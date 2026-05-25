@@ -2,8 +2,16 @@
 // `specorator run` — headless CI runner. Runs the same engine as the plugin,
 // without Obsidian. See DESIGN.md section 2.
 
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { Command } from "commander";
-import type { RunResult } from "@specorator/engine";
+import {
+  PlaywrightDriver,
+  Runner,
+  extractGherkinFence,
+  renderReportNote,
+  type TestCase,
+} from "@specorator/engine";
 
 const program = new Command();
 
@@ -14,20 +22,53 @@ program
 
 program
   .command("run")
-  .description("Run a suite or test case headless")
-  .option("-s, --suite <id>", "suite id to run")
-  .option("-c, --case <id>", "test case id to run")
-  .option("-t, --tags <expr>", "tag expression filter, e.g. '@smoke and not @wip'")
-  .option("-e, --env <name>", "environment from Environments.md")
-  .option("--vault <path>", "path to the Obsidian vault", ".")
-  .option("--rerun-failed", "rerun only the previously failed cases")
-  .option("--reporter <list>", "comma-separated reporters", "ndjson,html")
-  .action(async (_opts) => {
-    // TODO(phase-1): load the vault, parse suites, run via @specorator/engine,
-    // write reports, and exit non-zero on failure.
-    const _result: RunResult | null = null;
-    console.error("specorator run: not implemented yet (Phase 1)");
-    process.exitCode = 1;
+  .description("Run a test case file headless (Phase 1: single --case file)")
+  .option("-c, --case <file>", "path to a test-case markdown file")
+  .option("-s, --suite <id>", "suite id to run (Phase 2)")
+  .option("-t, --tags <expr>", "tag expression filter (Phase 2)")
+  .option("-e, --env <name>", "environment name", "default")
+  .option("--base-url <url>", "base URL for relative navigation")
+  .option("--headed", "run with a visible browser window", false)
+  .option("--channel <name>", "browser channel", "chrome")
+  .action(async (opts) => {
+    if (!opts.case) {
+      console.error("Phase 1 requires --case <file.md>. Suite/tag runs land in Phase 2.");
+      process.exitCode = 1;
+      return;
+    }
+
+    const markdown = readFileSync(opts.case, "utf8");
+    const gherkin = extractGherkinFence(markdown);
+    if (!gherkin) {
+      console.error(`No \`\`\`gherkin fence found in ${opts.case}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const testCase: TestCase = {
+      id: basename(opts.case).replace(/\.md$/, ""),
+      title: basename(opts.case),
+      suite: opts.suite ?? "",
+      tags: [],
+      status: "ready",
+      gherkin,
+      path: opts.case,
+    };
+
+    const driver = new PlaywrightDriver({
+      channel: opts.channel,
+      headless: !opts.headed,
+      baseURL: opts.baseUrl,
+    });
+
+    await driver.init();
+    try {
+      const result = await new Runner(driver).runCase(testCase, { env: opts.env });
+      console.log(renderReportNote(result));
+      process.exitCode = result.success ? 0 : 1;
+    } finally {
+      await driver.close();
+    }
   });
 
 program.parseAsync(process.argv);
