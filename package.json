@@ -1,0 +1,21 @@
+{
+  "name": "specorator-testrunner",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Local-first, markdown-native, AI-assisted BDD testing for Obsidian",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

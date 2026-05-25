@@ -1,0 +1,6 @@
+/* Specorator Test Runner — plugin styles */
+
+.specorator-gherkin {
+  border-left: 3px solid var(--interactive-accent);
+  padding-left: 0.75em;
+}

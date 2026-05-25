@@ -1,0 +1,19 @@
+{
+  "name": "@specorator/mcp",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Specorator local MCP server for Claude Code",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@specorator/engine": "*",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.6.3"
+  }
+}
