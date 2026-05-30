@@ -455,6 +455,8 @@ Signal-only — emitted after the suite-membership index incrementally updates (
 }
 ```
 
+Counts are derived by `TraceabilityService` via `UseCaseAutomationPolicy` (ADR-0017). Deprecated UCs are excluded from every count. `@wip`-tagged Features are excluded from each UC's roll-up so half-built work does not move the dashboard.
+
 Dashboard events are UI-integration events rather than business domain events. Per the EN-1 resolution they share the single domain `EventBus` in V1 (see §20). A separate `ui.*` channel will only be introduced if and when an external consumer (MCP, CLI) starts subscribing.
 
 ---

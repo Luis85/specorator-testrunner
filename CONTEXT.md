@@ -40,6 +40,10 @@ _Avoid_: Test group, test set, test pack.
 A Cucumber tag-expression string such as `@smoke and not @wip` that determines which scenarios a Test Suite includes. The single source of truth for suite membership.
 _Avoid_: Tag list, tag query, filter.
 
+**`@wip` Tag**:
+The conventional Cucumber tag for "work in progress." A Feature tagged `@wip` is excluded from the dashboard's KPI roll-up (per ADR-0017) so half-built work does not drag the dashboard red. Granularity is the Feature, not the scenario.
+_Avoid_: Draft tag, todo tag, skip tag.
+
 **Test Run**:
 A single invocation of the runner against some scope. Identified as `RUN-<timestamp>`. Always has exactly one terminal event: `testrun.completed` (passed/failed), `testrun.failed` (errored), or `testrun.cancelled`.
 _Avoid_: Test execution, run instance, job.

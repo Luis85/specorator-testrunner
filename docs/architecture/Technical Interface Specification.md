@@ -1398,7 +1398,7 @@ The demo Environment (`active: "demo"`) injects only `BASE_URL` pointing at the 
 
 ---
 
-## 14. Validation Contracts
+## 14. Domain Policies
 
 ### 14.1 PathSafetyPolicy
 
@@ -1428,6 +1428,16 @@ Rules:
 - `cwd` must resolve under `settings.paths.testRunnerPath`.
 - Command must match the allowlist in §13.2 (no arbitrary user-supplied commands in V1 — OQ-004 default).
 - Command must not contain shell metacharacters that imply destructive operations (`rm`, `&&`, `;`, redirects, etc.).
+
+### 14.3 UseCaseAutomationPolicy (per ADR-0017)
+
+```ts
+export interface UseCaseAutomationPolicy {
+  rollUp(useCase: UseCase, features: FeatureSpecification[], runs: TestRun[]): AutomationStatus;
+}
+```
+
+Inputs are pure values (no I/O). The policy excludes Features tagged `@wip` and returns one of the six `AutomationStatus` values per the table in ADR-0017. `TraceabilityService.refreshDashboard()` calls this policy once per UC when computing KPI counts.
 
 ---
 

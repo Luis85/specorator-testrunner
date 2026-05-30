@@ -202,6 +202,7 @@ Defined in the [Event Catalog](./Event%20Catalog.md). The Domain Layer exports t
 | `RunnerExecutionPolicy` | Decide what `--tags` expression to pass per execution scope. |
 | `EvidenceLinkingPolicy` | Determine which Use Case(s) a run's evidence attaches to. |
 | `CiReadinessPolicy` | Encode the rules for `EnvironmentValidationService` CI check. |
+| `UseCaseAutomationPolicy` | Derive `UseCase.automationStatus` from Feature states with `@wip` exclusion (per ADR-0017). |
 
 ### 6.5 Repositories (ports)
 
