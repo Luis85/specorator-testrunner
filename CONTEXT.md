@@ -63,7 +63,7 @@ The application that the tests drive. Real usage points at one of several **Envi
 _Avoid_: Target, app under test, AUT.
 
 **Environment**:
-A named addressable instance of the SUT (e.g. `staging`, `production`). The Test Hub stores a list of environments, each with at least a `baseUrl`, and tracks one **active environment**. Switching environments is a single action; never edit a URL inline. The demo bypasses environments entirely.
+A named addressable instance of the SUT (e.g. `staging`, `production`). The Test Hub stores a list of Environments, each with at least a `baseUrl` and optionally a set of credential env vars (per ADR-0014), and tracks one **active environment**. Switching environments is a single action; never edit a URL inline.
 _Avoid_: Stage, target, deployment, profile.
 
 **Active Environment**:

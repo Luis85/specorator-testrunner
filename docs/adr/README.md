@@ -20,3 +20,5 @@ ADRs here are **architectural shape** decisions: hard to reverse, surprising wit
 | [ADR-0010](./0010-restrict-custom-shell-commands.md) | Restrict Custom Shell Commands in V1 |
 | [ADR-0011](./0011-ci-reads-base-url-from-github-actions-variables.md) | CI Reads Base URL From GitHub Actions Variables |
 | [ADR-0012](./0012-use-case-to-feature-is-one-to-many.md) | Use Case to Feature Specification Is 1:N |
+| [ADR-0013](./0013-sut-modeled-as-named-environments.md) | SUT Modeled as Named Environments with One Active |
+| [ADR-0014](./0014-v1-auth-transport-is-environment-variables.md) | V1 Auth Transport Is Environment Variables |

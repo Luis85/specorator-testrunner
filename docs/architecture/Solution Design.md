@@ -487,6 +487,7 @@ Review Evidence
 ## 22. Security Considerations
 
 - The plugin itself performs no outbound network calls, no telemetry, and has no cloud dependency.
+- SUT credentials per Environment (ADR-0014) are stored in plaintext in plugin data (AD-9). The `SettingsTab` surfaces this prominently. CI runs read credentials from `secrets.E2E_*` only and never touch plugin storage.
 - The runner downloads Playwright browser binaries during install — this is the only outbound traffic initiated by the system, and it is gated behind the user's explicit "Install" action in the wizard.
 - Tests hit the user-configured System Under Test URL; no SUT is hard-coded.
 - The runner only reads from and writes to paths inside the configured workspace.
@@ -542,3 +543,4 @@ All open questions from the initial draft have been resolved. The decisions belo
 | AD-6 | Test execution is **serial** in V1. | Predictable evidence ordering, simpler `TestRunAggregate`, cleaner live monitor. Parallel deferred to post-MVP. |
 | AD-7 | TypeScript executed via the **`tsx` loader** from `cucumber.mjs`. | No build step; matches the Zero Configuration principle. |
 | AD-8 | Demo SUT = **local static HTML** served via `file://` (`.testrunner/src/fixtures/example.html`). | Zero internet dependency, deterministic in CI, smallest runner footprint. Local HTTP fixture server deferred. |
+| AD-9 | V1 stores SUT credentials in **plaintext** in Obsidian plugin data (`<vault>/.obsidian/plugins/e2e-test-hub/data.json`). | OS keychain adds a native dependency and complicates the headless CI story; env-var-only forces re-entry across sessions. Plugin data is the lowest-friction default. `SettingsTab` surfaces a prominent warning. CI never reads plugin data — it reads `secrets.E2E_*` per ADR-0014. Revisit in V2 (keychain / encrypted at rest). |

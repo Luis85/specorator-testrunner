@@ -207,6 +207,28 @@ export interface TestHubSettings {
   runner: RunnerSettings;
   automation: AutomationSettings;
   ci: CiSettings;
+  sut: SutSettings;                        // per ADR-0013 + ADR-0014
+}
+```
+
+### 5.1.1 SutSettings (per ADR-0013, ADR-0014)
+
+```ts
+export interface SutSettings {
+  active: string;                          // key into environments
+  environments: Record<string, SutEnvironment>;
+}
+
+export interface SutEnvironment {
+  baseUrl: string;                         // e.g. "https://staging.example.com"
+  auth?: SutAuth;                          // demo Environment has none
+}
+
+export interface SutAuth {
+  // Keys are injected verbatim into the runner subprocess as env vars.
+  // Plugin does NOT interpret them; user step definitions read process.env.E2E_*.
+  // V1 stores values in plaintext in plugin data per SDD AD-9.
+  env: Record<string, string>;
 }
 ```
 
@@ -312,6 +334,12 @@ export const DEFAULT_SETTINGS: TestHubSettings = {
     provider: "github-actions",
     workflowPath: ".github/workflows/e2e.yml",
     nodeVersion: "22",
+  },
+  sut: {
+    active: "demo",                        // bootstraps to the local file:// fixture
+    environments: {
+      demo: { baseUrl: "file://./.testrunner/src/fixtures/example.html" },
+    },
   },
 };
 ```
@@ -1327,6 +1355,17 @@ export interface RunnerCommandBuilder {
 | `ci` | `npm run test:ci` |
 
 `cwd` is always the runner path resolved from `settings.paths.testRunnerPath` plus the vault base path (`AbsoluteFileSystem.getVaultBasePath()`).
+
+`env` is built from the **Active Environment** per ADR-0013 / ADR-0014:
+
+```
+{
+  BASE_URL: <active env baseUrl>,
+  ...<active env auth.env>,                // E2E_USERNAME, E2E_PASSWORD, or whatever the user named
+}
+```
+
+The demo Environment (`active: "demo"`) injects only `BASE_URL` pointing at the `file://` fixture; no auth keys.
 
 ---
 

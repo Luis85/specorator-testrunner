@@ -6,6 +6,7 @@ title: CI Reads Base URL From GitHub Actions Variables
 date: 2026-05-30
 related:
   - "[[0006-runner-must-be-ci-compatible]]"
+  - "[[0013-sut-modeled-as-named-environments]]"
   - "[[Solution Design]]"
   - "[[Technical Interface Specification]]"
 ---
