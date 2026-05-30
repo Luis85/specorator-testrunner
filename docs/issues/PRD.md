@@ -280,7 +280,7 @@ The system shall allow configuration of:
 - Specification folder
 - Evidence folder
 - Runner folder
-- Package manager
+- Package manager *(V2 — V1 is fixed to `npm`, see SDD AD-2)*
 
 ### FR-015 CI Pipeline Generation
 

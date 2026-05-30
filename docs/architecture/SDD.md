@@ -133,7 +133,7 @@ interface FeatureSpecification {
 interface TestSuite {
   id: string;
   name: string;
-  tags: string[];            // suite membership is tag-driven
+  tagExpression: string;     // Cucumber tag expression, e.g. "@smoke and not @wip"
 }
 
 interface TestResult {
@@ -228,11 +228,14 @@ Services orchestrate use cases. Each service is independently testable and depen
 | Service | Responsibility | Boundary |
 | --- | --- | --- |
 | `InitializationService` | Drives the first-run wizard: creates vault folders, generates Test Hub notes, generates demo content, delegates runner install. | Owns folder/notes creation; delegates runner bits. |
-| `RunnerInstallationService` | Materialises `.testrunner`: writes `package.json`, `playwright.config.ts`, `cucumber.mjs`, installs deps, installs browsers, runs validation checks. | Owns everything under `.testrunner`. |
-| `TestExecutionService` | Spawns Cucumber/Playwright runs (Use Case, Feature, Suite, All), streams stdout/stderr, emits run events. | Read-only against vault; writes only to `.testrunner/reports`. |
+| `RunnerInstallationService` | Materialises `.testrunner`: writes `package.json`, `playwright.config.ts`, `cucumber.mjs`, runs `npm install`, installs Chromium browser. | Owns everything under `.testrunner`. npm is fixed in V1. |
+| `EnvironmentValidationService` | Checks Node.js, npm, Playwright, browser install, and CI readiness (`package.json`, scripts, reports folder). | Read-only diagnostics. Covers UC-002 and UC-020. |
+| `MaintenanceService` | Repairs damaged installations (recreates missing files/packages) and resets the Test Hub (removes generated assets, restores defaults). | Owns repair and reset flows. Covers UC-003 and UC-024. |
+| `StepDefinitionService` | Generates TypeScript step-definition stubs for undefined Gherkin steps. | Writes only to `.testrunner/src/steps`. Covers UC-010. |
+| `TestExecutionService` | Spawns Cucumber/Playwright runs (Use Case, Feature, Suite, All) serially in V1, streams stdout/stderr, emits run events. | Read-only against vault; writes only to `.testrunner/reports`. |
 | `ReportImportService` | Parses Playwright/Cucumber reports from `.testrunner/reports` into domain `TestRun` + `Evidence` records. | One-way: report → domain. |
 | `EvidenceGenerationService` | Renders Markdown evidence notes under `Test Evidence`. | Writes vault notes only. |
-| `PipelineGenerationService` | Generates CI workflow files (GitHub Actions in V1, Azure DevOps future). | Writes to repo root, not the vault. |
+| `PipelineGenerationService` | Generates CI workflow files (GitHub Actions in V1 at `.github/workflows/`, Azure DevOps future). | Writes to repo root, not the vault. |
 | `TraceabilityService` | Maintains Use Case ↔ Feature ↔ Suite ↔ Run ↔ Evidence links (FR-017). | Read-only across contexts. |
 
 ---
@@ -388,6 +391,15 @@ The runner must execute independently of Obsidian — both on the user's machine
 - Writes Playwright + Cucumber reports into `.testrunner/reports`.
 - Exits with non-zero on failure (CI-friendly).
 
+### V1 fixed choices
+
+| Concern | V1 choice | Rationale |
+| --- | --- | --- |
+| Package manager | `npm` | Single lockfile shape, fewer install/validation paths. User-selectable PM deferred to V2 (PRD FR-014). |
+| Browser matrix | Chromium-only | ~150 MB install; meets the "demo test in < 5 min" goal. Firefox + WebKit deferred to V3. |
+| Concurrency | Serial scenario execution | Predictable evidence ordering; simple `TestRunAggregate` state machine; cleaner live-monitor UI. Parallel workers deferred to post-MVP. |
+| TypeScript execution | `tsx` loader via `cucumber.mjs` | No build step; matches the Zero Configuration principle. |
+
 ---
 
 ## 17. CI Architecture
@@ -522,16 +534,16 @@ Architecture is accepted when:
 
 ---
 
-## 25. Open Questions
+## 25. Architectural Decisions
 
-These items align internally but warrant explicit confirmation before implementation.
+All open questions from the initial draft have been resolved. The decisions below are now binding for V1 unless explicitly revisited.
 
-| # | Question | Default in this draft |
+| # | Decision | Rationale |
 | --- | --- | --- |
-| OQ-1 | Does the install wizard auto-run the demo test, or wait for the user to click? | Wait for user click (matches PRD §10). |
-| OQ-2 | Package manager for `.testrunner`: fixed (npm) or user-selectable per PRD FR-014? | Fixed to npm in V1; selectable deferred. |
-| OQ-3 | Where do CI workflow files live — repo root (`.github/workflows`) or inside the vault? | Repo root. Implies the vault is a git-tracked repo. |
-| OQ-4 | Test suites: tag-driven (`@smoke`, `@regression`) or explicit scenario lists? | Tag-driven (lighter weight, matches Cucumber idiom). |
-| OQ-5 | Browser matrix: Chromium-only in V1, or all three engines? | Chromium-only V1; matrix in V3 per §23. |
-| OQ-6 | Concurrency: serial execution V1, or Playwright parallel workers? | Serial V1 for predictable evidence; parallel after demo flow is stable. |
-| OQ-7 | Strict TypeScript in `.testrunner` — direct `ts-node`/`tsx` or pre-compile? | `tsx` loader via `cucumber.mjs` (no build step). |
+| AD-1 | Install wizard does **not** auto-run the demo test; the user clicks **Run Demo Test** from the dashboard. | Predictable install, easier failure handling, matches PRD §10. |
+| AD-2 | Package manager fixed to **npm** in V1. | Simpler `RunnerInstallationService`, single lockfile shape. Selectable PM (PRD FR-014) deferred to V2. |
+| AD-3 | CI workflow files written to **repo root `.github/workflows/`**. | Standard convention; the vault is expected to live inside a git repo. |
+| AD-4 | Suites are **tag-driven** via a Cucumber tag expression on `TestSuite.tagExpression`. | Cucumber-native, one-edit suite membership, no list maintenance. |
+| AD-5 | Browser matrix: **Chromium-only** in V1. | ~150 MB install; meets the "demo test in < 5 min" goal. Full matrix in V3. |
+| AD-6 | Test execution is **serial** in V1. | Predictable evidence ordering, simpler `TestRunAggregate`, cleaner live monitor. Parallel deferred to post-MVP. |
+| AD-7 | TypeScript executed via the **`tsx` loader** from `cucumber.mjs`. | No build step; matches the Zero Configuration principle. |
