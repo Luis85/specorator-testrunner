@@ -6,8 +6,8 @@ specifications, test suites, Playwright execution, evidence, and CI/CD into a
 single Markdown-native, local-first workflow.
 
 > **Status:** Draft / Discovery. The product direction is captured in the
-> [PRD](./docs/issues/PRD.md). The codebase is early scaffolding — see
-> [Current state](#current-state) below.
+> [PRD](./docs/issues/PRD.md). The codebase is an empty plugin shell ready to
+> be built out against the PRD.
 
 ## Vision
 
@@ -74,40 +74,37 @@ Vault
 └── .testrunner
 ```
 
-## Current state
-
-The repository currently contains an earlier engine-first scaffold (see
-[`DESIGN.md`](./DESIGN.md) for the design of record from that pass). It is
-being re-aligned to the PRD direction described above.
-
-Existing workspace packages:
+## Repository layout
 
 ```
-packages/
-  engine/   gherkin parse, vocabulary, driver, runner, reporting (Vitest tests)
-  plugin/   Obsidian plugin shell
-  cli/      headless runner entry point
-  mcp/      local MCP server entry point
+.
+├── manifest.json          # Obsidian plugin manifest
+├── package.json           # Plugin build + typecheck scripts
+├── tsconfig.json          # TypeScript config (strict)
+├── esbuild.config.mjs     # esbuild bundler config
+├── styles.css             # Plugin styles
+├── src/
+│   └── main.ts            # Plugin entry point
+├── docs/
+│   └── issues/
+│       └── PRD.md         # Product requirements (source of truth)
+└── .github/workflows/
+    └── ci.yml             # Typecheck + build on push / PR
 ```
-
-The PRD calls for a single Obsidian plugin plus a `.testrunner` runner folder
-generated into the user's vault. Mapping the existing packages onto that
-target — and what gets kept, renamed, or removed — is the next item to iterate
-on.
 
 ## Documents
 
 - [PRD](./docs/issues/PRD.md) — product requirements (this is the source of truth for scope).
-- [DESIGN.md](./DESIGN.md) — prior design exploration, retained for context.
 
 ## Development
 
 Requires Node 20+.
 
 ```bash
-npm install        # install workspace deps
-npm run build      # build all packages
-npm run typecheck  # type-check all packages
+npm install        # install dependencies
+npm run dev        # esbuild watch mode
+npm run build      # production bundle (main.js)
+npm run typecheck  # tsc --noEmit
 ```
 
 ## License

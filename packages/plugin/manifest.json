@@ -1,9 +1,0 @@
-{
-  "id": "specorator-testrunner",
-  "name": "Specorator Test Runner",
-  "version": "0.0.1",
-  "minAppVersion": "1.8.0",
-  "description": "Local-first, markdown-native, AI-assisted BDD testing. Write Gherkin in your notes and run it with Playwright.",
-  "author": "Luis85",
-  "isDesktopOnly": true
-}

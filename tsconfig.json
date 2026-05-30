@@ -11,5 +11,6 @@
     "resolveJsonModule": true,
     "declaration": false,
     "noEmit": true
-  }
+  },
+  "include": ["src/**/*.ts"]
 }
