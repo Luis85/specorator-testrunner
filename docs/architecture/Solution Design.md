@@ -347,9 +347,9 @@ Obsidian Workspace
 +------------------------------------------------+
 | Recent Executions                              |
 +------------------------------------------------+
-+------------------------------------------------+
-| CI Readiness                                   |
-+------------------------------------------------+
++----------------------+-------------------------+
+| CI Readiness         | Sync risk (logs)        |
++----------------------+-------------------------+
 ```
 
 ---
@@ -489,6 +489,7 @@ Review Evidence
 - The plugin itself performs no outbound network calls, no telemetry, and has no cloud dependency.
 - SUT credentials per Environment (ADR-0014) are stored in plaintext in plugin data (AD-9). The `SettingsTab` surfaces this prominently. CI runs read credentials from `secrets.E2E_*` only and never touch plugin storage.
 - Persistent logs (ADR-0019) live inside the vault at the user-configured path (default `Test Hub/logs/`). The `Logger` redacts credential-shaped fields and any value matching the Active Environment's auth env vars before writing. Users who do not want logs in git add the log path to their `.gitignore`.
+- The default log path is **not** a dotfolder, so Obsidian Sync and similar vault syncers will copy logs across devices by default. This residual risk is documented in the User Manual ("Logs and sync") and surfaced as a passive "Sync risk" tile on the dashboard. Subprocess stderr fragments are not exhaustively redactable — the documentation pattern is preferred over silent path rewrites.
 - The runner downloads Playwright browser binaries during install — this is the only outbound traffic initiated by the system, and it is gated behind the user's explicit "Install" action in the wizard.
 - Tests hit the user-configured System Under Test URL; no SUT is hard-coded.
 - The runner only reads from and writes to paths inside the configured workspace.

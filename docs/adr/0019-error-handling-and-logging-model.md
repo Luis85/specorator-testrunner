@@ -111,6 +111,19 @@ Structured logging: `fields` is JSON-serialised into the persistent log; the con
 - **Console-only.** Simplest. Rejected: gone the moment the user reloads Obsidian; useless for support stories.
 - **No credential redaction.** Trust call sites. Rejected: one careless `logger.debug("auth context", env)` leaks credentials into a file that may sync; redaction in the Logger itself is the only safe default.
 
+## Residual risk: vault sync
+
+Because logs live inside the vault and the default path (`Test Hub/logs/`) is not a dotfolder, Obsidian Sync (and similar vault syncers — iCloud, Dropbox) will copy logs across the user's devices unless explicitly excluded. The Logger's credential redaction covers structured fields and the Active Environment's known credential values, but it cannot catch every fragment a subprocess might print on stderr (URLs with query strings, paths to private files, third-party error traces).
+
+The plugin documents this risk rather than mitigating it programmatically:
+
+- The generated **User Manual** has a "Logs and sync" section that explains the risk and shows the exact lines to add to Obsidian Sync exclusions (and to `.gitignore`).
+- The dashboard renders a passive **"Sync risk: logs are inside the vault"** tile next to the CI Readiness tile. The tile links to the manual section.
+
+Moving the default path to a dotfolder (`.testhub-logs/`) was considered and rejected: it would lose the "discoverable in the vault" property the user explicitly wanted, and it would silently bypass the user's own sync/backup preferences. Generating sync-exclusion files automatically was considered and rejected: Obsidian Sync's exclusion file is user-owned, and writing to it without asking is invasive. Documentation + a passive dashboard tile is the lightest mitigation that respects user intent.
+
+The default path can be moved to a dotfolder in V1.1 if telemetry-free user feedback shows people are surprised by what synced — no data migration needed (logs are local-machine artifacts).
+
 ## Consequences
 
 - New `LoggingSettings` section under `TestHubSettings`. `RunnerSettings.verboseLogging` is *not* introduced; `logging.level` covers the same surface more generally.
@@ -119,3 +132,4 @@ Structured logging: `fields` is JSON-serialised into the persistent log; the con
 - `AppError.code` typed as `ErrorCode` union — new codes are added by editing the union.
 - SettingsTab gains a Logging section: enabled, path (with `PathSafetyPolicy` validation), level.
 - Users who don't want logs in git add the configured path to `.gitignore`; users who want a log archive commit it. Plugin doesn't take a position on which.
+- Dashboard gains a passive "Sync risk" tile; User Manual gains a "Logs and sync" section.
