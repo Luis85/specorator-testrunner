@@ -236,7 +236,7 @@ Path: `src/shared/{event-bus,logging,result,errors,utils}`.
 | --- | --- |
 | `EventBus` | Single in-process bus shared by domain + UI events (per EN-1). |
 | `Result<T, E>` | Exception-free flow for application-level operations. |
-| `Logger` | Consistent diagnostics into Obsidian notices and `console`. |
+| `Logger` | Structured diagnostics with credential redaction; writes through `LogSinkPort` adapters to console, Notices, and the vault-resident persistent log per ADR-0019. |
 | `Errors` | Tagged error hierarchy for actionable failure modes. |
 
 ```ts

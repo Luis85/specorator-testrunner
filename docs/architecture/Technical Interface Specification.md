@@ -56,12 +56,35 @@ export type Result<T, E = AppError> =
 
 ```ts
 export interface AppError {
-  code: string;                            // stable machine-readable code
+  code: ErrorCode;                         // typed union per ADR-0019
   message: string;                         // human-readable message
   details?: Record<string, unknown>;
   cause?: unknown;
 }
+
+export type ErrorCode =
+  // execution
+  | "RUN_IN_PROGRESS"                      // ADR-0018
+  | "RUN_TIMEOUT"
+  | "RUN_CANCELLED"
+  // path / command safety
+  | "PATH_UNSAFE"                          // PathSafetyPolicy
+  | "COMMAND_DISALLOWED"                   // RunnerExecutionPolicy
+  // install / runner
+  | "INIT_FAILED"
+  | "RUNNER_MISSING_FILE"
+  | "BROWSER_NOT_INSTALLED"
+  | "NPM_INSTALL_FAILED"
+  // report / evidence
+  | "REPORT_NOT_FOUND"
+  | "REPORT_PARSE_FAILED"
+  | "EVIDENCE_WRITE_FAILED"
+  // settings / validation
+  | "SETTINGS_INVALID"
+  | "SUT_ENV_NOT_FOUND";
 ```
+
+Codes are stable across plugin versions. Adding is safe; renaming is breaking.
 
 ### 3.3 Identifiers
 
@@ -210,8 +233,21 @@ export interface TestHubSettings {
   automation: AutomationSettings;
   ci: CiSettings;
   sut: SutSettings;                        // per ADR-0013 + ADR-0014
+  logging: LoggingSettings;                // per ADR-0019
 }
 ```
+
+### 5.1.2 LoggingSettings (per ADR-0019)
+
+```ts
+export interface LoggingSettings {
+  enabled: boolean;                        // master switch for the persistent file sink
+  path: VaultPath;                         // default "Test Hub/logs"
+  level: "debug" | "info" | "warn" | "error";
+}
+```
+
+The persistent log file is written to `<vault>/<logging.path>/plugin-<YYYY-MM-DD>.log` (daily rotation). Console and Notice sinks are unaffected by `enabled` — they are always on for `warn`/`error`. Users who want to keep logs out of git add `<logging.path>/` to their `.gitignore`. The `path` is validated by `PathSafetyPolicy`.
 
 ### 5.1.1 SutSettings (per ADR-0013, ADR-0014)
 
@@ -343,6 +379,11 @@ export const DEFAULT_SETTINGS: TestHubSettings = {
     environments: {
       demo: { baseUrl: "file://./.testrunner/src/fixtures/example.html" },
     },
+  },
+  logging: {
+    enabled: true,
+    path: "Test Hub/logs",
+    level: "info",
   },
 };
 ```
@@ -1027,6 +1068,19 @@ export interface FeatureFileWatcher {
 }
 ```
 
+### 9.8 LogSinkPort (per ADR-0019)
+
+```ts
+export interface LogSinkPort {
+  init(settings: LoggingSettings): Promise<Result<void>>;
+  write(line: string): Promise<void>;      // line is already redacted by Logger
+  rotate(today: string): Promise<void>;    // ensures plugin-<YYYY-MM-DD>.log is the active target
+  close(): Promise<void>;
+}
+```
+
+The plugin-side `Logger` (Shared Kernel) builds a redacted, structured log line, then hands it to whichever `LogSinkPort` implementations are wired in. Default wiring is `ConsoleSink` + `VaultFileSink` (the latter respects `LoggingSettings.enabled`).
+
 ### 9.8 ReportParser
 
 ```ts
@@ -1400,6 +1454,24 @@ export interface RunnerCommandBuilder {
 The demo Environment (`active: "demo"`) injects only `BASE_URL` pointing at the `file://` fixture; no auth keys.
 
 ---
+
+## 13.3 Logger (Shared Kernel, per ADR-0019)
+
+```ts
+export interface Logger {
+  debug(msg: string, fields?: Record<string, unknown>): void;
+  info(msg: string, fields?: Record<string, unknown>): void;
+  warn(msg: string, fields?: Record<string, unknown>): void;
+  error(msg: string, error?: Error | AppError, fields?: Record<string, unknown>): void;
+}
+```
+
+The Logger redacts sensitive fields before serialising:
+
+- Field keys matching `/pass|secret|token|key|auth|credential/i` are replaced with `"***"`.
+- Values matching any entry in the Active Environment's `SutAuth.env` map are replaced with `"***"`.
+
+Redaction is enforced inside the Logger; call sites cannot bypass it without dropping to raw `console.*`. Field name `runId` is a convention so log filtering by run is trivial.
 
 ## 14. Domain Policies
 

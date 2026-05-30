@@ -488,6 +488,7 @@ Review Evidence
 
 - The plugin itself performs no outbound network calls, no telemetry, and has no cloud dependency.
 - SUT credentials per Environment (ADR-0014) are stored in plaintext in plugin data (AD-9). The `SettingsTab` surfaces this prominently. CI runs read credentials from `secrets.E2E_*` only and never touch plugin storage.
+- Persistent logs (ADR-0019) live inside the vault at the user-configured path (default `Test Hub/logs/`). The `Logger` redacts credential-shaped fields and any value matching the Active Environment's auth env vars before writing. Users who do not want logs in git add the log path to their `.gitignore`.
 - The runner downloads Playwright browser binaries during install — this is the only outbound traffic initiated by the system, and it is gated behind the user's explicit "Install" action in the wizard.
 - Tests hit the user-configured System Under Test URL; no SUT is hard-coded.
 - The runner only reads from and writes to paths inside the configured workspace.

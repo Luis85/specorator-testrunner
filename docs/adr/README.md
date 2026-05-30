@@ -26,3 +26,4 @@ ADRs here are **architectural shape** decisions: hard to reverse, surprising wit
 | [ADR-0016](./0016-evidence-partitioned-by-year-month.md) | Evidence Partitioned by Year/Month |
 | [ADR-0017](./0017-use-case-automation-rollup-with-wip-exclusion.md) | Use Case Automation Status Rolls Up From Features With `@wip` Exclusion |
 | [ADR-0018](./0018-at-most-one-active-test-run.md) | At Most One Active Test Run |
+| [ADR-0019](./0019-error-handling-and-logging-model.md) | Error Handling and Logging Model |

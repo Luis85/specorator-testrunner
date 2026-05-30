@@ -661,7 +661,7 @@ export type EventHandler<TPayload> = (
 export type Unsubscribe = () => void;
 ```
 
-Handlers run asynchronously and in registration order. The bus does not retry — failures are logged and surfaced through Obsidian notices.
+Handlers run asynchronously and in registration order. The bus does not retry — failures are logged through the `Logger` (per ADR-0019) and surfaced through Obsidian Notices when they are user-actionable. Background failures (handler exceptions with no user remediation) log at `warn` / `error` and reach the dashboard health tile, not a Notice.
 
 ---
 
