@@ -78,8 +78,8 @@ In this project, the design docs are the primary record. Cross-reference against
 - `docs/architecture/Runtime View.md` (Arc42 §6 — sequence diagrams).
 - `docs/architecture/Technical Interface Specification.md` (TypeScript contracts).
 - `docs/architecture/Event Catalog.md` (domain events).
-- `docs/use-cases/V1.md` plus `UC-001..UC-024.md` notes.
-- `docs/issues/Backlog V1.md` plus `EPIC-*.md`, `FEAT-*.md`, `US-*.md` notes.
+- Individual use-case notes under `docs/use-cases/UC-NNN.md`.
+- Backlog notes under `docs/issues/{EPIC,FEAT,US}-NNN.md`.
 - `docs/adr/` for accepted long-form architectural decisions.
 
 ### Update CONTEXT.md inline

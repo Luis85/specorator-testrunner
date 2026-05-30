@@ -95,13 +95,10 @@ Vault
 │   │   ├── Technical Interface Specification.md   # TypeScript contracts
 │   │   └── Event Catalog.md                       # V1 domain event catalog
 │   ├── adr/
-│   │   ├── README.md              # ADR index
-│   │   └── 0001-*.md … 0010-*.md  # 10 architectural decision records
+│   │   └── 0001-*.md … 0019-*.md       # Architectural decision records
 │   ├── use-cases/
-│   │   ├── V1.md                  # Use case index
-│   │   └── UC-001.md … UC-024.md  # One note per use case
+│   │   └── UC-001.md … UC-024.md       # One note per use case
 │   └── issues/
-│       ├── Backlog V1.md          # Backlog index
 │       ├── EPIC-001.md … EPIC-012.md   # Epics (12)
 │       ├── FEAT-001.md … FEAT-028.md   # Features (28)
 │       └── US-001.md … US-050.md       # User stories (50)
@@ -131,14 +128,13 @@ Vault
 
 - [Obsidian E2E Test Hub](./docs/Obsidian%20E2E%20Test%20Hub.md) — Product Requirements (source of truth for scope).
 - [CONTEXT.md](./CONTEXT.md) — Project glossary (used by the `grill-with-docs` skill).
-- [ADR index](./docs/adr/README.md) — 10 architectural decision records.
 - [Solution Design](./docs/architecture/Solution%20Design.md) — architecture, domain model, V1 architectural decisions.
 - [Building Block View](./docs/architecture/Building%20Block%20View.md) — Arc42 §5 building blocks (views, services, adapters, runner internals).
 - [Runtime View](./docs/architecture/Runtime%20View.md) — Arc42 §6 runtime scenarios with Mermaid sequence diagrams.
 - [Technical Interface Specification](./docs/architecture/Technical%20Interface%20Specification.md) — TypeScript contracts: shared types, domain, repositories, services, ports, frontmatter schemas, runner + CI templates.
 - [Event Catalog](./docs/architecture/Event%20Catalog.md) — V1 domain events, envelope, EventBus contract.
-- [Use Cases V1](./docs/use-cases/V1.md) — index of 24 V1 use cases (each in its own note).
-- [Backlog V1](./docs/issues/Backlog%20V1.md) — index of 12 epics, 28 features, 50 user stories.
+
+Use cases live as individual notes under `docs/use-cases/UC-NNN.md`. Backlog items live under `docs/issues/{EPIC,FEAT,US}-NNN.md`. Architectural decision records live under `docs/adr/NNNN-*.md`. Per-domain indexes will return via Obsidian Bases once the plugin lands.
 
 ## Development
 

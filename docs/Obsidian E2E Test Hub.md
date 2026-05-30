@@ -7,7 +7,7 @@
 - **Stage:** Discovery
 - **Target Platform:** Obsidian Desktop
 - **Technology Stack:** TypeScript, Obsidian Plugin API, Playwright, Cucumber-JS, Node.js
-- **Companion documents:** [Solution Design](./architecture/Solution%20Design.md), [Event Catalog](./architecture/Event%20Catalog.md), [Use Cases V1](./use-cases/V1.md)
+- **Companion documents:** [[Solution Design]], [[Building Block View]], [[Runtime View]], [[Technical Interface Specification]], [[Event Catalog]]
 
 ---
 
@@ -346,7 +346,7 @@ testRunnerPath: .testrunner
 
 ## 12. Acceptance Criteria
 
-Each AC is mapped to the mandatory MVP Use Case(s) it satisfies (see [Use Cases V1](../use-cases/V1.md)).
+Each AC is mapped to the mandatory MVP Use Case(s) it satisfies. Use Case notes live under `docs/use-cases/UC-NNN.md`.
 
 | ID | Criterion | Covers |
 | --- | --- | --- |

@@ -6,7 +6,7 @@
 - **Status:** Draft
 - **Stage:** Solution Design / Implementation Preparation
 - **Type:** Technical Contract Document
-- **Companion documents:** [Obsidian E2E Test Hub PRD](../Obsidian%20E2E%20Test%20Hub.md), [Solution Design](./Solution%20Design.md), [Building Block View](./Building%20Block%20View.md), [Runtime View](./Runtime%20View.md), [Event Catalog](./Event%20Catalog.md), [Use Cases V1](../use-cases/V1.md)
+- **Companion documents:** [[Obsidian E2E Test Hub]], [[Solution Design]], [[Building Block View]], [[Runtime View]], [[Event Catalog]]
 
 ---
 

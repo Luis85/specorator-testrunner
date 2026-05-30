@@ -5,7 +5,7 @@
 - **Version:** 1.0
 - **Status:** Draft
 - **Architecture Stage:** Solution Design
-- **Companion documents:** [Obsidian E2E Test Hub PRD](../Obsidian%20E2E%20Test%20Hub.md), [Building Block View](./Building%20Block%20View.md), [Runtime View](./Runtime%20View.md), [Technical Interface Specification](./Technical%20Interface%20Specification.md), [Event Catalog](./Event%20Catalog.md), [Use Cases V1](../use-cases/V1.md)
+- **Companion documents:** [[Obsidian E2E Test Hub]], [[Building Block View]], [[Runtime View]], [[Technical Interface Specification]], [[Event Catalog]]
 
 ---
 
@@ -13,7 +13,7 @@
 
 ### Purpose
 
-This document describes the architecture and technical design of the Obsidian E2E Test Hub. The PRD (`docs/issues/PRD.md`) defines *what* the product does and *why*; this SDD defines *how* it is structured and *how* the parts collaborate.
+This document describes the architecture and technical design of the Obsidian E2E Test Hub. The [[Obsidian E2E Test Hub]] PRD defines *what* the product does and *why*; this Solution Design defines *how* it is structured and *how* the parts collaborate.
 
 The solution enables users to:
 

@@ -13,7 +13,7 @@ related:
 
 The Obsidian plugin and the test runtime are two independently shippable systems. The plugin lives in `src/` and provides the UI, orchestration, and scaffolding. The runtime lives in `.testrunner/` and is a self-contained Node project (Playwright + Cucumber-JS + TypeScript). They communicate only via the file system: the plugin spawns the runner as a child process and observes its reports.
 
-The decision exists because the runner must be executable without Obsidian (the same suite has to run inside GitHub Actions, see [[#ADR-0006]]). Coupling the runner to the plugin's process model would make CI execution impossible.
+The decision exists because the runner must be executable without Obsidian (the same suite has to run inside GitHub Actions, see [[0006-runner-must-be-ci-compatible]]). Coupling the runner to the plugin's process model would make CI execution impossible.
 
 ## Considered alternatives
 

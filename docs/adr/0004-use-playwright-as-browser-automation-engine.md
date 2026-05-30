@@ -13,7 +13,7 @@ related:
 
 Playwright drives the browser from the Cucumber `World`. Selected over Selenium, Cypress, and Puppeteer because: (a) first-class TypeScript support, (b) built-in trace + screenshot capture (which the Evidence pipeline depends on), (c) reliable auto-waiting that reduces flake without per-step sleeps, and (d) `playwright install --with-deps` is a one-command CI setup.
 
-Playwright Test (the runner) is **not** used; Cucumber-JS is the runner and Playwright is used purely as the browser library. See [[#ADR-0003]] for the Cucumber-vs-alternatives rationale.
+Playwright Test (the runner) is **not** used; Cucumber-JS is the runner and Playwright is used purely as the browser library. See [[0003-use-gherkin-as-specification-format]] for the Cucumber-vs-alternatives rationale.
 
 ## Considered alternatives
 
