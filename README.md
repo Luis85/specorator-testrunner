@@ -105,7 +105,23 @@ Vault
 │       ├── EPIC-001.md … EPIC-012.md   # Epics (12)
 │       ├── FEAT-001.md … FEAT-028.md   # Features (28)
 │       └── US-001.md … US-050.md       # User stories (50)
-├── .claude/skills/grill-with-docs/    # Stress-test plans against docs / glossary
+├── .claude/skills/
+│   ├── grill-with-docs/                  # Stress-test plans against docs / glossary (mattpocock/skills)
+│   ├── brainstorming/                    # Superpowers methodology (14 skills)
+│   ├── test-driven-development/
+│   ├── systematic-debugging/
+│   ├── writing-plans/
+│   ├── executing-plans/
+│   ├── subagent-driven-development/
+│   ├── dispatching-parallel-agents/
+│   ├── verification-before-completion/
+│   ├── using-superpowers/
+│   ├── writing-skills/
+│   ├── requesting-code-review/
+│   ├── receiving-code-review/
+│   ├── finishing-a-development-branch/
+│   ├── using-git-worktrees/
+│   └── NOTICE-superpowers.txt            # Upstream attribution + MIT license
 └── .github/workflows/
     └── ci.yml                     # Typecheck + build on push / PR
 ```
