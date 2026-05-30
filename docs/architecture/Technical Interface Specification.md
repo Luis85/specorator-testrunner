@@ -811,7 +811,10 @@ export interface ExecuteTestRequest {
 }
 ```
 
-Implementation enforces the EN-2 terminal-event invariant: exactly one of `testrun.completed` / `testrun.failed` / `testrun.cancelled` per run.
+Implementation invariants:
+
+- EN-2 terminal-event invariant: exactly one of `testrun.completed` / `testrun.failed` / `testrun.cancelled` per run.
+- ADR-0018 single-active invariant: `execute()` returns `Result.failure({ code: "RUN_IN_PROGRESS", details: { activeRunId } })` when invoked while another run is active. Caller must `cancel(activeRunId)` and await `testrun.cancelled` before retrying.
 
 ### 8.11 ReportImportService
 

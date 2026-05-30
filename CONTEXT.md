@@ -45,7 +45,7 @@ The conventional Cucumber tag for "work in progress." A Feature tagged `@wip` is
 _Avoid_: Draft tag, todo tag, skip tag.
 
 **Test Run**:
-A single invocation of the runner against some scope. Identified as `RUN-<timestamp>`. Always has exactly one terminal event: `testrun.completed` (passed/failed), `testrun.failed` (errored), or `testrun.cancelled`.
+A single invocation of the runner against some scope. Identified as `RUN-<timestamp>`. Always has exactly one terminal event: `testrun.completed` (passed/failed), `testrun.failed` (errored), or `testrun.cancelled`. At most one Run is active per Vault at a time (per ADR-0018); a second concurrent Run is rejected with `RUN_IN_PROGRESS` until the active one terminates.
 _Avoid_: Test execution, run instance, job.
 
 **Scenario Reference**:

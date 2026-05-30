@@ -282,7 +282,7 @@ Aggregate roots own consistency boundaries; commands enter through them and even
 | `UseCaseAggregate` | Use Case lifecycle, linked feature, linked evidence. | `UseCaseCreated`, `UseCaseUpdated`. |
 | `FeatureAggregate` | Feature file, scenarios, tags. | `FeatureCreated`, `FeatureUpdated`. |
 | `SuiteAggregate` | Test suite definition and tag membership. | `SuiteCreated`, `SuiteUpdated`. |
-| `TestRunAggregate` | Execution lifecycle (start, progress, finish). | `TestRunStarted`, `TestRunCompleted`. |
+| `TestRunAggregate` | Execution lifecycle (start, progress, finish). At most one **active** run per Vault (per ADR-0018) — single-active state machine; subsequent `execute()` calls return `RUN_IN_PROGRESS` until the active run terminates. | `TestRunStarted`, `TestRunCompleted`. |
 | `EvidenceAggregate` | Evidence note + attachments. | `EvidenceGenerated`. |
 
 ---
