@@ -85,6 +85,7 @@ Vault
 ├── styles.css             # Plugin styles
 ├── src/
 │   └── main.ts            # Plugin entry point
+├── CONTEXT.md                     # Glossary (per grill-with-docs skill)
 ├── docs/
 │   ├── Obsidian E2E Test Hub.md   # Product Requirements (source of truth)
 │   ├── architecture/
@@ -93,6 +94,9 @@ Vault
 │   │   ├── Runtime View.md                        # Arc42 §6 runtime scenarios
 │   │   ├── Technical Interface Specification.md   # TypeScript contracts
 │   │   └── Event Catalog.md                       # V1 domain event catalog
+│   ├── adr/
+│   │   ├── README.md              # ADR index
+│   │   └── 0001-*.md … 0010-*.md  # 10 architectural decision records
 │   ├── use-cases/
 │   │   ├── V1.md                  # Use case index
 │   │   └── UC-001.md … UC-024.md  # One note per use case
@@ -101,6 +105,7 @@ Vault
 │       ├── EPIC-001.md … EPIC-012.md   # Epics (12)
 │       ├── FEAT-001.md … FEAT-028.md   # Features (28)
 │       └── US-001.md … US-050.md       # User stories (50)
+├── .claude/skills/grill-with-docs/    # Stress-test plans against docs / glossary
 └── .github/workflows/
     └── ci.yml                     # Typecheck + build on push / PR
 ```
@@ -108,6 +113,8 @@ Vault
 ## Documents
 
 - [Obsidian E2E Test Hub](./docs/Obsidian%20E2E%20Test%20Hub.md) — Product Requirements (source of truth for scope).
+- [CONTEXT.md](./CONTEXT.md) — Project glossary (used by the `grill-with-docs` skill).
+- [ADR index](./docs/adr/README.md) — 10 architectural decision records.
 - [Solution Design](./docs/architecture/Solution%20Design.md) — architecture, domain model, V1 architectural decisions.
 - [Building Block View](./docs/architecture/Building%20Block%20View.md) — Arc42 §5 building blocks (views, services, adapters, runner internals).
 - [Runtime View](./docs/architecture/Runtime%20View.md) — Arc42 §6 runtime scenarios with Mermaid sequence diagrams.
