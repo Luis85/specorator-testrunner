@@ -88,8 +88,9 @@ Vault
 ├── docs/
 │   ├── Obsidian E2E Test Hub.md   # Product Requirements (source of truth)
 │   ├── architecture/
-│   │   ├── Solution Design.md     # Architecture of record
-│   │   └── Event Catalog.md       # V1 domain event catalog
+│   │   ├── Solution Design.md       # Architecture of record
+│   │   ├── Building Block View.md   # Arc42 building block view (detailed)
+│   │   └── Event Catalog.md         # V1 domain event catalog
 │   ├── use-cases/
 │   │   ├── V1.md                  # Use case index
 │   │   └── UC-001.md … UC-024.md  # One note per use case
@@ -106,6 +107,7 @@ Vault
 
 - [Obsidian E2E Test Hub](./docs/Obsidian%20E2E%20Test%20Hub.md) — Product Requirements (source of truth for scope).
 - [Solution Design](./docs/architecture/Solution%20Design.md) — architecture, domain model, V1 architectural decisions.
+- [Building Block View](./docs/architecture/Building%20Block%20View.md) — Arc42 building block view (views, services, adapters, runner internals, runtime flows).
 - [Event Catalog](./docs/architecture/Event%20Catalog.md) — V1 domain events, envelope, EventBus contract.
 - [Use Cases V1](./docs/use-cases/V1.md) — index of 24 V1 use cases (each in its own note).
 - [Backlog V1](./docs/issues/Backlog%20V1.md) — index of 12 epics, 28 features, 50 user stories.

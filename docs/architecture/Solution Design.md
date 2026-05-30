@@ -5,7 +5,7 @@
 - **Version:** 1.0
 - **Status:** Draft
 - **Architecture Stage:** Solution Design
-- **Companion documents:** [Obsidian E2E Test Hub PRD](../Obsidian%20E2E%20Test%20Hub.md), [Event Catalog](./Event%20Catalog.md), [Use Cases V1](../use-cases/V1.md)
+- **Companion documents:** [Obsidian E2E Test Hub PRD](../Obsidian%20E2E%20Test%20Hub.md), [Building Block View](./Building%20Block%20View.md), [Event Catalog](./Event%20Catalog.md), [Use Cases V1](../use-cases/V1.md)
 
 ---
 
@@ -228,20 +228,19 @@ Plugin
 
 ## 9. Presentation Layer
 
-The Test Hub surfaces as a workspace leaf with a tabbed view. Each tab is implemented as a sub-view and is independently navigable via commands.
+The plugin opens dedicated workspace leaves per concern, plus an Obsidian Settings tab and a first-run modal. Detailed event subscriptions per view live in the [Building Block View §4](./Building%20Block%20View.md#4-presentation-layer).
 
 | View | Surface | Purpose |
 | --- | --- | --- |
-| `TestHubView` | Workspace leaf | Top-level container, hosts the dashboard and navigation. |
-| `DashboardView` | Tab | KPIs, recent executions, CI readiness. |
-| `UseCasesView` | Tab | Use Case explorer and editor entry. |
-| `SpecificationsView` | Tab | Feature file browser. |
-| `SuitesView` | Tab | Test suite management. |
-| `RunsView` | Tab | Live execution monitor + history. |
-| `EvidenceView` | Tab | Report and screenshot browser. |
-| `DocumentationView` | Tab | Renders the generated Test Hub notes. |
-| `SettingsView` | Settings tab | Plugin configuration (per FR-014). |
-| `InitializationModal` | Modal | First-run wizard (per FR-002). |
+| `TestHubView` | Workspace leaf | Main dashboard: KPIs, runner health, recent runs, quick actions. |
+| `UseCaseExplorerView` | Workspace leaf | Browse, create, run Use Cases; automation status. |
+| `SpecificationExplorerView` | Workspace leaf | Feature files: create, validate, detect missing steps. |
+| `SuiteExplorerView` | Workspace leaf | Suites: create, run, manage tag expressions. |
+| `TestRunPanel` | Sidebar leaf | Live execution monitor + history. |
+| `EvidenceExplorerView` | Workspace leaf | Report and screenshot browser. |
+| `DocumentationView` | Workspace leaf | Renders the generated Test Hub notes. |
+| `SettingsTab` | Obsidian Settings | Plugin configuration (per FR-014). |
+| `InitializationWizardView` | Modal | First-run wizard (per FR-002). |
 
 ---
 
@@ -308,19 +307,20 @@ Summary:
 
 ## 14. UI Composition Map
 
+Each view opens as its own workspace leaf. Navigation is by ribbon icon + command palette.
+
 ```
-TestHubView (workspace leaf)
-├── Top Bar         (run controls, init status)
-├── Navigation      (tab switcher)
-└── Tabs
-    ├── DashboardView
-    ├── UseCasesView
-    ├── SpecificationsView
-    ├── SuitesView
-    ├── RunsView
-    ├── EvidenceView
-    ├── DocumentationView
-    └── SettingsView (also reachable from Obsidian Settings)
+Obsidian Workspace
+├── Ribbon: "Test Hub" command group
+├── TestHubView          (main dashboard leaf)
+├── UseCaseExplorerView  (leaf, on demand)
+├── SpecificationExplorerView (leaf, on demand)
+├── SuiteExplorerView    (leaf, on demand)
+├── TestRunPanel         (sidebar leaf, opens on testrun.started)
+├── EvidenceExplorerView (leaf, on demand)
+├── DocumentationView    (leaf, on demand)
+├── InitializationWizardView (modal, first run only)
+└── SettingsTab          (Obsidian Settings)
 ```
 
 ---
@@ -444,7 +444,8 @@ Review Evidence
 | Asset | Identifier | Description |
 | --- | --- | --- |
 | Demo Use Case | `UC-001` | Open Example Page. |
-| Demo Feature | `example.feature` | Single scenario tagged `@smoke`, exercising navigation + assertion. |
+| Demo Feature | `example.feature` | Single scenario tagged `@smoke`, exercising navigation + assertion against the local fixture. |
+| Demo SUT | `.testrunner/src/fixtures/example.html` | Local static HTML served via `file://` per AD-8. No HTTP server. |
 | Default Suites | `Smoke`, `Regression` | Created by the init wizard. Smoke's tag expression is `@smoke` (contains the demo scenario); Regression's tag expression is `@regression` (empty initially). |
 | Demo Report | generated | Created by the first run; populates the dashboard. |
 
@@ -530,3 +531,4 @@ All open questions from the initial draft have been resolved. The decisions belo
 | AD-5 | Browser matrix: **Chromium-only** in V1. | ~150 MB install; meets the "demo test in < 5 min" goal. Full matrix in V3. |
 | AD-6 | Test execution is **serial** in V1. | Predictable evidence ordering, simpler `TestRunAggregate`, cleaner live monitor. Parallel deferred to post-MVP. |
 | AD-7 | TypeScript executed via the **`tsx` loader** from `cucumber.mjs`. | No build step; matches the Zero Configuration principle. |
+| AD-8 | Demo SUT = **local static HTML** served via `file://` (`.testrunner/src/fixtures/example.html`). | Zero internet dependency, deterministic in CI, smallest runner footprint. Local HTTP fixture server deferred. |
