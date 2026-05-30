@@ -21,11 +21,11 @@ _Avoid_: Workspace, project folder.
 ### Business artifacts
 
 **Use Case**:
-A business-facing description of a single capability the System Under Test must support. A Markdown note with frontmatter, identified as `UC-NNN`. Distinct from "use case" in the generic software-architecture sense.
+A business-facing description of a single capability the System Under Test must support. A Markdown note with frontmatter, identified as `UC-NNN`. May own 0..N **Feature Specifications**. Distinct from "use case" in the generic software-architecture sense.
 _Avoid_: Story, requirement, scenario, ticket.
 
 **Feature Specification**:
-A `.feature` file in Gherkin that makes a Use Case executable. One Feature corresponds to one Use Case.
+A `.feature` file in Gherkin that makes part of a Use Case executable. Each Feature belongs to exactly one Use Case; the back-reference is encoded both in the filename (`<UC-id>-<slug>.feature`) and in the Feature's frontmatter. Sharing test logic across Use Cases is done via step definitions and Cucumber `Background`, never via shared Feature files.
 _Avoid_: Feature file (informal), spec file, BDD file.
 
 **Test Suite**:

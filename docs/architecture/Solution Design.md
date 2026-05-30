@@ -126,7 +126,7 @@ interface UseCase {
   description: string;
   status: UseCaseStatus;
   automationStatus: AutomationStatus;
-  featureFile: string;       // relative vault path
+  featureFiles: string[];    // 0..N per ADR-0012; empty = not automated
   suites: string[];          // suite ids
   evidence: string[];        // evidence ids
 }

@@ -352,7 +352,7 @@ export interface UseCase {
   description?: string;                    // standardized name per G6
   status: UseCaseStatus;                   // business lifecycle
   automationStatus: AutomationStatus;      // test state
-  featureFile?: VaultPath;
+  featureFiles: VaultPath[];               // 0..N per ADR-0012; empty = not automated
   suites: SuiteId[];
   evidence: VaultPath[];
   lastTestRun?: TestRunSummary;
@@ -389,7 +389,7 @@ export type AutomationStatus =
 ```ts
 export interface FeatureSpecification {
   path: VaultPath;
-  useCaseId?: UseCaseId;
+  useCaseId: UseCaseId;                    // required per ADR-0012; orphan features are a validation error
   featureName: string;
   tags: string[];
   scenarios: ScenarioSpecification[];

@@ -19,3 +19,4 @@ ADRs here are **architectural shape** decisions: hard to reverse, surprising wit
 | [ADR-0009](./0009-provide-out-of-the-box-demo-test.md) | Provide Out-of-the-box Demo Test |
 | [ADR-0010](./0010-restrict-custom-shell-commands.md) | Restrict Custom Shell Commands in V1 |
 | [ADR-0011](./0011-ci-reads-base-url-from-github-actions-variables.md) | CI Reads Base URL From GitHub Actions Variables |
+| [ADR-0012](./0012-use-case-to-feature-is-one-to-many.md) | Use Case to Feature Specification Is 1:N |
