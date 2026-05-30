@@ -7,6 +7,7 @@
 - **Stage:** Discovery
 - **Target Platform:** Obsidian Desktop
 - **Technology Stack:** TypeScript, Obsidian Plugin API, Playwright, Cucumber-JS, Node.js
+- **Companion document:** [SDD](../architecture/SDD.md)
 
 ---
 

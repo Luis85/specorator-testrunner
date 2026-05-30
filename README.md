@@ -86,15 +86,18 @@ Vault
 ├── src/
 │   └── main.ts            # Plugin entry point
 ├── docs/
-│   └── issues/
-│       └── PRD.md         # Product requirements (source of truth)
+│   ├── issues/
+│   │   └── PRD.md         # Product requirements (source of truth)
+│   └── architecture/
+│       └── SDD.md         # Solution design
 └── .github/workflows/
     └── ci.yml             # Typecheck + build on push / PR
 ```
 
 ## Documents
 
-- [PRD](./docs/issues/PRD.md) — product requirements (this is the source of truth for scope).
+- [PRD](./docs/issues/PRD.md) — product requirements (source of truth for scope).
+- [SDD](./docs/architecture/SDD.md) — solution design (architecture, domain model, events).
 
 ## Development
 
