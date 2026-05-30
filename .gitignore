@@ -3,19 +3,10 @@ node_modules/
 .npm/
 
 # Build output
+main.js
 dist/
 build/
 *.tsbuildinfo
-packages/plugin/main.js
-
-# Playwright
-/test-results/
-/playwright-report/
-.playwright/
-playwright/.cache/
-
-# Specorator runtime (non-synced vault data: secrets, history, engine, bridge)
-.specorator/
 
 # Logs
 *.log
