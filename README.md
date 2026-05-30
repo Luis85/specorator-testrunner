@@ -88,8 +88,10 @@ Vault
 ├── docs/
 │   ├── issues/
 │   │   └── PRD.md         # Product requirements (source of truth)
-│   └── architecture/
-│       └── SDD.md         # Solution design
+│   ├── architecture/
+│   │   └── SDD.md         # Solution design
+│   └── use-cases/
+│       └── V1.md          # V1 use case set
 └── .github/workflows/
     └── ci.yml             # Typecheck + build on push / PR
 ```
@@ -98,6 +100,7 @@ Vault
 
 - [PRD](./docs/issues/PRD.md) — product requirements (source of truth for scope).
 - [SDD](./docs/architecture/SDD.md) — solution design (architecture, domain model, events).
+- [Use Cases V1](./docs/use-cases/V1.md) — 24 V1 use cases with mandatory/optional MVP split.
 
 ## Development
 
