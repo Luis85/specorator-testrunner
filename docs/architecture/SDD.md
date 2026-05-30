@@ -271,56 +271,14 @@ Adapters implement infrastructure ports declared in the domain/application layer
 
 ## 13. Event Catalog
 
-All events carry an `occurredAt: Date`. Payloads sketched below.
+The full event catalog — envelope, naming convention, payload shapes per event, use-case mapping, MVP priority, EventBus interface, and correlation rules — lives in [EventCatalog.md](./EventCatalog.md).
 
-```ts
-type RunnerInstalled = {
-  occurredAt: Date;
-  runnerPath: string;
-  playwrightVersion: string;
-  cucumberVersion: string;
-};
+Summary:
 
-type UseCaseCreated = {
-  occurredAt: Date;
-  useCaseId: string;
-  title: string;
-  featureFile?: string;
-};
-
-type FeatureCreated = {
-  occurredAt: Date;
-  featurePath: string;
-  scenarioCount: number;
-};
-
-type TestRunStarted = {
-  occurredAt: Date;
-  runId: string;
-  scope: "useCase" | "feature" | "suite" | "all";
-  targetId: string;
-};
-
-type TestRunCompleted = {
-  occurredAt: Date;
-  runId: string;
-  result: TestResult;       // status + counts + duration
-  evidenceId?: string;
-};
-
-type EvidenceGenerated = {
-  occurredAt: Date;
-  evidenceId: string;
-  runId: string;
-  evidencePath: string;
-};
-
-type PipelineGenerated = {
-  occurredAt: Date;
-  provider: "github-actions" | "azure-devops";
-  workflowPath: string;
-};
-```
+- One in-process `EventBus` per plugin lifecycle.
+- Events grouped into installation, use case, specification, suite, test execution, report, evidence, dashboard, CI, documentation, and settings.
+- Envelope carries `id`, `type`, `occurredAt`, `source`, `correlationId`, `causationId`, `payload`.
+- No event-sourcing in V1; aggregates own state, events communicate change.
 
 ---
 

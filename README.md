@@ -89,7 +89,8 @@ Vault
 │   ├── issues/
 │   │   └── PRD.md         # Product requirements (source of truth)
 │   ├── architecture/
-│   │   └── SDD.md         # Solution design
+│   │   ├── SDD.md         # Solution design
+│   │   └── EventCatalog.md # V1 domain event catalog
 │   └── use-cases/
 │       └── V1.md          # V1 use case set
 └── .github/workflows/
@@ -99,7 +100,8 @@ Vault
 ## Documents
 
 - [PRD](./docs/issues/PRD.md) — product requirements (source of truth for scope).
-- [SDD](./docs/architecture/SDD.md) — solution design (architecture, domain model, events).
+- [SDD](./docs/architecture/SDD.md) — solution design (architecture, domain model, decisions).
+- [Event Catalog](./docs/architecture/EventCatalog.md) — V1 domain events, envelope, EventBus contract.
 - [Use Cases V1](./docs/use-cases/V1.md) — 24 V1 use cases with mandatory/optional MVP split.
 
 ## Development
