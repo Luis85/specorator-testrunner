@@ -133,6 +133,7 @@ interface FeatureSpecification {
 interface TestSuite {
   id: string;
   name: string;
+  path: string;              // relative vault path to the suite note
   tagExpression: string;     // Cucumber tag expression, e.g. "@smoke and not @wip"
 }
 
@@ -402,7 +403,9 @@ Install Dependencies          (ProcessAdapter)
    ↓
 Install Browsers              (ProcessAdapter)
    ↓
-Generate Demo Content         (UC-001 + feature + suite)
+Generate Demo Content         (UC-001 + feature)
+   ↓
+Create Default Suites         (Smoke + Regression)
    ↓
 Open Dashboard
    ↓
@@ -418,8 +421,8 @@ Review Evidence
 | Asset | Identifier | Description |
 | --- | --- | --- |
 | Demo Use Case | `UC-001` | Open Example Page. |
-| Demo Feature | `example.feature` | Single scenario exercising navigation + assertion. |
-| Demo Suite | `Smoke` | Tag-driven suite containing the demo scenario. |
+| Demo Feature | `example.feature` | Single scenario tagged `@smoke`, exercising navigation + assertion. |
+| Default Suites | `Smoke`, `Regression` | Created by the init wizard. Smoke's tag expression is `@smoke` (contains the demo scenario); Regression's tag expression is `@regression` (empty initially). |
 | Demo Report | generated | Created by the first run; populates the dashboard. |
 
 ---

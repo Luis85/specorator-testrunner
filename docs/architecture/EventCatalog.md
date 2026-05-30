@@ -139,17 +139,6 @@ export interface DomainEvent<TPayload = unknown> {
 }
 ```
 
-### `usecase.indexed`
-
-```ts
-{
-  useCaseId: string;
-  path: string;
-}
-```
-
-Emitted by `TraceabilityService` after a Use Case is added to the in-memory index.
-
 ### `usecase.status.changed`
 
 ```ts
@@ -309,7 +298,7 @@ High-frequency event. Subscribers (the live monitor) should debounce or batch.
 ```ts
 {
   runId: string;
-  status: "passed" | "failed" | "errored" | "cancelled";
+  status: "passed" | "failed";             // normal completion only
   durationMs: number;
   passed: number;
   failed: number;
@@ -317,7 +306,7 @@ High-frequency event. Subscribers (the live monitor) should debounce or batch.
 }
 ```
 
-`failed` = at least one scenario failed an assertion. `errored` = the run never reached a clean completion (crash, install fault, missing dependency).
+`failed` = the run finished with at least one scenario failing an assertion.
 
 ### `testrun.failed`
 
@@ -329,7 +318,7 @@ High-frequency event. Subscribers (the live monitor) should debounce or batch.
 }
 ```
 
-Emitted when `status = "errored"` or `"failed"` and the consumer needs the error context separately from the result counts.
+Reserved for **errored** runs — the runner never reached a clean completion (crash, install fault, missing dependency). The payload has no result counts because none were produced.
 
 ### `testrun.cancelled`
 
@@ -337,13 +326,25 @@ Emitted when `status = "errored"` or `"failed"` and the consumer needs the error
 { runId: string; }
 ```
 
+### Terminal-event invariant
+
+Every test run emits **exactly one** terminal event, chosen by the way the run ended:
+
+| Outcome | Terminal event |
+| --- | --- |
+| Run completed normally (passed or failed scenarios) | `testrun.completed` |
+| Run errored (never produced results) | `testrun.failed` |
+| Run cancelled by the user | `testrun.cancelled` |
+
+Subscribers waiting on terminal state should listen to all three event types.
+
 ---
 
 ## 8. Report Events
 
-### `report.generated`
+### `report.detected`
 
-Emitted on behalf of the runner (`source = "runner"`) when a Playwright/Cucumber report file is written to `.testrunner/reports`.
+Emitted by the plugin's file watcher (`source = "plugin"`) when a Playwright/Cucumber report file appears under `.testrunner/reports`. The runner does not publish to the EventBus — it writes files; the plugin observes them.
 
 ```ts
 {
@@ -439,7 +440,7 @@ Emitted on behalf of the runner (`source = "runner"`) when a Playwright/Cucumber
 }
 ```
 
-Dashboard events are UI-integration events rather than business domain events. They are included here because the EventBus carries them on the same channel; see editorial note EN-1 if we later split UI events out.
+Dashboard events are UI-integration events rather than business domain events. Per the EN-1 resolution they share the single domain `EventBus` in V1 (see §20). A separate `ui.*` channel will only be introduced if and when an external consumer (MCP, CLI) starts subscribing.
 
 ---
 
@@ -491,7 +492,7 @@ Reserved for V2 — V1 does not poll CI providers.
 ```ts
 {
   path: string;
-  documentType: "getting-started" | "manual" | "troubleshooting" | "reference";
+  documentType: "getting-started" | "manual" | "troubleshooting";
 }
 ```
 
@@ -529,7 +530,7 @@ Reserved for V2 — V1 does not poll CI providers.
 | UC-001 Initialize Test Hub | `testhub.initialization.started`, `testrunner.installed`, `documentation.generated`, `testhub.initialization.completed` |
 | UC-002 Validate Environment | `testrunner.validated` |
 | UC-003 Repair Installation | `testrunner.repaired` |
-| UC-004 Create Use Case | `usecase.created`, `usecase.indexed` |
+| UC-004 Create Use Case | `usecase.created` |
 | UC-005 Edit Use Case | `usecase.updated` |
 | UC-006 Generate Feature Specification | `specification.created`, `specification.linkedToUseCase` |
 | UC-007 Edit Feature Specification | `specification.updated` |
@@ -590,7 +591,6 @@ Reserved for V2 — V1 does not poll CI providers.
 | Event | Used by |
 | --- | --- |
 | `usecase.deleted` | (no UC yet) |
-| `usecase.indexed` | UC-004 supporting |
 | `usecase.status.changed` | UC-005 supporting |
 | `specification.updated` | UC-007 |
 | `specification.validation.completed` | UC-007 supporting |
@@ -598,7 +598,7 @@ Reserved for V2 — V1 does not poll CI providers.
 | `suite.deleted` | (no UC yet) |
 | `suite.executed` | UC-013 supporting |
 | `testrun.cancelled` | UC-011 supporting |
-| `report.generated` | UC-016 supporting |
+| `report.detected` | UC-016 supporting |
 | `report.import.failed` | UC-016 supporting |
 | `evidence.reviewed` | UC-017 |
 | `dashboard.opened` | UC-018 supporting |
@@ -676,14 +676,14 @@ It is **not** an event-sourcing system in V1. Aggregates own state; events commu
 
 ---
 
-## 20. Editorial Notes / Follow-ups
+## 20. Resolutions
 
-These are not blockers; they are decisions worth a second look before we wire the EventBus.
+All editorial notes raised in the first draft are now resolved.
 
-| ID | Note |
+| ID | Resolution |
 | --- | --- |
-| EN-1 | `dashboard.*` events behave as UI integration events, not business domain events. Consider a separate `ui.*` channel if the EventBus ever feeds an external consumer (e.g. an MCP server in V3). |
-| EN-2 | `testrun.failed` and `testrun.completed` (with `status="failed"`) overlap. Confirm whether subscribers can rely on receiving exactly one terminal event per run, or both. Suggested invariant: every run emits one of `testrun.completed` **or** `testrun.failed` (never both); `testrun.failed` is reserved for *errored* runs that never produced result counts. |
-| EN-3 | `usecase.indexed` is a side-effect of `usecase.created` and `usecase.updated`. If `TraceabilityService` always indexes synchronously, this event is redundant noise. Worth dropping unless an async indexer is planned. |
-| EN-4 | `report.generated` is `source = "runner"` but the runner runs in a child process; in practice the plugin will detect file appearance, not receive an event. Either rename to `report.detected` or document the file-watch translation. |
-| EN-5 | No `demo.generated` event today. UC-001 generates demo content but it's currently lumped into `documentation.generated`. Consider splitting if demo regeneration becomes a standalone flow (e.g. for tutorials). |
+| EN-1 | `dashboard.*` events remain on the single domain `EventBus` in V1. A separate `ui.*` channel is deferred until an external consumer subscribes. |
+| EN-2 | Exactly one terminal event per test run: `testrun.completed` (passed/failed), `testrun.failed` (errored), or `testrun.cancelled`. `testrun.completed.status` is therefore reduced to `"passed" \| "failed"`; `"errored"` is no longer a `testrun.completed` outcome. |
+| EN-3 | `usecase.indexed` removed. `TraceabilityService` indexes synchronously inside the `usecase.created` / `usecase.updated` handlers. |
+| EN-4 | `report.generated` renamed to `report.detected`. Source is `"plugin"`; the plugin's file watcher observes runner output rather than receiving an event from the subprocess. |
+| EN-5 | No `demo.generated` event in V1. Demo content creation stays under `documentation.generated`. Revisit if a standalone "regenerate demo" flow is added in V2+. |

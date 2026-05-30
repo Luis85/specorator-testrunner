@@ -155,10 +155,12 @@ The system shall provide a setup wizard.
 The wizard shall:
 
 - create folders
+- generate documentation
+- generate demo content
+- create default suites (Smoke, Regression)
 - install runner
 - install dependencies
 - install browsers
-- generate demo content
 - verify installation
 
 ### FR-003 Use Case Management
@@ -188,12 +190,12 @@ Supported:
 
 ### FR-005 Test Suite Management
 
-The system shall allow grouping scenarios into suites.
+The system shall allow grouping scenarios into suites via Cucumber tag expressions (see SDD AD-4).
 
-Default suites:
+Default suites — created automatically by the init wizard:
 
-- Smoke
-- Regression
+- **Smoke** (`@smoke`) — contains the demo scenario.
+- **Regression** (`@regression`) — empty until the user tags scenarios.
 
 ### FR-006 Runner Installation
 
@@ -248,7 +250,7 @@ Example:
 Result: Passed
 Date: 2026-06-01
 Scenario:
-Create Note
+Open Example Page
 Screenshots:
 ...
 Trace:
