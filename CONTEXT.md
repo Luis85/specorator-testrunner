@@ -18,6 +18,10 @@ _Avoid_: Runner folder, test directory, test harness.
 The Obsidian vault that contains both the business-facing Markdown artifacts and the `.testrunner` runtime. The vault root and the git repo root are the same path in V1.
 _Avoid_: Workspace, project folder.
 
+**Project**:
+The unit the Test Hub manages: one Vault = one git repo = one `.testrunner/` = one set of Use Cases, Specifications, Suites, Evidence, and one set of Environments (per ADR-0015). A user who needs to test two different applications uses two separate Vaults. Variations of *the same* application (mobile/desktop, staging/production) are expressed through Suites and Environments, not through projects.
+_Avoid_: Workspace, repo, instance.
+
 ### Business artifacts
 
 **Use Case**:
