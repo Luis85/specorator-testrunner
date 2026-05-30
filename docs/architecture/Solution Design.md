@@ -1,11 +1,11 @@
-# Solution Design Document (SDD)
+# Solution Design — Obsidian E2E Test Hub
 
-## Obsidian E2E Test Hub
+> Architecture of record: bounded contexts, domain model, services, runner, CI, and V1 architectural decisions.
 
 - **Version:** 1.0
 - **Status:** Draft
 - **Architecture Stage:** Solution Design
-- **Companion document:** [PRD](../issues/PRD.md)
+- **Companion documents:** [Obsidian E2E Test Hub PRD](../Obsidian%20E2E%20Test%20Hub.md), [Event Catalog](./Event%20Catalog.md), [Use Cases V1](../use-cases/V1.md)
 
 ---
 
@@ -295,7 +295,7 @@ Adapters implement infrastructure ports declared in the domain/application layer
 
 ## 13. Event Catalog
 
-The full event catalog — envelope, naming convention, payload shapes per event, use-case mapping, MVP priority, EventBus interface, and correlation rules — lives in [EventCatalog.md](./EventCatalog.md).
+The full event catalog — envelope, naming convention, payload shapes per event, use-case mapping, MVP priority, EventBus interface, and correlation rules — lives in [Event Catalog](./Event%20Catalog.md).
 
 Summary:
 

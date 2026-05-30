@@ -6,8 +6,8 @@ specifications, test suites, Playwright execution, evidence, and CI/CD into a
 single Markdown-native, local-first workflow.
 
 > **Status:** Draft / Discovery. The product direction is captured in the
-> [PRD](./docs/issues/PRD.md). The codebase is an empty plugin shell ready to
-> be built out against the PRD.
+> [PRD](./docs/Obsidian%20E2E%20Test%20Hub.md). The codebase is an empty plugin
+> shell ready to be built out against the PRD.
 
 ## Vision
 
@@ -86,23 +86,29 @@ Vault
 ├── src/
 │   └── main.ts            # Plugin entry point
 ├── docs/
-│   ├── issues/
-│   │   └── PRD.md         # Product requirements (source of truth)
+│   ├── Obsidian E2E Test Hub.md   # Product Requirements (source of truth)
 │   ├── architecture/
-│   │   ├── SDD.md         # Solution design
-│   │   └── EventCatalog.md # V1 domain event catalog
-│   └── use-cases/
-│       └── V1.md          # V1 use case set
+│   │   ├── Solution Design.md     # Architecture of record
+│   │   └── Event Catalog.md       # V1 domain event catalog
+│   ├── use-cases/
+│   │   ├── V1.md                  # Use case index
+│   │   └── UC-001.md … UC-024.md  # One note per use case
+│   └── issues/
+│       ├── Backlog V1.md          # Backlog index
+│       ├── EPIC-001.md … EPIC-012.md   # Epics (12)
+│       ├── FEAT-001.md … FEAT-028.md   # Features (28)
+│       └── US-001.md … US-050.md       # User stories (50)
 └── .github/workflows/
-    └── ci.yml             # Typecheck + build on push / PR
+    └── ci.yml                     # Typecheck + build on push / PR
 ```
 
 ## Documents
 
-- [PRD](./docs/issues/PRD.md) — product requirements (source of truth for scope).
-- [SDD](./docs/architecture/SDD.md) — solution design (architecture, domain model, decisions).
-- [Event Catalog](./docs/architecture/EventCatalog.md) — V1 domain events, envelope, EventBus contract.
-- [Use Cases V1](./docs/use-cases/V1.md) — 24 V1 use cases with mandatory/optional MVP split.
+- [Obsidian E2E Test Hub](./docs/Obsidian%20E2E%20Test%20Hub.md) — Product Requirements (source of truth for scope).
+- [Solution Design](./docs/architecture/Solution%20Design.md) — architecture, domain model, V1 architectural decisions.
+- [Event Catalog](./docs/architecture/Event%20Catalog.md) — V1 domain events, envelope, EventBus contract.
+- [Use Cases V1](./docs/use-cases/V1.md) — index of 24 V1 use cases (each in its own note).
+- [Backlog V1](./docs/issues/Backlog%20V1.md) — index of 12 epics, 28 features, 50 user stories.
 
 ## Development
 

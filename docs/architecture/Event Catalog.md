@@ -1,14 +1,14 @@
-# Event Catalog V1
+# Event Catalog — Obsidian E2E Test Hub
 
-## Obsidian E2E Test Hub
+> V1 domain event catalog: envelope, payloads, use-case mapping, EventBus contract, correlation rules.
 
 - **Product:** Obsidian E2E Test Hub
 - **Version:** 1.0
 - **Stage:** MVP / V1
 - **Type:** Domain Event Catalog
-- **Companion documents:** [PRD](../issues/PRD.md), [SDD](./SDD.md), [Use Cases V1](../use-cases/V1.md)
+- **Companion documents:** [Obsidian E2E Test Hub PRD](../Obsidian%20E2E%20Test%20Hub.md), [Solution Design](./Solution%20Design.md), [Use Cases V1](../use-cases/V1.md)
 
-This catalog supersedes the compact event list in SDD §13.
+This catalog supersedes the compact event list in Solution Design §13.
 
 ---
 

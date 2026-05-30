@@ -1,13 +1,13 @@
-# Product Requirements Document (PRD)
+# Obsidian E2E Test Hub
 
-## Obsidian E2E Test Hub
+> Product Requirements Document — V1 MVP.
 
 - **Version:** 1.0
 - **Status:** Draft
 - **Stage:** Discovery
 - **Target Platform:** Obsidian Desktop
 - **Technology Stack:** TypeScript, Obsidian Plugin API, Playwright, Cucumber-JS, Node.js
-- **Companion document:** [SDD](../architecture/SDD.md)
+- **Companion documents:** [Solution Design](./architecture/Solution%20Design.md), [Event Catalog](./architecture/Event%20Catalog.md), [Use Cases V1](./use-cases/V1.md)
 
 ---
 
