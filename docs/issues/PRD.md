@@ -171,7 +171,7 @@ Each Use Case shall contain:
 
 - identifier
 - title
-- objective
+- description
 - linked feature
 - linked evidence
 - automation status
@@ -208,7 +208,7 @@ The system shall verify:
 - NodeJS
 - npm
 - Playwright
-- Browser installation
+- Browser installation — Chromium (per SDD AD-5)
 - `package.json`
 - feature discovery
 
@@ -346,18 +346,28 @@ testRunnerPath: .testrunner
 
 ## 12. Acceptance Criteria
 
-| ID | Criterion |
-| --- | --- |
-| AC-001 | User can initialize Test Hub. |
-| AC-002 | Demo test executes successfully. |
-| AC-003 | Evidence is generated. |
-| AC-004 | Runner executes independently from Obsidian. |
-| AC-005 | Runner executes inside GitHub Actions. |
-| AC-006 | User can create a Use Case. |
-| AC-007 | User can create a Feature. |
-| AC-008 | User can execute a Suite. |
-| AC-009 | Dashboard reflects execution results. |
-| AC-010 | Documentation is generated automatically. |
+Each AC is mapped to the mandatory MVP Use Case(s) it satisfies (see [Use Cases V1](../use-cases/V1.md)).
+
+| ID | Criterion | Covers |
+| --- | --- | --- |
+| AC-001 | User can initialize the Test Hub from the dashboard. | UC-001 |
+| AC-002 | Default suites (Smoke, Regression) exist after init. | UC-001 |
+| AC-003 | Documentation (Getting Started, User Manual, Troubleshooting) is generated during init. | UC-001 |
+| AC-004 | Environment validation reports Node, npm, Playwright, and Chromium status. | UC-002 |
+| AC-005 | User can create a Use Case. | UC-004 |
+| AC-006 | User can generate a Feature Specification from a Use Case. | UC-006 |
+| AC-007 | User can create a Test Suite with a tag expression. | UC-008 |
+| AC-008 | User can generate step definition stubs for undefined Gherkin steps. | UC-010 |
+| AC-009 | User can execute a Use Case and see results. | UC-011 |
+| AC-010 | User can execute a Test Suite. | UC-013 |
+| AC-011 | Live execution view streams runner output during a test run. | UC-015 |
+| AC-012 | Evidence is generated after each run and linked to the originating Use Case. | UC-016 |
+| AC-013 | Dashboard reflects execution results (KPIs, latest runs). | UC-018 |
+| AC-014 | User can generate a GitHub Actions workflow at the repo root. | UC-019 |
+| AC-015 | CI readiness check reports `package.json`, test scripts, and reports folder status. | UC-020 |
+| AC-016 | User can open the Getting Started guide and the User Manual from the dashboard. | UC-021, UC-022 |
+| AC-017 | Runner executes independently from Obsidian (local and CI). | AG-002, AG-004 |
+| AC-018 | Demo test executes successfully on first run. | UC-001 + UC-011 |
 
 ---
 
