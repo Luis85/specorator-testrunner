@@ -59,8 +59,16 @@ The first-run modal that scaffolds the vault, generates documentation, creates d
 _Avoid_: Onboarding flow, setup screen, first-launch dialog.
 
 **System Under Test (SUT)**:
-The application that the tests drive. In V1 the demo SUT is a local static HTML fixture; production usage points at the user's own application.
+The application that the tests drive. Real usage points at one of several **Environments**; the demo locks the SUT to a local static HTML fixture (`file://`) and ignores environment configuration entirely.
 _Avoid_: Target, app under test, AUT.
+
+**Environment**:
+A named addressable instance of the SUT (e.g. `staging`, `production`). The Test Hub stores a list of environments, each with at least a `baseUrl`, and tracks one **active environment**. Switching environments is a single action; never edit a URL inline. The demo bypasses environments entirely.
+_Avoid_: Stage, target, deployment, profile.
+
+**Active Environment**:
+The Environment that subsequent test runs will execute against unless an explicit override is given. Persisted in settings; surfaced in the dashboard's top bar.
+_Avoid_: Current target, selected env.
 
 ### Architectural decisions
 
