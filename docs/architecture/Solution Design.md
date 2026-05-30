@@ -5,7 +5,7 @@
 - **Version:** 1.0
 - **Status:** Draft
 - **Architecture Stage:** Solution Design
-- **Companion documents:** [Obsidian E2E Test Hub PRD](../Obsidian%20E2E%20Test%20Hub.md), [Building Block View](./Building%20Block%20View.md), [Event Catalog](./Event%20Catalog.md), [Use Cases V1](../use-cases/V1.md)
+- **Companion documents:** [Obsidian E2E Test Hub PRD](../Obsidian%20E2E%20Test%20Hub.md), [Building Block View](./Building%20Block%20View.md), [Runtime View](./Runtime%20View.md), [Technical Interface Specification](./Technical%20Interface%20Specification.md), [Event Catalog](./Event%20Catalog.md), [Use Cases V1](../use-cases/V1.md)
 
 ---
 
@@ -102,10 +102,19 @@ In V1 the Obsidian vault root **is** the git repo root. CI workflows generated b
 ## 6. Domain Model
 
 ```ts
-type UseCaseStatus =
+type UseCaseStatus =                       // business lifecycle
   | "draft"
   | "specified"
+  | "ready-for-automation"
   | "automated"
+  | "verified"
+  | "deprecated";
+
+type AutomationStatus =                    // test state
+  | "not-planned"
+  | "planned"
+  | "missing-steps"
+  | "implemented"
   | "passing"
   | "failing";
 
@@ -116,6 +125,7 @@ interface UseCase {
   title: string;
   description: string;
   status: UseCaseStatus;
+  automationStatus: AutomationStatus;
   featureFile: string;       // relative vault path
   suites: string[];          // suite ids
   evidence: string[];        // evidence ids
