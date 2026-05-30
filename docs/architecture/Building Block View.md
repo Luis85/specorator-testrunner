@@ -171,8 +171,9 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 
 ### 5.15 `TraceabilityService`
 
-- **Purpose:** Maintain Use Case ↔ Feature ↔ Suite ↔ Run ↔ Evidence links (FR-017); feeds the dashboard.
-- **Publishes:** `dashboard.refreshed`, `dashboard.kpi.updated`.
+- **Purpose:** Maintain Use Case ↔ Feature ↔ Suite ↔ Run ↔ Evidence links (FR-017); owns the suite-membership index (per SDD AD-10); feeds the dashboard.
+- **Responsibilities:** Cold-scan feature files on plugin load; subscribe to `FeatureFileWatcher` events for incremental updates; expose `scenarioCountFor(suiteId)` / `suitesFor(scenarioRef)` for the views.
+- **Publishes:** `dashboard.refreshed` (debounced 250 ms per AD-10), `dashboard.kpi.updated`.
 
 ---
 
@@ -222,6 +223,7 @@ Path: `src/infrastructure/{obsidian,filesystem,runner,reports,templates,ci}`.
 | `ReportParserAdapter` | Parses Cucumber JSON + Playwright artifacts (reports, screenshots, traces). |
 | `CiTemplateWriter` | Writes `.github/workflows/e2e.yml` (AD-3). Azure DevOps template stub deferred to V2. |
 | `ReportFileWatcher` | Watches `.testrunner/reports`; publishes `report.detected` (per EN-4). |
+| `FeatureFileWatcher` | Subscribes to `vault.on('modify' \| 'create' \| 'rename' \| 'delete')` for `*.feature`; feeds `TraceabilityService.refreshMembership()` per SDD AD-10. |
 
 ---
 

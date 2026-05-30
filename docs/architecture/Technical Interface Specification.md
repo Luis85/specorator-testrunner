@@ -71,6 +71,7 @@ export type UseCaseId = string;            // e.g. "UC-001"
 export type SuiteId = string;              // e.g. "smoke"
 export type RunId = string;                // e.g. "RUN-2026-06-01-100000"
 export type EvidenceId = string;           // e.g. "EV-2026-06-01-100000"
+export type ScenarioReference = string;    // "<featurePath>::<scenarioName>[::row-<index>]" per SDD AD-10
 ```
 
 ### 3.4 VaultPath
@@ -861,6 +862,10 @@ export interface GeneratedPipeline {
 export interface TraceabilityService {
   refreshDashboard(): Promise<Result<DashboardSnapshot>>;
   linksFor(useCaseId: UseCaseId): Promise<Result<TraceabilityRecord>>;
+  // Suite-membership index (per SDD AD-10):
+  refreshMembership(changedFeaturePath?: VaultPath): Promise<Result<void>>;
+  scenarioCountFor(suiteId: SuiteId): number;
+  suitesFor(scenario: ScenarioReference): SuiteId[];
 }
 
 export interface DashboardSnapshot {
@@ -992,6 +997,18 @@ export interface ReportFileWatcher {
   start(runnerPath: VaultPath): Promise<Result<void>>;
   stop(): Promise<void>;
   // emits `report.detected` events through the EventBus.
+}
+```
+
+### 9.7.1 FeatureFileWatcher (per SDD AD-10)
+
+```ts
+export interface FeatureFileWatcher {
+  start(featureFilesPath: VaultPath): Promise<Result<void>>;
+  stop(): Promise<void>;
+  // Subscribes to vault.on('modify' | 'create' | 'rename' | 'delete') for *.feature.
+  // Hands each event to TraceabilityService.refreshMembership(path);
+  // does NOT emit a public event per file change.
 }
 ```
 

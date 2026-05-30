@@ -258,6 +258,8 @@ Result event for UC-010. `causationId` references the originating `specification
 }
 ```
 
+Emitted only at the end of a `Run Suite` (UC-013) flow, after the runner exits. **Not** emitted on suite-membership index updates — those are silent and surface only via the debounced `dashboard.refreshed` signal (per SDD AD-10).
+
 ---
 
 ## 7. Test Execution Events
@@ -427,6 +429,8 @@ Emitted by the plugin's file watcher (`source = "plugin"`) when a Playwright/Cuc
   latestRunId?: string;
 }
 ```
+
+Signal-only — emitted after the suite-membership index incrementally updates (per SDD AD-10) or after a `testrun.completed`/`evidence.generated` chain settles. Debounced to 250 ms to coalesce bursts of vault file events. Subscribers (`TestHubView`, `SuiteExplorerView`, `UseCaseExplorerView`) re-query `TraceabilityService` for current counts instead of treating the payload as state.
 
 ### `dashboard.kpi.updated`
 

@@ -40,6 +40,10 @@ _Avoid_: Tag list, tag query, filter.
 A single invocation of the runner against some scope. Identified as `RUN-<timestamp>`. Always has exactly one terminal event: `testrun.completed` (passed/failed), `testrun.failed` (errored), or `testrun.cancelled`.
 _Avoid_: Test execution, run instance, job.
 
+**Scenario Reference**:
+The natural key used to identify a Cucumber scenario inside the Test Hub: `<featurePath>::<scenarioName>` (and `::row-<index>` for a Scenario Outline example). Stable across runs but **not** across renames — renaming a scenario produces a new Scenario Reference and loses prior history once.
+_Avoid_: Scenario id, scenario key, test id.
+
 **Evidence**:
 A Markdown note under `Test Evidence/` that records the audit trail for one Test Run: result counts, links to reports, screenshots, and traces. Always **links** to artifacts in `.testrunner/reports/`, never duplicates them.
 _Avoid_: Test report, results note, output.
