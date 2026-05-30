@@ -1,44 +1,104 @@
-# Specorator Test Runner
+# Obsidian E2E Test Hub
 
-A local-first, markdown-native, AI-assisted BDD test environment for
-[Obsidian](https://obsidian.md). Write test cases in Gherkin inside Markdown
-code fences, run them against real websites with Playwright, chain them into
-end-to-end flows on the Obsidian Canvas, and read quality/regression reports
-right in your vault.
+An Obsidian plugin that lets users **define, manage, execute, and document
+end-to-end tests** directly inside their vault — combining Use Cases, Gherkin
+specifications, test suites, Playwright execution, evidence, and CI/CD into a
+single Markdown-native, local-first workflow.
 
-> Status: **early design / scaffolding.** See [`DESIGN.md`](./DESIGN.md) for the
-> full design of record.
+> **Status:** Draft / Discovery. The product direction is captured in the
+> [PRD](./docs/issues/PRD.md). The codebase is early scaffolding — see
+> [Current state](#current-state) below.
 
-## What it does
+## Vision
 
-- **Author** test cases as ordinary notes — YAML frontmatter for metadata, prose
-  for living documentation, a fenced ` ```gherkin ` block for the executable
-  scenario.
-- **Run** scenarios with a built-in natural-language step vocabulary (most
-  scenarios need zero custom code) plus a code-free `(api)` state-setup family
-  for seeding data and programmatic login.
-- **Report** results back into the vault as Dataview-friendly notes, with
-  flakiness scoring and regression detection backed by run history.
-- **Chain** cases into E2E flows on the Obsidian Canvas, sharing browser session
-  state down the chain.
-- **CI** the same suites headless via the `specorator run` CLI — no Obsidian
-  required.
-- **Assist** authoring and triage with an opt-in local MCP server plus Claude
-  Code skills, subagents, and slash commands.
+Enable teams to transform requirements into executable specifications and
+continuously verify software quality without leaving Obsidian:
 
-## Architecture
+Requirements → Specification → Automation → Execution → Evidence → CI
 
-One reusable **engine core** with three frontends — the Obsidian plugin, the
-`specorator run` CLI (for CI), and an MCP server (for Claude Code). Playwright is
-the primary execution driver. See [`DESIGN.md`](./DESIGN.md).
+The plugin acts as a Business-Driven Development (BDD) workbench where product
+owners, business analysts, QA engineers, developers, and delivery managers
+collaborate on Markdown artifacts that are git-friendly and CI-ready.
+
+## Product principles
+
+| ID | Principle | Description |
+| --- | --- | --- |
+| P1 | Markdown First | All business artifacts are Markdown. |
+| P2 | Local First | Everything runs locally. |
+| P3 | Git Friendly | All artifacts are version controllable. |
+| P4 | CI Ready | Generated assets execute without Obsidian. |
+| P5 | Zero Configuration | Users can get started immediately. |
+
+## High-level architecture
+
+```
+Obsidian Plugin
+│
+├── Dashboard
+├── Use Case Management
+├── Specification Management
+├── Test Suite Management
+├── Runner Management
+├── Report Viewer
+└── Documentation
+            │
+            ▼
+.testrunner
+├── Playwright
+├── Cucumber
+├── TypeScript
+├── Reports
+├── Screenshots
+└── Traces
+```
+
+The Obsidian plugin authors and orchestrates. The `.testrunner` folder in the
+vault holds a self-contained Node project that runs Playwright + Cucumber-JS
+and can also be executed standalone from CI.
+
+## Vault layout
+
+```
+Vault
+├── Test Hub
+│   ├── Dashboard.md
+│   ├── Getting Started.md
+│   ├── User Manual.md
+│   └── Troubleshooting.md
+├── Use Cases
+├── Specifications
+│   └── features
+├── Test Suites
+├── Test Evidence
+└── .testrunner
+```
+
+## Current state
+
+The repository currently contains an earlier engine-first scaffold (see
+[`DESIGN.md`](./DESIGN.md) for the design of record from that pass). It is
+being re-aligned to the PRD direction described above.
+
+Existing workspace packages:
 
 ```
 packages/
-  engine/   @specorator/engine  — gherkin, vocabulary, driver, runner, reporting
-  plugin/   Obsidian plugin     — authoring UI, explorer, canvas, dashboards
-  cli/      @specorator/cli      — `specorator run` (headless CI)
-  mcp/      @specorator/mcp      — local MCP server for Claude Code
+  engine/   gherkin parse, vocabulary, driver, runner, reporting (Vitest tests)
+  plugin/   Obsidian plugin shell
+  cli/      headless runner entry point
+  mcp/      local MCP server entry point
 ```
+
+The PRD calls for a single Obsidian plugin plus a `.testrunner` runner folder
+generated into the user's vault. Mapping the existing packages onto that
+target — and what gets kept, renamed, or removed — is the next item to iterate
+on.
+
+## Documents
+
+- [PRD](./docs/issues/PRD.md) — product requirements (this is the source of truth for scope).
+- [DESIGN.md](./DESIGN.md) — prior design exploration, retained for context.
 
 ## Development
 
