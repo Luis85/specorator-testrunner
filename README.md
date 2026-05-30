@@ -107,6 +107,7 @@ Vault
 │       └── US-001.md … US-050.md       # User stories (50)
 ├── .claude/skills/
 │   ├── grill-with-docs/                  # Stress-test plans against docs / glossary (mattpocock/skills)
+│   ├── improve-codebase-architecture/    # Find deepening opportunities (mattpocock/skills)
 │   ├── brainstorming/                    # Superpowers methodology (14 skills)
 │   ├── test-driven-development/
 │   ├── systematic-debugging/
