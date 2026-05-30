@@ -116,8 +116,8 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 
 ### 5.5 `MaintenanceService`
 
-- **Purpose:** Repair (UC-003) and reset (UC-024) the installation.
-- **Publishes:** `testrunner.repaired`, `settings.reset`.
+- **Purpose:** Repair (UC-003) and reset (UC-024) the installation, plus sweep stale Evidence per the retention setting (SDD AD-11).
+- **Publishes:** `testrunner.repaired`, `settings.reset`, `evidence.swept`.
 
 ### 5.6 `DocumentationGenerationService`
 

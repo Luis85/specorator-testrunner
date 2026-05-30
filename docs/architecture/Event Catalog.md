@@ -410,6 +410,17 @@ Emitted by the plugin's file watcher (`source = "plugin"`) when a Playwright/Cuc
 
 `reviewedBy` is optional and originates from a manual `reviewedBy:` annotation in the evidence note's frontmatter — the plugin has no user identity of its own.
 
+### `evidence.swept`
+
+```ts
+{
+  deletedPaths: string[];                  // evidence folders removed by the sweeper
+  updatedUseCases: string[];               // UC ids whose evidence[] was pruned
+}
+```
+
+Emitted by `MaintenanceService.sweepEvidence()` (per SDD AD-11) only when the sweeper actually deleted something. Fires after the related `usecase.updated` events, so a single sweep produces a fan-out of `usecase.updated` followed by one `evidence.swept`. CI never triggers the sweeper.
+
 ---
 
 ## 10. Dashboard Events

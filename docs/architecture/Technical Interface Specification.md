@@ -161,6 +161,7 @@ export type DomainEventType =
   | "evidence.generated"
   | "evidence.linkedToUseCase"
   | "evidence.reviewed"
+  | "evidence.swept"
   // dashboard (UI integration events — share the bus per EN-1)
   | "dashboard.opened"
   | "dashboard.refreshed"
@@ -279,6 +280,7 @@ export interface AutomationSettings {
   updateUseCaseFrontmatterAfterRun: boolean;
   generateEvidenceMarkdown: boolean;
   openDashboardAfterInitialization: boolean;
+  evidenceRetentionDays?: number;          // SDD AD-11: undefined = keep forever (V1 default)
 }
 ```
 
@@ -685,6 +687,7 @@ export interface CiReadinessResult {
 export interface MaintenanceService {
   repair(): Promise<Result<RepairResult>>;                         // UC-003
   reset(confirm: ResetConfirmation): Promise<Result<void>>;        // UC-024
+  sweepEvidence(confirm?: SweepConfirmation): Promise<Result<SweepResult>>; // SDD AD-11
 }
 
 export interface RepairResult {
@@ -696,6 +699,15 @@ export interface RepairResult {
 export interface ResetConfirmation {
   confirmed: true;                         // typed proof that the user confirmed
   profile: "default";
+}
+
+export interface SweepConfirmation {
+  confirmed: true;                         // required on the first sweep after enabling retention
+}
+
+export interface SweepResult {
+  deletedPaths: VaultPath[];               // evidence folders removed
+  updatedUseCases: UseCaseId[];            // UCs whose evidence[] was pruned
 }
 ```
 
