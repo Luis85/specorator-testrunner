@@ -525,11 +525,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         if (notify) new Notice(`Report import failed: ${imported.error.message}`, 10000);
         return;
       }
-      // Honor the opt-out: skip evidence-note generation when disabled.
-      if (!this.hubSettings.automation.generateEvidenceMarkdown) {
-        if (notify) new Notice("Evidence Markdown generation is disabled in settings.");
-        return;
-      }
+      // Always call generate(): it honors BOTH opt-outs internally — skipping
+      // the Markdown note when generateEvidenceMarkdown is off, but still writing
+      // the Use Case lastTestRun (Recent Runs) when updateUseCaseFrontmatterAfterRun
+      // is on. Gating the whole call on the note opt-out dropped runs from the
+      // dashboard (US-038).
       const evidence = await this.evidenceGenerationService.generate({
         run,
         report: imported.value,
