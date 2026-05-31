@@ -6,12 +6,14 @@ specifications, test suites, Playwright execution, evidence, and CI/CD into a
 single Markdown-native, local-first workflow.
 
 > **Status:** In development. The product direction is captured in the
-> [PRD](./docs/Obsidian%20E2E%20Test%20Hub.md). **Sprint 1 (Foundation &
-> Initialization, EPIC-001/EPIC-002)** is implemented: the layered plugin
+> [PRD](./docs/Obsidian%20E2E%20Test%20Hub.md). Implemented so far:
+> **EPIC-001/EPIC-002 (Foundation & Initialization)** — the layered plugin
 > skeleton, settings service + UI, and the Initialization Wizard that scaffolds
 > the vault, generates documentation and demo content, and creates the default
-> Smoke/Regression suites. Runner installation and execution (EPIC-003+) are
-> next.
+> Smoke/Regression suites; and **EPIC-003 (Test Runner)** — generating the
+> self-contained `.testrunner` project, installing npm dependencies and the
+> Chromium browser, validating the environment, and repairing the installation.
+> Test execution and reporting (EPIC-007+) are next.
 
 ## Vision
 

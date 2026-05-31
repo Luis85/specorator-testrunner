@@ -1,0 +1,90 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import type {
+  ChildProcessRunner,
+  RunCommandRequest,
+  RunnerCommandResult,
+  RunnerOutput,
+} from "../../application/ports/child-process-runner";
+import { appError } from "../../shared/errors/errors";
+import { ok, type Result } from "../../shared/result/result";
+
+/**
+ * Node `child_process.spawn`-backed runner (BBV §7 `ProcessAdapter`).
+ *
+ * Commands are spawned with `shell: true` for cross-platform `npm`/`npx`
+ * resolution (R3); V1 commands come from trusted settings defaults and are
+ * screened by `CommandSafetyPolicy` before reaching this adapter.
+ */
+export class NodeChildProcessRunner implements ChildProcessRunner {
+  private readonly active = new Map<string, ChildProcess>();
+  private counter = 0;
+
+  run(request: RunCommandRequest): Promise<Result<RunnerCommandResult>> {
+    return this.spawn(request);
+  }
+
+  runStreaming(
+    request: RunCommandRequest,
+    onOutput: (output: RunnerOutput) => void,
+  ): Promise<Result<RunnerCommandResult>> {
+    return this.spawn(request, onOutput);
+  }
+
+  async cancel(_processId: string): Promise<Result<void>> {
+    // V1 cancels the active install/run; finer-grained targeting arrives with
+    // the test-execution epic.
+    for (const child of this.active.values()) child.kill();
+    return ok(undefined);
+  }
+
+  private spawn(
+    request: RunCommandRequest,
+    onOutput?: (output: RunnerOutput) => void,
+  ): Promise<Result<RunnerCommandResult>> {
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const id = `proc-${++this.counter}`;
+      let settled = false;
+      const finish = (result: Result<RunnerCommandResult>) => {
+        if (settled) return;
+        settled = true;
+        this.active.delete(id);
+        resolve(result);
+      };
+
+      let child: ChildProcess;
+      try {
+        child = spawn(request.command, {
+          cwd: request.cwd,
+          env: { ...process.env, ...request.env },
+          shell: true,
+        });
+      } catch (cause) {
+        finish({ ok: false, error: appError("INIT_FAILED", `Could not spawn: ${request.command}`, { cause }) });
+        return;
+      }
+      this.active.set(id, child);
+
+      let stdout = "";
+      let stderr = "";
+      const emit = (stream: "stdout" | "stderr", chunk: Buffer) => {
+        const text = chunk.toString();
+        if (stream === "stdout") stdout += text;
+        else stderr += text;
+        if (onOutput) {
+          for (const line of text.split(/\r?\n/)) {
+            if (line.length > 0) onOutput({ stream, line, timestamp: new Date().toISOString() });
+          }
+        }
+      };
+      child.stdout?.on("data", (chunk: Buffer) => emit("stdout", chunk));
+      child.stderr?.on("data", (chunk: Buffer) => emit("stderr", chunk));
+      child.on("error", (cause) =>
+        finish({ ok: false, error: appError("INIT_FAILED", `Process error: ${request.command}`, { cause }) }),
+      );
+      child.on("close", (code) =>
+        finish(ok({ exitCode: code ?? -1, stdout, stderr, durationMs: Date.now() - started })),
+      );
+    });
+  }
+}
