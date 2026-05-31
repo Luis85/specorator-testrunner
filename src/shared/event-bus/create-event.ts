@@ -1,4 +1,9 @@
-import type { DomainEvent, DomainEventType, EventSource } from "../../domain/events/domain-event";
+import type {
+  DomainEvent,
+  DomainEventType,
+  EventPayloads,
+  EventSource,
+} from "../../domain/events/domain-event";
 
 const newId = (): string => {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
@@ -7,16 +12,22 @@ const newId = (): string => {
   return `evt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
-/** Stamps a {@link DomainEvent} envelope with an id and `occurredAt`. */
-export const createEvent = <TPayload>(
-  type: DomainEventType,
-  payload: TPayload,
+/**
+ * Stamps a {@link DomainEvent} envelope with an id and `occurredAt`.
+ *
+ * Generic over the {@link DomainEventType} so the `payload` is checked against
+ * the catalog shape in {@link EventPayloads} at compile time — a wrong payload
+ * is a type error, not runtime drift.
+ */
+export const createEvent = <T extends DomainEventType>(
+  type: T,
+  payload: EventPayloads[T],
   options: {
     source?: EventSource;
     correlationId?: string;
     causationId?: string;
   } = {},
-): DomainEvent<TPayload> => ({
+): DomainEvent<EventPayloads[T]> => ({
   id: newId(),
   type,
   occurredAt: new Date().toISOString(),
