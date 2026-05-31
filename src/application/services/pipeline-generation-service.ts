@@ -57,6 +57,34 @@ export class DefaultPipelineGenerationService
     // same allowlist used for local spawns (ADR-0010) before writing.
     const effectiveInstall = request.settings.runner.ciInstallCommand.trim() || "npm ci";
     const effectiveRun = request.settings.runner.ciRunCommand.trim() || "npm run test:ci";
+    const nodeVersion = request.settings.ci.nodeVersion.trim() || "22";
+    // Reject control characters (newlines especially) in EVERY value rendered
+    // into the YAML before anything else — a multiline value would break out of
+    // its `run:`/`with:` line and inject arbitrary workflow steps even though the
+    // tokenized command check below (which splits on whitespace) wouldn't see it.
+    for (const value of [effectiveInstall, effectiveRun, nodeVersion]) {
+      // eslint-disable-next-line no-control-regex
+      if (/[\u0000-\u001f]/.test(value)) {
+        return err(
+          appError(
+            "VALIDATION_FAILED",
+            `Configured CI value contains a control character and can't be written to the workflow: ${JSON.stringify(value)}.`,
+            { details: { value } },
+          ),
+        );
+      }
+    }
+    // The Node version is interpolated as a YAML scalar; keep it to a plain
+    // version/range token so it can't carry spaces or YAML syntax.
+    if (!/^[0-9A-Za-z.\-_/>=<^~* |]+$/.test(nodeVersion)) {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `CI node version is not a valid version token: "${nodeVersion}".`,
+          { details: { nodeVersion } },
+        ),
+      );
+    }
     for (const command of [effectiveInstall, effectiveRun]) {
       const safe = this.commandSafety.assertSafe(command.split(/\s+/).filter(Boolean));
       if (!safe.ok) {

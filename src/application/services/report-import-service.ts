@@ -9,7 +9,7 @@ import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
-import { joinVaultPath } from "../../shared/utils/vault-path";
+import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
 
 /** Report import contract (TIS §8.11, UC-016, US-032/033/034). */
 export interface ReportImportService {
@@ -125,12 +125,18 @@ export class DefaultReportImportService implements ReportImportService {
     // TestRun), not the current settings — a testRunnerPath changed mid-run or
     // before a manual re-import must not read a different runner's report.
     const runnerPath = run.workingDirectory;
+    // Prefer the run-specific snapshot the executor wrote (reports/<runId>.json)
+    // so a concurrent run's cleanup of the fixed report can't race this import;
+    // fall back to the fixed path for manual re-imports of older runs.
+    const reportFile = run.reportPaths.json
+      ? relativeVaultPath(runnerPath, run.reportPaths.json)
+      : REPORT_FILE;
     // VaultPath used for artifact references + event payloads (vault-relative).
-    const reportVaultPath = joinVaultPath(runnerPath, REPORT_FILE);
+    const reportVaultPath = run.reportPaths.json ?? joinVaultPath(runnerPath, REPORT_FILE);
 
     const cwd = await resolveRunnerCwd(this.absoluteFs, runnerPath);
     if (!cwd.ok) return err(cwd.error);
-    const reportAbsPath = `${cwd.value.replace(/[/\\]$/, "")}/${REPORT_FILE}`;
+    const reportAbsPath = `${cwd.value.replace(/[/\\]$/, "")}/${reportFile}`;
 
     await this.publishDetected(run.id, reportVaultPath);
 

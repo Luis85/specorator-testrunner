@@ -4,7 +4,12 @@ import type { UseCaseService } from "./use-case-service";
 import { useCaseIdFromPath } from "../content/gherkin";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { Evidence, EvidenceArtifact } from "../../domain/entities/evidence";
-import type { TestRun, TestRunResult, TestRunStatus } from "../../domain/entities/test-run";
+import type {
+  ExecutionScope,
+  TestRun,
+  TestRunResult,
+  TestRunStatus,
+} from "../../domain/entities/test-run";
 import type {
   EvidenceId,
   RunId,
@@ -107,7 +112,12 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     if (settings.automation.updateUseCaseFrontmatterAfterRun) {
       // Record WHEN the run actually finished, not this (possibly re-import)
       // evidence-generation time, so last_run_date stays accurate on re-imports.
-      await this.link(evidence, this.summaryStatus(run, report.result), run.finishedAt ?? run.startedAt);
+      await this.link(
+        evidence,
+        this.summaryStatus(run, report.result),
+        run.finishedAt ?? run.startedAt,
+        run.scope,
+      );
     }
     return ok(evidence);
   }
@@ -143,6 +153,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     evidence: Evidence,
     summaryStatus: TestRunStatus,
     runDate: string,
+    runScope: ExecutionScope,
   ): Promise<void> {
     for (const useCaseId of evidence.linkedUseCases) {
       const found = await this.useCaseService.findById(useCaseId);
@@ -160,6 +171,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
           runId: evidence.runId,
           status: summaryStatus,
           date: runDate,
+          scope: runScope,
           evidencePath: evidence.path,
         },
       };
