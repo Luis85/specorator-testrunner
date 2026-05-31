@@ -17,7 +17,10 @@ import type { TestHubSettings } from "../../domain/settings/settings";
  * {@link ../services/pipeline-generation-service}.
  */
 export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string => {
-  const runnerPath = settings.paths.testRunnerPath;
+  // Normalize separators to POSIX: the workflow runs on ubuntu-latest where the
+  // repo is checked out with "/" separators, so a Windows-configured
+  // `e2e\runner` would otherwise point at a literal backslash path (ADR-0006).
+  const runnerPath = settings.paths.testRunnerPath.replace(/\\/g, "/");
   const nodeVersion = settings.ci.nodeVersion.trim() || "22";
 
   // US-042: every step runs with cwd = the runner folder, so the same commands
