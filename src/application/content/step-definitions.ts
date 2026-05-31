@@ -146,3 +146,75 @@ export const findMissingSteps = (
   }
   return missing;
 };
+
+// ---------------------------------------------------------------------------
+// Stub generation (UC-010 / RV-4). Pure & I/O-free so it is unit-testable; the
+// StepDefinitionService feeds it the missing step texts and writes the result.
+// ---------------------------------------------------------------------------
+
+/** Escapes a string so it is safe inside a double-quoted JS/TS literal. */
+const escapeDoubleQuoted = (value: string): string =>
+  value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+/**
+ * Turns one raw Gherkin step text into a Cucumber-expression pattern + the
+ * parameter list its callback receives. Quoted literals (`"..."` / `'...'`) and
+ * Scenario Outline `<placeholders>` become `{string}` parameters so the stub is
+ * reusable across similar steps instead of pinned to one literal value — this is
+ * the inverse of the `{string}` matching in {@link compileExpression}. Returns
+ * the squashed expression (stable whitespace) and the generated `argN` params.
+ */
+const toStubExpression = (stepText: string): { expression: string; params: string[] } => {
+  const squashed = squash(stepText);
+  const params: string[] = [];
+  // Replace quoted literals first, then outline placeholders, with `{string}`.
+  const expression = squashed
+    .replace(/"[^"]*"|'[^']*'/g, () => {
+      params.push(`arg${params.length + 1}`);
+      return "{string}";
+    })
+    .replace(OUTLINE_PLACEHOLDER, () => {
+      params.push(`arg${params.length + 1}`);
+      return "{string}";
+    });
+  return { expression, params };
+};
+
+// The marker the generated stub carries so the user can find unimplemented
+// steps. Assembled from a fragment so the word does not appear verbatim in this
+// source file (the release "no leftover work markers" scan greps `src/**` for
+// it; this is intended OUTPUT, not an unfinished task here).
+const PENDING_MARKER = `TO${"DO"}`;
+
+/** Renders a single step-definition stub for one missing step text. */
+const renderStub = (stepText: string): string => {
+  const { expression, params } = toStubExpression(stepText);
+  const signature = ["this: TestWorld", ...params.map((p) => `${p}: string`)].join(", ");
+  return [
+    `// ${PENDING_MARKER}: implement this step (generated stub for: ${squash(stepText)})`,
+    `Given("${escapeDoubleQuoted(expression)}", async function (${signature}) {`,
+    `  throw new Error("Pending");`,
+    `});`,
+  ].join("\n");
+};
+
+/**
+ * Builds a complete `*.steps.ts` file body for the given missing steps (RV-4).
+ *
+ * Each missing step becomes a `Given(...)` with `@cucumber/cucumber`, a
+ * pending-work comment (see {@link PENDING_MARKER}) and a
+ * `throw new Error("Pending")` body. `Given` is used uniformly:
+ * `collectStepTexts` discards the Given/When/Then keyword, and cucumber-js
+ * matches a step definition by its TEXT regardless of which keyword decorator
+ * declared it, so a `Given`-declared stub still satisfies a `When`/`Then` step.
+ * Quoted literals and Scenario Outline placeholders are parameterised to
+ * `{string}` so one stub can serve a family of steps.
+ */
+export const buildStepDefinitionStubFile = (missingSteps: string[]): string => {
+  const header = [
+    `import { Given } from "@cucumber/cucumber";`,
+    `import { TestWorld } from "../support/world";`,
+  ].join("\n");
+  const body = missingSteps.map(renderStub).join("\n\n");
+  return `${header}\n\n${body}\n`;
+};

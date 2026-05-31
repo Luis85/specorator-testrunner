@@ -26,6 +26,13 @@ export interface SpecificationValidationResult {
 export interface MissingStepResult {
   featurePath: VaultPath;
   missingSteps: string[];
+  /**
+   * Id of the published `specification.missingSteps.detected` event. UC-010
+   * threads it into `stepdefinition.generated`'s `causationId` (Event Catalog
+   * §5) so the generated stubs are causally linked to the detection that
+   * triggered them.
+   */
+  detectionEventId: string;
 }
 
 /**
@@ -208,14 +215,16 @@ export class DefaultSpecificationService implements SpecificationService {
 
     const missingSteps = findMissingSteps(collectStepTexts(feature), definitions);
 
-    await this.eventBus.publish(
-      createEvent("specification.missingSteps.detected", { featurePath, missingSteps }),
-    );
+    const detectionEvent = createEvent("specification.missingSteps.detected", {
+      featurePath,
+      missingSteps,
+    });
+    await this.eventBus.publish(detectionEvent);
     this.logger.info("Missing steps detected", {
       featurePath,
       missing: missingSteps.length,
     });
-    return ok({ featurePath, missingSteps });
+    return ok({ featurePath, missingSteps, detectionEventId: detectionEvent.id });
   }
 
   /**
