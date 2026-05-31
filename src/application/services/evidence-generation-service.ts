@@ -165,7 +165,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
    */
   private async link(
     evidence: Evidence,
-    statusFor: (useCaseId: UseCaseId) => TestRunStatus,
+    statusFor: (useCaseId: UseCaseId) => TestRunStatus | "skipped",
     runDate: string,
     runScope: ExecutionScope,
     wroteNote: boolean,
@@ -222,14 +222,20 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
    * doesn't redden sibling UCs whose features passed). Falls back to the run
    * aggregate when a UC has no scenarios in the report.
    */
-  private perUseCaseStatus(run: TestRun, report: ImportedReport): (id: UseCaseId) => TestRunStatus {
+  private perUseCaseStatus(
+    run: TestRun,
+    report: ImportedReport,
+  ): (id: UseCaseId) => TestRunStatus | "skipped" {
     return (useCaseId) => {
       if (run.status === "cancelled" || run.status === "errored") return run.status;
       const own = report.scenarioResults.filter(
         (s) => useCaseIdFromPath(s.featureUri ?? s.feature) === useCaseId,
       );
       if (own.length === 0) return this.summaryStatus(run, report.result);
-      return own.some((s) => s.status === "failed") ? "failed" : "passed";
+      if (own.some((s) => s.status === "failed")) return "failed";
+      // A UC whose own scenarios all SKIPPED didn't pass — don't inflate the
+      // Passing KPI; report skipped so the policy treats it as not-passing.
+      return own.some((s) => s.status === "passed") ? "passed" : "skipped";
     };
   }
 

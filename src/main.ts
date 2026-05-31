@@ -518,7 +518,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         if (notify) new Notice(`Evidence generation failed: ${evidence.error.message}`, 10000);
         return;
       }
-      if (notify) new Notice(`Evidence written to ${evidence.value.path}`);
+      if (notify) {
+        // generate() may return ok without writing a note (Markdown disabled) —
+        // don't point the user at a deliberately non-existent file.
+        new Notice(
+          this.hubSettings.automation.generateEvidenceMarkdown
+            ? `Evidence written to ${evidence.value.path}`
+            : "Last run recorded (evidence Markdown generation is disabled).",
+        );
+      }
     } catch (error) {
       // The subscriber must not throw into the bus (EN-1).
       this.logger.error("Report import / evidence generation threw", error as Error);
