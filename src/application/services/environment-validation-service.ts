@@ -166,9 +166,25 @@ export class DefaultEnvironmentValidationService
       if (!(await this.absoluteFs.existsAbsolute(runnerAbs))) {
         missingItems.push(`Runner folder is missing at ${settings.paths.testRunnerPath}.`);
       }
-      // package.json + scripts the workflow invokes (US-041).
-      if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/package.json`))) {
+      // package.json + the `test:ci` script the workflow invokes (US-041/UC-020):
+      // a stale package.json without it makes the generated CI job fail at once.
+      const pkgPath = `${runnerAbs}/package.json`;
+      if (!(await this.absoluteFs.existsAbsolute(pkgPath))) {
         missingItems.push("Runner package.json is missing.");
+      } else {
+        const pkg = await this.absoluteFs.readAbsolute(pkgPath);
+        if (pkg.ok) {
+          try {
+            const parsed = JSON.parse(pkg.value) as { scripts?: Record<string, unknown> };
+            if (typeof parsed.scripts?.["test:ci"] !== "string") {
+              missingItems.push(
+                'Runner package.json has no "test:ci" script (the CI job runs npm run test:ci).',
+              );
+            }
+          } catch {
+            missingItems.push("Runner package.json is not valid JSON.");
+          }
+        }
       }
       // Lockfile: `npm ci` (the CI install command) fails without it (US-041).
       if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/package-lock.json`))) {

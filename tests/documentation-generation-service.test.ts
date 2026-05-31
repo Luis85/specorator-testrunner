@@ -109,7 +109,7 @@ describe("DefaultDocumentationGenerationService.generate (FEAT-024, US-043/044/0
 });
 
 describe("DefaultDocumentationGenerationService.open (FEAT-025, US-046)", () => {
-  it("opens the index hub by default and emits documentation.opened", async () => {
+  it("opens the Getting Started guide by default and emits a cataloged documentType", async () => {
     const { service, workspace, events, types } = makeService();
     await service.generate();
 
@@ -118,15 +118,15 @@ describe("DefaultDocumentationGenerationService.open (FEAT-025, US-046)", () => 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const indexPath = joinVaultPath(DOCS, "Test Hub Documentation.md");
-    expect(result.value.documentType).toBe("index");
-    expect(result.value.path).toBe(indexPath);
-    expect(workspace.opened).toEqual([indexPath]);
+    // Default is a cataloged documentType (the index hub is not in the
+    // documentation.opened enum).
+    expect(result.value.documentType).toBe("getting-started");
+    expect(workspace.opened).toEqual([result.value.path]);
 
     expect(types()).toContain("documentation.opened");
     const event = events.find((e) => e.type === "documentation.opened");
     const payload = event?.payload as { path: VaultPath; documentType: string };
-    expect(payload).toEqual({ path: indexPath, documentType: "index" });
+    expect(payload).toEqual({ path: result.value.path, documentType: "getting-started" });
   });
 
   it("opens a specific guide when requested", async () => {

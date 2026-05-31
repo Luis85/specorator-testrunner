@@ -12,11 +12,12 @@ export type DocumentationType =
   | "index";
 
 /**
- * A generated doc's `documentType` as carried by `documentation.opened`
- * (US-046 / UC-021,022,023). Every type is openable, including the `index`
- * hub that the "Open Documentation" command opens by default.
+ * A doc's `documentType` as carried by `documentation.opened` — constrained to
+ * the Event Catalog enum (`getting-started | manual | troubleshooting`, TIS §12 /
+ * UC-021,022,023). The `index` hub is generated and linked but is NOT an
+ * `OpenableDocumentType`, so the event payload never carries an off-catalog value.
  */
-export type OpenableDocumentType = DocumentationType;
+export type OpenableDocumentType = Exclude<DocumentationType, "index">;
 
 /** One generated documentation note. */
 export interface DocumentationFile {

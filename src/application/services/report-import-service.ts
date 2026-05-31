@@ -121,8 +121,10 @@ export class DefaultReportImportService implements ReportImportService {
   ) {}
 
   async import(run: TestRun): Promise<Result<ImportedReport>> {
-    const settings = await this.settingsService.load();
-    const runnerPath = settings.paths.testRunnerPath;
+    // Use the runner directory THIS run actually spawned in (recorded on the
+    // TestRun), not the current settings — a testRunnerPath changed mid-run or
+    // before a manual re-import must not read a different runner's report.
+    const runnerPath = run.workingDirectory;
     // VaultPath used for artifact references + event payloads (vault-relative).
     const reportVaultPath = joinVaultPath(runnerPath, REPORT_FILE);
 
@@ -311,9 +313,10 @@ export class DefaultReportImportService implements ReportImportService {
         if (!type) continue;
         artifacts.push({
           type,
-          // Embedded artifacts live inside the report; reference the reports
-          // folder (a stable VaultPath) rather than fabricating a per-file path.
-          path: joinVaultPath(runnerPath, "reports"),
+          // Embedded artifacts live inline (base64) inside the report file, so
+          // reference the concrete report — the directory alone can't be opened
+          // to review the bytes from the evidence note.
+          path: joinVaultPath(runnerPath, REPORT_FILE),
           label: mime || type,
         });
       }

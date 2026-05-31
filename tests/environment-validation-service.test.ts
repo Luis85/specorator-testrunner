@@ -186,10 +186,25 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(result.missingItems.some((m) => m.includes("CI workflow"))).toBe(true);
   });
 
-  it("validateCiReadiness is ready when runner, lockfile and workflow are present (UC-020)", async () => {
+  it("validateCiReadiness flags a package.json without a test:ci script (UC-020)", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.existing.add("/vault/.testrunner");
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { test: "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const result = await service.validateCiReadiness(DEFAULT_SETTINGS);
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("test:ci"))).toBe(true);
+  });
+
+  it("validateCiReadiness is ready when runner, lockfile, test:ci script and workflow are present (UC-020)", async () => {
     const { service, absoluteFs, types } = build();
     absoluteFs.existing.add("/vault/.testrunner");
-    absoluteFs.existing.add("/vault/.testrunner/package.json");
+    absoluteFs.seed(
+      "/vault/.testrunner/package.json",
+      JSON.stringify({ scripts: { "test:ci": "cucumber-js" } }),
+    );
     absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
     absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
 
