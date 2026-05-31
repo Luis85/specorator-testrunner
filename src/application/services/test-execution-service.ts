@@ -393,8 +393,32 @@ export class DefaultTestExecutionService implements TestExecutionService {
         }
         return ok(smoke);
       }
-      case "all":
+      case "all": {
+        // ADR-0012: a Use Case with status "deprecated" excludes all of its
+        // Features from Run All. The bare `base` runs the runner's config glob
+        // over every feature file, so when any UC is deprecated we instead pass
+        // the explicit union of the NON-deprecated UCs' feature files (every
+        // feature in this system is generated from a UC, so that union is "all
+        // features minus the retired ones"). With no deprecated UCs we keep the
+        // cheap glob. If the UC index can't be read we fall back to the glob
+        // rather than silently running nothing.
+        const all = await this.useCaseService.findAll();
+        if (all.ok && all.value.some((uc) => uc.status === "deprecated")) {
+          const activeFiles = all.value
+            .filter((uc) => uc.status !== "deprecated")
+            .flatMap((uc) => uc.featureFiles);
+          if (activeFiles.length > 0) {
+            return ok(
+              appendScopedArgs(base, activeFiles.map((path) => this.featureArg(settings, path))),
+            );
+          }
+          // Every non-deprecated UC is unautomated (or all UCs are deprecated):
+          // there is no active coverage to run, so target a path that matches no
+          // feature instead of falling back to the all-features glob.
+          return ok(appendScopedArgs(base, [`${this.featurePrefix(settings)}/__no_active_features__.feature`]));
+        }
         return ok([...base]);
+      }
       case "suite": {
         const tags = await this.suiteService.resolveTagExpression(request.target);
         if (!tags.ok) return err(tags.error);
