@@ -6,13 +6,57 @@ const policy = new DefaultCommandSafetyPolicy();
 describe("DefaultCommandSafetyPolicy", () => {
   it("allows the trusted default runner argv", () => {
     for (const args of [
+      ["npm", "--version"],
       ["npm", "install"],
       ["npm", "ci"],
+      ["npx", "playwright", "--version"],
       ["npx", "playwright", "install", "chromium"],
+      ["npx", "playwright", "install", "--with-deps", "chromium"],
       ["node", "--version"],
+      ["/opt/homebrew/bin/node", "--version"],
+      ["node.exe", "--version"],
+      ["npm", "run", "test"],
       ["npm", "run", "test:smoke"],
+      ["npm", "run", "test:ci"],
     ]) {
       expect(policy.assertSafe(args).ok, args.join(" ")).toBe(true);
+    }
+  });
+
+  it("restricts node to a --version probe, never code execution (ADR-0010)", () => {
+    for (const args of [
+      ["node", "-e", "process.exit(42)"],
+      ["node", "--eval", "require('fs')"],
+      ["node", "-p", "1+1"],
+      ["node", "script.js"],
+      ["node"],
+    ]) {
+      const result = policy.assertSafe(args);
+      expect(result.ok, args.join(" ")).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("COMMAND_DISALLOWED");
+    }
+  });
+
+  it("only lets npx run the bundled Playwright CLI (ADR-0010)", () => {
+    for (const args of [
+      ["npx", "some-malicious-package"],
+      ["npx", "-y", "cowsay"],
+      ["npx"],
+    ]) {
+      expect(policy.assertSafe(args).ok, args.join(" ")).toBe(false);
+    }
+  });
+
+  it("rejects npm subcommands the runner never uses (ADR-0010)", () => {
+    for (const args of [
+      ["npm", "exec", "--", "rm"],
+      ["npm", "run"],
+      ["npm", "run", "test; rm -rf /"],
+      ["npm"],
+    ]) {
+      const result = policy.assertSafe(args);
+      expect(result.ok, args.join(" ")).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("COMMAND_DISALLOWED");
     }
   });
 

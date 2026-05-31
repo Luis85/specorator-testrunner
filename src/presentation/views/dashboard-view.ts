@@ -24,9 +24,15 @@ const REFRESH_ON: DomainEventType[] = [
   "evidence.linkedToUseCase",
 ];
 
+/** The documentation entry points reachable from the dashboard (AC-016). */
+export type DashboardDocumentType = "getting-started" | "manual" | "troubleshooting";
+
 export interface DashboardViewDeps {
   traceabilityService: TraceabilityService;
   eventBus: EventBus;
+  // AC-016: open the Getting Started guide / User Manual straight from the
+  // dashboard. A callback (not the service) keeps the view decoupled.
+  openDocumentation: (documentType: DashboardDocumentType) => void | Promise<void>;
 }
 
 /**
@@ -100,6 +106,11 @@ export class DashboardView extends ItemView {
       tile.createDiv({ cls: "e2e-test-hub-kpi-label", text: kpi.label });
     }
 
+    // Documentation access (AC-016): open the Getting Started guide / User
+    // Manual without leaving the dashboard. Rendered before the recent-runs
+    // early return so the actions are always available.
+    this.renderDocumentationActions(container);
+
     // Recent runs (US-038).
     container.createEl("h3", { text: "Recent Runs" });
     if (view.recentRuns.length === 0) {
@@ -118,6 +129,24 @@ export class DashboardView extends ItemView {
       tr.createEl("td", { text: run.runId });
       tr.createEl("td", { text: run.status });
       tr.createEl("td", { text: run.date });
+    }
+  }
+
+  /** AC-016 documentation buttons (Getting Started + User Manual). */
+  private renderDocumentationActions(container: HTMLElement): void {
+    const actions = container.createDiv({ cls: "e2e-test-hub-doc-actions" });
+    const buttons: ReadonlyArray<[string, DashboardDocumentType]> = [
+      ["Getting Started", "getting-started"],
+      ["User Manual", "manual"],
+    ];
+    for (const [label, documentType] of buttons) {
+      const button = actions.createEl("button", {
+        text: label,
+        cls: "e2e-test-hub-doc-button",
+      });
+      button.addEventListener("click", () => {
+        void this.deps.openDocumentation(documentType);
+      });
     }
   }
 }

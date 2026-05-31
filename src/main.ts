@@ -275,6 +275,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         new DashboardView(leaf, {
           traceabilityService: this.traceabilityService,
           eventBus,
+          openDocumentation: (documentType) => this.openDocumentation(documentType),
         }),
     );
 
