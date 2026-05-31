@@ -74,14 +74,16 @@ export class DefaultPipelineGenerationService
         ),
       );
     }
-    // GitHub Actions only discovers workflows under `.github/workflows/`. A path
-    // elsewhere (e.g. `ci/e2e.yml`) would be written and reported ready but never
-    // run, so require the Actions directory for the github-actions provider.
-    if (!relativePath.startsWith(".github/workflows/")) {
+    // GitHub Actions only discovers workflows that live directly under
+    // `.github/workflows/` AND end in `.yml`/`.yaml`. A path elsewhere
+    // (`ci/e2e.yml`), a non-YAML file (`.github/workflows/e2e.txt`), or a bare
+    // directory would be written/reported ready but never run, so require the
+    // full shape for the github-actions provider.
+    if (!/^\.github\/workflows\/[^/]+\.ya?ml$/.test(relativePath)) {
       return err(
         appError(
           "VALIDATION_FAILED",
-          `GitHub Actions workflow path must be under ".github/workflows/": "${relativePath}".`,
+          `GitHub Actions workflow path must be a .yml/.yaml file directly under ".github/workflows/": "${relativePath}".`,
           { details: { path: relativePath } },
         ),
       );

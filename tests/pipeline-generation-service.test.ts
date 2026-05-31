@@ -56,7 +56,13 @@ describe("DefaultPipelineGenerationService", () => {
 
   it("rejects a repo-relative workflowPath outside .github/workflows and writes nothing", async () => {
     const { service, absoluteFs } = build();
-    for (const workflowPath of ["ci/e2e.yml", "e2e.yml", ".github/e2e.yml"]) {
+    for (const workflowPath of [
+      "ci/e2e.yml",
+      "e2e.yml",
+      ".github/e2e.yml",
+      ".github/workflows/e2e.txt", // not a YAML file
+      ".github/workflows/sub/e2e.yml", // nested, not directly under workflows/
+    ]) {
       const settings = { ...DEFAULT_SETTINGS, ci: { ...DEFAULT_SETTINGS.ci, workflowPath } };
       const result = await service.generate({ provider: "github-actions", settings });
       expect(result.ok, workflowPath).toBe(false);

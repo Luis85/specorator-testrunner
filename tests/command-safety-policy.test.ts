@@ -23,6 +23,21 @@ describe("DefaultCommandSafetyPolicy", () => {
     }
   });
 
+  it("rejects npm/npx given as a path, allowing a path only for node (ADR-0010)", () => {
+    for (const args of [
+      ["/tmp/npm", "install"],
+      ["./npx", "playwright", "--version"],
+      ["C:\\evil\\npm.cmd", "run", "test"],
+      ["../npm", "ci"],
+    ]) {
+      const result = policy.assertSafe(args);
+      expect(result.ok, args.join(" ")).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("COMMAND_DISALLOWED");
+    }
+    // node, by contrast, may be a configured absolute/version-manager path.
+    expect(policy.assertSafe(["/opt/homebrew/bin/node", "--version"]).ok).toBe(true);
+  });
+
   it("restricts node to a --version probe, never code execution (ADR-0010)", () => {
     for (const args of [
       ["node", "-e", "process.exit(42)"],
