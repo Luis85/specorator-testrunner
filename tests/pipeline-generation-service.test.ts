@@ -111,6 +111,29 @@ describe("DefaultPipelineGenerationService", () => {
     expect(absoluteFs.written.size).toBe(0);
   });
 
+  it("permits custom npm CI scripts and install flags", async () => {
+    for (const over of [
+      { ciRunCommand: "npm run e2e:ci" },
+      { ciInstallCommand: "npm install --no-audit" },
+      { ciInstallCommand: "npm ci --ignore-scripts" },
+    ]) {
+      const { service } = build();
+      const settings = { ...DEFAULT_SETTINGS, runner: { ...DEFAULT_SETTINGS.runner, ...over } };
+      const result = await service.generate({ provider: "github-actions", settings });
+      expect(result.ok, JSON.stringify(over)).toBe(true);
+    }
+  });
+
+  it("rejects non-npm CI commands and writes nothing", async () => {
+    const { service, absoluteFs } = build();
+    for (const ciRunCommand of ["node build.js", "npm run", "npm publish"]) {
+      const settings = { ...DEFAULT_SETTINGS, runner: { ...DEFAULT_SETTINGS.runner, ciRunCommand } };
+      const result = await service.generate({ provider: "github-actions", settings });
+      expect(result.ok, ciRunCommand).toBe(false);
+    }
+    expect(absoluteFs.written.size).toBe(0);
+  });
+
   it("rejects shell metacharacters smuggled after a -- separator and writes nothing", async () => {
     const { service, absoluteFs } = build();
     for (const ciRunCommand of [

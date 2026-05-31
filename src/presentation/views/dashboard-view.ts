@@ -22,6 +22,9 @@ const REFRESH_ON: DomainEventType[] = [
   "testrun.cancelled",
   "evidence.generated",
   "evidence.linkedToUseCase",
+  // KPI automation status is derived from parsed feature files, so a feature
+  // edit (steps/scenarios/@wip) changes the counts — refresh on it too.
+  "specification.updated",
 ];
 
 /** The documentation entry points reachable from the dashboard (AC-016). */
