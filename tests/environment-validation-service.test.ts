@@ -215,6 +215,27 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(types()).toContain("ci.readiness.checked");
   });
 
+  it("validateCiReadiness finds the workflow when workflowPath uses Windows separators", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.existing.add("/vault/.testrunner");
+    absoluteFs.seed(
+      "/vault/.testrunner/package.json",
+      JSON.stringify({ scripts: { "test:ci": "x" } }),
+    );
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    // Generation normalizes `\`→`/`, so the file lives at the POSIX path.
+    absoluteFs.existing.add("/vault/.github/workflows/e2e.yml");
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, workflowPath: ".github\\workflows\\e2e.yml" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.missingItems.some((m) => m.includes("CI workflow"))).toBe(false);
+    expect(result.ready).toBe(true);
+  });
+
   it("validateCiReadiness warns about committed node_modules and an empty BASE_URL", async () => {
     const { service, absoluteFs } = build();
     absoluteFs.existing.add("/vault/.testrunner");

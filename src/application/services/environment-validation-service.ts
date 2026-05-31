@@ -195,8 +195,12 @@ export class DefaultEnvironmentValidationService
         missingItems.push("Runner package-lock.json is missing (npm ci needs a lockfile).");
       }
       // The CI workflow itself must have been generated (UC-019 → UC-020).
-      if (!(await this.absoluteFs.existsAbsolute(`${root}/${settings.ci.workflowPath}`))) {
-        missingItems.push(`CI workflow not generated at ${settings.ci.workflowPath}.`);
+      // Generation normalizes `\`→`/` before writing (so a Windows-configured
+      // `.github\workflows\e2e.yml` is written to the POSIX path GitHub finds);
+      // normalize here too or the readiness probe would miss the generated file.
+      const workflowRel = settings.ci.workflowPath.replace(/\\/g, "/");
+      if (!(await this.absoluteFs.existsAbsolute(`${root}/${workflowRel}`))) {
+        missingItems.push(`CI workflow not generated at ${workflowRel}.`);
       }
       // node_modules being committed defeats `npm ci`; warn rather than block.
       if (await this.absoluteFs.existsAbsolute(`${runnerAbs}/node_modules`)) {
