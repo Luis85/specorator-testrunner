@@ -52,7 +52,7 @@ const build = () => {
     silentLogger,
     () => FIXED_NOW,
   );
-  return { service, fs, childProcess, events, types };
+  return { service, fs, childProcess, absoluteFs, events, types };
 };
 
 /** Seeds a suite so the `suite` scope can resolve a tag expression. */
@@ -86,6 +86,14 @@ describe("DefaultTestExecutionService", () => {
     const { service } = build();
     const result = await service.execute({ scope: "all", target: "all" });
     expect(result.ok && result.value.command).toBe("npm run test");
+  });
+
+  it("clears any prior Cucumber report before running (no stale import)", async () => {
+    const { service, absoluteFs } = build();
+    const reportPath = "/vault/.testrunner/reports/cucumber-report.json";
+    absoluteFs.seed(reportPath, "{ old report }");
+    await service.execute({ scope: "demo", target: "demo" });
+    expect(await absoluteFs.existsAbsolute(reportPath)).toBe(false);
   });
 
   it("mints unique run ids for sequential runs in the same second", async () => {
