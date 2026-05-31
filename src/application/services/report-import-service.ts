@@ -253,7 +253,7 @@ export class DefaultReportImportService implements ReportImportService {
         result[status] += 1;
         result.total += 1;
 
-        this.collectArtifacts(stepsAndHooks, runnerPath, artifacts);
+        this.collectArtifacts(stepsAndHooks, reportVaultPath, artifacts);
       }
 
       // A failed Background with no scenarios after it: surface it on its own so
@@ -269,7 +269,7 @@ export class DefaultReportImportService implements ReportImportService {
         });
         result.failed += 1;
         result.total += 1;
-        this.collectArtifacts(bgFailedSteps, runnerPath, artifacts);
+        this.collectArtifacts(bgFailedSteps, reportVaultPath, artifacts);
       }
     }
 
@@ -308,7 +308,7 @@ export class DefaultReportImportService implements ReportImportService {
    */
   private collectArtifacts(
     steps: CucumberStep[],
-    runnerPath: VaultPath,
+    reportVaultPath: VaultPath,
     artifacts: EvidenceArtifact[],
   ): void {
     for (const step of steps) {
@@ -333,9 +333,10 @@ export class DefaultReportImportService implements ReportImportService {
         artifacts.push({
           type,
           // Embedded artifacts live inline (base64) inside the report file, so
-          // reference the concrete report — the directory alone can't be opened
-          // to review the bytes from the evidence note.
-          path: joinVaultPath(runnerPath, REPORT_FILE),
+          // reference the concrete report we actually read (the run-specific
+          // snapshot when present) — not the fixed path, which a later run
+          // deletes/overwrites, leaving the link dangling.
+          path: reportVaultPath,
           label: mime || type,
         });
       }

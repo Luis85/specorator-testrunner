@@ -47,6 +47,12 @@ export interface DashboardViewDeps {
  */
 export class DashboardView extends ItemView {
   private readonly subscriptions: Unsubscribe[] = [];
+  // Renders are async (they await refreshDashboard). Firing them concurrently
+  // lets a slower render with STALE data empty + rebuild the container last,
+  // clobbering fresher output. Chain them so they run one at a time, and
+  // coalesce a burst of events into a single trailing render.
+  private renderChain: Promise<void> = Promise.resolve();
+  private renderPending = false;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -73,9 +79,29 @@ export class DashboardView extends ItemView {
       createEvent("dashboard.opened", { dashboardPath: DASHBOARD_VIEW_TYPE }),
     );
     for (const type of REFRESH_ON) {
-      this.subscriptions.push(this.deps.eventBus.subscribe(type, () => void this.render()));
+      this.subscriptions.push(
+        this.deps.eventBus.subscribe(type, () => this.scheduleRender()),
+      );
     }
     await this.render();
+  }
+
+  /**
+   * Serializes renders so concurrent events can't interleave their async
+   * refresh + rebuild. Returns the chain so the (handler-awaiting) event bus
+   * preserves ordering; a burst collapses into one trailing render since the
+   * queued render already picks up the latest state.
+   */
+  private scheduleRender(): Promise<void> {
+    if (this.renderPending) return this.renderChain;
+    this.renderPending = true;
+    this.renderChain = this.renderChain
+      .catch(() => undefined)
+      .then(() => {
+        this.renderPending = false;
+        return this.render();
+      });
+    return this.renderChain;
   }
 
   async onClose(): Promise<void> {
@@ -133,12 +159,14 @@ export class DashboardView extends ItemView {
     }
   }
 
-  /** AC-016 documentation buttons (Getting Started + User Manual). */
+  /** AC-016 documentation buttons (US-046: Getting Started / Manual / Troubleshooting). */
   private renderDocumentationActions(container: HTMLElement): void {
     const actions = container.createDiv({ cls: "e2e-test-hub-doc-actions" });
+    // All three guides US-046 maps to UC-021/022/023 must be reachable here.
     const buttons: ReadonlyArray<[string, DashboardDocumentType]> = [
       ["Getting Started", "getting-started"],
       ["User Manual", "manual"],
+      ["Troubleshooting", "troubleshooting"],
     ];
     for (const [label, documentType] of buttons) {
       const button = actions.createEl("button", {
