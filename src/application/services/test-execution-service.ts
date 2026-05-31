@@ -7,12 +7,13 @@ import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { ExecutionScope, TestRun } from "../../domain/entities/test-run";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
 import type { DomainEventType, EventPayloads } from "../../domain/events/domain-event";
-import type { TestHubSettings } from "../../domain/settings/settings";
+import { collectCredentialValues, type TestHubSettings } from "../../domain/settings/settings";
 import type { RunId } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
+import { redactSecrets } from "../../shared/logging/redact";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
 
@@ -364,19 +365,20 @@ export class DefaultTestExecutionService implements TestExecutionService {
       // we never start an untracked runner the UI already saw as cancelled.
       if (activeRun.terminated) return ok(run);
 
+      // Redact the live console too (security review M1): the runner can echo a
+      // configured `auth.env` credential into stdout/stderr (e.g. a login error),
+      // so scrub each streamed line with the SAME ADR-0019 helper the Logger uses
+      // before publishing testrun.output.received. The secret set is built ONCE
+      // per run from the active settings; an empty set makes redactSecrets a
+      // no-op pass-through, so a run with no credentials keeps the hot path cheap.
+      const runSecrets = new Set(collectCredentialValues(settings));
       const result = await this.childProcess.runStreaming(
         { args: argv, cwd: cwd.value, env: this.runEnv(settings), processId: run.id },
         (output) => {
-          // V1 scope: the live console streams raw runner output WITHOUT
-          // credential redaction. It is ephemeral, local-only UI (not vault-
-          // persisted), so the ADR-0019 sync-leak risk doesn't apply here;
-          // persisted logs ARE redacted (ConsoleLogger value-scrubbing). Routing
-          // streamed lines through redaction is a documented post-V1 follow-up
-          // (security review M1).
           void this.publish("testrun.output.received", run.id, {
             runId: run.id,
             stream: output.stream,
-            line: output.line,
+            line: redactSecrets(output.line, runSecrets),
           });
         },
       );

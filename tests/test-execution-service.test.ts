@@ -493,6 +493,52 @@ describe("DefaultTestExecutionService", () => {
     expect((output[1].payload as { stream: string }).stream).toBe("stderr");
   });
 
+  it("redacts a configured auth.env credential in the live output stream (security M1)", async () => {
+    const { service, childProcess, settings, events } = build();
+    const current = await settings.load();
+    // Configure an env credential the runner then echoes into stderr.
+    await settings.save({
+      ...current,
+      sut: {
+        ...current.sut,
+        environments: {
+          ...current.sut.environments,
+          demo: {
+            ...current.sut.environments.demo,
+            auth: { kind: "env", env: { E2E_TOKEN: "super-secret-token" } },
+          },
+        },
+      },
+    });
+    childProcess.streamLines.push(
+      { stream: "stderr", line: "login failed: super-secret-token (401)", timestamp: "t" },
+      { stream: "stdout", line: "exact super-secret-token", timestamp: "t" },
+    );
+
+    await service.execute({ scope: "demo", target: "demo" });
+
+    const output = events.filter((e) => e.type === "testrun.output.received");
+    const lines = output.map((e) => (e.payload as { line: string }).line);
+    // The credential is scrubbed both as an embedded substring and a whole value.
+    expect(lines).toEqual(["login failed: *** (401)", "exact ***"]);
+  });
+
+  it("passes streamed lines through unchanged when no credentials are configured", async () => {
+    const { service, childProcess, events } = build();
+    // DEFAULT_SETTINGS' demo environment has no auth.env → empty secret set.
+    childProcess.streamLines.push(
+      { stream: "stdout", line: "plain output line", timestamp: "t" },
+      { stream: "stderr", line: "another *** literal", timestamp: "t" },
+    );
+
+    await service.execute({ scope: "demo", target: "demo" });
+
+    const lines = events
+      .filter((e) => e.type === "testrun.output.received")
+      .map((e) => (e.payload as { line: string }).line);
+    expect(lines).toEqual(["plain output line", "another *** literal"]);
+  });
+
   it("publishes exactly one terminal event (EN-2)", async () => {
     const { service, events } = build();
     await service.execute({ scope: "demo", target: "demo" });
