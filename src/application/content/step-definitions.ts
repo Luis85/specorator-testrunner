@@ -37,13 +37,13 @@ const STEP_DEF_CALL =
   /\b(?:Given|When|Then|And|But)\s*\(\s*(?:(["'`])((?:\\.|(?!\1).)*)\1|\/((?:\\.|[^/])+)\/([a-z]*))/g;
 
 /**
- * Strips block and line comments so a commented-out step definition isn't
- * scraped as implemented (which would hide a genuinely missing step). String
- * literals containing `//` are rare in step patterns, and an over-strip there
- * only risks a false "missing" report — the safe direction (UC-010).
+ * Strips block comments and *full-line* `//` comments so a commented-out step
+ * definition isn't scraped as implemented (which would hide a genuinely missing
+ * step). Only line-leading `//` is removed, so a `//` inside a pattern literal
+ * (e.g. a URL like `http://example.com`) is preserved (UC-010).
  */
 const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 
 /** Scrapes step-definition patterns from one steps file's source. */
 export const parseStepDefinitions = (source: string): StepDefinitionPattern[] => {

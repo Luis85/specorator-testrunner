@@ -38,6 +38,13 @@ describe("parseStepDefinitions", () => {
       { kind: "expression", source: "a real step" },
     ]);
   });
+
+  it("preserves patterns containing URL literals (// inside a string)", () => {
+    const source = `Given("I open http://example.com/path", () => {});`;
+    expect(parseStepDefinitions(source)).toEqual([
+      { kind: "expression", source: "I open http://example.com/path" },
+    ]);
+  });
 });
 
 describe("isStepDefined", () => {

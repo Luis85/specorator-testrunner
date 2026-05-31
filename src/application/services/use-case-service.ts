@@ -130,6 +130,9 @@ export class DefaultUseCaseService implements UseCaseService {
           automation_status: useCase.automationStatus,
           description: useCase.description,
           feature_files: useCase.featureFiles.length > 0 ? useCase.featureFiles : undefined,
+          // Drop the legacy singular key: parse() reads both, so leaving it
+          // would duplicate the feature once it's also in feature_files.
+          feature_file: undefined,
           suites: useCase.suites.length > 0 ? useCase.suites : undefined,
           evidence: useCase.evidence.length > 0 ? useCase.evidence : undefined,
         })

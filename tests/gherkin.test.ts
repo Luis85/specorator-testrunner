@@ -121,4 +121,23 @@ describe("parseFeature", () => {
       "a generic step",
     ]);
   });
+
+  it("collects Background steps (they run before every scenario)", () => {
+    const feature = parseFeature(
+      `Feature: F
+  Background:
+    Given I am logged in
+  Scenario: S
+    When I do a thing
+    Then it works`,
+      "UC-002-x.feature",
+    );
+    expect(feature).not.toBeNull();
+    if (!feature) return;
+    expect(collectStepTexts(feature)).toEqual([
+      "I am logged in",
+      "I do a thing",
+      "it works",
+    ]);
+  });
 });
