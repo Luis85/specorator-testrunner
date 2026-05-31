@@ -26,8 +26,8 @@ const PACKAGE_JSON = `{
     "install:browsers:ci": "playwright install --with-deps chromium"
   },
   "devDependencies": {
-    "@cucumber/cucumber": "^11.0.0",
-    "playwright": "^1.49.0",
+    "@cucumber/cucumber": "^12.0.0",
+    "playwright": "^1.60.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }
@@ -65,7 +65,9 @@ const cucumberMjs = (featuresGlob: string): string => `export default {
       "progress",
       "json:reports/cucumber-report.json",
     ],
-    publishQuiet: true,
+    // NOTE: the deprecated \`publishQuiet\` option was REMOVED in Cucumber 12
+    // (the publish banner it suppressed no longer exists). Cucumber 12 rejects
+    // unknown options, so it must not be emitted here (P4-5).
     parallel: 0,
   },
 };
