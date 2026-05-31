@@ -184,6 +184,27 @@ describe("DefaultTestExecutionService", () => {
     expect(childProcess.calls).toHaveLength(0); // never spawned a non-test command
   });
 
+  it("whenActiveSettles resolves immediately when idle and after a run settles", async () => {
+    const { service, childProcess } = build();
+    // Idle → already settled.
+    await service.whenActiveSettles();
+
+    childProcess.pending = true;
+    const run = service.execute({ scope: "demo", target: "demo" });
+    let settled = false;
+    const settles = service.whenActiveSettles().then(() => {
+      settled = true;
+    });
+    // Still running → not settled yet.
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    await service.cancel("RUN-2026-06-01-100000");
+    await run;
+    await settles;
+    expect(settled).toBe(true);
+  });
+
   it("aborts the run when the stale report cannot be cleared", async () => {
     const { service, childProcess, absoluteFs } = build();
     absoluteFs.deleteAbsolute = async () => ({
