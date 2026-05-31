@@ -11,4 +11,6 @@ export interface AbsoluteFileSystem {
   getVaultBasePath(): Promise<Result<string>>;
   existsAbsolute(path: string): Promise<boolean>;
   writeAbsolute(path: string, content: string): Promise<Result<void>>;
+  /** Immediate child entry names of a directory; `[]` if it does not exist. */
+  listAbsolute(path: string): Promise<string[]>;
 }

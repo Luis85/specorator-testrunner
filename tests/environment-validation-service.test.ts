@@ -38,7 +38,7 @@ const markFullyInstalled = (absoluteFs: FakeAbsoluteFileSystem) => {
   absoluteFs.existing.add("/vault/.testrunner");
   absoluteFs.existing.add("/vault/.testrunner/package.json");
   absoluteFs.existing.add("/vault/.testrunner/node_modules");
-  absoluteFs.existing.add("/home/u/.cache/ms-playwright");
+  absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome-linux/chrome");
 };
 
 describe("DefaultEnvironmentValidationService", () => {
@@ -101,12 +101,28 @@ describe("DefaultEnvironmentValidationService", () => {
     absoluteFs.existing.add("/vault/.testrunner");
     absoluteFs.existing.add("/vault/.testrunner/package.json");
     absoluteFs.existing.add("/vault/.testrunner/node_modules");
-    absoluteFs.existing.add("/vault/.testrunner/node_modules/playwright-core/.local-browsers");
+    absoluteFs.existing.add(
+      "/vault/.testrunner/node_modules/playwright-core/.local-browsers/chromium-1148/chrome",
+    );
 
     const result = await service.validateEnvironment();
 
     expect(result.browsersInstalled).toBe(true);
     expect(result.valid).toBe(true);
+  });
+
+  it("does not count a cache that lacks Chromium (e.g. Firefox-only/partial)", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.existing.add("/vault/.testrunner");
+    absoluteFs.existing.add("/vault/.testrunner/package.json");
+    absoluteFs.existing.add("/vault/.testrunner/node_modules");
+    absoluteFs.existing.add("/home/u/.cache/ms-playwright/firefox-1234/firefox");
+
+    const result = await service.validateEnvironment();
+
+    expect(result.browsersInstalled).toBe(false);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i) => i.code === "BROWSER_NOT_INSTALLED")).toBe(true);
   });
 
   it("validateCiReadiness reports the missing workflow", async () => {

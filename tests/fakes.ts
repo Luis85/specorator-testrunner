@@ -106,6 +106,17 @@ export class FakeAbsoluteFileSystem implements AbsoluteFileSystem {
     this.existing.add(path);
     return ok(undefined);
   }
+
+  async listAbsolute(path: string): Promise<string[]> {
+    const prefix = `${path}/`;
+    const children = new Set<string>();
+    for (const candidate of [...this.existing, ...this.written.keys()]) {
+      if (candidate.startsWith(prefix)) {
+        children.add(candidate.slice(prefix.length).split("/")[0]);
+      }
+    }
+    return [...children];
+  }
 }
 
 /** Scriptable {@link ChildProcessRunner}: matches commands by substring. */

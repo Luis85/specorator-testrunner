@@ -76,7 +76,7 @@ describe("DefaultMaintenanceService", () => {
     absoluteFs.existing.add("/vault/.testrunner");
     absoluteFs.existing.add("/vault/.testrunner/package.json");
     absoluteFs.existing.add("/vault/.testrunner/node_modules");
-    absoluteFs.existing.add("/home/u/.cache/ms-playwright");
+    absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome");
 
     const result = await service.repair();
 
@@ -92,7 +92,7 @@ describe("DefaultMaintenanceService", () => {
     absoluteFs.existing.add("/vault/.testrunner");
     absoluteFs.existing.add("/vault/.testrunner/package.json");
     absoluteFs.existing.add("/vault/.testrunner/node_modules");
-    absoluteFs.existing.add("/home/u/.cache/ms-playwright");
+    absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome");
     childProcess.exitCodes.set("npx playwright --version", 1);
 
     const result = await service.repair();

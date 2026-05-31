@@ -169,8 +169,12 @@ export class DefaultEnvironmentValidationService
   }
 
   private async detectBrowsers(runnerAbs: string): Promise<boolean> {
+    // Look for an actual `chromium-*` browser entry, not just the cache root:
+    // a partial cache, or one holding only Firefox/WebKit, must NOT count
+    // (the runner only ever launches Chromium, AD-5).
     for (const candidate of playwrightBrowsersCandidates(this.platform, this.env, runnerAbs)) {
-      if (await this.absoluteFs.existsAbsolute(candidate)) return true;
+      const entries = await this.absoluteFs.listAbsolute(candidate);
+      if (entries.some((entry) => entry.toLowerCase().startsWith("chromium"))) return true;
     }
     return false;
   }
