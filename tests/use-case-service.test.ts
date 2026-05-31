@@ -157,6 +157,31 @@ describe("DefaultUseCaseService", () => {
     expect(missing.ok && missing.value).toBe(null);
   });
 
+  it("drops an unsafe frontmatter path instead of branding it (review P2, ADR-0008)", async () => {
+    const { service, fs } = build();
+    // Hand-edited / synced frontmatter is untrusted: a traversal/injection path
+    // must be validated through vaultPath() and skipped, never surfaced as a
+    // branded VaultPath that could reach an fs sink.
+    fs.files.set(
+      "Use Cases/UC-007.md",
+      buildNote(
+        {
+          type: "use-case",
+          id: "UC-007",
+          title: "Tampered",
+          feature_files: ["Specifications/features/UC-007-ok.feature", "../../etc/passwd"],
+        },
+        "# UC-007",
+      ),
+    );
+
+    const found = await service.findById("UC-007");
+    expect(found.ok).toBe(true);
+    if (!found.ok || !found.value) return;
+    // The safe path is kept; the traversal path is dropped.
+    expect(found.value.featureFiles).toEqual(["Specifications/features/UC-007-ok.feature"]);
+  });
+
   it("update drops the legacy singular feature_file so features aren't duplicated", async () => {
     const { service, fs } = build();
     // A note using the legacy `feature_file` key (e.g. the seeded demo).

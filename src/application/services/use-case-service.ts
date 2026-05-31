@@ -4,7 +4,7 @@ import type { SettingsService } from "./settings-service";
 import type { ExecutionScope, TestRunStatus } from "../../domain/entities/test-run";
 import type { AutomationStatus, UseCase, UseCaseStatus } from "../../domain/entities/use-case";
 import type { SuiteId, UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
-import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
+import { vaultPath } from "../../domain/value-objects/vault-path";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -173,10 +173,21 @@ export class DefaultUseCaseService implements UseCaseService {
 
     const toArray = (value: string | string[] | undefined): string[] =>
       Array.isArray(value) ? value : typeof value === "string" && value !== "" ? [value] : [];
-    // These paths come from plugin-authored Use Case frontmatter (written by this
-    // plugin), so they are trusted on read-back — branded, not re-validated.
+    // Use Case frontmatter is hand-editable (and Sync-able), so even though the
+    // plugin writes it, a read-back path is UNTRUSTED input — validate it through
+    // the vaultPath() chokepoint (PathSafetyPolicy) and DROP any unsafe one rather
+    // than brand it as valid. A dropped path simply isn't surfaced as a link
+    // (best-effort read model); it can never reach an fs sink masquerading as
+    // policy-validated (review P2, ADR-0008/P0-1).
     const toVaultPaths = (value: string | string[] | undefined): VaultPath[] =>
-      toArray(value).map(unsafeVaultPath);
+      toArray(value).flatMap((raw) => {
+        const safe = vaultPath(raw);
+        return safe.ok ? [safe.value] : [];
+      });
+    const toVaultPath = (raw: string): VaultPath | undefined => {
+      const safe = vaultPath(raw);
+      return safe.ok ? safe.value : undefined;
+    };
 
     return {
       id: fm.id,
@@ -199,7 +210,7 @@ export class DefaultUseCaseService implements UseCaseService {
               date: typeof fm.last_run_date === "string" ? fm.last_run_date : "",
               evidencePath:
                 typeof fm.last_run_evidence === "string"
-                  ? unsafeVaultPath(fm.last_run_evidence)
+                  ? toVaultPath(fm.last_run_evidence)
                   : undefined,
               scope:
                 typeof fm.last_run_scope === "string"
