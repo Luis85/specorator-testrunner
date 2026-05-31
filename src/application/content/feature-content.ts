@@ -23,14 +23,22 @@ export const featureFileName = (useCaseId: UseCaseId, slug: string): string =>
 /**
  * Picks the slug for the next Feature under a Use Case: `happy-path` for the
  * first Feature, otherwise `feature-<n>` (UC-006 step 3). A caller-supplied slug
- * always wins so a UI prompt can name additional Features.
+ * always wins so a UI prompt can name additional Features. The `<n>` is chosen
+ * beyond the highest existing `feature-<n>` for this UC (not the array length),
+ * so deleting a middle Feature can't produce a colliding name.
  */
 export const nextFeatureSlug = (useCase: UseCase, requested?: string): string => {
   const explicit = requested ? slugify(requested) : "";
   if (explicit) return explicit;
-  return useCase.featureFiles.length === 0
-    ? "happy-path"
-    : `feature-${useCase.featureFiles.length + 1}`;
+  if (useCase.featureFiles.length === 0) return "happy-path";
+
+  const numbered = new RegExp(`${useCase.id}-feature-(\\d+)\\.feature$`);
+  let max = 1; // happy-path occupies the first slot
+  for (const path of useCase.featureFiles) {
+    const match = numbered.exec(path);
+    if (match) max = Math.max(max, Number.parseInt(match[1], 10));
+  }
+  return `feature-${max + 1}`;
 };
 
 /**

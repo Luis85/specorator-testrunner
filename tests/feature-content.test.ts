@@ -44,6 +44,17 @@ describe("nextFeatureSlug", () => {
       "edge-cases",
     );
   });
+
+  it("numbers beyond the highest existing feature-<n>, not the array length", () => {
+    // happy-path + feature-3 present (feature-2 was deleted) → must not collide.
+    const uc = useCase({
+      featureFiles: [
+        "Specifications/features/UC-001-happy-path.feature",
+        "Specifications/features/UC-001-feature-3.feature",
+      ],
+    });
+    expect(nextFeatureSlug(uc)).toBe("feature-4");
+  });
 });
 
 describe("buildStarterFeature", () => {

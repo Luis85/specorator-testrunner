@@ -51,6 +51,25 @@ describe("isStepDefined", () => {
   it("ignores an un-compilable regex definition", () => {
     expect(isStepDefined("anything", [{ kind: "regex", source: "(" }])).toBe(false);
   });
+
+  it("matches {int}/{float}/{word} against unquoted arguments", () => {
+    const defs = parseStepDefinitions(`
+      Given("I have {int} cukes", () => {});
+      When("the total is {float} euros", () => {});
+      Then("the {word} is ready", () => {});
+    `);
+    expect(isStepDefined("I have 5 cukes", defs)).toBe(true);
+    expect(isStepDefined("the total is 12.50 euros", defs)).toBe(true);
+    expect(isStepDefined("the kitchen is ready", defs)).toBe(true);
+    // The literal text around the param still has to match.
+    expect(isStepDefined("I have 5 apples", defs)).toBe(false);
+  });
+
+  it("does not match a longer step that merely starts with a definition", () => {
+    const defs = parseStepDefinitions(`Given("I wait", () => {});`);
+    expect(isStepDefined("I wait", defs)).toBe(true);
+    expect(isStepDefined("I wait for the page", defs)).toBe(false); // anchored
+  });
 });
 
 describe("findMissingSteps", () => {
@@ -67,5 +86,10 @@ describe("findMissingSteps", () => {
       definitions,
     );
     expect(missing).toEqual(["I do something undefined", "yet another missing"]);
+  });
+
+  it("skips Scenario Outline steps that still contain <placeholders>", () => {
+    const missing = findMissingSteps(["I select <option> from the menu"], []);
+    expect(missing).toEqual([]); // not matchable until Examples are expanded
   });
 });

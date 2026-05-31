@@ -84,6 +84,21 @@ describe("parseFeature", () => {
     ]);
   });
 
+  it("does not treat a word that merely starts with a keyword as a step", () => {
+    const feature = parseFeature(
+      `Feature: F
+  Scenario: S
+    Given a real step
+    Andrew is a name, not an And step
+    Then done`,
+      "UC-003-x.feature",
+    );
+    expect(feature?.scenarios[0].steps).toEqual([
+      { keyword: "Given", text: "a real step" },
+      { keyword: "Then", text: "done" },
+    ]);
+  });
+
   it("returns null when there is no Feature line", () => {
     expect(parseFeature("just some text\nGiven x", "x.feature")).toBeNull();
     expect(parseFeature("", "x.feature")).toBeNull();

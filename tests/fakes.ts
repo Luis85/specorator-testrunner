@@ -54,6 +54,9 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async writeFile(path: VaultPath, content: string): Promise<Result<void>> {
+    if (this.failOn && this.failOn.path === path) {
+      return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
+    }
     this.files.set(path, content);
     return ok(undefined);
   }
@@ -67,6 +70,16 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async listFiles(path: VaultPath): Promise<Result<VaultPath[]>> {
+    // Immediate children only, mirroring the Obsidian adapter (non-recursive).
+    const prefix = `${path}/`;
+    return ok(
+      [...this.files.keys()].filter(
+        (p) => p.startsWith(prefix) && !p.slice(prefix.length).includes("/"),
+      ),
+    );
+  }
+
+  async listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>> {
     return ok([...this.files.keys()].filter((p) => p.startsWith(`${path}/`)));
   }
 }

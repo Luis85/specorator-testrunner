@@ -118,6 +118,12 @@ export class DefaultSpecificationService implements SpecificationService {
       );
     }
 
+    // The file now exists, so announce creation before the link step — a later
+    // failure must not leave a created Feature with no `specification.created`.
+    await this.eventBus.publish(
+      createEvent("specification.created", { useCaseId: useCase.id, featurePath }),
+    );
+
     // Append the new path to the UC and rewrite its note (forward reference).
     const updated = await this.useCaseService.update({
       ...useCase,
@@ -125,9 +131,6 @@ export class DefaultSpecificationService implements SpecificationService {
     });
     if (!updated.ok) return err(updated.error);
 
-    await this.eventBus.publish(
-      createEvent("specification.created", { useCaseId: useCase.id, featurePath }),
-    );
     await this.eventBus.publish(
       createEvent("specification.linkedToUseCase", { useCaseId: useCase.id, featurePath }),
     );
@@ -224,10 +227,14 @@ export class DefaultSpecificationService implements SpecificationService {
     return ok({ featurePath, missingSteps });
   }
 
-  /** Reads every `*.ts` under the steps folder and scrapes its patterns. */
+  /**
+   * Reads every `*.ts` under the steps folder (recursively, matching the
+   * runner's `src/steps/**` glob) and scrapes its patterns. A missing folder
+   * yields no definitions, so every step is reported missing.
+   */
   private async loadStepDefinitions(stepsDir: VaultPath) {
-    const listed = await this.fs.listFiles(stepsDir);
-    if (!listed.ok) return []; // no runner / steps folder yet → everything is missing
+    const listed = await this.fs.listFilesRecursive(stepsDir);
+    if (!listed.ok) return []; // genuine listing failure → treat as no definitions
 
     const patterns = [];
     for (const path of listed.value) {

@@ -85,6 +85,24 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     }
   }
 
+  async listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>> {
+    const normalized = normalizePath(path);
+    try {
+      if (!(await this.app.vault.adapter.exists(normalized))) return ok([]);
+      const files: VaultPath[] = [];
+      const queue = [normalized];
+      while (queue.length > 0) {
+        const dir = queue.shift() as string;
+        const listing = await this.app.vault.adapter.list(dir);
+        files.push(...listing.files);
+        queue.push(...listing.folders);
+      }
+      return ok(files);
+    } catch (cause) {
+      return err(appError("INIT_FAILED", `Could not list "${path}" recursively.`, { cause }));
+    }
+  }
+
   /** Ensures the parent folder tree exists before a file write. */
   private async ensureParentFolder(normalizedPath: string): Promise<Result<void>> {
     const lastSlash = normalizedPath.lastIndexOf("/");

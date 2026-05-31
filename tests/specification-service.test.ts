@@ -44,9 +44,10 @@ describe("DefaultSpecificationService.createFromUseCase", () => {
     const note = fs.files.get("Use Cases/UC-001 Open Example Page.md") ?? "";
     expect(note).toContain(path);
 
+    // created is announced as soon as the file exists, then the UC is linked.
     expect(types()).toEqual([
-      "usecase.updated",
       "specification.created",
+      "usecase.updated",
       "specification.linkedToUseCase",
     ]);
   });
@@ -74,6 +75,20 @@ describe("DefaultSpecificationService.createFromUseCase", () => {
     const result = await service.createFromUseCase("UC-404");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("still emits specification.created if linking the UC fails after the file is written", async () => {
+    const { service, fs, types } = build();
+    seedUseCase(fs);
+    // The UC note rewrite (useCaseService.update) fails.
+    fs.failOn = { path: "Use Cases/UC-001 Open Example Page.md", message: "disk full" };
+
+    const result = await service.createFromUseCase("UC-001");
+
+    expect(result.ok).toBe(false); // the link step failed
+    expect(fs.files.has("Specifications/features/UC-001-happy-path.feature")).toBe(true);
+    expect(types()).toContain("specification.created");
+    expect(types()).not.toContain("specification.linkedToUseCase");
   });
 });
 
@@ -184,6 +199,21 @@ When("I click the {string} button", async () => {});`,
     expect(result.value.featurePath).toBe(path);
     expect(result.value.missingSteps).toEqual(["I have not implemented this"]);
     expect(types()).toContain("specification.missingSteps.detected");
+  });
+
+  it("finds step definitions in nested steps subfolders (recursive, matches src/steps/**)", async () => {
+    const { service, fs } = build();
+    const path = "Specifications/features/UC-001-nested.feature";
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a nested step\n");
+    fs.files.set(
+      ".testrunner/src/steps/auth/login.steps.ts",
+      `Given("a nested step", async () => {});`,
+    );
+
+    const result = await service.detectMissingSteps(path);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.missingSteps).toEqual([]);
   });
 
   it("treats every step as missing when no steps folder exists", async () => {
