@@ -6,10 +6,11 @@ import {
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import type { TestSuite } from "../../domain/entities/suite";
-import type { SuiteId } from "../../domain/value-objects/identifiers";
+import type { SuiteId, VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
+import { parseFrontmatter } from "../../shared/utils/frontmatter";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath } from "../../shared/utils/vault-path";
 
@@ -21,12 +22,14 @@ export interface CreateSuiteRequest {
 
 /**
  * Suite lifecycle (TIS §8.8). Sprint 1 implements the creation surface the
- * Initialization Wizard needs; read/index methods (`findAll`,
- * `resolveTagExpression`) arrive with EPIC-006 Test Suite Management.
+ * Initialization Wizard needs; EPIC-006 adds the read/index methods
+ * (`findAll`, `resolveTagExpression`) for Test Suite Management.
  */
 export interface SuiteService {
   create(request: CreateSuiteRequest): Promise<Result<TestSuite>>;
   createDefaults(): Promise<Result<TestSuite[]>>; // Smoke + Regression per G1
+  findAll(): Promise<Result<TestSuite[]>>; // US-024/US-025 visibility, UC-008
+  resolveTagExpression(suiteId: SuiteId): Promise<Result<string>>; // per AD-4
 }
 
 const slugify = (name: string): SuiteId =>
@@ -60,6 +63,52 @@ export class DefaultSuiteService implements SuiteService {
       created.push(result.value);
     }
     return ok(created);
+  }
+
+  /** Indexes every `test-suite` note under the suites folder (UC-008, best-effort). */
+  async findAll(): Promise<Result<TestSuite[]>> {
+    const settings = await this.settingsService.load();
+    const listed = await this.fs.listFiles(settings.paths.testSuitesPath);
+    if (!listed.ok) return err(listed.error);
+
+    const suites: TestSuite[] = [];
+    for (const path of listed.value) {
+      if (!path.endsWith(".md")) continue;
+      const read = await this.fs.readFile(path);
+      if (!read.ok) continue; // index is best-effort; skip unreadable notes
+      const suite = this.parse(read.value, path);
+      if (suite) suites.push(suite);
+    }
+    suites.sort((a, b) => a.id.localeCompare(b.id));
+    return ok(suites);
+  }
+
+  /**
+   * Returns a suite's Cucumber tag expression verbatim (AD-4): this is the exact
+   * `--tags` argument a run uses, so it is never rewritten (e.g. no implicit
+   * `and not @wip`). Errors when no suite has the given id.
+   */
+  async resolveTagExpression(suiteId: SuiteId): Promise<Result<string>> {
+    const all = await this.findAll();
+    if (!all.ok) return err(all.error);
+    const suite = all.value.find((candidate) => candidate.id === suiteId);
+    if (!suite) {
+      return err(appError("VALIDATION_FAILED", `No Test Suite found with id "${suiteId}".`));
+    }
+    return ok(suite.tagExpression);
+  }
+
+  /** Maps a note's frontmatter to a {@link TestSuite}; returns null if it is not one (TIS §10.2). */
+  private parse(content: string, path: VaultPath): TestSuite | null {
+    const fm = parseFrontmatter(content);
+    if (fm.type !== "test-suite" || typeof fm.id !== "string") return null;
+    return {
+      id: fm.id,
+      name: typeof fm.title === "string" ? fm.title : fm.id,
+      description: typeof fm.description === "string" ? fm.description : undefined,
+      tagExpression: typeof fm.tag_expression === "string" ? fm.tag_expression : "",
+      path,
+    };
   }
 
   private async createFromSeed(seed: DefaultSuiteSeed): Promise<Result<TestSuite>> {
