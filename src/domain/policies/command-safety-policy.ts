@@ -59,6 +59,13 @@ export class DefaultCommandSafetyPolicy implements CommandSafetyPolicy {
     if (!ALLOWED_PROGRAMS.has(basename)) {
       return disallow(`Command program is not allowed: "${program}".`);
     }
+    // Only `node` (RunnerSettings.nodeExecutable) may be a path — npm/npx must be
+    // the bare PATH-resolved command. Otherwise a synced/tampered settings blob
+    // could point `installCommand`/run commands at an attacker-controlled
+    // executable whose basename is `npm`/`npx` and run arbitrary code (ADR-0010).
+    if (basename !== "node" && /[/\\]/.test(program)) {
+      return disallow(`${basename} must be the bare command, not a path: "${program}".`);
+    }
 
     const rest = args.slice(1);
     switch (basename) {
