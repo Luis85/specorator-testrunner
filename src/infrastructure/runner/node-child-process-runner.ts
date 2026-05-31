@@ -107,18 +107,19 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
           // Rather than `shell: true` (which doesn't escape an args array —
           // DEP0190 — so spaces/metacharacters break boundaries), invoke cmd.exe
           // with each token explicitly quoted and pass it verbatim.
-          // cmd expands `%VAR%` env-var references inside quotes with no reliable
-          // command-line escape, so reject only that pattern (a paired
-          // `%NAME%`). A lone/unpaired `%` — e.g. `Discount 10%.feature` — is a
-          // valid literal cmd passes through, so it stays runnable on Windows
-          // (POSIX passes everything literally below).
-          const CMD_VAR = /%[A-Za-z_][A-Za-z0-9_]*%/;
-          if (request.args.some((arg) => CMD_VAR.test(arg))) {
+          // cmd performs percent-delimited expansion (`%VAR%`, and substring/
+          // modifier forms like `%PATH:~0,1%`) on the command line with no
+          // reliable escape — and `%` signs can even pair ACROSS tokens once
+          // they're joined. Identifier-shaped matching misses the modifier
+          // forms and cross-token pairing, so since these args are meant to be
+          // literal, reject ANY `%` on the cmd path. (POSIX passes everything
+          // literally below, so a `%` stays runnable there.)
+          if (request.args.some((arg) => arg.includes("%"))) {
             finish({
               ok: false,
               error: appError(
                 "COMMAND_DISALLOWED",
-                `Argument contains a "%VAR%" reference cmd.exe would expand on Windows: ${display}`,
+                `Argument contains a "%" cmd.exe would expand on Windows: ${display}`,
               ),
             });
             return;
@@ -151,24 +152,39 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
 
       let stdout = "";
       let stderr = "";
+      // Stream `data` chunks are NOT guaranteed to land on newline boundaries —
+      // a Cucumber line can split across two chunks, and a chunk can end mid-line.
+      // Buffer each stream's tail and only publish COMPLETE lines, holding the
+      // trailing partial until the next chunk (flushed on close) so the live
+      // console never shows a half-line or splits one line into two.
+      const tails: { stdout: string; stderr: string } = { stdout: "", stderr: "" };
       const emit = (stream: "stdout" | "stderr", chunk: Buffer) => {
         const text = chunk.toString();
         if (stream === "stdout") stdout += text;
         else stderr += text;
-        if (onOutput) {
-          for (const line of text.split(/\r?\n/)) {
-            if (line.length > 0) onOutput({ stream, line, timestamp: new Date().toISOString() });
-          }
+        if (!onOutput) return;
+        const segments = (tails[stream] + text).split(/\r?\n/);
+        tails[stream] = segments.pop() ?? ""; // trailing partial — hold for next chunk
+        for (const line of segments) {
+          if (line.length > 0) onOutput({ stream, line, timestamp: new Date().toISOString() });
         }
+      };
+      const flushTail = (stream: "stdout" | "stderr") => {
+        if (!onOutput) return;
+        const line = tails[stream];
+        tails[stream] = "";
+        if (line.length > 0) onOutput({ stream, line, timestamp: new Date().toISOString() });
       };
       child.stdout?.on("data", (chunk: Buffer) => emit("stdout", chunk));
       child.stderr?.on("data", (chunk: Buffer) => emit("stderr", chunk));
       child.on("error", (cause) =>
         finish({ ok: false, error: appError("INIT_FAILED", `Process error: ${display}`, { cause }) }),
       );
-      child.on("close", (code) =>
-        finish(ok({ exitCode: code ?? -1, stdout, stderr, durationMs: Date.now() - started })),
-      );
+      child.on("close", (code) => {
+        flushTail("stdout");
+        flushTail("stderr");
+        finish(ok({ exitCode: code ?? -1, stdout, stderr, durationMs: Date.now() - started }));
+      });
     });
   }
 }
