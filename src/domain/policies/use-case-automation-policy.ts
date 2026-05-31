@@ -77,7 +77,13 @@ export const computeAutomationStatus = (
       lastRun.scope === "all" ||
       lastRun.scope === "use-case" ||
       active.length === 1;
-    return coversWholeUseCase ? "passing" : "implemented";
+    if (coversWholeUseCase) return "passing";
+    // A partial (single-Feature-scope) pass on a multi-Feature UC doesn't by
+    // itself prove the whole UC passes — but it also must not REGRESS a UC that
+    // already reached "passing" via an earlier UC-wide run (a common targeted
+    // rerun). Without per-feature pass history we use the persisted status as a
+    // floor: keep "passing" if already there, otherwise it's still partial.
+    return useCase.automationStatus === "passing" ? "passing" : "implemented";
   }
 
   // Queued / running / cancelled: exercised at least once but no clean pass yet.

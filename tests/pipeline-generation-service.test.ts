@@ -126,7 +126,13 @@ describe("DefaultPipelineGenerationService", () => {
 
   it("rejects non-npm CI commands and writes nothing", async () => {
     const { service, absoluteFs } = build();
-    for (const ciRunCommand of ["node build.js", "npm run", "npm publish"]) {
+    for (const ciRunCommand of [
+      "node build.js",
+      "npm run",
+      "npm publish",
+      "npm install left-pad",
+      "npm ci evil-pkg",
+    ]) {
       const settings = { ...DEFAULT_SETTINGS, runner: { ...DEFAULT_SETTINGS.runner, ciRunCommand } };
       const result = await service.generate({ provider: "github-actions", settings });
       expect(result.ok, ciRunCommand).toBe(false);
