@@ -86,20 +86,9 @@ export class DefaultTestExecutionService implements TestExecutionService {
       );
     }
 
-    const settings = await this.settingsService.load();
-
-    const command = await this.resolveCommand(request, settings);
-    if (!command.ok) return err(command.error);
-
-    // Defense in depth (TIS §14.2): V1 targets come from trusted vault data,
-    // but the tag expression / feature paths are interpolated, so screen the
-    // resolved string before it reaches a shell.
-    const safe = this.commandSafety.assertSafe(command.value);
-    if (!safe.ok) return err(safe.error);
-
-    const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
-    if (!cwd.ok) return err(cwd.error);
-
+    // Reserve the active slot SYNCHRONOUSLY — before any await — so a second
+    // execute() racing in cannot also pass the guard above and start a second
+    // process (ADR-0018 single active run). Details are filled in after setup.
     const startedAt = this.now();
     const run: TestRun = {
       id: runId(startedAt),
@@ -107,25 +96,41 @@ export class DefaultTestExecutionService implements TestExecutionService {
       target: request.target,
       status: "running",
       startedAt: startedAt.toISOString(),
-      command: command.value,
-      workingDirectory: settings.paths.testRunnerPath,
+      command: "",
+      workingDirectory: "",
       reportPaths: {},
     };
     const activeRun: ActiveRun = { run, terminated: false };
     this.active = activeRun;
 
-    await this.publish("testrun.requested", run.id, {
-      scope: request.scope,
-      target: request.target,
-    });
-    await this.publish("testrun.started", run.id, {
-      runId: run.id,
-      command: run.command,
-      workingDirectory: run.workingDirectory,
-    });
-    this.logger.info("Test run started", { runId: run.id, scope: run.scope });
-
     try {
+      const settings = await this.settingsService.load();
+      run.workingDirectory = settings.paths.testRunnerPath;
+
+      const command = await this.resolveCommand(request, settings);
+      if (!command.ok) return err(command.error);
+
+      // Defense in depth (TIS §14.2): V1 targets come from trusted vault data,
+      // but the tag expression / feature paths are interpolated, so screen the
+      // resolved string before it reaches a shell.
+      const safe = this.commandSafety.assertSafe(command.value);
+      if (!safe.ok) return err(safe.error);
+
+      const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
+      if (!cwd.ok) return err(cwd.error);
+      run.command = command.value;
+
+      await this.publish("testrun.requested", run.id, {
+        scope: request.scope,
+        target: request.target,
+      });
+      await this.publish("testrun.started", run.id, {
+        runId: run.id,
+        command: run.command,
+        workingDirectory: run.workingDirectory,
+      });
+      this.logger.info("Test run started", { runId: run.id, scope: run.scope });
+
       const result = await this.childProcess.runStreaming(
         { command: command.value, cwd: cwd.value, env: {} },
         (output) => {

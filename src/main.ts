@@ -164,10 +164,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    // A dedicated runner instance for test execution: cancel() kills only the
+    // (single, ADR-0018) active test process, never a concurrent validation,
+    // repair, or install spawned on the shared `childProcess`.
     this.testExecutionService = new DefaultTestExecutionService(
       this.hubSettingsService,
       this.suiteService,
-      childProcess,
+      new NodeChildProcessRunner(),
       absoluteFs,
       commandSafety,
       eventBus,

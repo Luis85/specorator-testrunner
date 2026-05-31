@@ -200,6 +200,24 @@ describe("DefaultTestExecutionService", () => {
     await first;
   });
 
+  it("reserves the active slot synchronously so a simultaneous run is rejected", async () => {
+    const { service, childProcess } = build();
+    childProcess.pending = true;
+
+    // No await between the two calls: the slot must be reserved before the
+    // first execute() yields on its first await, or both would start (ADR-0018).
+    const first = service.execute({ scope: "demo", target: "demo" });
+    const second = await service.execute({ scope: "all", target: "all" });
+
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error.code).toBe("RUN_IN_PROGRESS");
+
+    childProcess.release();
+    await first;
+    // Only the first run ever spawned a process; the racing second was rejected.
+    expect(childProcess.calls).toHaveLength(1);
+  });
+
   it("cancel terminates the active run with testrun.cancelled", async () => {
     const { service, childProcess, types } = build();
     childProcess.pending = true;
