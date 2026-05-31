@@ -107,8 +107,6 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
   /** Last run started this session, so report import can re-run on demand. */
   private lastRun: TestRun | null = null;
-  /** In-flight run completion, so unload can await the process actually exiting. */
-  private activeRunTest: Promise<void> | null = null;
 
   async onload(): Promise<void> {
     const eventBus = new InMemoryEventBus((error) =>
@@ -421,13 +419,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         });
       }
     }
-    // cancel() only signals the child; the run's execute() promise settles when
-    // runStreaming observes the process close. Await the tracked in-flight run so
-    // the npm/Cucumber process has actually exited (and stopped writing reports)
-    // before this instance tears down and a new one could start.
-    if (this.activeRunTest !== null) {
-      await this.activeRunTest.catch(() => undefined);
-    }
+    // cancel() only signals the child; the run settles when the runner process
+    // actually closes. Await the service's active-run completion so the
+    // npm/Cucumber process has exited (and stopped writing reports) before this
+    // instance tears down and a new one could start.
+    await this.testExecutionService?.whenActiveSettles().catch(() => undefined);
     this.app.workspace.detachLeavesOfType(USE_CASE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(SUITE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(TEST_CONSOLE_VIEW_TYPE);
@@ -440,26 +436,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
    * (US-030, UC-015). ADR-0018 surfaces `RUN_IN_PROGRESS` as a Notice with the
    * active run id so the user can cancel it.
    */
-  private runTest(request: ExecuteTestRequest): Promise<void> {
-    // Track the in-flight run so onunload can await the process actually exiting
-    // (cancel-and-wait shutdown), then clear the slot when it settles.
-    const completion = this.executeRun(request).finally(() => {
-      if (this.activeRunTest === completion) this.activeRunTest = null;
-    });
-    // Only adopt this as THE tracked run when none is tracked yet. An overlapping
-    // Run is rejected by the service (RUN_IN_PROGRESS) and its short-lived promise
-    // must not replace the real active run's promise, or onunload would have
-    // nothing to await (ADR-0018 single-active).
-    if (this.activeRunTest === null) this.activeRunTest = completion;
-    return completion;
-  }
-
-  private async executeRun(request: ExecuteTestRequest): Promise<void> {
-    // Reserve the single-active slot (execute() does so synchronously) BEFORE
-    // yielding. Opening the console is fire-and-forget so a second Run command
-    // can't slip in during an `await` and win the slot while runTest tracked the
-    // first command's promise (the run that actually starts is the one tracked).
-    void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
+  private async runTest(request: ExecuteTestRequest): Promise<void> {
+    // Reveal the live console FIRST so it is subscribed to testrun.started /
+    // output events before execute() publishes them (the bus doesn't replay).
+    // The single-active slot is reserved synchronously inside execute(), and the
+    // service owns the cancel-and-wait completion (whenActiveSettles), so onunload
+    // no longer needs to track the run promise here.
+    await this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
     const result = await this.testExecutionService.execute(request);
     if (!result.ok) {
       const active = result.error.details?.activeRunId;
