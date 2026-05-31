@@ -84,6 +84,30 @@ describe("DefaultTestExecutionService", () => {
     expect(result.ok && result.value.command).toBe("npm run test");
   });
 
+  it("injects the Active SUT environment (BASE_URL + auth env) into the runner", async () => {
+    const { service, childProcess } = build();
+    await service.execute({ scope: "demo", target: "demo" });
+    // DEFAULT_SETTINGS.sut.active = "demo" → the demo baseUrl.
+    expect(childProcess.calls[0].env?.BASE_URL).toBe(
+      "file://./.testrunner/src/fixtures/example.html",
+    );
+  });
+
+  it("does not spawn a process when cancelled during setup (pre-start)", async () => {
+    const { service, childProcess, types } = build();
+    childProcess.pending = true;
+
+    // Slot is reserved synchronously; cancel before the run reaches runStreaming.
+    const run = service.execute({ scope: "demo", target: "demo" });
+    const cancelled = await service.cancel("RUN-2026-06-01-100000");
+    expect(cancelled.ok).toBe(true);
+    await run;
+
+    expect(childProcess.calls).toHaveLength(0); // never spawned
+    expect(types()).toContain("testrun.cancelled");
+    expect(types()).not.toContain("testrun.started");
+  });
+
   it("resolves the suite command from the suite's tag expression and emits suite.executed", async () => {
     const { service, fs, types } = build();
     seedSuite(fs, "smoke", "@smoke and not @wip");
