@@ -48,8 +48,8 @@ _Avoid_: Draft tag, todo tag, skip tag.
 A single invocation of the runner against some scope. Identified as `RUN-<timestamp>`. Always has exactly one terminal event: `testrun.completed` (passed/failed), `testrun.failed` (errored), or `testrun.cancelled`. At most one Run is active per Vault at a time (per ADR-0018); a second concurrent Run is rejected with `RUN_IN_PROGRESS` until the active one terminates.
 _Avoid_: Test execution, run instance, job.
 
-**Scenario Reference**:
-The natural key used to identify a Cucumber scenario inside the Test Hub: `<featurePath>::<scenarioName>` (and `::row-<index>` for a Scenario Outline example). Stable across runs but **not** across renames — renaming a scenario produces a new Scenario Reference and loses prior history once.
+**Scenario Reference** _(deferred — not yet implemented in V1)_:
+A planned natural key for identifying a Cucumber scenario inside the Test Hub: `<featurePath>::<scenarioName>` (and `::row-<index>` for a Scenario Outline example), intended to be stable across runs but **not** across renames — renaming a scenario would produce a new Scenario Reference and lose prior history once. **This concept has no code representation in V1.** Scenario-level identity and history are not tracked; the previously dead `ScenarioReference` type alias is being removed and the term is documented here only as a deferred concept (see V1 Review plan P3-5). Until it lands, the executable unit of identity is the **Feature** (see _Feature Specification_), not the scenario.
 _Avoid_: Scenario id, scenario key, test id.
 
 **Evidence**:
