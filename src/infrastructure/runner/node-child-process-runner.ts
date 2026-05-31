@@ -9,6 +9,14 @@ import { appError } from "../../shared/errors/errors";
 import { ok, type Result } from "../../shared/result/result";
 
 /**
+ * Quotes one token for a `cmd.exe /c` command line: wrapped in double quotes
+ * (so spaces and the cmd metacharacters `& | < > ^ ( )` stay literal) with any
+ * embedded quote doubled per cmd's convention. Used only on Windows, where the
+ * `.cmd` shim forces a shell launch.
+ */
+export const quoteForCmd = (token: string): string => `"${token.replace(/"/g, '""')}"`;
+
+/**
  * Node `child_process.spawn`-backed runner (BBV §7 `ProcessAdapter`).
  *
  * Commands are spawned from an argv array with `shell: false` — there is no
@@ -57,30 +65,25 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
 
       const [program, ...args] = request.args;
       const display = request.args.join(" ");
-      // On Windows, `npm`/`npx` are `.cmd` shims that Node refuses to launch
-      // without a shell (CVE-2024-27980), so a shell is required there; on POSIX
-      // we keep `shell: false` so args stay literal — no interpolation (TIS §13.2).
-      const useShell = process.platform === "win32";
-      // Under a shell the args are no longer literal, so reject cmd.exe
-      // metacharacters to prevent command splitting/injection on Windows. POSIX
-      // (shell: false) passes them through verbatim, so they're allowed there.
-      if (useShell && args.some((arg) => /[&|<>^()"%`]/.test(arg))) {
-        finish({
-          ok: false,
-          error: appError(
-            "COMMAND_DISALLOWED",
-            `Argument contains a shell metacharacter unsupported on Windows: ${display}`,
-          ),
-        });
-        return;
-      }
       let child: ChildProcess;
       try {
-        child = spawn(program, args, {
-          cwd: request.cwd,
-          env: { ...process.env, ...request.env },
-          shell: useShell,
-        });
+        const spawnOptions = { cwd: request.cwd, env: { ...process.env, ...request.env } };
+        if (process.platform === "win32") {
+          // `npm`/`npx` are `.cmd` shims Node refuses to launch without a shell
+          // (CVE-2024-27980). Rather than `shell: true` (which doesn't escape an
+          // args array — DEP0190 — so spaces/metacharacters break boundaries),
+          // invoke cmd.exe with each token explicitly quoted and pass it
+          // verbatim, so args stay literal (spaces + `&` etc. preserved).
+          const comspec = process.env.ComSpec ?? "cmd.exe";
+          const line = request.args.map(quoteForCmd).join(" ");
+          child = spawn(comspec, ["/d", "/s", "/c", line], {
+            ...spawnOptions,
+            windowsVerbatimArguments: true,
+          });
+        } else {
+          // POSIX: no shell — args are literal, never re-parsed (TIS §13.2).
+          child = spawn(program, args, { ...spawnOptions, shell: false });
+        }
       } catch (cause) {
         finish({ ok: false, error: appError("INIT_FAILED", `Could not spawn: ${display}`, { cause }) });
         return;
