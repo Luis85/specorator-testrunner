@@ -11,7 +11,7 @@ import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
-import { parseFrontmatter } from "../../shared/utils/frontmatter";
+import { parseFrontmatter, updateNoteFrontmatter } from "../../shared/utils/frontmatter";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath } from "../../shared/utils/vault-path";
 
@@ -113,9 +113,29 @@ export class DefaultUseCaseService implements UseCaseService {
     return ok(all.value.find((useCase) => useCase.id === id) ?? null);
   }
 
-  /** Rewrites a Use Case note from its current state (UC-005 supporting). */
+  /**
+   * Updates a Use Case note's managed frontmatter in place, preserving the
+   * note's Markdown body and any unknown frontmatter fields (so linking a
+   * Feature doesn't wipe hand-written sections). Falls back to a fresh note when
+   * the file does not exist yet (UC-005 / UC-006 supporting).
+   */
   async update(useCase: UseCase): Promise<Result<void>> {
-    const written = await this.fs.writeFile(useCase.path, buildUseCaseNote(useCase));
+    const existing = await this.fs.readFile(useCase.path);
+    const content = existing.ok
+      ? updateNoteFrontmatter(existing.value, {
+          type: "use-case",
+          id: useCase.id,
+          title: useCase.title,
+          status: useCase.status,
+          automation_status: useCase.automationStatus,
+          description: useCase.description,
+          feature_files: useCase.featureFiles.length > 0 ? useCase.featureFiles : undefined,
+          suites: useCase.suites.length > 0 ? useCase.suites : undefined,
+          evidence: useCase.evidence.length > 0 ? useCase.evidence : undefined,
+        })
+      : buildUseCaseNote(useCase);
+
+    const written = await this.fs.writeFile(useCase.path, content);
     if (!written.ok) return err(written.error);
 
     await this.eventBus.publish(

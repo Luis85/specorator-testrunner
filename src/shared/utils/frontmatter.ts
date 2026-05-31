@@ -123,3 +123,18 @@ export const parseNote = (rawContent: string): ParsedNote => {
 export const parseFrontmatter = (
   content: string,
 ): Record<string, string | string[]> => parseNote(content).frontmatter;
+
+/**
+ * Rewrites a note's frontmatter, merging `changes` over the existing fields and
+ * preserving the Markdown body and any unknown frontmatter fields. Used to
+ * update managed fields (e.g. `feature_files`) without clobbering hand-written
+ * content. A `null`/`undefined` change drops that key.
+ */
+export const updateNoteFrontmatter = (
+  content: string,
+  changes: Record<string, FrontmatterValue>,
+): string => {
+  const { frontmatter, body } = parseNote(content);
+  const merged: Record<string, FrontmatterValue> = { ...frontmatter, ...changes };
+  return `${buildFrontmatter(merged)}\n\n${body}`;
+};
