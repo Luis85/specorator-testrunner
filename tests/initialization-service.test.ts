@@ -106,6 +106,14 @@ describe("DefaultInitializationService", () => {
     expect(emitted).not.toContain("testhub.initialization.failed");
   });
 
+  it("skips documentation when generateDocumentation is false", async () => {
+    const { service, fs } = buildHarness();
+    const result = await service.initialize({ ...request, generateDocumentation: false });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.documentationGenerated).toBe(false);
+    expect(fs.files.has("Test Hub/Getting Started.md")).toBe(false);
+  });
+
   it("is idempotent: a second run creates no new folders", async () => {
     const { service } = buildHarness();
     await service.initialize(request);

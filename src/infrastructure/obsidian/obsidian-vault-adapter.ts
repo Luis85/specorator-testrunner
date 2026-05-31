@@ -19,8 +19,15 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
   async createFolder(path: VaultPath): Promise<Result<void>> {
     const normalized = normalizePath(path);
     try {
-      if (await this.app.vault.adapter.exists(normalized)) return ok(undefined);
-      await this.app.vault.createFolder(normalized);
+      // Obsidian's `vault.createFolder` is not recursive, so create each
+      // missing ancestor before the leaf (e.g. configuring "QA/Use Cases"
+      // when "QA" does not yet exist).
+      let current = "";
+      for (const segment of normalized.split("/")) {
+        current = current ? `${current}/${segment}` : segment;
+        if (await this.app.vault.adapter.exists(current)) continue;
+        await this.app.vault.createFolder(current);
+      }
       return ok(undefined);
     } catch (cause) {
       return err(appError("INIT_FAILED", `Could not create folder "${path}".`, { cause }));
@@ -78,18 +85,10 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     }
   }
 
-  /** Creates each missing ancestor folder, parent-first. */
+  /** Ensures the parent folder tree exists before a file write. */
   private async ensureParentFolder(normalizedPath: string): Promise<Result<void>> {
     const lastSlash = normalizedPath.lastIndexOf("/");
     if (lastSlash <= 0) return ok(undefined);
-    const segments = normalizedPath.slice(0, lastSlash).split("/");
-    let current = "";
-    for (const segment of segments) {
-      current = current ? `${current}/${segment}` : segment;
-      if (await this.app.vault.adapter.exists(current)) continue;
-      const created = await this.createFolder(current);
-      if (!created.ok) return created;
-    }
-    return ok(undefined);
+    return this.createFolder(normalizedPath.slice(0, lastSlash));
   }
 }

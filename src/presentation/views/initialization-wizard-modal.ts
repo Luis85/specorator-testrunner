@@ -114,9 +114,13 @@ export class InitializationWizardModal extends Modal {
     });
     new Notice("E2E Test Hub initialized.");
 
-    const gettingStarted = joinVaultPath(settings.paths.documentationPath, "Getting Started.md");
-    new Setting(contentEl)
-      .addButton((button) =>
+    const actions = new Setting(contentEl);
+    if (result.documentationGenerated) {
+      const gettingStarted = joinVaultPath(
+        settings.paths.documentationPath,
+        "Getting Started.md",
+      );
+      actions.addButton((button) =>
         button
           .setButtonText("Open Getting Started")
           .setCta()
@@ -124,8 +128,9 @@ export class InitializationWizardModal extends Modal {
             await this.deps.workspace.openFile(gettingStarted);
             this.close();
           }),
-      )
-      .addButton((button) => button.setButtonText("Close").onClick(() => this.close()));
+      );
+    }
+    actions.addButton((button) => button.setButtonText("Close").onClick(() => this.close()));
   }
 
   private renderFailure(message: string): void {
