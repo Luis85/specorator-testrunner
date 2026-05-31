@@ -23,7 +23,11 @@ export interface CreateSuiteRequest {
  */
 export interface SuiteService {
   create(request: CreateSuiteRequest): Promise<Result<TestSuite>>;
-  createDefaults(): Promise<Result<TestSuite[]>>; // Smoke + Regression per G1
+  /**
+   * @param correlationId optional init/reset flow id stamped onto the
+   * `suite.created` events so a wizard run's events share one id (§19, RV-1).
+   */
+  createDefaults(correlationId?: string): Promise<Result<TestSuite[]>>; // Smoke + Regression per G1
   findAll(): Promise<Result<TestSuite[]>>; // US-024/US-025 visibility, UC-008
   resolveTagExpression(suiteId: SuiteId): Promise<Result<string>>; // per AD-4
 }
@@ -81,10 +85,10 @@ export class DefaultSuiteService implements SuiteService {
     });
   }
 
-  async createDefaults(): Promise<Result<TestSuite[]>> {
+  async createDefaults(correlationId?: string): Promise<Result<TestSuite[]>> {
     const created: TestSuite[] = [];
     for (const seed of DEFAULT_SUITES) {
-      const result = await this.createFromSeed(seed);
+      const result = await this.createFromSeed(seed, correlationId);
       if (!result.ok) return err(result.error);
       created.push(result.value);
     }
@@ -139,7 +143,10 @@ export class DefaultSuiteService implements SuiteService {
     };
   }
 
-  private async createFromSeed(seed: DefaultSuiteSeed): Promise<Result<TestSuite>> {
+  private async createFromSeed(
+    seed: DefaultSuiteSeed,
+    correlationId?: string,
+  ): Promise<Result<TestSuite>> {
     const settings = await this.settingsService.load();
     // Sanitize the filename segment (preserve the display title in frontmatter)
     // so a name with "/" or reserved chars can't create subfolders or fail.
@@ -164,12 +171,16 @@ export class DefaultSuiteService implements SuiteService {
     }
 
     await this.eventBus.publish(
-      createEvent("suite.created", {
-        suiteId: suite.id,
-        name: suite.name,
-        path: suite.path,
-        tagExpression: suite.tagExpression,
-      }),
+      createEvent(
+        "suite.created",
+        {
+          suiteId: suite.id,
+          name: suite.name,
+          path: suite.path,
+          tagExpression: suite.tagExpression,
+        },
+        { correlationId },
+      ),
     );
     return ok(suite);
   }

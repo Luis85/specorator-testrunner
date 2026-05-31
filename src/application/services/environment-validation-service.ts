@@ -18,7 +18,11 @@ const npmRunScript = (command: string): string | null => {
 
 /** Environment + CI validation contract (TIS §8.3, UC-002 / UC-020). */
 export interface EnvironmentValidationService {
-  validateEnvironment(): Promise<RunnerValidationResult>;
+  /**
+   * @param correlationId optional init/reset flow id stamped onto
+   * `testrunner.validated` so a wizard run's events share one id (§19, RV-1).
+   */
+  validateEnvironment(correlationId?: string): Promise<RunnerValidationResult>;
   validateCiReadiness(settings: TestHubSettings): Promise<CiReadinessResult>;
 }
 
@@ -57,14 +61,14 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     private readonly platform: string = "linux",
   ) {}
 
-  async validateEnvironment(): Promise<RunnerValidationResult> {
+  async validateEnvironment(correlationId?: string): Promise<RunnerValidationResult> {
     const settings = await this.settingsService.load();
     const base = await this.absoluteFs.getVaultBasePath();
     const issues: RunnerValidationIssue[] = [];
 
     if (!base.ok) {
       issues.push({ code: "VAULT_PATH_UNKNOWN", message: base.error.message, severity: "error" });
-      return this.finish({
+      return this.finish(correlationId, {
         valid: false,
         nodeAvailable: false,
         packageManagerAvailable: false,
@@ -166,7 +170,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
       playwrightAvailable &&
       browsersInstalled;
 
-    return this.finish({
+    return this.finish(correlationId, {
       valid,
       nodeAvailable,
       packageManagerAvailable,
@@ -361,14 +365,21 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     return result;
   }
 
-  private async finish(result: RunnerValidationResult): Promise<RunnerValidationResult> {
+  private async finish(
+    correlationId: string | undefined,
+    result: RunnerValidationResult,
+  ): Promise<RunnerValidationResult> {
     await this.eventBus.publish(
-      createEvent("testrunner.validated", {
-        nodeAvailable: result.nodeAvailable,
-        packageManagerAvailable: result.packageManagerAvailable,
-        playwrightAvailable: result.playwrightAvailable,
-        browsersInstalled: result.browsersInstalled,
-      }),
+      createEvent(
+        "testrunner.validated",
+        {
+          nodeAvailable: result.nodeAvailable,
+          packageManagerAvailable: result.packageManagerAvailable,
+          playwrightAvailable: result.playwrightAvailable,
+          browsersInstalled: result.browsersInstalled,
+        },
+        { correlationId },
+      ),
     );
     return result;
   }
