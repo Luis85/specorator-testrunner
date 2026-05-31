@@ -1,0 +1,124 @@
+import { buildUseCaseNote, useCaseFileName } from "../content/use-case-content";
+import type { VaultFileSystem } from "../ports/vault-file-system";
+import type { SettingsService } from "./settings-service";
+import type {
+  AutomationStatus,
+  UseCase,
+  UseCaseStatus,
+} from "../../domain/entities/use-case";
+import type { SuiteId, UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
+import { appError } from "../../shared/errors/errors";
+import { createEvent } from "../../shared/event-bus/create-event";
+import type { EventBus } from "../../shared/event-bus/event-bus";
+import type { Logger } from "../../shared/logging/logger";
+import { parseFrontmatter } from "../../shared/utils/frontmatter";
+import { err, ok, type Result } from "../../shared/result/result";
+import { joinVaultPath } from "../../shared/utils/vault-path";
+
+export interface CreateUseCaseRequest {
+  title: string;
+  description?: string;
+  suites?: SuiteId[];
+}
+
+/**
+ * Use Case lifecycle (TIS §8.6, UC-004). EPIC-004 delivers `create` (US-015)
+ * and `findAll` (US-016); `update`/`linkFeature`/`linkEvidence` arrive with the
+ * Specification and Evidence epics.
+ */
+export interface UseCaseService {
+  create(request: CreateUseCaseRequest): Promise<Result<UseCase>>;
+  findAll(): Promise<Result<UseCase[]>>;
+}
+
+const ID_PATTERN = /^UC-(\d+)$/;
+
+/** Next sequential `UC-NNN` id given the existing use cases (US-015). */
+export const nextUseCaseId = (existing: UseCase[]): UseCaseId => {
+  const max = existing.reduce((highest, useCase) => {
+    const match = ID_PATTERN.exec(useCase.id);
+    return match ? Math.max(highest, Number.parseInt(match[1], 10)) : highest;
+  }, 0);
+  return `UC-${String(max + 1).padStart(3, "0")}`;
+};
+
+export class DefaultUseCaseService implements UseCaseService {
+  constructor(
+    private readonly settingsService: SettingsService,
+    private readonly fs: VaultFileSystem,
+    private readonly eventBus: EventBus,
+    private readonly logger: Logger,
+  ) {}
+
+  async create(request: CreateUseCaseRequest): Promise<Result<UseCase>> {
+    const title = request.title.trim();
+    if (title === "") {
+      return err(appError("VALIDATION_FAILED", "A Use Case title is required."));
+    }
+
+    const settings = await this.settingsService.load();
+    const existing = await this.findAll();
+    if (!existing.ok) return err(existing.error);
+
+    const id = nextUseCaseId(existing.value);
+    const path = joinVaultPath(settings.paths.useCasesPath, useCaseFileName(id, title));
+    const useCase: UseCase = {
+      id,
+      title,
+      description: request.description?.trim() || undefined,
+      status: "draft",
+      automationStatus: "not-planned",
+      featureFiles: [],
+      suites: request.suites ?? [],
+      evidence: [],
+      path,
+    };
+
+    const created = await this.fs.createFile(path, buildUseCaseNote(useCase));
+    if (!created.ok) return err(created.error);
+
+    await this.eventBus.publish(createEvent("usecase.created", { useCaseId: id, path }));
+    this.logger.info("Use Case created", { id, path });
+    return ok(useCase);
+  }
+
+  async findAll(): Promise<Result<UseCase[]>> {
+    const settings = await this.settingsService.load();
+    const listed = await this.fs.listFiles(settings.paths.useCasesPath);
+    if (!listed.ok) return err(listed.error);
+
+    const useCases: UseCase[] = [];
+    for (const path of listed.value) {
+      if (!path.endsWith(".md")) continue;
+      const read = await this.fs.readFile(path);
+      if (!read.ok) continue; // index is best-effort; skip unreadable notes
+      const useCase = this.parse(read.value, path);
+      if (useCase) useCases.push(useCase);
+    }
+    useCases.sort((a, b) => a.id.localeCompare(b.id));
+    return ok(useCases);
+  }
+
+  /** Maps a note's frontmatter to a {@link UseCase}; returns null if it is not one. */
+  private parse(content: string, path: VaultPath): UseCase | null {
+    const fm = parseFrontmatter(content);
+    if (fm.type !== "use-case" || typeof fm.id !== "string") return null;
+
+    const toArray = (value: string | string[] | undefined): string[] =>
+      Array.isArray(value) ? value : typeof value === "string" && value !== "" ? [value] : [];
+
+    return {
+      id: fm.id,
+      title: typeof fm.title === "string" ? fm.title : fm.id,
+      description: typeof fm.description === "string" ? fm.description : undefined,
+      status: (typeof fm.status === "string" ? fm.status : "draft") as UseCaseStatus,
+      automationStatus: (typeof fm.automation_status === "string"
+        ? fm.automation_status
+        : "not-planned") as AutomationStatus,
+      featureFiles: [...toArray(fm.feature_files), ...toArray(fm.feature_file)],
+      suites: toArray(fm.suites),
+      evidence: toArray(fm.evidence),
+      path,
+    };
+  }
+}

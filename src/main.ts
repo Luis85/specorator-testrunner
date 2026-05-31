@@ -20,6 +20,10 @@ import {
   type SettingsService,
 } from "./application/services/settings-service";
 import { DefaultSuiteService } from "./application/services/suite-service";
+import {
+  DefaultUseCaseService,
+  type UseCaseService,
+} from "./application/services/use-case-service";
 import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
 import { DEFAULT_SETTINGS, type TestHubSettings } from "./domain/settings/settings";
@@ -30,7 +34,12 @@ import { ObsidianWorkspaceAdapter } from "./infrastructure/obsidian/obsidian-wor
 import { NodeChildProcessRunner } from "./infrastructure/runner/node-child-process-runner";
 import { RunnerTemplateWriter } from "./infrastructure/runner/runner-template-writer";
 import { TestHubSettingTab, type SettingsHost } from "./presentation/settings/settings-tab";
+import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
+import {
+  USE_CASE_VIEW_TYPE,
+  UseCaseDashboardView,
+} from "./presentation/views/use-case-dashboard-view";
 import { InMemoryEventBus } from "./shared/event-bus/event-bus";
 import { ConsoleLogger, type Logger } from "./shared/logging/logger";
 import type { Result } from "./shared/result/result";
@@ -47,6 +56,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private initializationService!: InitializationService;
   private validationService!: EnvironmentValidationService;
   private maintenanceService!: MaintenanceService;
+  private useCaseService!: UseCaseService;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
 
   async onload(): Promise<void> {
@@ -112,6 +122,23 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    this.useCaseService = new DefaultUseCaseService(
+      this.hubSettingsService,
+      vault,
+      eventBus,
+      this.logger,
+    );
+
+    this.registerView(
+      USE_CASE_VIEW_TYPE,
+      (leaf) =>
+        new UseCaseDashboardView(leaf, {
+          useCaseService: this.useCaseService,
+          workspace: this.workspaceAdapter,
+          eventBus,
+          onCreate: () => this.openCreateUseCase(),
+        }),
+    );
 
     this.addSettingTab(new TestHubSettingTab(this, this));
 
@@ -131,11 +158,25 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Repair Installation",
       callback: () => void this.repairInstallation(),
     });
+    this.addCommand({
+      id: "create-use-case",
+      name: "Create Use Case",
+      callback: () => this.openCreateUseCase(),
+    });
+    this.addCommand({
+      id: "open-use-cases",
+      name: "Open Use Cases",
+      callback: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
+    });
+    this.addRibbonIcon("list-checks", "Open Use Cases", () =>
+      void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
+    );
 
     this.logger.info("E2E Test Hub loaded");
   }
 
   async onunload(): Promise<void> {
+    this.app.workspace.detachLeavesOfType(USE_CASE_VIEW_TYPE);
     this.logger?.info("E2E Test Hub unloaded");
   }
 
@@ -144,6 +185,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       initialization: this.initializationService,
       workspace: this.workspaceAdapter,
       getSettings: () => this.hubSettings,
+    }).open();
+  }
+
+  private openCreateUseCase(): void {
+    new CreateUseCaseModal(this.app, {
+      useCaseService: this.useCaseService,
+      workspace: this.workspaceAdapter,
     }).open();
   }
 

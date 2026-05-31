@@ -52,3 +52,71 @@ export const buildNote = (
   fields: Record<string, FrontmatterValue>,
   body: string,
 ): string => `${buildFrontmatter(fields)}\n\n${body.trimStart()}`;
+
+/** A note split into its parsed frontmatter and Markdown body. */
+export interface ParsedNote {
+  frontmatter: Record<string, string | string[]>;
+  body: string;
+}
+
+const unquote = (raw: string): string => {
+  const value = raw.trim();
+  if (value.startsWith('"')) {
+    try {
+      return JSON.parse(value) as string;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+};
+
+/**
+ * Parses notes produced by {@link buildNote}. Scalars are returned as strings
+ * (callers coerce); block sequences become string arrays. This is the inverse
+ * of {@link buildFrontmatter} for the plugin's own well-typed notes, not a
+ * general YAML parser.
+ */
+export const parseNote = (content: string): ParsedNote => {
+  // Consume the closing fence plus the blank line buildNote inserts, so the
+  // body round-trips exactly.
+  const match = /^---\n([\s\S]*?)\n---\n?\n?/.exec(content);
+  if (!match) return { frontmatter: {}, body: content };
+
+  const lines = match[1].split("\n");
+  const frontmatter: Record<string, string | string[]> = {};
+  let i = 0;
+  while (i < lines.length) {
+    const field = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(lines[i]);
+    if (!field) {
+      i++;
+      continue;
+    }
+    const [, key, rest] = field;
+    if (rest === "[]") {
+      frontmatter[key] = [];
+      i++;
+      continue;
+    }
+    if (rest === "") {
+      const items: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && /^\s*-\s+/.test(lines[j])) {
+        items.push(unquote(lines[j].replace(/^\s*-\s+/, "")));
+        j++;
+      }
+      frontmatter[key] = items.length > 0 ? items : "";
+      i = items.length > 0 ? j : i + 1;
+      continue;
+    }
+    frontmatter[key] = unquote(rest);
+    i++;
+  }
+
+  return { frontmatter, body: content.slice(match[0].length) };
+};
+
+/** Parses just the frontmatter block of a note. */
+export const parseFrontmatter = (
+  content: string,
+): Record<string, string | string[]> => parseNote(content).frontmatter;

@@ -6,8 +6,7 @@ import { err, ok, type Result } from "../../shared/result/result";
 
 /**
  * Implements {@link WorkspacePort} against the Obsidian `Workspace`
- * (BBV §7 `ObsidianWorkspaceAdapter`). Custom views (`openView`) land with the
- * Dashboard epic; in V1 this opens generated notes.
+ * (BBV §7 `ObsidianWorkspaceAdapter`).
  */
 export class ObsidianWorkspaceAdapter implements WorkspacePort {
   constructor(private readonly app: App) {}
@@ -21,9 +20,17 @@ export class ObsidianWorkspaceAdapter implements WorkspacePort {
     return ok(undefined);
   }
 
-  async openView(_viewType: string): Promise<Result<void>> {
-    // Registered workspace views arrive with EPIC-009 (Dashboard).
-    return err(appError("INIT_FAILED", "No views are registered yet."));
+  async openView(viewType: string): Promise<Result<void>> {
+    const { workspace } = this.app;
+    let leaf = workspace.getLeavesOfType(viewType)[0];
+    if (!leaf) {
+      const right = workspace.getRightLeaf(false);
+      if (!right) return err(appError("INIT_FAILED", "No workspace leaf is available."));
+      leaf = right;
+      await leaf.setViewState({ type: viewType, active: true });
+    }
+    workspace.revealLeaf(leaf);
+    return ok(undefined);
   }
 
   async revealInExplorer(path: VaultPath): Promise<Result<void>> {
