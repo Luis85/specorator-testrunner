@@ -13,7 +13,7 @@ related:
 
 # Use Case Automation Status Rolls Up From Features With @wip Exclusion
 
-`UseCase.automationStatus` is a derived value computed from the states of the Use Case's Features by `UseCaseAutomationPolicy`. Features (or scenarios within a Feature when the Feature itself is unmarked) tagged `@wip` are excluded from the roll-up so half-built work does not drag the dashboard red.
+`UseCase.automationStatus` is a derived value computed from the states of the Use Case's Features by `UseCaseAutomationPolicy`. Features tagged `@wip` are excluded from the roll-up so half-built work does not drag the dashboard red. Exclusion granularity is the **Feature**, not the scenario (see Consequences) — a `@wip` tag on a scenario inside an otherwise-unmarked Feature does not exclude it.
 
 ## Roll-up rule
 
@@ -25,6 +25,23 @@ related:
 | All Features have run at least once, all passed | `passing` |
 | All Features have run at least once, at least one failed | `failing` |
 | Features have run, none failed, some never ran | `implemented` |
+
+## Pass roll-up refinement: run scope + a prior-status floor
+
+The base table reads "all Features have run, all passed → `passing`", but the V1 implementation (`UseCaseAutomationPolicy.computeAutomationStatus`) does **not** treat a single passing run as proof that the *whole* Use Case passes. Two refinements, both accepted as the intended behaviour, sit on top of the table for the `passed` case:
+
+1. **Scope-awareness.** A passing run only rolls the whole UC up to `passing` when that run actually exercised every (non-`@wip`) Feature. Concretely, a `passed` last run yields `passing` only when:
+   - the run scope is `use-case` or `all` (a UC-wide run), **or**
+   - the run has no recorded scope (a legacy summary — treated as covering, for backward compatibility), **or**
+   - the UC has exactly one (non-`@wip`) Feature, so any scope covers it.
+
+   A single-Feature-scope run on a *multi-*Feature UC leaves the sibling Features unrun, so it does **not** by itself make the UC `passing`.
+
+2. **Prior-status "floor".** A partial (single-Feature-scope) pass on a multi-Feature UC must not *regress* a UC that already reached `passing` via an earlier UC-wide run (a common targeted rerun). Because V1 keeps no per-Feature pass history, the persisted `UseCase.automationStatus` is used as a floor: if the UC was already `passing`, a partial pass keeps it `passing`; otherwise the UC is reported as `implemented` (exercised, not yet proven green wholesale).
+
+This is why the policy reads the UC's current `automationStatus` as an input in addition to its Features and last run — the floor is the only mechanism, absent per-Feature history, that prevents a targeted single-Feature rerun from silently downgrading a genuinely-green multi-Feature UC. Finer per-Feature run history (which would remove the need for the floor) is deferred to V2.
+
+The other table rows (`not-planned`, `planned`, `missing-steps`, `failing`, and the `implemented` catch-all for queued/running/cancelled) are unaffected by this refinement.
 
 ## KPI definitions (used by `dashboard.kpi.updated`)
 
@@ -45,6 +62,7 @@ Deprecated UCs are excluded from every count. They still exist as notes; they ju
 ## Consequences
 
 - New `UseCaseAutomationPolicy` lives in the domain layer (no I/O, unit-testable in isolation per BBV §10).
+- The pass roll-up is **scope-aware and applies a prior-status floor** (see "Pass roll-up refinement" above): the policy takes the UC's current `automationStatus` as an input alongside its Features and last run, so a partial single-Feature rerun cannot regress an already-`passing` multi-Feature UC, and a single-Feature pass cannot mark a multi-Feature UC green on its own. This is the accepted V1 behaviour; per-Feature run history that would supersede the floor is a V2 item.
 - `TraceabilityService.refreshDashboard()` calls the policy to compute every KPI count.
 - `@wip` exclusion granularity is the **Feature**, not the scenario. A scenario tagged `@wip` inside an otherwise non-`@wip` Feature counts normally. Trade-off favours rule simplicity over precision; users learn to tag at the file level when they want to park work.
 - Deprecated UCs disappear from KPIs but remain in the vault; this is intentional so audit history is preserved.
