@@ -210,11 +210,20 @@ const renderStub = (stepText: string): string => {
  * Quoted literals and Scenario Outline placeholders are parameterised to
  * `{string}` so one stub can serve a family of steps.
  */
-export const buildStepDefinitionStubFile = (missingSteps: string[]): string => {
-  const header = [
-    `import { Given } from "@cucumber/cucumber";`,
-    `import { TestWorld } from "../support/world";`,
-  ].join("\n");
-  const body = missingSteps.map(renderStub).join("\n\n");
-  return `${header}\n\n${body}\n`;
-};
+/** Import header every generated steps module needs (Cucumber `Given` + the World). */
+export const STEP_DEFINITION_IMPORTS = [
+  `import { Given } from "@cucumber/cucumber";`,
+  `import { TestWorld } from "../support/world";`,
+].join("\n");
+
+/**
+ * Renders ONLY the stub blocks (no import header). Used when APPENDING to an
+ * existing steps file that already imports `Given`/`TestWorld` — re-emitting the
+ * header would create a duplicate top-level `Given` binding and the module would
+ * fail to load (`Identifier 'Given' has already been declared`).
+ */
+export const buildStepDefinitionStubBlocks = (missingSteps: string[]): string =>
+  missingSteps.map(renderStub).join("\n\n");
+
+export const buildStepDefinitionStubFile = (missingSteps: string[]): string =>
+  `${STEP_DEFINITION_IMPORTS}\n\n${buildStepDefinitionStubBlocks(missingSteps)}\n`;

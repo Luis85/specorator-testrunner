@@ -129,6 +129,26 @@ describe("DefaultStepDefinitionService.generate", () => {
     expect(written).toContain(`Given("a handwritten step"`);
     expect(written).toContain(`Given("a fresh step"`);
     expect(written.indexOf("a handwritten step")).toBeLessThan(written.indexOf("a fresh step"));
+    // The import header is NOT re-emitted: a second `import { Given }` would be a
+    // duplicate top-level binding and the module would fail to load (review).
+    const givenImports = written.match(
+      /import\s*\{[^}]*\bGiven\b[^}]*\}\s*from\s*["']@cucumber\/cucumber["']/g,
+    );
+    expect(givenImports).toHaveLength(1);
+  });
+
+  it("includes the import header when appending to a file that lacks it", async () => {
+    const { service, fs } = build();
+    // A steps file with no cucumber import (e.g. a stray fragment): the append
+    // must add the header so the resulting module still loads.
+    fs.files.set(STEP_FILE, `// notes, no imports here\n`);
+
+    const result = await service.generate(FEATURE, ["a fresh step"]);
+
+    expect(result.ok).toBe(true);
+    const written = fs.files.get(STEP_FILE) ?? "";
+    expect(written).toContain(`import { Given } from "@cucumber/cucumber";`);
+    expect(written).toContain(`Given("a fresh step"`);
   });
 
   it("writes the stub file under .testrunner/src/steps via the VaultFileSystem port", async () => {
