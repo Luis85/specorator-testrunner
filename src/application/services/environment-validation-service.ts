@@ -4,6 +4,7 @@ import {
   REQUIRED_RUNNER_DEPENDENCIES,
   VALIDATED_RUNNER_FILES,
 } from "../content/runner-templates";
+import { isNpmCiCommand } from "../content/ci-workflow-content";
 import { playwrightBrowsersCandidates, resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
@@ -232,7 +233,7 @@ export class DefaultEnvironmentValidationService
       // valid CI config.
       const effectiveCiInstall = settings.runner.ciInstallCommand.trim() || "npm ci";
       if (
-        effectiveCiInstall === "npm ci" &&
+        isNpmCiCommand(effectiveCiInstall) &&
         !(await this.absoluteFs.existsAbsolute(`${runnerAbs}/package-lock.json`))
       ) {
         missingItems.push("Runner package-lock.json is missing (npm ci needs a lockfile).");

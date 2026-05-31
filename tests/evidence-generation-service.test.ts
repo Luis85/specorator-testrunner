@@ -157,6 +157,9 @@ describe("DefaultEvidenceGenerationService", () => {
     // lastTestRun must be persisted (US-031), not silently dropped.
     expect(fm.last_run_id).toBe(run().id);
     expect(fm.last_run_evidence).toBe(EVIDENCE_PATH);
+    // last_run_date is when the run actually ran (startedAt), not the later
+    // evidence-generation/re-import time (FIXED_NOW = 10:05).
+    expect(fm.last_run_date).toBe(run().startedAt);
   });
 
   it("emits evidence.generated then evidence.linkedToUseCase", async () => {

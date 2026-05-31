@@ -105,7 +105,9 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     // Honor the opt-out: only write the evidence link into Use Case frontmatter
     // when the user hasn't disabled it (TIS §settings.automation).
     if (settings.automation.updateUseCaseFrontmatterAfterRun) {
-      await this.link(evidence, this.summaryStatus(run, report.result));
+      // Record WHEN the run actually finished, not this (possibly re-import)
+      // evidence-generation time, so last_run_date stays accurate on re-imports.
+      await this.link(evidence, this.summaryStatus(run, report.result), run.finishedAt ?? run.startedAt);
     }
     return ok(evidence);
   }
@@ -137,7 +139,11 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
   }
 
   /** Appends the evidence path + last-run summary to each owning Use Case. */
-  private async link(evidence: Evidence, summaryStatus: TestRunStatus): Promise<void> {
+  private async link(
+    evidence: Evidence,
+    summaryStatus: TestRunStatus,
+    runDate: string,
+  ): Promise<void> {
     for (const useCaseId of evidence.linkedUseCases) {
       const found = await this.useCaseService.findById(useCaseId);
       if (!found.ok || found.value === null) {
@@ -153,7 +159,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
         lastTestRun: {
           runId: evidence.runId,
           status: summaryStatus,
-          date: evidence.createdAt,
+          date: runDate,
           evidencePath: evidence.path,
         },
       };
