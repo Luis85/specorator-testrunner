@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { REQUIRED_RUNNER_FILES } from "../src/application/content/runner-manifest";
+import {
+  REQUIRED_RUNNER_FILES,
+  VALIDATED_RUNNER_FILES,
+} from "../src/application/content/runner-manifest";
 import { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
 import { DEFAULT_SETTINGS, type TestHubSettings } from "../src/domain/settings/settings";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
@@ -14,6 +17,16 @@ const cucumberFor = (settings: TestHubSettings): string =>
 describe("buildRunnerTemplates", () => {
   it("includes the files US-010 requires", () => {
     for (const file of REQUIRED_RUNNER_FILES) {
+      expect(byPath.has(file), file).toBe(true);
+    }
+  });
+
+  it("validates only files the generator actually emits (manifest/template lockstep)", () => {
+    // VALIDATED_RUNNER_FILES (app manifest) is asserted against the .testrunner
+    // on disk; every entry must be a path buildRunnerTemplates (infra) emits, or
+    // validation would check for a file that is never generated. Guards the
+    // cross-layer split introduced by P3-7 against silent drift.
+    for (const file of VALIDATED_RUNNER_FILES) {
       expect(byPath.has(file), file).toBe(true);
     }
   });

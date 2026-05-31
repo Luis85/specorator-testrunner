@@ -1,5 +1,5 @@
 import type { VaultPath } from "./identifiers";
-import { DefaultPathSafetyPolicy } from "../policies/path-safety-policy";
+import { DefaultPathSafetyPolicy, type PathSafetyPolicy } from "../policies/path-safety-policy";
 import { err, ok, type Result } from "../../shared/result/result";
 
 /**
@@ -25,14 +25,21 @@ const PATH_SAFETY = new DefaultPathSafetyPolicy();
 /**
  * SMART constructor — the ADR-0008 chokepoint for UNTRUSTED input.
  *
- * Validates `raw` through {@link DefaultPathSafetyPolicy} and, on success, returns
- * it branded as a {@link VaultPath}. Use this wherever a path originates outside
- * the plugin's own constants: `data.json` settings on load, note frontmatter, and
+ * Validates `raw` through a {@link PathSafetyPolicy} and, on success, returns it
+ * branded as a {@link VaultPath}. Use this wherever a path originates outside the
+ * plugin's own constants: `data.json` settings on load, note frontmatter, and
  * paths typed by the user. On failure the underlying `PATH_UNSAFE` error is
  * propagated so callers can fall back to a default or surface a validation error.
+ *
+ * `policy` defaults to a shared pure instance; callers that already hold an
+ * injected `PathSafetyPolicy` (e.g. `SettingsService`) pass it so validation and
+ * branding happen in ONE call and cannot drift apart.
  */
-export const vaultPath = (raw: string): Result<VaultPath> => {
-  const safe = PATH_SAFETY.validate(raw as VaultPath);
+export const vaultPath = (
+  raw: string,
+  policy: PathSafetyPolicy = PATH_SAFETY,
+): Result<VaultPath> => {
+  const safe = policy.validate(raw as VaultPath);
   return safe.ok ? ok(raw as VaultPath) : err(safe.error);
 };
 
