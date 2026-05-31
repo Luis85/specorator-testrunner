@@ -47,6 +47,19 @@ describe("DefaultCommandSafetyPolicy", () => {
     }
   });
 
+  it("rejects npm install/ci with a package spec or flag (ADR-0010)", () => {
+    for (const args of [
+      ["npm", "install", "lodash"],
+      ["npm", "install", "-g", "cowsay"],
+      ["npm", "install", "--global", "x"],
+      ["npm", "ci", "--ignore-scripts", "evil"],
+    ]) {
+      const result = policy.assertSafe(args);
+      expect(result.ok, args.join(" ")).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("COMMAND_DISALLOWED");
+    }
+  });
+
   it("rejects npm subcommands the runner never uses (ADR-0010)", () => {
     for (const args of [
       ["npm", "exec", "--", "rm"],
