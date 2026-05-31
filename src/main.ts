@@ -442,6 +442,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         if (notify) new Notice(`Report import failed: ${imported.error.message}`, 10000);
         return;
       }
+      // Honor the opt-out: skip evidence-note generation when disabled.
+      if (!this.hubSettings.automation.generateEvidenceMarkdown) {
+        if (notify) new Notice("Evidence Markdown generation is disabled in settings.");
+        return;
+      }
       const evidence = await this.evidenceGenerationService.generate({
         run,
         report: imported.value,
