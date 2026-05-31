@@ -100,6 +100,53 @@ describe("DefaultSuiteService", () => {
     expect(result.value.some((s) => s.id === "broken")).toBe(false);
   });
 
+  it("repairs a malformed same-id note at the target path instead of faking success (review)", async () => {
+    const { service, fs, types } = build();
+    // A malformed test-suite note (no tag_expression) is hidden from findAll, but
+    // create() must still REPAIR it rather than emit suite.created over an
+    // unresolvable note. Target path for "Smoke" is "Test Suites/Smoke.md".
+    fs.files.set(
+      "Test Suites/Smoke.md",
+      buildNote({ type: "test-suite", id: "smoke", title: "Smoke" }, "# Smoke"),
+    );
+    const result = await service.create({ name: "Smoke", tagExpression: "@smoke" });
+    expect(result.ok).toBe(true);
+    expect(types()).toContain("suite.created");
+    expect(fs.files.get("Test Suites/Smoke.md")).toContain("@smoke");
+    const resolved = await service.resolveTagExpression("smoke");
+    expect(resolved.ok && resolved.value).toBe("@smoke");
+  });
+
+  it("blocks a duplicate id even when the existing same-id note is malformed and elsewhere (review)", async () => {
+    const { service, fs, types } = build();
+    // A malformed same-id note at a DIFFERENT path is hidden from findAll; the
+    // duplicate-id guard must still see it (via the full index) and refuse, so we
+    // don't write a second note with the same id.
+    fs.files.set(
+      "Test Suites/archive/Old.md",
+      buildNote({ type: "test-suite", id: "smoke", title: "Old Smoke" }, "# Old"),
+    );
+    const result = await service.create({ name: "Smoke", tagExpression: "@smoke" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    // No second note written at the new target path.
+    expect(fs.files.has("Test Suites/Smoke.md")).toBe(false);
+    expect(types()).not.toContain("suite.created");
+  });
+
+  it("refuses to clobber a foreign / different-id note at the target path (review)", async () => {
+    const { service, fs, types } = build();
+    // A non-suite note that merely collides on the sanitized filename must be
+    // preserved verbatim, not overwritten.
+    const foreign = buildNote({ type: "use-case", id: "UC-001" }, "# my notes");
+    fs.files.set("Test Suites/Smoke.md", foreign);
+    const result = await service.create({ name: "Smoke", tagExpression: "@smoke" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    expect(fs.files.get("Test Suites/Smoke.md")).toBe(foreign);
+    expect(types()).not.toContain("suite.created");
+  });
+
   it("indexes suites nested in subfolders (recursive)", async () => {
     const { service, fs } = build();
     fs.files.set(

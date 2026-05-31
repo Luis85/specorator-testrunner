@@ -17,6 +17,18 @@ export interface CreateSuiteRequest {
 }
 
 /**
+ * An on-disk `test-suite` note as seen by the full index: its declared `id` and
+ * `path` always, plus the parsed {@link TestSuite} when valid (`null` when the
+ * note is malformed, e.g. missing tag_expression). Lets creation reason about
+ * malformed notes that findAll() deliberately omits.
+ */
+interface SuiteNote {
+  id: SuiteId;
+  path: VaultPath;
+  suite: TestSuite | null;
+}
+
+/**
  * Suite lifecycle (TIS §8.8). Sprint 1 implements the creation surface the
  * Initialization Wizard needs; EPIC-006 adds the read/index methods
  * (`findAll`, `resolveTagExpression`) for Test Suite Management.
@@ -72,13 +84,9 @@ export class DefaultSuiteService implements SuiteService {
     if (request.tagExpression.trim() === "") {
       return err(appError("VALIDATION_FAILED", "A suite tag expression is required."));
     }
-    // Reject a duplicate id: two notes sharing an id make resolveTagExpression
-    // ambiguous (it would pick whichever sorts first).
-    const existing = await this.findAll();
-    if (!existing.ok) return err(existing.error);
-    if (existing.value.some((suite) => suite.id === id)) {
-      return err(appError("VALIDATION_FAILED", `A Test Suite with id "${id}" already exists.`));
-    }
+    // The duplicate-id guard lives in createFromSeed (it scans the full on-disk
+    // index, which includes MALFORMED same-id notes that findAll() hides), so a
+    // second note with an existing id is blocked wherever the old one lives.
     return this.createFromSeed({
       id,
       name,
@@ -98,24 +106,41 @@ export class DefaultSuiteService implements SuiteService {
     return ok(created);
   }
 
-  /** Indexes every `test-suite` note under the suites folder (UC-008, best-effort). */
+  /** Indexes every VALID `test-suite` note under the suites folder (UC-008, best-effort). */
   async findAll(): Promise<Result<TestSuite[]>> {
+    const indexed = await this.indexSuiteNotes();
+    if (!indexed.ok) return err(indexed.error);
+    const suites = indexed.value
+      .filter((note): note is SuiteNote & { suite: TestSuite } => note.suite !== null)
+      .map((note) => note.suite);
+    suites.sort((a, b) => a.id.localeCompare(b.id));
+    return ok(suites);
+  }
+
+  /**
+   * Indexes EVERY `test-suite` note (valid AND malformed) with its id and path.
+   * findAll() exposes only the valid ones, but creation needs the full picture:
+   * a malformed same-id note (P3-2 hides it from findAll) must still block a
+   * duplicate id and be recognised at the target path (review). Best-effort:
+   * unreadable notes and non-suite notes are skipped.
+   */
+  private async indexSuiteNotes(): Promise<Result<SuiteNote[]>> {
     const settings = await this.settingsService.load();
     // Recurse so suites organised into subfolders are indexed (parity with
     // UseCaseService.findAll, so resolveTagExpression can't miss a real suite).
     const listed = await this.fs.listFilesRecursive(settings.paths.testSuitesPath);
     if (!listed.ok) return err(listed.error);
 
-    const suites: TestSuite[] = [];
+    const notes: SuiteNote[] = [];
     for (const path of listed.value) {
       if (!path.endsWith(".md")) continue;
       const read = await this.fs.readFile(path);
       if (!read.ok) continue; // index is best-effort; skip unreadable notes
-      const suite = this.parse(read.value, path);
-      if (suite) suites.push(suite);
+      const fm = parseFrontmatter(read.value);
+      if (fm.type !== "test-suite" || typeof fm.id !== "string") continue;
+      notes.push({ id: fm.id, path, suite: this.parse(read.value, path) });
     }
-    suites.sort((a, b) => a.id.localeCompare(b.id));
-    return ok(suites);
+    return ok(notes);
   }
 
   /**
@@ -151,33 +176,6 @@ export class DefaultSuiteService implements SuiteService {
     return built.ok ? built.value : null;
   }
 
-  /**
-   * Classifies whatever note currently occupies a target suite path so
-   * createFromSeed can skip / repair / refuse appropriately:
-   *  - `absent`  — no note there.
-   *  - `valid`   — a parseable Test Suite (leave it; idempotent seeding).
-   *  - `repair`  — a malformed `test-suite` note for THIS SAME suite (its `id`
-   *                matches the seed) that fails to parse (e.g. missing
-   *                tag_expression); safe to overwrite with valid content.
-   *  - `foreign` — some other note: a non-suite note, an unreadable note, OR a
-   *                malformed suite note for a DIFFERENT id. Must NOT be clobbered
-   *                (overwriting it would destroy unrelated content, review P2).
-   */
-  private async classifyExistingNote(
-    path: VaultPath,
-    seedId: SuiteId,
-  ): Promise<"absent" | "valid" | "repair" | "foreign"> {
-    if (!(await this.fs.exists(path))) return "absent";
-    const read = await this.fs.readFile(path);
-    if (!read.ok) return "foreign"; // unreadable — don't overwrite blindly
-    if (this.parse(read.value, path)) return "valid";
-    const fm = parseFrontmatter(read.value);
-    // Only repair a malformed note that IS this suite (same id). A malformed
-    // test-suite note with a different/absent id is someone else's content that
-    // merely collides on the sanitized filename — refuse rather than overwrite.
-    return fm.type === "test-suite" && fm.id === seedId ? "repair" : "foreign";
-  }
-
   private async createFromSeed(
     seed: DefaultSuiteSeed,
     correlationId?: string,
@@ -199,16 +197,34 @@ export class DefaultSuiteService implements SuiteService {
     if (!builtSuite.ok) return err(builtSuite.error);
     const suite = builtSuite.value;
 
-    // Decide what to do with any note already at the target path. A malformed
-    // `test-suite` note (e.g. missing tag_expression) is now HIDDEN from
-    // findAll() by parse() (P3-2), so create()'s duplicate-id scan can't see it;
-    // a plain skip-if-exists would then emit suite.created over a note that
-    // resolveTagExpression() can't resolve (review P2). So: skip a VALID suite
-    // (idempotent seeding, preserve customisation), REPAIR a malformed note that
-    // IS this same suite, and refuse to clobber a FOREIGN note (non-suite, or a
-    // malformed suite note for a DIFFERENT id that only collides on the filename).
-    const existing = await this.classifyExistingNote(path, suite.id);
-    if (existing === "foreign") {
+    // Index every test-suite note (valid AND malformed) so creation sees the
+    // complete on-disk picture — findAll() alone hides malformed notes (P3-2).
+    const indexed = await this.indexSuiteNotes();
+    if (!indexed.ok) return err(indexed.error);
+
+    // Reject a duplicate id ANYWHERE in the vault — including a malformed same-id
+    // note at a different path (review). Two notes sharing an id make
+    // resolveTagExpression ambiguous and leave identity ambiguous once repaired.
+    const dupElsewhere = indexed.value.find((n) => n.id === suite.id && n.path !== path);
+    if (dupElsewhere) {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `A Test Suite with id "${suite.id}" already exists (at "${dupElsewhere.path}").`,
+        ),
+      );
+    }
+
+    // Decide what to do with whatever occupies the TARGET path:
+    //  - nothing            → create.
+    //  - a VALID suite      → skip (idempotent seeding; preserve customisation).
+    //  - this same suite,   → repair (overwrite the malformed note with valid
+    //    malformed             content so resolveTagExpression can find it).
+    //  - any OTHER note     → refuse, never clobber (a different/absent-id suite
+    //    (incl. non-suite)     note, or a non-suite note — review P2).
+    const atTarget = indexed.value.find((n) => n.path === path);
+    const occupiedByForeign = (await this.fs.exists(path)) && !atTarget; // non-suite note at path
+    if (occupiedByForeign || (atTarget && atTarget.suite === null && atTarget.id !== suite.id)) {
       return err(
         appError(
           "VALIDATION_FAILED",
@@ -217,12 +233,12 @@ export class DefaultSuiteService implements SuiteService {
         ),
       );
     }
-    if (existing !== "valid") {
-      // "absent" → create; "repair" → overwrite the malformed suite note.
-      const written =
-        existing === "absent"
-          ? await this.fs.createFile(path, buildSuiteNote(seed))
-          : await this.fs.writeFile(path, buildSuiteNote(seed));
+    if (!atTarget || atTarget.suite === null) {
+      // A foreign note at the path was already refused above, so here the path is
+      // either empty (create) or holds this same suite's malformed note (repair).
+      const written = atTarget
+        ? await this.fs.writeFile(path, buildSuiteNote(seed))
+        : await this.fs.createFile(path, buildSuiteNote(seed));
       if (!written.ok) {
         return err(
           appError("INIT_FAILED", `Could not write suite "${seed.name}".`, {
