@@ -109,10 +109,14 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     // sibling-Test-Hub check. Errors return [] so validation stays advisory.
     try {
       const folders: VaultPath[] = [];
+      // The normalized vault root is the EMPTY path, not "/" — `DataAdapter.list`
+      // takes a normalized vault-relative path (review P2). Pass `dir` ("" at the
+      // root) directly, exactly as listFilesRecursive above does; "/" can throw in
+      // a real vault and fall through to ok([]), silently disabling the check.
       const queue = [""];
       while (queue.length > 0) {
         const dir = queue.shift() as string;
-        const listing = await this.app.vault.adapter.list(dir === "" ? "/" : dir);
+        const listing = await this.app.vault.adapter.list(dir);
         for (const folder of listing.folders) {
           folders.push(folder);
           queue.push(folder);
