@@ -23,6 +23,19 @@ export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string =>
   const runnerPath = settings.paths.testRunnerPath.replace(/\\/g, "/");
   const nodeVersion = settings.ci.nodeVersion.trim() || "22";
 
+  // Auth credentials are injected from CI secrets so authenticated suites match
+  // local execution (runEnv merges active.auth.env, ADR-0014). Emit every
+  // auth.env key configured across environments as `${{ secrets.<KEY> }}`.
+  const authKeys = [
+    ...new Set(
+      Object.values(settings.sut.environments).flatMap((e) => Object.keys(e.auth?.env ?? {})),
+    ),
+  ].sort();
+  const authEnvLines =
+    authKeys.length > 0
+      ? "\n" + authKeys.map((key) => `      ${key}: \${{ secrets.${key} }}`).join("\n")
+      : "";
+
   // US-042: every step runs with cwd = the runner folder, so the same commands
   // a developer runs locally are the ones CI runs — the runner stays standalone
   // (no Obsidian, no plugin) and reachable purely from the git checkout.
@@ -44,7 +57,7 @@ jobs:
       run:
         working-directory: ${runnerPath}
     env:
-      BASE_URL: \${{ vars.E2E_BASE_URL }}
+      BASE_URL: \${{ vars.E2E_BASE_URL }}${authEnvLines}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
