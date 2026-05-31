@@ -84,6 +84,14 @@ describe("DefaultTestExecutionService", () => {
     expect(result.ok && result.value.command).toBe("npm run test");
   });
 
+  it("mints unique run ids for sequential runs in the same second", async () => {
+    const { service } = build(); // fixed clock → same UTC second every call
+    const first = await service.execute({ scope: "demo", target: "demo" });
+    const second = await service.execute({ scope: "demo", target: "demo" });
+    expect(first.ok && first.value.id).toBe("RUN-2026-06-01-100000");
+    expect(second.ok && second.value.id).toBe("RUN-2026-06-01-100000-2");
+  });
+
   it("injects the Active SUT environment (BASE_URL + auth env) into the runner", async () => {
     const { service, childProcess } = build();
     await service.execute({ scope: "demo", target: "demo" });

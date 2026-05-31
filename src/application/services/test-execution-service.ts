@@ -55,11 +55,14 @@ const runId = (now: Date): RunId => {
  *
  * Result counts (`TestRunResult`) are imported from the Cucumber report in
  * EPIC-008; here `result` stays undefined and status is derived from the exit
- * code. `env` is left minimal (process-inherited) — Active-Environment env
- * injection (ADR-0013/0014, TIS §13) arrives with SUT environment management.
+ * code. The runner env is built from the Active SUT environment (ADR-0013/0014).
  */
 export class DefaultTestExecutionService implements TestExecutionService {
   private active: ActiveRun | null = null;
+  // De-dupe run ids within the same UTC second (the id has 1s resolution): the
+  // first run keeps the clean id; later same-second runs get a -2/-3/… suffix.
+  private lastIdBase: RunId | null = null;
+  private idSeq = 0;
 
   constructor(
     private readonly settingsService: SettingsService,
@@ -91,7 +94,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
     // process (ADR-0018 single active run). Details are filled in after setup.
     const startedAt = this.now();
     const run: TestRun = {
-      id: runId(startedAt),
+      id: this.mintRunId(startedAt),
       scope: request.scope,
       target: request.target,
       status: "running",
@@ -219,6 +222,18 @@ export class DefaultTestExecutionService implements TestExecutionService {
    * (ADR-0013/0014): `BASE_URL` plus any `auth.env` credentials, injected
    * verbatim. The host process env is merged by the ChildProcessRunner adapter.
    */
+  /** Unique run id: clean per-second base, then `-N` for same-second repeats. */
+  private mintRunId(now: Date): RunId {
+    const base = runId(now);
+    if (base === this.lastIdBase) {
+      this.idSeq += 1;
+      return `${base}-${this.idSeq}`;
+    }
+    this.lastIdBase = base;
+    this.idSeq = 1;
+    return base;
+  }
+
   private runEnv(settings: TestHubSettings): Record<string, string> {
     const active = settings.sut.environments[settings.sut.active];
     if (!active) return {};
