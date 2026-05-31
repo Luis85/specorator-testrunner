@@ -10,6 +10,29 @@ describe("buildGitHubActionsWorkflow", () => {
     expect(yaml).not.toContain(DEFAULT_SETTINGS.sut.environments.demo.baseUrl);
   });
 
+  it("exposes configured auth.env keys as CI secrets (matches local runEnv)", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: {
+        ...DEFAULT_SETTINGS.sut,
+        environments: {
+          ...DEFAULT_SETTINGS.sut.environments,
+          staging: { baseUrl: "https://staging.example.com", auth: { kind: "env", env: { E2E_USERNAME: "u", E2E_PASSWORD: "p" } } },
+        },
+      },
+    } as typeof DEFAULT_SETTINGS;
+    const yaml = buildGitHubActionsWorkflow(settings);
+    expect(yaml).toContain("E2E_USERNAME: ${{ secrets.E2E_USERNAME }}");
+    expect(yaml).toContain("E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}");
+    // Secret VALUES are never baked in.
+    expect(yaml).not.toContain("u\n");
+  });
+
+  it("emits no auth env lines when no environment configures auth", () => {
+    const yaml = buildGitHubActionsWorkflow(DEFAULT_SETTINGS);
+    expect(yaml).not.toContain("secrets.");
+  });
+
   it("runs the standalone runner commands in the runner folder (US-042, ADR-0006)", () => {
     const yaml = buildGitHubActionsWorkflow(DEFAULT_SETTINGS);
     expect(yaml).toContain(`working-directory: ${DEFAULT_SETTINGS.paths.testRunnerPath}`);
