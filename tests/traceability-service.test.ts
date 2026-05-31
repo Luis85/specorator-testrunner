@@ -84,6 +84,17 @@ describe("projectDashboardSnapshot (ADR-0017 KPI definitions)", () => {
     expect(snapshot.recentRuns.map((r) => r.runId)).toEqual(["RUN-B", "RUN-C", "RUN-A"]);
   });
 
+  it("de-duplicates recentRuns by runId (a broad run links many UCs)", () => {
+    // A single all/suite/demo run writes the same runId onto every resolved UC.
+    const snapshot = projectDashboardSnapshot([
+      useCase({ id: "UC-001", lastTestRun: run("RUN-ALL", "2026-06-03T09:00:00Z") }),
+      useCase({ id: "UC-002", lastTestRun: run("RUN-ALL", "2026-06-03T09:00:00Z") }),
+      useCase({ id: "UC-003", lastTestRun: run("RUN-OLD", "2026-06-01T09:00:00Z") }),
+    ]);
+
+    expect(snapshot.recentRuns.map((r) => r.runId)).toEqual(["RUN-ALL", "RUN-OLD"]);
+  });
+
   it("excludes a deprecated UC's run from recentRuns", () => {
     const snapshot = projectDashboardSnapshot([
       useCase({ id: "UC-001", status: "deprecated", lastTestRun: run("RUN-OLD", "2026-06-09T09:00:00Z") }),
