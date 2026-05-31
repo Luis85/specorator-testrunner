@@ -10,7 +10,7 @@ import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import { DefaultSuiteService } from "../src/application/services/suite-service";
 import { DefaultTestExecutionService } from "../src/application/services/test-execution-service";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
-import { REQUIRED_RUNNER_DEPENDENCIES } from "../src/application/content/runner-templates";
+import { REQUIRED_RUNNER_DEPENDENCIES } from "../src/application/content/runner-manifest";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import {

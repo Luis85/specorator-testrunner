@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRunnerTemplates } from "../../src/application/content/runner-templates";
+import { buildRunnerTemplates } from "../../src/infrastructure/runner/templates/runner-templates";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/settings";
 
 /**

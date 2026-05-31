@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildRunnerTemplates,
-  REQUIRED_RUNNER_FILES,
-} from "../src/application/content/runner-templates";
+import { REQUIRED_RUNNER_FILES } from "../src/application/content/runner-manifest";
+import { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
 import { DEFAULT_SETTINGS, type TestHubSettings } from "../src/domain/settings/settings";
 
 const templates = buildRunnerTemplates(DEFAULT_SETTINGS);

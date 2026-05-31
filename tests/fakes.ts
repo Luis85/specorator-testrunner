@@ -7,11 +7,14 @@ import type {
 } from "../src/application/ports/child-process-runner";
 import type { DataStore } from "../src/application/ports/data-store";
 import type {
+  TemplateFile,
   TemplateWriteRequest,
   TemplateWriteResult,
   TemplateWriter,
 } from "../src/application/ports/template-writer";
+import { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
 import type { VaultFileSystem } from "../src/application/ports/vault-file-system";
+import type { TestHubSettings } from "../src/domain/settings/settings";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { joinVaultPath } from "../src/shared/utils/vault-path";
 import type { DomainEvent, DomainEventType } from "../src/domain/events/domain-event";
@@ -260,6 +263,10 @@ export class FakeChildProcessRunner implements ChildProcessRunner {
 export class FakeTemplateWriter implements TemplateWriter {
   readonly requests: TemplateWriteRequest[] = [];
   fail = false;
+
+  buildRunnerTemplates(settings: TestHubSettings): TemplateFile[] {
+    return buildRunnerTemplates(settings);
+  }
 
   async writeTemplates(request: TemplateWriteRequest): Promise<Result<TemplateWriteResult>> {
     this.requests.push(request);

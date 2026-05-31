@@ -1,4 +1,3 @@
-import { buildRunnerTemplates } from "../content/runner-templates";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner, RunnerCommandResult } from "../ports/child-process-runner";
 import type { TemplateWriter } from "../ports/template-writer";
@@ -48,7 +47,7 @@ export class DefaultRunnerInstallationService implements RunnerInstallationServi
     const runnerPath = settings.paths.testRunnerPath;
     const written = await this.templates.writeTemplates({
       targetPath: runnerPath,
-      templates: buildRunnerTemplates(settings),
+      templates: this.templates.buildRunnerTemplates(settings),
     });
     if (!written.ok) {
       return err(

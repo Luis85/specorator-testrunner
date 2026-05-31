@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildGitHubActionsWorkflow } from "../../src/application/content/ci-workflow-content";
-import { buildRunnerTemplates } from "../../src/application/content/runner-templates";
+import { buildRunnerTemplates } from "../../src/infrastructure/runner/templates/runner-templates";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/settings";
 
 /**
