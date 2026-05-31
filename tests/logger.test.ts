@@ -39,4 +39,40 @@ describe("ConsoleLogger", () => {
     const fields = error.mock.calls[0][1] as { error: { message: string } };
     expect(fields.error.message).toBe("kaboom");
   });
+
+  it("redacts a configured secret logged positionally under a non-sensitive key (P0-2)", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const logger = new ConsoleLogger("info");
+    // Mirrors wiring the SUT auth.env credential values into the logger.
+    logger.setSecrets(["super-secret-token"]);
+    logger.info("exact value", { detail: "super-secret-token" });
+    expect(log).toHaveBeenCalledWith(expect.any(String), { detail: "***" });
+  });
+
+  it("scrubs a long secret embedded inside a larger logged string, e.g. stderr (M1)", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const logger = new ConsoleLogger("info");
+    logger.setSecrets(["super-secret-token"]);
+    // A credential echoed into streamed runner stderr under a plain key is now
+    // substring-scrubbed (long secrets only), so it can't leak into persisted logs.
+    logger.info("runner output", { stderr: "login failed: super-secret-token (401)" });
+    expect(log).toHaveBeenCalledWith(expect.any(String), { stderr: "login failed: *** (401)" });
+  });
+
+  it("does NOT substring-scrub short secrets (avoids over-redaction, M3)", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const logger = new ConsoleLogger("info");
+    logger.setSecrets(["node"]); // short value — whole-match only
+    logger.info("diag", { msg: "running node v20" });
+    // "node" is < 8 chars, so it is not scrubbed as a substring of a larger string.
+    expect(log).toHaveBeenCalledWith(expect.any(String), { msg: "running node v20" });
+  });
+
+  it("ignores empty secret values (setSecrets) so empty strings aren't blanked", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const logger = new ConsoleLogger("info");
+    logger.setSecrets(["", "real"]);
+    logger.info("msg", { a: "", b: "real" });
+    expect(log).toHaveBeenCalledWith(expect.any(String), { a: "", b: "***" });
+  });
 });

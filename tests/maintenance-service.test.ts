@@ -43,14 +43,26 @@ const build = () => {
     { HOME: "/home/u" },
     "linux",
   );
+  const activeRun = {
+    runId: null as string | null,
+    settled: false,
+    activeRunId() {
+      return this.runId;
+    },
+    whenActiveSettles() {
+      this.settled = true;
+      return Promise.resolve();
+    },
+  };
   const service = new DefaultMaintenanceService(
     settings,
     validation,
     runnerInstall,
     bus,
     silentLogger,
+    activeRun,
   );
-  return { service, absoluteFs, childProcess, templates, types };
+  return { service, absoluteFs, childProcess, templates, types, activeRun };
 };
 
 const seedHealthyRunner = (absoluteFs: FakeAbsoluteFileSystem) => {
@@ -117,5 +129,29 @@ describe("DefaultMaintenanceService", () => {
     const result = await service.repair();
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("NPM_INSTALL_FAILED");
+  });
+
+  it("refuses to repair while a test run is active (P0-3)", async () => {
+    const { service, templates, childProcess, activeRun } = build();
+    activeRun.runId = "RUN-2026-05-31-120000";
+
+    const result = await service.repair();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("RUN_IN_PROGRESS");
+      expect(result.error.details?.activeRunId).toBe("RUN-2026-05-31-120000");
+    }
+    // Nothing was mutated: no template re-sync, no install commands.
+    expect(templates.requests).toHaveLength(0);
+    expect(childProcess.calls).toHaveLength(0);
+  });
+
+  it("awaits the active run settling before mutating the runner (P0-3)", async () => {
+    const { service, activeRun } = build();
+    // No active run id, but a settle hook is still awaited before any mutation.
+    const result = await service.repair();
+    expect(result.ok).toBe(true);
+    expect(activeRun.settled).toBe(true);
   });
 });

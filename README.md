@@ -31,13 +31,13 @@ collaborate on Markdown artifacts that are git-friendly and CI-ready.
 
 ## Product principles
 
-| ID | Principle | Description |
-| --- | --- | --- |
-| P1 | Markdown First | All business artifacts are Markdown. |
-| P2 | Local First | Everything runs locally. |
-| P3 | Git Friendly | All artifacts are version controllable. |
-| P4 | CI Ready | Generated assets execute without Obsidian. |
-| P5 | Zero Configuration | Users can get started immediately. |
+| ID  | Principle          | Description                                |
+| --- | ------------------ | ------------------------------------------ |
+| P1  | Markdown First     | All business artifacts are Markdown.       |
+| P2  | Local First        | Everything runs locally.                   |
+| P3  | Git Friendly       | All artifacts are version controllable.    |
+| P4  | CI Ready           | Generated assets execute without Obsidian. |
+| P5  | Zero Configuration | Users can get started immediately.         |
 
 ## High-level architecture
 
@@ -65,6 +65,27 @@ Obsidian Plugin
 The Obsidian plugin authors and orchestrates. The `.testrunner` folder in the
 vault holds a self-contained Node project that runs Playwright + Cucumber-JS
 and can also be executed standalone from CI.
+
+## What this plugin does on your machine
+
+To run end-to-end tests locally, this plugin does a few things beyond editing
+Markdown. They are disclosed here in line with Obsidian's Developer Policies:
+
+- **Spawns external processes.** The plugin invokes `npm`, `npx`, and `node`
+  (with `shell: false`, never through a shell) to install dependencies, install
+  the browser, validate the environment, and run your tests. These executables
+  must already be available on your system.
+- **Downloads software over the network.** Installing the runner downloads npm
+  packages (Playwright, Cucumber-JS, and their dependencies) and a Chromium
+  browser via `playwright install`. This is the only network activity and it
+  happens only when you trigger an install/repair; the plugin itself does not
+  phone home.
+- **Writes files outside the Obsidian vault index.** It creates and maintains a
+  `.testrunner/` project folder (the self-contained Node test project) and, when
+  you generate CI, a `.github/workflows/` file. These live inside your vault
+  directory but are dot-folders that Obsidian does not index. Everything written
+  is local and version-controllable; nothing leaves your machine except the
+  package/browser downloads above.
 
 ## Vault layout
 

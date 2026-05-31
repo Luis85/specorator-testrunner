@@ -1,8 +1,4 @@
-import {
-  buildStarterFeature,
-  featureFileName,
-  nextFeatureSlug,
-} from "../content/feature-content";
+import { buildStarterFeature, featureFileName, nextFeatureSlug } from "../content/feature-content";
 import { collectStepTexts, parseFeature, useCaseIdFromPath } from "../content/gherkin";
 import { findMissingSteps, parseStepDefinitions } from "../content/step-definitions";
 import type { VaultFileSystem } from "../ports/vault-file-system";
@@ -41,10 +37,7 @@ export interface MissingStepResult {
  * when none is supplied — UC-006 step 3, ADR-0012).
  */
 export interface SpecificationService {
-  createFromUseCase(
-    useCaseId: UseCaseId,
-    slug?: string,
-  ): Promise<Result<FeatureSpecification>>;
+  createFromUseCase(useCaseId: UseCaseId, slug?: string): Promise<Result<FeatureSpecification>>;
   update(specification: FeatureSpecification): Promise<Result<void>>;
   validate(featurePath: VaultPath): Promise<Result<SpecificationValidationResult>>;
   detectMissingSteps(featurePath: VaultPath): Promise<Result<MissingStepResult>>;
@@ -90,9 +83,7 @@ export class DefaultSpecificationService implements SpecificationService {
     const found = await this.useCaseService.findById(useCaseId);
     if (!found.ok) return err(found.error);
     if (found.value === null) {
-      return err(
-        appError("VALIDATION_FAILED", `Use Case "${useCaseId}" was not found.`),
-      );
+      return err(appError("VALIDATION_FAILED", `Use Case "${useCaseId}" was not found.`));
     }
     const useCase = found.value;
 
@@ -120,9 +111,7 @@ export class DefaultSpecificationService implements SpecificationService {
     if (specification === null) {
       // Unreachable for our own starter content; guards against a future edit
       // to buildStarterFeature that drops the Feature line.
-      return err(
-        appError("VALIDATION_FAILED", "Generated Feature content did not parse."),
-      );
+      return err(appError("VALIDATION_FAILED", "Generated Feature content did not parse."));
     }
 
     // The file now exists, so announce creation before the link step — a later
@@ -147,10 +136,7 @@ export class DefaultSpecificationService implements SpecificationService {
 
   /** UC-007: re-serialise and write the Feature, then announce the change. */
   async update(specification: FeatureSpecification): Promise<Result<void>> {
-    const written = await this.fs.writeFile(
-      specification.path,
-      serialiseFeature(specification),
-    );
+    const written = await this.fs.writeFile(specification.path, serialiseFeature(specification));
     if (!written.ok) return err(written.error);
 
     await this.eventBus.publish(
@@ -213,9 +199,7 @@ export class DefaultSpecificationService implements SpecificationService {
 
     const feature = parseFeature(read.value, featurePath);
     if (feature === null) {
-      return err(
-        appError("VALIDATION_FAILED", `"${featurePath}" is not a valid Feature.`),
-      );
+      return err(appError("VALIDATION_FAILED", `"${featurePath}" is not a valid Feature.`));
     }
 
     const settings = await this.settingsService.load();

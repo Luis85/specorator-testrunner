@@ -16,7 +16,8 @@ const FEATURE_CONTENT = "Feature: F\n  Scenario: S\n    Given a step\n    Then a
 /** A FakeVaultFileSystem seeding valid feature content for every UC feature file. */
 const fsWithFeatures = (useCases: UseCase[]): FakeVaultFileSystem => {
   const fs = new FakeVaultFileSystem();
-  for (const uc of useCases) for (const path of uc.featureFiles) fs.files.set(path, FEATURE_CONTENT);
+  for (const uc of useCases)
+    for (const path of uc.featureFiles) fs.files.set(path, FEATURE_CONTENT);
   return fs;
 };
 
@@ -99,8 +100,14 @@ describe("projectDashboardSnapshot (ADR-0017 KPI definitions)", () => {
     // Same runId, per-UC status: one UC failed, one passed. The recent-run row
     // must show failed, not passed-because-it-sorted-first.
     const snapshot = projectDashboardSnapshot([
-      useCase({ id: "UC-001", lastTestRun: { runId: "RUN-ALL", status: "passed", date: "2026-06-03T09:00:00Z" } }),
-      useCase({ id: "UC-002", lastTestRun: { runId: "RUN-ALL", status: "failed", date: "2026-06-03T09:00:00Z" } }),
+      useCase({
+        id: "UC-001",
+        lastTestRun: { runId: "RUN-ALL", status: "passed", date: "2026-06-03T09:00:00Z" },
+      }),
+      useCase({
+        id: "UC-002",
+        lastTestRun: { runId: "RUN-ALL", status: "failed", date: "2026-06-03T09:00:00Z" },
+      }),
     ]);
 
     expect(snapshot.recentRuns).toHaveLength(1);
@@ -109,7 +116,11 @@ describe("projectDashboardSnapshot (ADR-0017 KPI definitions)", () => {
 
   it("excludes a deprecated UC's run from recentRuns", () => {
     const snapshot = projectDashboardSnapshot([
-      useCase({ id: "UC-001", status: "deprecated", lastTestRun: run("RUN-OLD", "2026-06-09T09:00:00Z") }),
+      useCase({
+        id: "UC-001",
+        status: "deprecated",
+        lastTestRun: run("RUN-OLD", "2026-06-09T09:00:00Z"),
+      }),
       useCase({ id: "UC-002", lastTestRun: run("RUN-NEW", "2026-06-01T09:00:00Z") }),
     ]);
     expect(snapshot.recentRuns.map((r) => r.runId)).toEqual(["RUN-NEW"]);
@@ -175,7 +186,12 @@ describe("DefaultTraceabilityService.refreshDashboard", () => {
         return err(appError("VALIDATION_FAILED", "boom"));
       },
     };
-    const service = new DefaultTraceabilityService(failing, new FakeVaultFileSystem(), bus, silentLogger);
+    const service = new DefaultTraceabilityService(
+      failing,
+      new FakeVaultFileSystem(),
+      bus,
+      silentLogger,
+    );
 
     const result = await service.refreshDashboard();
     expect(result.ok).toBe(false);
@@ -190,7 +206,10 @@ describe("DefaultTraceabilityService.linksFor", () => {
       stubUseCaseService([
         useCase({
           id: "UC-001",
-          featureFiles: ["Specifications/features/UC-001.feature", "Specifications/features/UC-001b.feature"],
+          featureFiles: [
+            "Specifications/features/UC-001.feature",
+            "Specifications/features/UC-001b.feature",
+          ],
           suites: ["smoke"],
           evidence: ["Test Evidence/runs/EV-1.md"],
           lastTestRun: run("RUN-A", "2026-06-01T09:00:00Z"),
@@ -215,7 +234,12 @@ describe("DefaultTraceabilityService.linksFor", () => {
 
   it("returns VALIDATION_FAILED for an unknown UC id", async () => {
     const { bus } = recordingEventBus();
-    const service = new DefaultTraceabilityService(stubUseCaseService([]), new FakeVaultFileSystem(), bus, silentLogger);
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService([]),
+      new FakeVaultFileSystem(),
+      bus,
+      silentLogger,
+    );
     const result = await service.linksFor("UC-999");
     expect(result.ok).toBe(false);
     if (result.ok) return;

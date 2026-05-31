@@ -234,8 +234,6 @@ export class DefaultInitializationService implements InitializationService {
       paths.testRunnerPath,
       logging.path,
     ];
-    return [...new Set(candidates)].sort(
-      (a, b) => a.split("/").length - b.split("/").length,
-    );
+    return [...new Set(candidates)].sort((a, b) => a.split("/").length - b.split("/").length);
   }
 }

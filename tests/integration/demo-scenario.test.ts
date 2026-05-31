@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   buildDemoUseCaseNote,
   DEMO_FEATURE_CONTENT,
@@ -13,14 +13,8 @@ import { DefaultSuiteService } from "../../src/application/services/suite-servic
 import { DefaultUseCaseService } from "../../src/application/services/use-case-service";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/settings";
 import { DefaultPathSafetyPolicy } from "../../src/domain/policies/path-safety-policy";
-import type { VaultPath } from "../../src/domain/value-objects/identifiers";
 import { joinVaultPath } from "../../src/shared/utils/vault-path";
-import {
-  FakeDataStore,
-  FakeVaultFileSystem,
-  recordingEventBus,
-  silentLogger,
-} from "../fakes";
+import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "../fakes";
 
 /**
  * US-049 — Validate Demo Scenario (FEAT-028, UC-001).
@@ -36,10 +30,7 @@ import {
  * before a user ever opens the vault.
  */
 
-const FEATURE_PATH = joinVaultPath(
-  DEFAULT_SETTINGS.paths.featureFilesPath,
-  DEMO_FEATURE_FILE_NAME,
-) as VaultPath;
+const FEATURE_PATH = joinVaultPath(DEFAULT_SETTINGS.paths.featureFilesPath, DEMO_FEATURE_FILE_NAME);
 
 const build = () => {
   const fs = new FakeVaultFileSystem();
@@ -77,7 +68,7 @@ describe("US-049 demo scenario: shipped demo content is valid end-to-end", () =>
     const ucPath = joinVaultPath(
       DEFAULT_SETTINGS.paths.useCasesPath,
       `${DEMO_USE_CASE_ID} ${DEMO_USE_CASE_TITLE}.md`,
-    ) as VaultPath;
+    );
     await fs.createFile(ucPath, buildDemoUseCaseNote(FEATURE_PATH));
 
     const all = await useCases.findAll();

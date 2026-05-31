@@ -200,8 +200,7 @@ export class DefaultReportImportService implements ReportImportService {
       if (!isRecord(rawFeature)) continue;
       const feature = rawFeature as CucumberFeature;
       const featureUri = typeof feature.uri === "string" ? feature.uri : undefined;
-      const featureName =
-        typeof feature.name === "string" ? feature.name : (featureUri ?? "");
+      const featureName = typeof feature.name === "string" ? feature.name : (featureUri ?? "");
       const elements = Array.isArray(feature.elements) ? feature.elements : [];
       // A failed Background fails every scenario it precedes (Cucumber marks
       // their steps skipped), so fold it into those scenarios rather than
@@ -222,9 +221,7 @@ export class DefaultReportImportService implements ReportImportService {
           // replaces the prior one for the scenarios that follow IT — including
           // clearing a carried-over failure, otherwise every following scenario
           // would be mis-reported as failed.
-          bgSteps = (Array.isArray(scenario.steps) ? scenario.steps : []).filter(
-            isRecord,
-          ) as CucumberStep[];
+          bgSteps = (Array.isArray(scenario.steps) ? scenario.steps : []).filter(isRecord);
           bgFailed = scenarioStatus(bgSteps) === "failed";
           continue;
         }

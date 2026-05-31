@@ -10,12 +10,8 @@ export const formatOutputLine = (stream: "stdout" | "stderr", line: string): str
   stream === "stderr" ? `[stderr] ${line}` : line;
 
 /** Human-readable banner for the run's terminal state. */
-export const formatStatusBanner = (
-  status: TestRunStatus,
-  durationMs?: number,
-): string => {
-  const suffix =
-    durationMs !== undefined ? ` (${(durationMs / 1000).toFixed(1)}s)` : "";
+export const formatStatusBanner = (status: TestRunStatus, durationMs?: number): string => {
+  const suffix = durationMs !== undefined ? ` (${(durationMs / 1000).toFixed(1)}s)` : "";
   switch (status) {
     case "passed":
       return `Run passed${suffix}`;

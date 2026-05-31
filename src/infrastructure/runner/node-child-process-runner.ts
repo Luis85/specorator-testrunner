@@ -41,10 +41,12 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
     return this.spawn(request, onOutput);
   }
 
-  async cancel(_processId: string): Promise<Result<void>> {
-    // V1 cancels the active install/run; finer-grained targeting arrives with
-    // the test-execution epic.
-    for (const child of this.active.values()) this.killTree(child);
+  async cancel(processId: string): Promise<Result<void>> {
+    // Honor the id: kill ONLY the matching child (and its whole process tree),
+    // never sibling installs/validations sharing this runner (P0-4). An unknown
+    // id is a safe no-op (the process already closed and removed itself).
+    const child = this.active.get(processId);
+    if (child) this.killTree(child);
     return ok(undefined);
   }
 
@@ -83,7 +85,10 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
   ): Promise<Result<RunnerCommandResult>> {
     return new Promise((resolve) => {
       const started = Date.now();
-      const id = `proc-${++this.counter}`;
+      // Register under the caller's cancellation handle (e.g. runId) when given,
+      // so cancel(processId) targets exactly this child; otherwise an internal
+      // id keeps it tracked for cleanup but unreachable by external cancel.
+      const id = request.processId ?? `proc-${++this.counter}`;
       let settled = false;
       const finish = (result: Result<RunnerCommandResult>) => {
         if (settled) return;
@@ -145,7 +150,10 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
           });
         }
       } catch (cause) {
-        finish({ ok: false, error: appError("INIT_FAILED", `Could not spawn: ${display}`, { cause }) });
+        finish({
+          ok: false,
+          error: appError("INIT_FAILED", `Could not spawn: ${display}`, { cause }),
+        });
         return;
       }
       this.active.set(id, child);
@@ -178,7 +186,10 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       child.stdout?.on("data", (chunk: Buffer) => emit("stdout", chunk));
       child.stderr?.on("data", (chunk: Buffer) => emit("stderr", chunk));
       child.on("error", (cause) =>
-        finish({ ok: false, error: appError("INIT_FAILED", `Process error: ${display}`, { cause }) }),
+        finish({
+          ok: false,
+          error: appError("INIT_FAILED", `Process error: ${display}`, { cause }),
+        }),
       );
       child.on("close", (code) => {
         flushTail("stdout");

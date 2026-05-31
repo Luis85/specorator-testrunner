@@ -33,6 +33,14 @@ interface CompletedPayload {
  * status banner. Formatting is delegated to the pure {@link test-console-format}
  * helpers so the rendering rules are unit-tested without a DOM.
  */
+/**
+ * Cap on retained output lines. A long-running suite can stream tens of
+ * thousands of lines; without a bound each becomes a permanent `<div>` and the
+ * DOM grows without limit. We keep the most recent {@link MAX_OUTPUT_LINES} and
+ * drop the oldest beyond that (PRES-M4).
+ */
+const MAX_OUTPUT_LINES = 5000;
+
 export class TestConsoleView extends ItemView {
   private readonly subscriptions: Unsubscribe[] = [];
   private output!: HTMLElement;
@@ -65,9 +73,7 @@ export class TestConsoleView extends ItemView {
     this.output = container.createEl("pre", { cls: "e2e-test-hub-console-output" });
 
     this.subscriptions.push(
-      this.eventBus.subscribe<StartedPayload>("testrun.started", (event) =>
-        this.onStarted(event),
-      ),
+      this.eventBus.subscribe<StartedPayload>("testrun.started", (event) => this.onStarted(event)),
       this.eventBus.subscribe<OutputPayload>("testrun.output.received", (event) =>
         this.onOutputReceived(event),
       ),
@@ -91,13 +97,28 @@ export class TestConsoleView extends ItemView {
       text: `$ ${event.payload.command}`,
       cls: "e2e-test-hub-console-cmd",
     });
+    this.output.scrollTop = this.output.scrollHeight;
   }
 
   private onOutputReceived(event: DomainEvent<OutputPayload>): void {
+    // Append only when the user is already pinned to the bottom (within a small
+    // slack) so we don't yank the viewport while they scroll back through
+    // earlier output.
+    const pinnedToBottom =
+      this.output.scrollHeight - this.output.scrollTop - this.output.clientHeight < 4;
+
     this.output.createEl("div", {
       text: formatOutputLine(event.payload.stream, event.payload.line),
       cls: event.payload.stream === "stderr" ? "e2e-test-hub-console-stderr" : undefined,
     });
+
+    // Bound the retained DOM: drop the oldest lines beyond the cap so a long
+    // run can't grow the panel without limit (PRES-M4).
+    while (this.output.childElementCount > MAX_OUTPUT_LINES) {
+      this.output.firstElementChild?.remove();
+    }
+
+    if (pinnedToBottom) this.output.scrollTop = this.output.scrollHeight;
   }
 
   private onTerminal(status: TestRunStatus, durationMs?: number): void {

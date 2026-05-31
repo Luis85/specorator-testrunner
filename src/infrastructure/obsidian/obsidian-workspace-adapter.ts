@@ -29,7 +29,9 @@ export class ObsidianWorkspaceAdapter implements WorkspacePort {
       leaf = right;
       await leaf.setViewState({ type: viewType, active: true });
     }
-    workspace.revealLeaf(leaf);
+    // revealLeaf may return a promise in some Obsidian versions; we do not
+    // need to await it (the view is already attached), so discard it.
+    void workspace.revealLeaf(leaf);
     return ok(undefined);
   }
 

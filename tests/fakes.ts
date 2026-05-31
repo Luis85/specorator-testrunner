@@ -14,10 +14,7 @@ import type {
 import type { VaultFileSystem } from "../src/application/ports/vault-file-system";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { joinVaultPath } from "../src/shared/utils/vault-path";
-import type {
-  DomainEvent,
-  DomainEventType,
-} from "../src/domain/events/domain-event";
+import type { DomainEvent, DomainEventType } from "../src/domain/events/domain-event";
 import { InMemoryEventBus } from "../src/shared/event-bus/event-bus";
 import type { Logger } from "../src/shared/logging/logger";
 import { ok, type Result } from "../src/shared/result/result";
@@ -254,7 +251,7 @@ export const recordingEventBus = (): {
   const bus = new InMemoryEventBus();
   const originalPublish = bus.publish.bind(bus);
   bus.publish = async <T>(event: DomainEvent<T>) => {
-    events.push(event as DomainEvent);
+    events.push(event);
     return originalPublish(event);
   };
   return { bus, events, types: () => events.map((event) => event.type) };

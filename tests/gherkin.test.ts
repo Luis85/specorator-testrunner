@@ -137,11 +137,7 @@ describe("parseFeature", () => {
     // Background is its own block, NOT a scenario, and collected for missing-steps.
     expect(feature.background?.map((s) => s.text)).toEqual(["I am logged in"]);
     expect(feature.scenarios).toHaveLength(1);
-    expect(collectStepTexts(feature)).toEqual([
-      "I am logged in",
-      "I do a thing",
-      "it works",
-    ]);
+    expect(collectStepTexts(feature)).toEqual(["I am logged in", "I do a thing", "it works"]);
   });
 
   it("does not treat doc-string content as steps", () => {

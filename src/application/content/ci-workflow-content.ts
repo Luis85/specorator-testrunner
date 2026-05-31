@@ -2,13 +2,7 @@ import type { TestHubSettings } from "../../domain/settings/settings";
 
 // `npm ci` and its documented aliases (npm ci --help), all of which do a
 // lockfile-requiring clean install.
-const NPM_CI_SUBCOMMANDS = new Set([
-  "ci",
-  "clean-install",
-  "ic",
-  "install-clean",
-  "isntall-clean",
-]);
+const NPM_CI_SUBCOMMANDS = new Set(["ci", "clean-install", "ic", "install-clean", "isntall-clean"]);
 
 /** True when a CI install command is an `npm ci` invocation (any alias/flags). */
 export const isNpmCiCommand = (command: string): boolean => {

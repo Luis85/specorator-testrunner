@@ -38,10 +38,7 @@ import {
   DefaultSpecificationService,
   type SpecificationService,
 } from "./application/services/specification-service";
-import {
-  DefaultSuiteService,
-  type SuiteService,
-} from "./application/services/suite-service";
+import { DefaultSuiteService, type SuiteService } from "./application/services/suite-service";
 import {
   DefaultTraceabilityService,
   type TraceabilityService,
@@ -58,7 +55,11 @@ import {
 import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
 import type { TestRun } from "./domain/entities/test-run";
-import { DEFAULT_SETTINGS, type TestHubSettings } from "./domain/settings/settings";
+import {
+  collectCredentialValues,
+  DEFAULT_SETTINGS,
+  type TestHubSettings,
+} from "./domain/settings/settings";
 import { NodeAbsoluteFileSystem } from "./infrastructure/filesystem/node-absolute-file-system";
 import { ObsidianDataStore } from "./infrastructure/obsidian/obsidian-data-store";
 import { ObsidianVaultAdapter } from "./infrastructure/obsidian/obsidian-vault-adapter";
@@ -70,25 +71,16 @@ import { CreateSuiteModal } from "./presentation/views/create-suite-modal";
 import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
 import { GenerateFeatureModal } from "./presentation/views/generate-feature-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
-import {
-  SUITE_VIEW_TYPE,
-  SuiteDashboardView,
-} from "./presentation/views/suite-dashboard-view";
+import { SUITE_VIEW_TYPE, SuiteDashboardView } from "./presentation/views/suite-dashboard-view";
 import { RunPickerModal } from "./presentation/views/run-picker-modal";
-import {
-  TEST_CONSOLE_VIEW_TYPE,
-  TestConsoleView,
-} from "./presentation/views/test-console-view";
+import { TEST_CONSOLE_VIEW_TYPE, TestConsoleView } from "./presentation/views/test-console-view";
 import {
   USE_CASE_VIEW_TYPE,
   UseCaseDashboardView,
 } from "./presentation/views/use-case-dashboard-view";
-import {
-  DASHBOARD_VIEW_TYPE,
-  DashboardView,
-} from "./presentation/views/dashboard-view";
+import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
 import { InMemoryEventBus } from "./shared/event-bus/event-bus";
-import { ConsoleLogger, type Logger } from "./shared/logging/logger";
+import { ConsoleLogger } from "./shared/logging/logger";
 import type { Result } from "./shared/result/result";
 
 /**
@@ -98,7 +90,7 @@ import type { Result } from "./shared/result/result";
  */
 export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private hubSettings: TestHubSettings = DEFAULT_SETTINGS;
-  private logger!: Logger;
+  private logger!: ConsoleLogger;
   private hubSettingsService!: SettingsService;
   private initializationService!: InitializationService;
   private validationService!: EnvironmentValidationService;
@@ -129,9 +121,22 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     const pathSafety = new DefaultPathSafetyPolicy();
     const dataStore = new ObsidianDataStore(this);
 
-    this.hubSettingsService = new DefaultSettingsService(dataStore, pathSafety, eventBus);
+    // The logger is built first so SettingsService.load() can report a tampered
+    // path (P0-1) and so it exists before any settings/secrets are known. Its
+    // value-based redaction set (ADR-0019) is populated from the loaded SUT
+    // credentials immediately after load and refreshed on every settings change
+    // (P0-2). Reconstructed once the persisted log level is known.
+    const consoleLogger = new ConsoleLogger("info");
+    this.logger = consoleLogger;
+    this.hubSettingsService = new DefaultSettingsService(
+      dataStore,
+      pathSafety,
+      eventBus,
+      this.logger,
+    );
     this.hubSettings = await this.hubSettingsService.load();
     this.logger = new ConsoleLogger(this.hubSettings.logging.level);
+    this.refreshLoggerSecrets();
 
     const vault = new ObsidianVaultAdapter(this.app);
     this.vaultAdapter = vault;
@@ -175,13 +180,23 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // EPIC-010 CI/CD (UC-019): generate the GitHub Actions workflow into the
     // user's repo root via the absolute filesystem (the workflow is not a
     // VaultPath; it must live where GitHub Actions discovers it, TIS §8.13).
-    this.pipelineService = new DefaultPipelineGenerationService(absoluteFs, eventBus, commandSafety);
+    this.pipelineService = new DefaultPipelineGenerationService(
+      absoluteFs,
+      eventBus,
+      commandSafety,
+    );
+    // Guard repair() against an active run (P0-3). The execution service is
+    // built further down, so delegate lazily through `this`.
     this.maintenanceService = new DefaultMaintenanceService(
       this.hubSettingsService,
       this.validationService,
       runnerInstall,
       eventBus,
       this.logger,
+      {
+        activeRunId: () => this.testExecutionService.activeRunId(),
+        whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
+      },
     );
     this.initializationService = new DefaultInitializationService(
       this.hubSettingsService,
@@ -270,10 +285,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           onCreate: () => this.openCreateSuite(),
         }),
     );
-    this.registerView(
-      TEST_CONSOLE_VIEW_TYPE,
-      (leaf) => new TestConsoleView(leaf, eventBus),
-    );
+    this.registerView(TEST_CONSOLE_VIEW_TYPE, (leaf) => new TestConsoleView(leaf, eventBus));
     this.registerView(
       DASHBOARD_VIEW_TYPE,
       (leaf) =>
@@ -327,8 +339,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Open Use Cases",
       callback: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
     });
-    this.addRibbonIcon("list-checks", "Open Use Cases", () =>
-      void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
+    this.addRibbonIcon(
+      "list-checks",
+      "Open Use Cases",
+      () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
     );
     this.addCommand({
       id: "create-test-suite",
@@ -340,8 +354,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Open Test Suites",
       callback: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
     });
-    this.addRibbonIcon("layers", "Open Test Suites", () =>
-      void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
+    this.addRibbonIcon(
+      "layers",
+      "Open Test Suites",
+      () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
     );
     this.addCommand({
       id: "generate-feature",
@@ -426,8 +442,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         }
       },
     });
-    this.addRibbonIcon("terminal", "Open Test Console", () =>
-      void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
+    this.addRibbonIcon(
+      "terminal",
+      "Open Test Console",
+      () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
     );
 
     // EPIC-009 Dashboard (UC-018).
@@ -436,8 +454,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Open Dashboard",
       callback: () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
     });
-    this.addRibbonIcon("gauge", "Open Test Hub Dashboard", () =>
-      void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
+    this.addRibbonIcon(
+      "gauge",
+      "Open Test Hub Dashboard",
+      () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
     );
 
     // EPIC-011 Documentation (FEAT-024 US-043/044/045, FEAT-025 US-046).
@@ -465,29 +485,39 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.logger.info("E2E Test Hub loaded");
   }
 
-  async onunload(): Promise<void> {
-    // A disable/reload while a run is active would otherwise leave the runner's
-    // npm/Cucumber child alive inside Obsidian with no console subscribers and
-    // no command path to stop it — cancel it before tearing down the UI.
+  onunload(): void {
+    // Best-effort SYNCHRONOUS teardown (PRES-H1, P1-4). Obsidian does NOT await
+    // the promise onunload returns, so we cannot meaningfully `await` the cancel
+    // or `whenActiveSettles()` here — the awaits would be fire-and-forget and the
+    // "wait for the child to exit before teardown" guarantee would not hold.
+    //
+    // Instead: issue the kill signal immediately so a run active during a
+    // disable/reload doesn't leave the runner's npm/Cucumber child alive inside
+    // Obsidian with no console subscribers and no command path to stop it. We
+    // `void` the discarded promise — cancel() reserves nothing and only signals
+    // the child; the service's single-active-run slot (reserved synchronously in
+    // execute(), freed only when the process actually closes) prevents overlap
+    // WITHIN this instance.
+    //
+    // Residual limitation: a brand-new plugin instance can onload() while this
+    // instance's child is still closing. That cross-instance overlap is inherent
+    // without a cross-instance lock and is acceptable for V1 (the per-run report
+    // snapshot already protects evidence attribution).
     const active = this.testExecutionService?.activeRunId() ?? null;
     if (active !== null) {
-      const cancelled = await this.testExecutionService.cancel(active);
-      if (!cancelled.ok) {
-        this.logger?.warn("Could not cancel active run on unload", {
-          runId: active,
-          reason: cancelled.error.message,
-        });
-      }
+      void this.testExecutionService.cancel(active).then((cancelled) => {
+        if (!cancelled.ok) {
+          this.logger?.warn("Could not cancel active run on unload", {
+            runId: active,
+            reason: cancelled.error.message,
+          });
+        }
+      });
     }
-    // cancel() only signals the child; the run settles when the runner process
-    // actually closes. Await the service's active-run completion so the
-    // npm/Cucumber process has exited (and stopped writing reports) before this
-    // instance tears down and a new one could start.
-    await this.testExecutionService?.whenActiveSettles().catch(() => undefined);
-    this.app.workspace.detachLeavesOfType(USE_CASE_VIEW_TYPE);
-    this.app.workspace.detachLeavesOfType(SUITE_VIEW_TYPE);
-    this.app.workspace.detachLeavesOfType(TEST_CONSOLE_VIEW_TYPE);
-    this.app.workspace.detachLeavesOfType(DASHBOARD_VIEW_TYPE);
+    // registerView + each view's onClose already tear the views down on unload;
+    // detachLeavesOfType is explicitly discouraged (it destroys the user's saved
+    // workspace layout across reloads/updates), so it is intentionally NOT called
+    // here (P1-3 / PRES-H2).
     this.logger?.info("E2E Test Hub unloaded");
   }
 
@@ -505,10 +535,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     await this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
     const result = await this.testExecutionService.execute(request);
     if (!result.ok) {
-      const active = result.error.details?.activeRunId;
+      // `details` is typed `Record<string, unknown>`, so `activeRunId` widens
+      // to `unknown`; at runtime it is always the active run's id string.
+      const active =
+        typeof result.error.details?.activeRunId === "string"
+          ? result.error.details.activeRunId
+          : "";
       new Notice(
         active
-          ? `A run is already in progress (${String(active)}). Cancel it first.`
+          ? `A run is already in progress (${active}). Cancel it first.`
           : `Could not start run: ${result.error.message}`,
         10000,
       );
@@ -783,10 +818,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       new Notice(`CI workflow written to ${result.value.path}.`);
     } else if (!overwriteExisting && result.error.details?.path) {
       // The file exists; make the documented overwrite flow reachable (UC-019).
-      new Notice(
-        `${result.error.message} Use "Overwrite CI Workflow" to replace it.`,
-        10000,
-      );
+      new Notice(`${result.error.message} Use "Overwrite CI Workflow" to replace it.`, 10000);
     } else {
       new Notice(`Could not generate CI workflow: ${result.error.message}`, 10000);
     }
@@ -798,15 +830,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     const result = await this.validationService.validateCiReadiness(this.hubSettings);
     // Spell out the warnings (e.g. which repository secrets to create), not just
     // a count — this Notice is the only UI surface for the readiness result.
-    const warnings =
-      result.warnings.length > 0 ? `\nWarnings: ${result.warnings.join("; ")}` : "";
+    const warnings = result.warnings.length > 0 ? `\nWarnings: ${result.warnings.join("; ")}` : "";
     if (result.ready) {
       new Notice(`CI is ready.${warnings}`, warnings ? 10000 : undefined);
     } else {
-      new Notice(
-        `CI not ready — missing: ${result.missingItems.join("; ")}${warnings}`,
-        10000,
-      );
+      new Notice(`CI not ready — missing: ${result.missingItems.join("; ")}${warnings}`, 10000);
     }
   }
 
@@ -845,13 +873,40 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     const result = await this.hubSettingsService.save(next);
     if (result.ok) {
       this.hubSettings = next;
+      // New/changed SUT credentials must start being scrubbed immediately
+      // (ADR-0019 value-based redaction, P0-2 / T3).
+      this.refreshLoggerSecrets();
       this.logger.info("Settings updated");
     }
     return result;
   }
 
   async resetSettings(): Promise<void> {
+    // A reset overwrites settings/credentials; refuse while a run is active so
+    // it can't redirect evidence writes or swap credentials mid-run (P0-3).
+    if (this.testExecutionService.activeRunId() !== null) {
+      new Notice("A test run is in progress; cancel it before resetting settings.", 10000);
+      return;
+    }
+    // Let the active-run completion + in-flight evidence writes settle before
+    // mutating settings (defensive: the guard above already covers the common
+    // case, but evidence I/O outlives the active slot — see evidenceChain).
+    await this.testExecutionService.whenActiveSettles().catch(() => undefined);
+    await this.evidenceChain.catch(() => undefined);
     const result = await this.hubSettingsService.reset();
-    if (result.ok) this.hubSettings = result.value;
+    if (result.ok) {
+      this.hubSettings = result.value;
+      this.refreshLoggerSecrets();
+    }
+  }
+
+  /**
+   * Rebuilds the Logger's value-based redaction set (ADR-0019) from the current
+   * SUT credential values, so a credential logged positionally under a
+   * non-sensitive key (e.g. streamed runner stderr) is scrubbed to `***`
+   * (P0-2 / T3). Called after load and on every settings change.
+   */
+  private refreshLoggerSecrets(): void {
+    this.logger.setSecrets(collectCredentialValues(this.hubSettings));
   }
 }

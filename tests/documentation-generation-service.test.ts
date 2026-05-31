@@ -12,11 +12,7 @@ import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { ok, type Result } from "../src/shared/result/result";
 import { joinVaultPath } from "../src/shared/utils/vault-path";
-import {
-  FakeDataStore,
-  FakeVaultFileSystem,
-  recordingEventBus,
-} from "./fakes";
+import { FakeDataStore, FakeVaultFileSystem, recordingEventBus } from "./fakes";
 
 const DOCS = DEFAULT_SETTINGS.paths.documentationPath;
 
@@ -51,12 +47,7 @@ const makeService = () => {
     bus,
   );
   const workspace = new FakeWorkspace();
-  const service = new DefaultDocumentationGenerationService(
-    settings,
-    fs,
-    bus,
-    workspace,
-  );
+  const service = new DefaultDocumentationGenerationService(settings, fs, bus, workspace);
   return { service, fs, events, types, workspace };
 };
 
@@ -232,15 +223,9 @@ describe("documentation content builders (US-043/044/045)", () => {
   });
 
   it("documentationFileName resolves every type", () => {
-    expect(documentationFileName(DEFAULT_SETTINGS, "index")).toBe(
-      "Test Hub Documentation.md",
-    );
-    expect(documentationFileName(DEFAULT_SETTINGS, "getting-started")).toBe(
-      "Getting Started.md",
-    );
+    expect(documentationFileName(DEFAULT_SETTINGS, "index")).toBe("Test Hub Documentation.md");
+    expect(documentationFileName(DEFAULT_SETTINGS, "getting-started")).toBe("Getting Started.md");
     expect(documentationFileName(DEFAULT_SETTINGS, "manual")).toBe("User Manual.md");
-    expect(documentationFileName(DEFAULT_SETTINGS, "troubleshooting")).toBe(
-      "Troubleshooting.md",
-    );
+    expect(documentationFileName(DEFAULT_SETTINGS, "troubleshooting")).toBe("Troubleshooting.md");
   });
 });

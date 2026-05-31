@@ -72,9 +72,9 @@ describe("tokenizeCommand", () => {
   });
 
   it("keeps a double-quoted argument with spaces as one token", () => {
-    expect(
-      tokenizeCommand('npm run test -- --format "json:reports/cucumber report.json"'),
-    ).toEqual(["npm", "run", "test", "--", "--format", "json:reports/cucumber report.json"]);
+    expect(tokenizeCommand('npm run test -- --format "json:reports/cucumber report.json"')).toEqual(
+      ["npm", "run", "test", "--", "--format", "json:reports/cucumber report.json"],
+    );
   });
 
   it("keeps single-quoted arguments literal and honors backslash escapes", () => {
@@ -90,9 +90,14 @@ describe("tokenizeCommand", () => {
   });
 
   it("keeps unquoted backslashes literal (Windows paths)", () => {
-    expect(
-      tokenizeCommand("npm run test -- --format json:C:\\tmp\\cucumber.json"),
-    ).toEqual(["npm", "run", "test", "--", "--format", "json:C:\\tmp\\cucumber.json"]);
+    expect(tokenizeCommand("npm run test -- --format json:C:\\tmp\\cucumber.json")).toEqual([
+      "npm",
+      "run",
+      "test",
+      "--",
+      "--format",
+      "json:C:\\tmp\\cucumber.json",
+    ]);
   });
 
   it("returns an empty array for a blank command", () => {
@@ -131,11 +136,7 @@ describe("DefaultTestExecutionService", () => {
     expect(result.value.status).toBe("passed");
     expect(result.value.id).toBe("RUN-2026-06-01-100000");
     expect(childProcess.calls[0].args).toEqual(["npm", "run", "test:smoke"]);
-    expect(types()).toEqual([
-      "testrun.requested",
-      "testrun.started",
-      "testrun.completed",
-    ]);
+    expect(types()).toEqual(["testrun.requested", "testrun.started", "testrun.completed"]);
   });
 
   it("resolves the all command", async () => {
@@ -334,9 +335,7 @@ describe("DefaultTestExecutionService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("passed");
-    expect(result.value.command).toBe(
-      "npm run test -- ../Specifications/features/R&D.feature",
-    );
+    expect(result.value.command).toBe("npm run test -- ../Specifications/features/R&D.feature");
   });
 
   it("resolves the use-case command as a feature glob when the UC is unknown", async () => {

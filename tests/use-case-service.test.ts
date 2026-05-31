@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
-import {
-  DefaultUseCaseService,
-  nextUseCaseId,
-} from "../src/application/services/use-case-service";
+import { DefaultUseCaseService, nextUseCaseId } from "../src/application/services/use-case-service";
 import { buildDemoUseCaseNote } from "../src/application/content/demo-content";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { UseCase } from "../src/domain/entities/use-case";
@@ -13,7 +10,11 @@ import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } f
 const build = () => {
   const fs = new FakeVaultFileSystem();
   const { bus, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(new FakeDataStore(), new DefaultPathSafetyPolicy(), bus);
+  const settings = new DefaultSettingsService(
+    new FakeDataStore(),
+    new DefaultPathSafetyPolicy(),
+    bus,
+  );
   const service = new DefaultUseCaseService(settings, fs, bus, silentLogger);
   return { service, fs, types };
 };
@@ -48,7 +49,7 @@ describe("DefaultUseCaseService", () => {
   });
 
   it("collapses a multi-line description into a single frontmatter line", async () => {
-    const { service, fs } = build();
+    const { service } = build();
     const result = await service.create({
       title: "Multi",
       description: "First line.\nSecond line.\n\nThird.",
@@ -63,7 +64,10 @@ describe("DefaultUseCaseService", () => {
 
   it("allocates the next id from existing use cases", async () => {
     const { service, fs } = build();
-    fs.files.set("Use Cases/UC-001 Demo.md", buildDemoUseCaseNote("Specifications/features/demo.feature"));
+    fs.files.set(
+      "Use Cases/UC-001 Demo.md",
+      buildDemoUseCaseNote("Specifications/features/demo.feature"),
+    );
 
     const result = await service.create({ title: "Second" });
 
@@ -96,12 +100,21 @@ describe("DefaultUseCaseService", () => {
     const { service, fs } = build();
     fs.files.set(
       "Use Cases/UC-002 Later.md",
-      buildNote({ type: "use-case", id: "UC-002", title: "Later", status: "specified" }, "# UC-002"),
+      buildNote(
+        { type: "use-case", id: "UC-002", title: "Later", status: "specified" },
+        "# UC-002",
+      ),
     );
     fs.files.set(
       "Use Cases/UC-001 First.md",
       buildNote(
-        { type: "use-case", id: "UC-001", title: "First", automation_status: "passing", feature_file: "f.feature" },
+        {
+          type: "use-case",
+          id: "UC-001",
+          title: "First",
+          automation_status: "passing",
+          feature_file: "f.feature",
+        },
         "# UC-001",
       ),
     );
@@ -121,7 +134,10 @@ describe("DefaultUseCaseService", () => {
     const { service, fs } = build();
     fs.files.set(
       "Use Cases/UC-002 Later.md",
-      buildNote({ type: "use-case", id: "UC-002", title: "Later", status: "specified" }, "# UC-002"),
+      buildNote(
+        { type: "use-case", id: "UC-002", title: "Later", status: "specified" },
+        "# UC-002",
+      ),
     );
 
     const found = await service.findById("UC-002");
@@ -138,18 +154,28 @@ describe("DefaultUseCaseService", () => {
     fs.files.set(
       path,
       buildNote(
-        { type: "use-case", id: "UC-001", title: "Legacy", feature_file: "Specifications/features/UC-001-happy-path.feature" },
+        {
+          type: "use-case",
+          id: "UC-001",
+          title: "Legacy",
+          feature_file: "Specifications/features/UC-001-happy-path.feature",
+        },
         "# UC-001",
       ),
     );
     const loaded = await service.findById("UC-001");
     if (!loaded.ok || !loaded.value) throw new Error("expected UC-001");
-    expect(loaded.value.featureFiles).toEqual(["Specifications/features/UC-001-happy-path.feature"]);
+    expect(loaded.value.featureFiles).toEqual([
+      "Specifications/features/UC-001-happy-path.feature",
+    ]);
 
     // Add a second feature and persist.
     await service.update({
       ...loaded.value,
-      featureFiles: [...loaded.value.featureFiles, "Specifications/features/UC-001-feature-2.feature"],
+      featureFiles: [
+        ...loaded.value.featureFiles,
+        "Specifications/features/UC-001-feature-2.feature",
+      ],
     });
 
     // Re-read: no duplication from the old feature_file lingering.
@@ -170,7 +196,13 @@ describe("DefaultUseCaseService", () => {
     fs.files.set(
       path,
       buildNote(
-        { type: "use-case", id: "UC-001", title: "Hand Edited", status: "specified", owner: "qa-team" },
+        {
+          type: "use-case",
+          id: "UC-001",
+          title: "Hand Edited",
+          status: "specified",
+          owner: "qa-team",
+        },
         "# UC-001\n\n## Notes\n\nHand-written analysis that must not be deleted.",
       ),
     );

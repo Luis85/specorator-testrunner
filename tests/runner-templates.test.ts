@@ -66,4 +66,34 @@ describe("buildRunnerTemplates", () => {
     expect(byPath.get("package.json")?.overwrite).toBe(true);
     expect(byPath.get("src/support/world.ts")?.overwrite).toBe(true);
   });
+
+  it("escapes a hostile feature path into a safe JS string literal (P0-1 defence-in-depth)", () => {
+    // Even if PathSafetyPolicy were bypassed and a break-out payload reached the
+    // generator, JSON.stringify must keep `paths` a single, fully-escaped string
+    // literal so the generated module Node loads cannot execute injected code.
+    const hostile = 'features"]};import("node:child_process").execSync("calc");//';
+    const cucumber = cucumberFor({
+      ...DEFAULT_SETTINGS,
+      paths: { ...DEFAULT_SETTINGS.paths, featureFilesPath: hostile },
+    });
+    // The embedded quote that would close the literal must be backslash-escaped
+    // (JSON.stringify) so it can't break out — i.e. `"` only ever appears as `\"`.
+    expect(cucumber).toContain('\\"]};import(');
+    // The emitted module must still be valid JS that evaluates to a config with
+    // a single string `paths` entry — i.e. nothing escaped the literal.
+    const config = evalModule(cucumber);
+    expect(Array.isArray(config.default.paths)).toBe(true);
+    expect(config.default.paths).toHaveLength(1);
+    expect(typeof config.default.paths[0]).toBe("string");
+    // The breakout sequence survived as inert STRING DATA inside the literal —
+    // nothing escaped to module scope (which would have thrown or changed shape).
+    expect(config.default.paths[0]).toContain('"]};import(');
+  });
 });
+
+/** Evaluates the generated `export default { … }` module body in isolation. */
+const evalModule = (source: string): { default: { paths: unknown[] } } => {
+  const body = source.replace(/^export default/, "return");
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  return new Function(body)() as { default: { paths: unknown[] } };
+};

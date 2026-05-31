@@ -16,9 +16,16 @@ describe("buildFrontmatter", () => {
       suites: ["smoke", "regression"],
     });
     expect(fm).toBe(
-      ["---", "type: test-suite", "id: smoke", "enabled: true", "suites:", "  - smoke", "  - regression", "---"].join(
-        "\n",
-      ),
+      [
+        "---",
+        "type: test-suite",
+        "id: smoke",
+        "enabled: true",
+        "suites:",
+        "  - smoke",
+        "  - regression",
+        "---",
+      ].join("\n"),
     );
   });
 

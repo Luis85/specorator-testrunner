@@ -11,7 +11,11 @@ import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } f
 const build = () => {
   const fs = new FakeVaultFileSystem();
   const { bus, events, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(new FakeDataStore(), new DefaultPathSafetyPolicy(), bus);
+  const settings = new DefaultSettingsService(
+    new FakeDataStore(),
+    new DefaultPathSafetyPolicy(),
+    bus,
+  );
   const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger);
   const service = new DefaultSpecificationService(settings, useCases, fs, bus, silentLogger);
   return { service, useCases, fs, events, types };

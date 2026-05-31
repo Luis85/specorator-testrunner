@@ -38,9 +38,7 @@ const renderField = (key: string, value: FrontmatterValue): string | null => {
 };
 
 /** Serialises an object as a `---`-delimited YAML frontmatter block. */
-export const buildFrontmatter = (
-  fields: Record<string, FrontmatterValue>,
-): string => {
+export const buildFrontmatter = (fields: Record<string, FrontmatterValue>): string => {
   const lines = Object.entries(fields)
     .map(([key, value]) => renderField(key, value))
     .filter((line): line is string => line !== null);
@@ -48,10 +46,8 @@ export const buildFrontmatter = (
 };
 
 /** Combines a frontmatter block with a Markdown body. */
-export const buildNote = (
-  fields: Record<string, FrontmatterValue>,
-  body: string,
-): string => `${buildFrontmatter(fields)}\n\n${body.trimStart()}`;
+export const buildNote = (fields: Record<string, FrontmatterValue>, body: string): string =>
+  `${buildFrontmatter(fields)}\n\n${body.trimStart()}`;
 
 /** A note split into its parsed frontmatter and Markdown body. */
 export interface ParsedNote {
@@ -120,9 +116,8 @@ export const parseNote = (rawContent: string): ParsedNote => {
 };
 
 /** Parses just the frontmatter block of a note. */
-export const parseFrontmatter = (
-  content: string,
-): Record<string, string | string[]> => parseNote(content).frontmatter;
+export const parseFrontmatter = (content: string): Record<string, string | string[]> =>
+  parseNote(content).frontmatter;
 
 /**
  * Rewrites a note's frontmatter, merging `changes` over the existing fields and

@@ -1,9 +1,6 @@
 import { buildRunnerTemplates } from "../content/runner-templates";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
-import type {
-  ChildProcessRunner,
-  RunnerCommandResult,
-} from "../ports/child-process-runner";
+import type { ChildProcessRunner, RunnerCommandResult } from "../ports/child-process-runner";
 import type { TemplateWriter } from "../ports/template-writer";
 import { resolveRunnerCwd } from "./runner-paths";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
@@ -101,8 +98,12 @@ export class DefaultRunnerInstallationService implements RunnerInstallationServi
       return err(appError(failureCode, `Failed to start ${label}.`, { cause: result.error }));
     }
     if (result.value.exitCode !== 0) {
+      // Route the child's stderr through the redacting logger so any credential
+      // value the tool echoed is scrubbed (ADR-0019 / P0-2), and truncate it so
+      // a runaway error log can't flood the console.
       this.logger.error(`${label} exited non-zero`, undefined, {
         exitCode: result.value.exitCode,
+        stderr: result.value.stderr.slice(0, 2000),
       });
       return err(
         appError(failureCode, `${label} failed (exit ${result.value.exitCode}).`, {

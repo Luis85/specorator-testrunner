@@ -134,7 +134,10 @@ describe("DefaultPipelineGenerationService", () => {
       "npm install left-pad",
       "npm ci evil-pkg",
     ]) {
-      const settings = { ...DEFAULT_SETTINGS, runner: { ...DEFAULT_SETTINGS.runner, ciRunCommand } };
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        runner: { ...DEFAULT_SETTINGS.runner, ciRunCommand },
+      };
       const result = await service.generate({ provider: "github-actions", settings });
       expect(result.ok, ciRunCommand).toBe(false);
     }

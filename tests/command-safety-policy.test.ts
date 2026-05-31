@@ -66,7 +66,9 @@ describe("DefaultCommandSafetyPolicy", () => {
     }
     // install/probe shapes stay allowed.
     expect(policy.assertSafe(["npx", "playwright", "--version"]).ok).toBe(true);
-    expect(policy.assertSafe(["npx", "playwright", "install", "--with-deps", "chromium"]).ok).toBe(true);
+    expect(policy.assertSafe(["npx", "playwright", "install", "--with-deps", "chromium"]).ok).toBe(
+      true,
+    );
   });
 
   it("rejects npm run options that precede the -- separator (ADR-0010)", () => {

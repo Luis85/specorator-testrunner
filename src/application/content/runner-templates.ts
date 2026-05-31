@@ -26,8 +26,8 @@ const PACKAGE_JSON = `{
     "install:browsers:ci": "playwright install --with-deps chromium"
   },
   "devDependencies": {
-    "@cucumber/cucumber": "^11.0.0",
-    "playwright": "^1.49.0",
+    "@cucumber/cucumber": "^12.0.0",
+    "playwright": "^1.60.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }
@@ -53,15 +53,21 @@ const TSCONFIG_JSON = `{
 // documented setup for tsx 4 / Node 20.6+, AD-7), so no deprecated `loader`
 // hook here. The runner runs with cwd = the runner folder, so the feature glob
 // is the path from the runner folder to the configured feature folder (ADR-0008).
+// The glob is emitted via JSON.stringify so it is ALWAYS a safe, fully-escaped
+// JS string literal — even if a hostile `featureFilesPath` somehow reaches here
+// it cannot break out of the literal and inject code into the module Node loads
+// (defence in depth behind PathSafetyPolicy; see SEC-1 / P0-1).
 const cucumberMjs = (featuresGlob: string): string => `export default {
   default: {
     import: ["src/support/**/*.ts", "src/steps/**/*.ts"],
-    paths: ["${featuresGlob}"],
+    paths: [${JSON.stringify(featuresGlob)}],
     format: [
       "progress",
       "json:reports/cucumber-report.json",
     ],
-    publishQuiet: true,
+    // NOTE: the deprecated \`publishQuiet\` option was REMOVED in Cucumber 12
+    // (the publish banner it suppressed no longer exists). Cucumber 12 rejects
+    // unknown options, so it must not be emitted here (P4-5).
     parallel: 0,
   },
 };

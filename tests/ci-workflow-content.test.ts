@@ -17,7 +17,10 @@ describe("buildGitHubActionsWorkflow", () => {
         ...DEFAULT_SETTINGS.sut,
         environments: {
           ...DEFAULT_SETTINGS.sut.environments,
-          staging: { baseUrl: "https://staging.example.com", auth: { kind: "env", env: { E2E_USERNAME: "u", E2E_PASSWORD: "p" } } },
+          staging: {
+            baseUrl: "https://staging.example.com",
+            auth: { kind: "env", env: { E2E_USERNAME: "u", E2E_PASSWORD: "p" } },
+          },
         },
       },
     } as typeof DEFAULT_SETTINGS;
@@ -48,7 +51,10 @@ describe("buildGitHubActionsWorkflow", () => {
         ...DEFAULT_SETTINGS.sut,
         environments: {
           ...DEFAULT_SETTINGS.sut.environments,
-          staging: { baseUrl: "https://staging.example.com", auth: { kind: "env", env: { BASE_URL: "x", E2E_TOKEN: "t" } } },
+          staging: {
+            baseUrl: "https://staging.example.com",
+            auth: { kind: "env", env: { BASE_URL: "x", E2E_TOKEN: "t" } },
+          },
         },
       },
     } as typeof DEFAULT_SETTINGS;
@@ -103,7 +109,7 @@ describe("buildGitHubActionsWorkflow", () => {
       ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "20" },
     });
     expect(yaml).toContain("actions/checkout@v4");
-    expect(yaml).toContain("node-version: \"20\"");
+    expect(yaml).toContain('node-version: "20"');
   });
 
   it("falls back to a default Node version when blank", () => {
@@ -111,6 +117,6 @@ describe("buildGitHubActionsWorkflow", () => {
       ...DEFAULT_SETTINGS,
       ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "  " },
     });
-    expect(yaml).toContain("node-version: \"22\"");
+    expect(yaml).toContain('node-version: "22"');
   });
 });

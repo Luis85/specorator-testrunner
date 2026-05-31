@@ -1,1 +1,219 @@
-/* E2E Test Hub — plugin styles */
+/* E2E Test Hub — plugin styles
+ *
+ * All selectors target the `e2e-test-hub-*` classes the presentation views set
+ * via Obsidian `createEl`/`createDiv` (zero raw HTML). Colours use Obsidian CSS
+ * variables so the plugin adapts to light/dark and custom themes.
+ */
+
+/* ── KPI tiles (DashboardView, US-037) ───────────────────────────────────── */
+
+.e2e-test-hub-kpi-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: var(--size-4-3, 12px);
+  margin: var(--size-4-4, 16px) 0;
+}
+
+.e2e-test-hub-kpi-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-4-1, 4px);
+  padding: var(--size-4-4, 16px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background-color: var(--background-secondary);
+  text-align: center;
+}
+
+.e2e-test-hub-kpi-value {
+  font-size: var(--font-ui-large, 1.6rem);
+  font-weight: var(--font-bold, 700);
+  line-height: 1.2;
+  color: var(--text-normal);
+}
+
+.e2e-test-hub-kpi-label {
+  font-size: var(--font-ui-smaller, 0.8rem);
+  color: var(--text-muted);
+}
+
+/* ── Tables (dashboard recent runs, suites, use cases) ────────────────────── */
+
+.e2e-test-hub-runs-table,
+.e2e-test-hub-suite-table,
+.e2e-test-hub-uc-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--size-4-2, 8px) 0;
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-runs-table th,
+.e2e-test-hub-suite-table th,
+.e2e-test-hub-uc-table th {
+  text-align: left;
+  padding: var(--size-4-2, 8px);
+  border-bottom: 2px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-weight: var(--font-semibold, 600);
+}
+
+.e2e-test-hub-runs-table td,
+.e2e-test-hub-suite-table td,
+.e2e-test-hub-uc-table td {
+  padding: var(--size-4-2, 8px);
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  vertical-align: top;
+}
+
+.e2e-test-hub-runs-table tbody tr:hover,
+.e2e-test-hub-suite-table tbody tr:hover,
+.e2e-test-hub-uc-table tbody tr:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+/* ── Suite / Use Case panel headers ───────────────────────────────────────── */
+
+.e2e-test-hub-suite-header,
+.e2e-test-hub-uc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-3, 12px);
+  flex-wrap: wrap;
+}
+
+/* ── Link-as-button (open suite / use case) ───────────────────────────────── */
+
+.e2e-test-hub-link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.e2e-test-hub-link-button:hover {
+  color: var(--text-accent-hover);
+  text-decoration: underline;
+}
+
+.e2e-test-hub-link-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* ── Documentation actions (DashboardView, AC-016) ────────────────────────── */
+
+.e2e-test-hub-doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+  margin: var(--size-4-2, 8px) 0 var(--size-4-4, 16px);
+}
+
+.e2e-test-hub-doc-button {
+  cursor: pointer;
+}
+
+/* ── Test Console (TestConsoleView, US-030 / UC-015) ──────────────────────── */
+
+.e2e-test-hub-console-banner {
+  padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+  margin: var(--size-4-2, 8px) 0;
+  border-radius: var(--radius-s, 4px);
+  border-left: 4px solid var(--background-modifier-border);
+  font-weight: var(--font-semibold, 600);
+  background-color: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+/* Status-driven banner colours. `statusModifier` sets dataset.status to the raw
+ * TestRunStatus, so these values mirror that union exactly. */
+.e2e-test-hub-console-banner[data-status="running"],
+.e2e-test-hub-console-banner[data-status="queued"] {
+  background-color: var(--background-modifier-border);
+  border-left-color: var(--text-muted);
+  color: var(--text-normal);
+}
+
+.e2e-test-hub-console-banner[data-status="passed"] {
+  background-color: var(--background-modifier-success);
+  border-left-color: var(--text-success);
+  color: var(--text-success);
+}
+
+.e2e-test-hub-console-banner[data-status="failed"],
+.e2e-test-hub-console-banner[data-status="errored"] {
+  background-color: var(--background-modifier-error);
+  border-left-color: var(--text-error);
+  color: var(--text-error);
+}
+
+.e2e-test-hub-console-banner[data-status="cancelled"] {
+  background-color: var(--background-secondary-alt);
+  border-left-color: var(--text-warning, var(--text-muted));
+  color: var(--text-muted);
+}
+
+.e2e-test-hub-console-output {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--size-4-3, 12px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-primary-alt);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller, 0.8rem);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-normal);
+}
+
+.e2e-test-hub-console-cmd {
+  color: var(--text-accent);
+  font-weight: var(--font-semibold, 600);
+  margin-bottom: var(--size-4-1, 4px);
+}
+
+/* stderr lines are emphasised so failures stand out in the stream. */
+.e2e-test-hub-console-stderr {
+  color: var(--text-error);
+  background-color: var(--background-modifier-error);
+}
+
+/* ── Initialization wizard progress / error (initialization-wizard-modal) ─── */
+
+.e2e-test-hub-progress {
+  margin: var(--size-4-3, 12px) 0;
+  padding: var(--size-4-3, 12px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-secondary);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller, 0.8rem);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.e2e-test-hub-progress-row {
+  padding: var(--size-4-1, 4px) 0;
+  color: var(--text-muted);
+}
+
+.e2e-test-hub-error {
+  margin: var(--size-4-3, 12px) 0;
+  padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+  border-left: 4px solid var(--text-error);
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-modifier-error);
+  color: var(--text-error);
+}
