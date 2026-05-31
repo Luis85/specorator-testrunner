@@ -28,7 +28,10 @@ const run = (overrides: Partial<TestRun> = {}): TestRun => ({
   startedAt: "2026-05-31T10:00:00.000Z",
   command: "npm run test",
   workingDirectory: ".testrunner",
-  reportPaths: {},
+  // A finished run that produced a report has its run-specific snapshot recorded
+  // (the executor sets this after snapshotReport); the coordinator only imports
+  // when it is present. Tests for the "no report" path override it to {}.
+  reportPaths: { json: ".testrunner/reports/RUN-2026-05-31-100000.json" },
   ...overrides,
 });
 
@@ -260,6 +263,21 @@ describe("PostRunCoordinator", () => {
       await env.coordinator.whenSettled();
 
       expect(env.reportImport.calls.map((c) => c.id)).toEqual(["RUN-A", "RUN-B"]);
+    });
+
+    it("skips import when no run-specific snapshot exists (cancelled-in-setup, review)", async () => {
+      // A run cancelled during setup never reaches snapshotReport, so
+      // reportPaths.json stays unset. Importing would fall back to the FIXED
+      // report (possibly a previous run's) — the coordinator must skip instead.
+      const env = build();
+      env.coordinator.start();
+      env.setLastRun(run({ status: "cancelled", reportPaths: {} }));
+
+      await publishTerminal(env.bus, "testrun.cancelled");
+      await env.coordinator.whenSettled();
+
+      expect(env.reportImport.calls).toHaveLength(0);
+      expect(env.evidenceGen.calls).toHaveLength(0);
     });
 
     it("does not block the terminal publish on the import chain (review P2)", async () => {

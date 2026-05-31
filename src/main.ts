@@ -602,6 +602,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       case "no-run":
         new Notice("No test run to import a report for yet.");
         break;
+      case "no-report":
+        new Notice("The last run produced no report to import (it did not finish a test run).");
+        break;
       case "run-in-progress":
         new Notice("A test run is in progress; import its report once it finishes.");
         break;

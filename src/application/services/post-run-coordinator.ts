@@ -23,6 +23,7 @@ export type ImportLastRunOutcome =
   | { kind: "imported"; evidencePath?: string }
   | { kind: "recorded" } // imported, but evidence Markdown is disabled
   | { kind: "no-run" } // no run has finished this session
+  | { kind: "no-report" } // run finished but wrote no run-specific report (e.g. cancelled in setup)
   | { kind: "run-in-progress"; activeRunId: string }
   | { kind: "ineligible"; status: TestRunStatus }; // errored/queued/running — no report
 
@@ -191,6 +192,20 @@ export class PostRunCoordinator {
       // importLastRun path, which only runs when idle, doesn't wait).
       if (this.deps.activeRunId() === run.id) {
         await this.deps.whenActiveSettles();
+      }
+      // Only import when a RUN-SPECIFIC snapshot (reports/<runId>.json) exists.
+      // Without it, ReportImportService falls back to the FIXED
+      // reports/cucumber-report.json — which, for a run cancelled during setup
+      // (before the pre-run cleanup) or one that never produced a report, can be
+      // a PREVIOUS run's report and would be mis-attributed here (review). The
+      // executor sets reportPaths.json only after snapshotting this run's report,
+      // so its presence is the "report ownership established" signal.
+      if (!run.reportPaths.json) {
+        this.logger.info("No run-specific report snapshot; skipping import", {
+          runId: run.id,
+          status: run.status,
+        });
+        return ok({ kind: "no-report" });
       }
       const imported = await this.deps.reportImportService.import(run);
       if (!imported.ok) {
