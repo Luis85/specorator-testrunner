@@ -1,5 +1,6 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
+import { VALIDATED_RUNNER_FILES } from "../content/runner-templates";
 import { playwrightBrowsersCandidates, resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
@@ -83,7 +84,12 @@ export class DefaultEnvironmentValidationService
     );
     const packageManagerAvailable = await this.commandSucceeds("npm --version", base.value);
     const runnerFolderExists = await this.absoluteFs.existsAbsolute(runnerAbs);
-    const packageJsonExists = await this.absoluteFs.existsAbsolute(`${runnerAbs}/package.json`);
+    const missingFiles: string[] = [];
+    for (const file of VALIDATED_RUNNER_FILES) {
+      if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/${file}`))) missingFiles.push(file);
+    }
+    const packageJsonExists = !missingFiles.includes("package.json");
+    const runnerFilesComplete = runnerFolderExists && missingFiles.length === 0;
     const dependenciesInstalled = await this.absoluteFs.existsAbsolute(`${runnerAbs}/node_modules`);
     const playwrightAvailable =
       dependenciesInstalled &&
@@ -96,8 +102,9 @@ export class DefaultEnvironmentValidationService
       issues.push({ code: "NPM_MISSING", message: "npm is not available.", severity: "error" });
     if (!runnerFolderExists)
       issues.push({ code: "RUNNER_MISSING_FILE", message: "The .testrunner folder is missing.", severity: "error" });
-    else if (!packageJsonExists)
-      issues.push({ code: "RUNNER_MISSING_FILE", message: ".testrunner/package.json is missing.", severity: "error" });
+    else
+      for (const file of missingFiles)
+        issues.push({ code: "RUNNER_MISSING_FILE", message: `.testrunner/${file} is missing.`, severity: "error" });
     if (!dependenciesInstalled)
       issues.push({ code: "DEPENDENCIES_MISSING", message: "Runner dependencies are not installed.", severity: "error" });
     else if (!playwrightAvailable)
@@ -109,7 +116,7 @@ export class DefaultEnvironmentValidationService
       nodeAvailable &&
       packageManagerAvailable &&
       runnerFolderExists &&
-      packageJsonExists &&
+      runnerFilesComplete &&
       dependenciesInstalled &&
       playwrightAvailable &&
       browsersInstalled;

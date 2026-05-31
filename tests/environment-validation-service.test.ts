@@ -3,6 +3,7 @@ import { DefaultEnvironmentValidationService } from "../src/application/services
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
+import { VALIDATED_RUNNER_FILES } from "../src/application/content/runner-templates";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import {
   FakeAbsoluteFileSystem,
@@ -34,9 +35,15 @@ const build = (env: Record<string, string | undefined> = ENV) => {
   return { service, absoluteFs, childProcess, types };
 };
 
-const markFullyInstalled = (absoluteFs: FakeAbsoluteFileSystem) => {
+const addManagedFiles = (absoluteFs: FakeAbsoluteFileSystem) => {
   absoluteFs.existing.add("/vault/.testrunner");
-  absoluteFs.existing.add("/vault/.testrunner/package.json");
+  for (const file of VALIDATED_RUNNER_FILES) {
+    absoluteFs.existing.add(`/vault/.testrunner/${file}`);
+  }
+};
+
+const markFullyInstalled = (absoluteFs: FakeAbsoluteFileSystem) => {
+  addManagedFiles(absoluteFs);
   absoluteFs.existing.add("/vault/.testrunner/node_modules");
   absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome-linux/chrome");
 };
@@ -96,10 +103,24 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(childProcess.calls.map((c) => c.command)).not.toContain("npx playwright --version");
   });
 
+  it("is invalid when a managed runner file is missing even if deps/browser are present", async () => {
+    const { service, absoluteFs } = build();
+    markFullyInstalled(absoluteFs);
+    absoluteFs.existing.delete("/vault/.testrunner/cucumber.mjs");
+
+    const result = await service.validateEnvironment();
+
+    expect(result.valid).toBe(false);
+    expect(
+      result.issues.some(
+        (i) => i.code === "RUNNER_MISSING_FILE" && i.message.includes("cucumber.mjs"),
+      ),
+    ).toBe(true);
+  });
+
   it("detects browsers in Playwright hermetic mode (PLAYWRIGHT_BROWSERS_PATH=0)", async () => {
     const { service, absoluteFs } = build({ HOME: "/home/u", PLAYWRIGHT_BROWSERS_PATH: "0" });
-    absoluteFs.existing.add("/vault/.testrunner");
-    absoluteFs.existing.add("/vault/.testrunner/package.json");
+    addManagedFiles(absoluteFs);
     absoluteFs.existing.add("/vault/.testrunner/node_modules");
     absoluteFs.existing.add(
       "/vault/.testrunner/node_modules/playwright-core/.local-browsers/chromium-1148/chrome",
@@ -113,8 +134,7 @@ describe("DefaultEnvironmentValidationService", () => {
 
   it("does not count a cache that lacks Chromium (e.g. Firefox-only/partial)", async () => {
     const { service, absoluteFs } = build();
-    absoluteFs.existing.add("/vault/.testrunner");
-    absoluteFs.existing.add("/vault/.testrunner/package.json");
+    addManagedFiles(absoluteFs);
     absoluteFs.existing.add("/vault/.testrunner/node_modules");
     absoluteFs.existing.add("/home/u/.cache/ms-playwright/firefox-1234/firefox");
 

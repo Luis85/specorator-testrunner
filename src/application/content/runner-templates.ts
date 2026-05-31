@@ -235,10 +235,25 @@ export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] 
   { path: "src/steps/example.steps.ts", content: EXAMPLE_STEPS_TS, overwrite: false },
 ];
 
-/** Files the validation/repair logic treats as required (US-010 / US-013). */
+/** Files US-010 asserts the generator produces. */
 export const REQUIRED_RUNNER_FILES = [
   "package.json",
   "tsconfig.json",
   "cucumber.mjs",
   "README.md",
+] as const;
+
+/**
+ * Managed files a test run depends on; checked by validation (US-013). A run
+ * needs the config, the TS config tsx reads, the Cucumber support layer, and
+ * the demo fixture — README.md is documentation only, so it is excluded.
+ */
+export const VALIDATED_RUNNER_FILES = [
+  "package.json",
+  "tsconfig.json",
+  "cucumber.mjs",
+  "src/support/world.ts",
+  "src/support/hooks.ts",
+  "src/support/paths.ts",
+  "src/fixtures/example.html",
 ] as const;
