@@ -220,10 +220,12 @@ export class DefaultTestExecutionService implements TestExecutionService {
         return ok(`npm run test -- --tags "${tags.value}"`);
       }
       case "feature":
-        return ok(`npm run test -- ${this.featureArg(settings, request.target)}`);
+        // Quote the path so a configured folder/filename with spaces survives
+        // the shell (the runner spawns with shell:true), matching `suite`.
+        return ok(`npm run test -- "${this.featureArg(settings, request.target)}"`);
       case "use-case":
         return ok(
-          `npm run test -- ${this.featurePrefix(settings)}/${request.target}-*.feature`,
+          `npm run test -- "${this.featurePrefix(settings)}/${request.target}-*.feature"`,
         );
     }
   }

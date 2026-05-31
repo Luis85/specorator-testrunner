@@ -111,7 +111,7 @@ describe("DefaultTestExecutionService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.command).toBe(
-      "npm run test -- ../Specifications/features/checkout.feature",
+      'npm run test -- "../Specifications/features/checkout.feature"',
     );
   });
 
@@ -119,7 +119,7 @@ describe("DefaultTestExecutionService", () => {
     const { service } = build();
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- ../Specifications/features/UC-001-*.feature",
+      'npm run test -- "../Specifications/features/UC-001-*.feature"',
     );
   });
 
