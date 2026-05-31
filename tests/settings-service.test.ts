@@ -109,6 +109,17 @@ describe("DefaultSettingsService", () => {
     expect(loaded.logging.path).toBe(DEFAULT_SETTINGS.logging.path);
   });
 
+  it("recovers (does not throw) from a NON-STRING persisted path (review P2)", async () => {
+    // A corrupt/sync-mangled data.json with a number where a path string belongs
+    // must fall back to the default, not crash load with `path.trim is not a function`.
+    const { service, logger } = makeService({
+      paths: { ...DEFAULT_SETTINGS.paths, featureFilesPath: 42 as unknown as string },
+    });
+    const loaded = await service.load();
+    expect(loaded.paths.featureFilesPath).toBe(DEFAULT_SETTINGS.paths.featureFilesPath);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
   it("collectCredentialValues gathers credential auth.env values across environments (P0-2)", () => {
     // Synthetic, obviously-fake fixture values (not secret-shaped) — these stand
     // in for SUT credential values; collection is by value, not by key name.

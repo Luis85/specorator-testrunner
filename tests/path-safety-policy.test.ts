@@ -24,6 +24,14 @@ describe("DefaultPathSafetyPolicy", () => {
     expect(policy.validate(vp("   ")).ok).toBe(false);
   });
 
+  it("returns a Result (does not throw) for a non-string value (review P2)", () => {
+    // A corrupt data.json can hand a number where a path string belongs; the
+    // policy must guard the type before any string method.
+    expect(policy.validate(42 as unknown as string).ok).toBe(false);
+    expect(policy.validate(null as unknown as string).ok).toBe(false);
+    expect(policy.validate(undefined as unknown as string).ok).toBe(false);
+  });
+
   it("rejects absolute paths (POSIX and Windows)", () => {
     expect(policy.validate(vp("/etc/passwd")).ok).toBe(false);
     expect(policy.validate(vp("C:\\Windows")).ok).toBe(false);

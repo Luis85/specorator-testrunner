@@ -1,5 +1,6 @@
 import type { VaultPath } from "./identifiers";
 import { DefaultPathSafetyPolicy, type PathSafetyPolicy } from "../policies/path-safety-policy";
+import { appError } from "../../shared/errors/errors";
 import { err, ok, type Result } from "../../shared/result/result";
 
 /**
@@ -36,9 +37,17 @@ const PATH_SAFETY = new DefaultPathSafetyPolicy();
  * branding happen in ONE call and cannot drift apart.
  */
 export const vaultPath = (
-  raw: string,
+  raw: unknown,
   policy: PathSafetyPolicy = PATH_SAFETY,
 ): Result<VaultPath> => {
+  // `raw` is `unknown` because the untrusted sources this guards (a hand-edited
+  // or sync-corrupted `data.json`, note frontmatter) can hold a non-string —
+  // e.g. `{ "featureFilesPath": 42 }`. Reject it here as a Result rather than
+  // letting `PathSafetyPolicy.validate` call `.trim()` on a number and throw,
+  // which would crash settings load instead of falling back to a default.
+  if (typeof raw !== "string") {
+    return err(appError("PATH_UNSAFE", `Path must be a string (got ${typeof raw}).`));
+  }
   const safe = policy.validate(raw as VaultPath);
   return safe.ok ? ok(raw as VaultPath) : err(safe.error);
 };

@@ -29,7 +29,10 @@ const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 
 export class DefaultPathSafetyPolicy implements PathSafetyPolicy {
   validate(path: VaultPath): Result<void> {
-    if (path === undefined || path === null || path.trim() === "") {
+    // Defensive: callers should pass a string, but untrusted settings/frontmatter
+    // can carry a non-string (e.g. a number from a corrupt data.json). Guard the
+    // type before any string method so this returns a Result instead of throwing.
+    if (typeof path !== "string" || path.trim() === "") {
       return err(appError("PATH_UNSAFE", "Path must not be empty."));
     }
     if (path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path)) {
