@@ -158,7 +158,9 @@ sequenceDiagram
 
 ## RV-4 — Generate Step Definition Stub (UC-010)
 
-**Trigger.** User opens a feature with undefined steps and clicks **Generate Step Stubs**.
+**Status: implemented (P2-5).** `StepDefinitionService` (`src/application/services/step-definition-service.ts`) generates the stubs and publishes `stepdefinition.generated`; the **Generate Step Definitions** command in `main.ts` runs detection then generation. In V1 the trigger is an explicit user command (not auto-on-every-feature-edit); the originating detection event's id is threaded through as the result event's `causationId` so a future auto-path can reuse the wiring.
+
+**Trigger.** User opens a feature with undefined steps and runs **Generate Step Definitions** (the V1 command equivalent of "Generate Step Stubs").
 
 ```mermaid
 sequenceDiagram
@@ -175,14 +177,21 @@ sequenceDiagram
     Spec->>Vault: readFile(featurePath)
     Spec->>Spec: parse Gherkin, diff against existing steps
     Spec-->>Bus: specification.missingSteps.detected
-    Spec-->>V: missingSteps: string[]
-    V->>Step: generate(featurePath, missingSteps)
-    Step->>Vault: writeFile(.testrunner/src/steps/<feature>.steps.ts, tsStubs)
-    Step-->>Bus: stepdefinition.generated
+    Spec-->>V: { missingSteps, detectionEventId }
+    V->>Step: generate(featurePath, missingSteps, detectionEventId)
+    Note over Step: re-diff vs every src/steps/*.ts (non-destructive)
+    Step->>Vault: createFile / append .testrunner/src/steps/<feature>.steps.ts
+    Step-->>Bus: stepdefinition.generated (causationId = detection event id)
     V->>Vault: openFile(.testrunner/src/steps/<feature>.steps.ts)
 ```
 
-**Stub content.** Each missing step becomes a TypeScript function with `@cucumber/cucumber` decorators, a `TODO` comment, and `throw new Error('Pending')`.
+**Stub content.** Each missing step becomes a `Given(...)` from `@cucumber/cucumber` with a `TODO` comment and `throw new Error("Pending")` (quoted literals + Scenario Outline placeholders parameterise to `{string}`).
+
+**Non-destructive (ADR-0012 / RV-8 spirit).** Generation re-diffs the requested steps against every existing `*.ts` under `.testrunner/src/steps` and only stubs the still-undefined ones; a hand-edited steps file for the feature is appended to, never overwritten. When nothing is missing the service returns an empty result and publishes no event.
+
+**Path + port.** Stubs are written through the same `VaultFileSystem` port and `.testrunner/src/steps` path convention that `SpecificationService.detectMissingSteps` reads from, so a stub written here is picked up by the next detection pass.
+
+**causationId (Event Catalog §5/§19).** `stepdefinition.generated.causationId` is set to the originating `specification.missingSteps.detected` event id (surfaced as `MissingStepResult.detectionEventId`).
 
 ---
 

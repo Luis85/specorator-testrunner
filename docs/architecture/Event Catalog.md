@@ -214,7 +214,7 @@ Trigger for UC-010 (StepDefinitionService).
 }
 ```
 
-Result event for UC-010. `causationId` references the originating `specification.missingSteps.detected`.
+Result event for UC-010. Produced by `StepDefinitionService.generate()` (`src/application/services/step-definition-service.ts`, RV-4) when it writes one or more stubs; no event is published when every requested step is already defined. `causationId` references the originating `specification.missingSteps.detected` (its id is surfaced as `MissingStepResult.detectionEventId` and threaded through by the **Generate Step Definitions** command).
 
 ---
 

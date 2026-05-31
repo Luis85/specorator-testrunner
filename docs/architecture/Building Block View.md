@@ -142,8 +142,11 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 
 ### 5.10 `StepDefinitionService`
 
-- **Purpose:** Generate TypeScript step-definition stubs for undefined Gherkin steps (UC-010).
-- **Publishes:** `stepdefinition.generated`.
+- **Status:** Implemented (P2-5) — `src/application/services/step-definition-service.ts`.
+- **Purpose:** Generate TypeScript step-definition stubs for the undefined Gherkin steps of a Feature (UC-010 / RV-4).
+- **Responsibilities:** Re-diff the requested steps against every existing `*.ts` under `.testrunner/src/steps` (so generation is non-destructive — already-defined steps are never re-stubbed), render `Given(...)` stubs via the pure `buildStepDefinitionStubFile` helper in `content/step-definitions.ts`, and write them through the `VaultFileSystem` port into `.testrunner/src/steps/<feature>.steps.ts` (the same path `SpecificationService.detectMissingSteps` reads). Appends to a hand-edited file; never overwrites. Depends only on ports/services.
+- **Trigger model:** Explicit user command (not auto-on-edit). The caller runs `SpecificationService.detectMissingSteps` then passes its `missingSteps` + `detectionEventId` here.
+- **Publishes:** `stepdefinition.generated`, with `causationId` set to the originating `specification.missingSteps.detected` event id (Event Catalog §5/§19). No event is published when there is nothing to stub.
 
 ### 5.11 `TestExecutionService`
 
