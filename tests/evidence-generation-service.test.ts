@@ -113,8 +113,6 @@ describe("DefaultEvidenceGenerationService", () => {
     const ucNote = fs.files.get("Use Cases/UC-001 Checkout.md");
     const fm = parseFrontmatter(ucNote ?? "");
     expect(fm.evidence).toEqual([EVIDENCE_PATH]);
-    // lastTestRun is not a managed frontmatter field; the link surfaces via
-    // evidence[] (the source of truth UseCaseService reads back).
     expect(ucNote).toContain(EVIDENCE_PATH);
   });
 
