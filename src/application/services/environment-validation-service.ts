@@ -189,21 +189,22 @@ export class DefaultEnvironmentValidationService
       }
       // package.json + the npm script the generated CI job invokes (US-041/
       // UC-020). The job runs the configured `runner.ciRunCommand` (default
-      // `npm run test:ci`); a stale package.json missing THAT script fails CI at
-      // once. Derive the script name from the command so this stays aligned with
-      // the workflow (a non-`npm run` command can't be script-checked here).
-      const ciScript = npmRunScript(settings.runner.ciRunCommand) ?? "test:ci";
+      // `npm run test:ci`). Only validate a package script when that command
+      // actually parses as `npm run <script>`; a custom non-npm command (e.g.
+      // `npx cucumber-js …`) doesn't depend on a package script, so skip it.
+      const effectiveCiCommand = settings.runner.ciRunCommand.trim() || "npm run test:ci";
+      const ciScript = npmRunScript(effectiveCiCommand);
       const pkgPath = `${runnerAbs}/package.json`;
       if (!(await this.absoluteFs.existsAbsolute(pkgPath))) {
         missingItems.push("Runner package.json is missing.");
-      } else {
+      } else if (ciScript !== null) {
         const pkg = await this.absoluteFs.readAbsolute(pkgPath);
         if (pkg.ok) {
           try {
             const parsed = JSON.parse(pkg.value) as { scripts?: Record<string, unknown> };
             if (typeof parsed.scripts?.[ciScript] !== "string") {
               missingItems.push(
-                `Runner package.json has no "${ciScript}" script (the CI job runs ${settings.runner.ciRunCommand.trim() || "npm run test:ci"}).`,
+                `Runner package.json has no "${ciScript}" script (the CI job runs ${effectiveCiCommand}).`,
               );
             }
           } catch {

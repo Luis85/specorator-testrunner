@@ -519,8 +519,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.lastRun = result.value;
     // Import the report + generate evidence for THIS finished run (UC-016).
     // Driven from the returned run — not event/instance state — so the report
-    // is attributed to the correct run. Skip non-report terminal states.
-    if (result.value.status === "passed" || result.value.status === "failed") {
+    // is attributed to the correct run. A cancelled run may have flushed a valid
+    // partial report (the pre-run cleanup means it can only be THIS run's), so
+    // import it too; a spawn-error `errored` run never produced one. Missing/
+    // invalid reports return a logged Result, so this is always safe.
+    if (
+      result.value.status === "passed" ||
+      result.value.status === "failed" ||
+      result.value.status === "cancelled"
+    ) {
       await this.importAndGenerateEvidence(result.value);
     }
   }
