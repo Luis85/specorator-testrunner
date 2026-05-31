@@ -59,6 +59,13 @@ export class DefaultSuiteService implements SuiteService {
     if (request.tagExpression.trim() === "") {
       return err(appError("VALIDATION_FAILED", "A suite tag expression is required."));
     }
+    // Reject a duplicate id: two notes sharing an id make resolveTagExpression
+    // ambiguous (it would pick whichever sorts first).
+    const existing = await this.findAll();
+    if (!existing.ok) return err(existing.error);
+    if (existing.value.some((suite) => suite.id === id)) {
+      return err(appError("VALIDATION_FAILED", `A Test Suite with id "${id}" already exists.`));
+    }
     return this.createFromSeed({
       id,
       name,

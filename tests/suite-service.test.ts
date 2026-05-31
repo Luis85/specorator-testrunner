@@ -47,6 +47,16 @@ describe("DefaultSuiteService", () => {
     if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
   });
 
+  it("rejects a duplicate suite id", async () => {
+    const { service } = build();
+    const first = await service.create({ name: "Checkout", tagExpression: "@checkout" });
+    expect(first.ok).toBe(true);
+    // "Checkout!" slugifies to the same id "checkout".
+    const dup = await service.create({ name: "Checkout!", tagExpression: "@checkout2" });
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.error.code).toBe("VALIDATION_FAILED");
+  });
+
   it("collapses a multi-line description into a single frontmatter line", async () => {
     const { service, fs } = build();
     const result = await service.create({
