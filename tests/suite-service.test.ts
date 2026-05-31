@@ -134,6 +134,36 @@ describe("DefaultSuiteService", () => {
     expect(types()).not.toContain("suite.created");
   });
 
+  it("rejects create() for a valid same-id suite already at the target path (review)", async () => {
+    const { service, fs, types } = build();
+    // A valid suite already exists at the target path with a DIFFERENT tag
+    // expression. create() must reject (not silently keep the old on-disk note
+    // while returning the new tag expression) — createDefaults' idempotent skip
+    // is "seed" mode only.
+    const old = buildSuiteNote({
+      id: "smoke",
+      name: "Smoke",
+      description: "",
+      tagExpression: "@old",
+    });
+    fs.files.set("Test Suites/Smoke.md", old);
+    const result = await service.create({ name: "Smoke", tagExpression: "@new" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    // On-disk note is untouched and no duplicate event was emitted.
+    expect(fs.files.get("Test Suites/Smoke.md")).toBe(old);
+    expect(types()).not.toContain("suite.created");
+  });
+
+  it("createDefaults is idempotent: re-seeding an existing default suite is not an error", async () => {
+    const { service } = build();
+    expect((await service.createDefaults()).ok).toBe(true);
+    // Second run (e.g. a UC-024 reset) must succeed, not fail on "duplicate id".
+    const second = await service.createDefaults();
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.value.map((s) => s.id)).toEqual(["smoke", "regression"]);
+  });
+
   it("refuses to clobber a foreign / different-id note at the target path (review)", async () => {
     const { service, fs, types } = build();
     // A non-suite note that merely collides on the sanitized filename must be

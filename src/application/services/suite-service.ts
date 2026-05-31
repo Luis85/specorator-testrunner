@@ -84,22 +84,27 @@ export class DefaultSuiteService implements SuiteService {
     if (request.tagExpression.trim() === "") {
       return err(appError("VALIDATION_FAILED", "A suite tag expression is required."));
     }
-    // The duplicate-id guard lives in createFromSeed (it scans the full on-disk
-    // index, which includes MALFORMED same-id notes that findAll() hides), so a
-    // second note with an existing id is blocked wherever the old one lives.
-    return this.createFromSeed({
-      id,
-      name,
-      // Collapse newlines: frontmatter `description` is a single-line scalar.
-      description: request.description?.replace(/\s+/g, " ").trim() ?? "",
-      tagExpression: request.tagExpression.trim(),
-    });
+    // "create" mode rejects a duplicate id ANYWHERE (incl. an existing valid
+    // suite at the target path, or a malformed same-id note findAll() hides);
+    // createFromSeed scans the full on-disk index for this.
+    return this.createFromSeed(
+      {
+        id,
+        name,
+        // Collapse newlines: frontmatter `description` is a single-line scalar.
+        description: request.description?.replace(/\s+/g, " ").trim() ?? "",
+        tagExpression: request.tagExpression.trim(),
+      },
+      "create",
+    );
   }
 
   async createDefaults(correlationId?: string): Promise<Result<TestSuite[]>> {
     const created: TestSuite[] = [];
     for (const seed of DEFAULT_SUITES) {
-      const result = await this.createFromSeed(seed, correlationId);
+      // "seed" mode is idempotent: an already-present default suite is kept (not
+      // a duplicate error), so re-running init / a UC-024 reset is safe.
+      const result = await this.createFromSeed(seed, "seed", correlationId);
       if (!result.ok) return err(result.error);
       created.push(result.value);
     }
@@ -178,6 +183,7 @@ export class DefaultSuiteService implements SuiteService {
 
   private async createFromSeed(
     seed: DefaultSuiteSeed,
+    mode: "create" | "seed",
     correlationId?: string,
   ): Promise<Result<TestSuite>> {
     const settings = await this.settingsService.load();
@@ -217,7 +223,8 @@ export class DefaultSuiteService implements SuiteService {
 
     // Decide what to do with whatever occupies the TARGET path:
     //  - nothing            → create.
-    //  - a VALID suite      → skip (idempotent seeding; preserve customisation).
+    //  - a VALID same-id    → in "create" mode this is a duplicate → reject; in
+    //    suite                "seed" mode it's idempotent re-seeding → skip.
     //  - this same suite,   → repair (overwrite the malformed note with valid
     //    malformed             content so resolveTagExpression can find it).
     //  - any OTHER note     → refuse, never clobber (a different/absent-id suite
@@ -231,6 +238,15 @@ export class DefaultSuiteService implements SuiteService {
           `A different note already exists at "${path}"; ` +
             `rename it or choose a different suite name.`,
         ),
+      );
+    }
+    if (mode === "create" && atTarget && atTarget.suite !== null) {
+      // A valid suite with this id is already on disk — a user "create" must not
+      // silently overwrite it (its on-disk tag expression would diverge from the
+      // returned one), so reject as a duplicate. (createDefaults uses "seed" mode
+      // and skips instead — idempotent re-seeding.)
+      return err(
+        appError("VALIDATION_FAILED", `A Test Suite with id "${suite.id}" already exists.`),
       );
     }
     if (!atTarget || atTarget.suite === null) {
