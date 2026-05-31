@@ -105,6 +105,27 @@ describe("DefaultEvidenceGenerationService", () => {
     expect(note).toContain("[[.testrunner/reports/cucumber-report.json|JSON]]");
   });
 
+  it("records a cancelled run as cancelled even with a passing partial report", async () => {
+    const { service, fs } = build();
+    seedUseCase(fs);
+
+    // A cancelled run whose partial report shows only a passing scenario must
+    // not be recorded as PASSED.
+    const result = await service.generate({
+      run: run({ status: "cancelled" }),
+      report: report({
+        result: { passed: 1, failed: 0, skipped: 0, total: 1 },
+        scenarioResults: [{ feature: "Checkout", scenario: "Pays", status: "passed" }],
+      }),
+    });
+    expect(result.ok).toBe(true);
+
+    const note = fs.files.get(EVIDENCE_PATH);
+    const fm = parseFrontmatter(note ?? "");
+    expect(fm.status).toBe("cancelled");
+    expect(note).toContain("Status: **CANCELLED**");
+  });
+
   it("links evidence into the owning Use Case (evidence[] + lastTestRun)", async () => {
     const { service, fs } = build();
     seedUseCase(fs);
