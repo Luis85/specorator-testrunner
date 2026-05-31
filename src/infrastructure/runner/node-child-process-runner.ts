@@ -68,12 +68,16 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       let child: ChildProcess;
       try {
         const spawnOptions = { cwd: request.cwd, env: { ...process.env, ...request.env } };
-        if (process.platform === "win32") {
-          // `npm`/`npx` are `.cmd` shims Node refuses to launch without a shell
-          // (CVE-2024-27980). Rather than `shell: true` (which doesn't escape an
-          // args array — DEP0190 — so spaces/metacharacters break boundaries),
-          // invoke cmd.exe with each token explicitly quoted and pass it
-          // verbatim, so args stay literal (spaces + `&` etc. preserved).
+        const programBase = (program.split(/[/\\]/).pop() ?? program).toLowerCase();
+        const isCmdShim = /^(npm|npx)(\.cmd)?$/.test(programBase);
+        if (process.platform === "win32" && isCmdShim) {
+          // ONLY the `npm`/`npx` `.cmd` shims need a shell (Node refuses to launch
+          // .cmd without one, CVE-2024-27980); other programs — e.g. a configured
+          // `node.exe` path, possibly with spaces — are spawned directly below
+          // (shell: false), avoiding cmd's quoting quirks.
+          // Rather than `shell: true` (which doesn't escape an args array —
+          // DEP0190 — so spaces/metacharacters break boundaries), invoke cmd.exe
+          // with each token explicitly quoted and pass it verbatim.
           // `%` is the one char cmd still expands inside quotes (%VAR%) with no
           // reliable command-line escape, so reject it on Windows (a rare
           // filename/tag case; POSIX passes it through literally below).
