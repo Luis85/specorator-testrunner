@@ -37,6 +37,19 @@ export default tseslint.config(
     },
   },
   {
+    // Node scripts (plain .mjs, not type-checked): give them Node globals so
+    // `process`/`console` aren't flagged no-undef. These run under Node directly.
+    files: ["scripts/**/*.mjs", "*.mjs"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        URL: "readonly",
+        __dirname: "readonly",
+      },
+    },
+  },
+  {
     // Test files exercise fakes/partial mocks and read JSON as `unknown`;
     // relax the unsafe-* rules that are noisy and low-value in tests.
     files: ["tests/**/*.ts"],
