@@ -77,9 +77,12 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     // Resolve each linked UC's note basename so the wikilink resolves in
     // Obsidian (the note is `UC-001 Title.md`, so bare `[[UC-001]]` would not).
     const ucNoteNames = await this.resolveUseCaseNoteNames(linkedUseCases);
+    // Prefer a terminal cancelled/errored run status so an interrupted run with
+    // a partial report isn't recorded as PASSED in the audit note.
+    const noteStatus = this.displayStatus(run, report.result);
     const written = await this.fs.writeFile(
       evidencePath,
-      this.renderNote(evidence, report, ucNoteNames),
+      this.renderNote(evidence, report, ucNoteNames, noteStatus),
     );
     if (!written.ok) {
       return err(
@@ -112,6 +115,16 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
    * status, falling back to a result-derived passed/failed when the run object
    * carries a non-terminal status (e.g. an on-demand re-import).
    */
+  /**
+   * Status shown in the evidence note: a terminal `cancelled`/`errored` run
+   * status takes precedence over the pass/fail-derived status, so an
+   * interrupted run isn't misrepresented as passed (US-031).
+   */
+  private displayStatus(run: TestRun, result: TestRunResult): TestRunStatus | "skipped" {
+    if (run.status === "cancelled" || run.status === "errored") return run.status;
+    return overallStatus(result);
+  }
+
   private summaryStatus(run: TestRun, result: TestRunResult): TestRunStatus {
     if (run.status === "passed" || run.status === "failed") return run.status;
     if (run.status === "cancelled" || run.status === "errored") return run.status;
@@ -220,6 +233,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     evidence: Evidence,
     report: ImportedReport,
     ucNoteNames: Map<UseCaseId, string>,
+    noteStatus: TestRunStatus | "skipped",
   ): string {
     const { result } = evidence;
     const screenshots = evidence.artifacts.filter((a) => a.type === "screenshot");
@@ -230,7 +244,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
         type: "test-evidence",
         id: evidence.id,
         run_id: evidence.runId,
-        status: overallStatus(result),
+        status: noteStatus,
         created_at: evidence.createdAt,
         passed: result.passed,
         failed: result.failed,
@@ -240,7 +254,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
         screenshots: screenshots.length > 0 ? screenshots.map((a) => a.path) : undefined,
         traces: traces.length > 0 ? traces.map((a) => a.path) : undefined,
       },
-      this.renderBody(evidence, report, ucNoteNames),
+      this.renderBody(evidence, report, ucNoteNames, noteStatus),
     );
   }
 
@@ -248,12 +262,13 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     evidence: Evidence,
     report: ImportedReport,
     ucNoteNames: Map<UseCaseId, string>,
+    noteStatus: TestRunStatus | "skipped",
   ): string {
     const { result } = evidence;
     const sections = [
       `# Test Evidence — ${evidence.runId}`,
       "",
-      `> Status: **${overallStatus(result).toUpperCase()}** · ${evidence.createdAt}`,
+      `> Status: **${noteStatus.toUpperCase()}** · ${evidence.createdAt}`,
       "",
       "## Results",
       "",
