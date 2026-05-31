@@ -74,6 +74,18 @@ export class DefaultPipelineGenerationService
         ),
       );
     }
+    // GitHub Actions only discovers workflows under `.github/workflows/`. A path
+    // elsewhere (e.g. `ci/e2e.yml`) would be written and reported ready but never
+    // run, so require the Actions directory for the github-actions provider.
+    if (!relativePath.startsWith(".github/workflows/")) {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `GitHub Actions workflow path must be under ".github/workflows/": "${relativePath}".`,
+          { details: { path: relativePath } },
+        ),
+      );
+    }
     const absolutePath = `${root}/${relativePath}`;
 
     // OQ-005 default: never clobber an existing workflow without explicit opt-in.

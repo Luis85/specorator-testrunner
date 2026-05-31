@@ -54,6 +54,17 @@ describe("DefaultPipelineGenerationService", () => {
     expect(absoluteFs.written.size).toBe(0);
   });
 
+  it("rejects a repo-relative workflowPath outside .github/workflows and writes nothing", async () => {
+    const { service, absoluteFs } = build();
+    for (const workflowPath of ["ci/e2e.yml", "e2e.yml", ".github/e2e.yml"]) {
+      const settings = { ...DEFAULT_SETTINGS, ci: { ...DEFAULT_SETTINGS.ci, workflowPath } };
+      const result = await service.generate({ provider: "github-actions", settings });
+      expect(result.ok, workflowPath).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    }
+    expect(absoluteFs.written.size).toBe(0);
+  });
+
   it("refuses to clobber an existing workflow unless overwrite is enabled (OQ-005)", async () => {
     const { service, absoluteFs, types } = build();
     absoluteFs.existing.add(workflowAbs);
