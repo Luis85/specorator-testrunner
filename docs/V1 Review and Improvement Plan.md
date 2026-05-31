@@ -67,13 +67,13 @@ These were independently flagged by 2+ tracks and should be treated as the spine
 
 | ID | Item | Severity | Refs |
 |---|---|---|---|
-| **P2-1** | **Decide the event-driven contract (T1).** Either build `ReportFileWatcher` + a thin application-layer post-run orchestrator that subscribes to `testrun.completed`, **or** amend BBV §14 / RV-5/6 / Event Catalog §8 to document the imperative orchestration and move/remove the now-misplaced `report.detected`. | 🟠 High (architecture decision) | ARCH-H1, SVC-H4 |
+| **P2-1** | ✅ **Done.** Built an in-process `PostRunCoordinator` (application layer) that subscribes to the EN-2 terminal run events (`testrun.completed`/`failed`/`cancelled`) and runs import → evidence → dashboard refresh — **no** `ReportFileWatcher`. The misplaced `report.detected` event was removed (union + payload map + emission). BBV §5.11a/§7/§14, RV-5/6, and Event Catalog §8/§10/§20 updated. | 🟠 High (architecture decision) | ARCH-H1, SVC-H4 |
 | **P2-2** | **Propagate `correlationId` through init & reset flows** (`documentation.generated`, `suite.created`, `testrunner.installed/validated` all drop it). The run path already honors `correlationId = runId` correctly. | 🔴 Critical (per catalog §19) | SVC-C1 |
 | **P2-3** | **Fix event payload drift.** Align `initialization.completed/failed`, `settings.updated/validated/reset`, `usecase.created`, and demo `specification.created` with the catalog. Add a compiler-enforced `DomainEventType → payload` map so the catalog is type-checked, not prose. | 🟠 High | SVC-H1, H2 |
 | **P2-4** | **Implement `MaintenanceService.reset()` + UC-024 chain** (and `sweepEvidence()` if AD-11 is in scope). Reset must delete managed folders, re-init (RV-1), and emit `testhub.initialization.started/completed`; fix `settings.reset` payload to `{ profile: "default" }`. | 🟠 High | SVC-C2 |
 | **P2-5** | **Implement `StepDefinitionService` + `stepdefinition.generated` (UC-010)** — a headline V1 use case with no producer today; or formally defer it. | 🟠 High | SVC-H3 |
-| **P2-6** | **Resolve dashboard event semantics.** `dashboard.refreshed`/`kpi.updated` fire only when a dashboard view renders (pull), never from orchestration and never if no view is open. Push from the post-run orchestrator, or scope them as view-events in the catalog. | 🟡 Medium | SVC-H3 |
-| **P2-7** | **Extract post-run coordination from `main.ts` (T2):** move `lastRun`, `evidenceChain`, and run-status eligibility into a `PostRunCoordinator`; move `.feature` discovery into `SpecificationService.listFeatures()`; extract command handlers to `presentation/commands/`. | 🟡 Medium | ARCH-H2, M1 |
+| **P2-6** | ✅ **Done.** The `PostRunCoordinator` PUSHES `TraceabilityService.refreshDashboard()` after evidence is generated, so `dashboard.refreshed`/`kpi.updated` fire from the run flow even when no view is open. To avoid a refresh loop, `TraceabilityService` now splits into an emitting `refreshDashboard()` (the push) and a non-emitting `snapshot()` (read by the views on re-render); `DashboardView` reacts to `dashboard.*` and renders from `snapshot()`. | 🟡 Medium | SVC-H3 |
+| **P2-7** | ✅ **Done (post-run part).** `lastRun`, the `evidenceChain` concurrency guard, and the run-status eligibility rule moved out of `main.ts` into the `PostRunCoordinator`; `main.ts` now constructs it, `start()`s/`stop()`s it, awaits `whenSettled()` on reset, and delegates the "Import Report for Last Run" command to `importLastRun()`. _(Still open: move `.feature` discovery into `SpecificationService.listFeatures()` and extract command handlers to `presentation/commands/`.)_ | 🟡 Medium | ARCH-H2, M1 |
 
 ### Phase 3 — Domain hardening & ADR reconciliation
 
@@ -132,4 +132,4 @@ These were independently flagged by 2+ tracks and should be treated as the spine
 4. **PR D (domain + ADR reconciliation):** Phase 3.
 5. **PR E (tooling/tests/UX):** Phase 4, with P4-1 (process-boundary tests) prioritized.
 
-> Note: P2-1 (build the watcher vs. document imperative orchestration) is a genuine fork in the road and should be decided by the team before Phase 2 work begins — much of Phase 2 depends on the answer.
+> Note: P2-1 (build the watcher vs. an in-process orchestrator) is **resolved** — an in-process `PostRunCoordinator` subscribes to the terminal run events; no `ReportFileWatcher` was built and `report.detected` was removed. P2-6 and the post-run part of P2-7 landed on top of it.

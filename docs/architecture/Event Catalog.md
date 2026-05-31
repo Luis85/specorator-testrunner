@@ -344,17 +344,7 @@ Subscribers waiting on terminal state should listen to all three event types.
 
 ## 8. Report Events
 
-### `report.detected`
-
-Emitted by the plugin's file watcher (`source = "plugin"`) when a Playwright/Cucumber report file appears under `.testrunner/reports`. The runner does not publish to the EventBus — it writes files; the plugin observes them.
-
-```ts
-{
-  runId: string;
-  reportPath: string;
-  format: "json" | "html";                 // markdown evidence is emitted as evidence.generated, not here
-}
-```
+> **`report.detected` removed.** Earlier drafts defined a `report.detected` event, emitted by a `ReportFileWatcher`, to trigger the import. That watcher was never built and nothing subscribed to the event. The post-run flow is instead driven **in-process** by the `PostRunCoordinator` (application layer), which subscribes to the EN-2 terminal run events (`testrun.completed` / `testrun.failed` / `testrun.cancelled`) and runs import → evidence → dashboard refresh for the just-finished run. `report.detected` is no longer in the `DomainEventType` union or the payload map. The runner still does not publish to the EventBus — it writes files; the plugin reads them after the run ends.
 
 ### `report.imported`
 
@@ -441,7 +431,7 @@ Emitted by `MaintenanceService.sweepEvidence()` (per SDD AD-11) only when the sw
 }
 ```
 
-Signal-only — emitted after the suite-membership index incrementally updates (per SDD AD-10) or after a `testrun.completed`/`evidence.generated` chain settles. Debounced to 250 ms to coalesce bursts of vault file events. Subscribers (`TestHubView`, `SuiteExplorerView`, `UseCaseExplorerView`) re-query `TraceabilityService` for current counts instead of treating the payload as state.
+Signal-only — emitted by `TraceabilityService.refreshDashboard()`. In V1 this is **pushed from the run flow**: after a run settles, the `PostRunCoordinator` calls `refreshDashboard()` so the KPI events fire even when no dashboard view is open (P2-6). A dashboard view also pushes one refresh on open. Subscribers (`DashboardView`, `SuiteExplorerView`, `UseCaseExplorerView`) re-query `TraceabilityService` for current counts instead of treating the payload as state. To avoid a refresh loop, a view re-rendering in response to `dashboard.refreshed`/`dashboard.kpi.updated` reads the **non-emitting** `TraceabilityService.snapshot()`, never `refreshDashboard()`.
 
 ### `dashboard.kpi.updated`
 
@@ -617,7 +607,6 @@ Reserved for V2 — V1 does not poll CI providers.
 | `suite.deleted` | (no UC yet) |
 | `suite.executed` | UC-013 supporting |
 | `testrun.cancelled` | UC-011 supporting |
-| `report.detected` | UC-016 supporting |
 | `report.import.failed` | UC-016 supporting |
 | `evidence.reviewed` | UC-017 |
 | `dashboard.opened` | UC-018 supporting |
@@ -704,5 +693,5 @@ All editorial notes raised in the first draft are now resolved.
 | EN-1 | `dashboard.*` events remain on the single domain `EventBus` in V1. A separate `ui.*` channel is deferred until an external consumer subscribes. |
 | EN-2 | Exactly one terminal event per test run: `testrun.completed` (passed/failed), `testrun.failed` (errored), or `testrun.cancelled`. `testrun.completed.status` is therefore reduced to `"passed" \| "failed"`; `"errored"` is no longer a `testrun.completed` outcome. |
 | EN-3 | `usecase.indexed` removed. `TraceabilityService` indexes synchronously inside the `usecase.created` / `usecase.updated` handlers. |
-| EN-4 | `report.generated` renamed to `report.detected`. Source is `"plugin"`; the plugin's file watcher observes runner output rather than receiving an event from the subprocess. |
+| EN-4 | ~~`report.generated` renamed to `report.detected`~~ **Superseded.** The planned `ReportFileWatcher`/`report.detected` choreography was never built and is removed (see §8). The post-run import is driven in-process by the `PostRunCoordinator`, which subscribes to the EN-2 terminal run events and reads the runner's report files after the run ends. |
 | EN-5 | No `demo.generated` event in V1. Demo content creation stays under `documentation.generated`. Revisit if a standalone "regenerate demo" flow is added in V2+. |

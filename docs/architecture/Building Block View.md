@@ -148,14 +148,21 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 ### 5.11 `TestExecutionService`
 
 - **Purpose:** Orchestrate test execution.
-- **Responsibilities:** Resolve scope, build runner command, spawn child process, stream output, detect completion, trigger report import. Serial execution in V1 (AD-6).
+- **Responsibilities:** Resolve scope, build runner command, spawn child process, stream output, detect completion. Serial execution in V1 (AD-6). Exposes `lastRun()` (the just-finished run) so the `PostRunCoordinator` can import it without reconstructing it from an event payload.
 - **Publishes:** `testrun.requested`, `testrun.started`, `testrun.output.received`, `testrun.completed`, `testrun.failed`, `testrun.cancelled`. (Per EN-2: exactly one terminal event per run.)
-- **Depends on:** `RunnerCommandBuilder`, `ProcessAdapter`, `ReportImportService`.
+- **Depends on:** `RunnerCommandBuilder`, `ProcessAdapter`. It does **not** import reports itself — the `PostRunCoordinator` reacts to the terminal event.
+
+### 5.11a `PostRunCoordinator`
+
+- **Purpose:** Drive the in-process post-run flow (P2-1/P2-6/P2-7), replacing the never-built `ReportFileWatcher`/`report.detected` choreography.
+- **Responsibilities:** Subscribe to the EN-2 terminal run events (`testrun.completed`/`failed`/`cancelled`); on a terminal event, obtain the finished run via `TestExecutionService.lastRun()` and run import → evidence → dashboard refresh, serialized through a single evidence chain so back-to-back runs can't clobber each other's Use Case frontmatter. Encapsulates the run-status eligibility rule (`importLastRun()`, for the manual re-import command) and exposes `whenSettled()` for unload/reset.
+- **Publishes:** nothing directly; it drives `ReportImportService`, `EvidenceGenerationService`, and `TraceabilityService.refreshDashboard()`.
+- **Depends on:** `ReportImportService`, `EvidenceGenerationService`, `TraceabilityService`, `EventBus`, `Logger`. Application-layer only — no Obsidian/infra imports.
 
 ### 5.12 `ReportImportService`
 
 - **Purpose:** Import runner reports.
-- **Consumes:** `report.detected` (from file watcher, see EN-4).
+- **Invoked by:** `PostRunCoordinator` (after a terminal run event) and the manual "Import Report for Last Run" command. The runner writes report files; the plugin reads them after the run ends (no file watcher, no `report.detected`).
 - **Publishes:** `report.imported`, `report.import.failed`.
 - **Depends on:** `ReportParserAdapter`.
 
@@ -172,8 +179,8 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 ### 5.15 `TraceabilityService`
 
 - **Purpose:** Maintain Use Case ↔ Feature ↔ Suite ↔ Run ↔ Evidence links (FR-017); owns the suite-membership index (per SDD AD-10); feeds the dashboard.
-- **Responsibilities:** Cold-scan feature files on plugin load; subscribe to `FeatureFileWatcher` events for incremental updates; expose `scenarioCountFor(suiteId)` / `suitesFor(scenarioRef)` for the views.
-- **Publishes:** `dashboard.refreshed` (debounced 250 ms per AD-10), `dashboard.kpi.updated`.
+- **Responsibilities:** Aggregate the Use Case index into a `DashboardSnapshot`. Exposes two reads: `refreshDashboard()` (computes **and publishes** `dashboard.refreshed`/`dashboard.kpi.updated` — used to PUSH from the `PostRunCoordinator` and from a dashboard view's open) and `snapshot()` (the same computation **without** publishing — read by the views when re-rendering, so a view reacting to `dashboard.*` cannot loop, P2-6).
+- **Publishes:** `dashboard.refreshed`, `dashboard.kpi.updated` (from `refreshDashboard()` only).
 
 ---
 
@@ -223,8 +230,8 @@ Path: `src/infrastructure/{obsidian,filesystem,runner,reports,templates,ci}`.
 | `RunnerTemplateWriter` | Writes the `.testrunner` template: `package.json`, `tsconfig.json`, `playwright.config.ts`, `cucumber.mjs`, demo steps, demo page objects, fixtures (AD-8), `README.md`. |
 | `ReportParserAdapter` | Parses Cucumber JSON + Playwright artifacts (reports, screenshots, traces). |
 | `CiTemplateWriter` | Writes `.github/workflows/e2e.yml` (AD-3). Azure DevOps template stub deferred to V2. |
-| `ReportFileWatcher` | Watches `.testrunner/reports`; publishes `report.detected` (per EN-4). |
-| `FeatureFileWatcher` | Subscribes to `vault.on('modify' \| 'create' \| 'rename' \| 'delete')` for `*.feature`; feeds `TraceabilityService.refreshMembership()` per SDD AD-10. |
+| ~~`ReportFileWatcher`~~ | **Not built / removed.** The post-run import is driven in-process by the `PostRunCoordinator` (application layer) from the EN-2 terminal run event, not by a filesystem watcher. See §5.11a and Event Catalog §8. |
+| `FeatureFileWatcher` | _(Deferred, per SDD AD-10.)_ Would subscribe to `vault.on('modify' \| 'create' \| 'rename' \| 'delete')` for `*.feature` to feed incremental traceability updates. Not in V1. |
 
 ---
 
@@ -290,7 +297,7 @@ Per AD-8: static HTML files served via `file://`. The demo scenario `example.fea
 
 ### 9.6 Reports (`reports`)
 
-Cucumber JSON, Playwright HTML, screenshots, traces. Watched by `ReportFileWatcher`.
+Cucumber JSON, Playwright HTML, screenshots, traces. Read by `ReportImportService` after a run ends (the `PostRunCoordinator` triggers the import from the terminal run event — there is no filesystem watcher).
 
 ---
 
@@ -434,11 +441,14 @@ TestExecutionService
        - error exit → testrun.failed
        - cancel    → testrun.cancelled
    ↓
-ReportFileWatcher detects new report           → report.detected
-ReportImportService.import()                   → report.imported
-EvidenceGenerationService.generate()           → evidence.generated, evidence.linkedToUseCase
-TraceabilityService.refreshDashboard()         → dashboard.refreshed, dashboard.kpi.updated
+PostRunCoordinator (subscribed to the terminal events) reads the finished run
+   via TestExecutionService.lastRun(), then runs (serialized):
+   ├─ ReportImportService.import(run)            → report.imported
+   ├─ EvidenceGenerationService.generate()       → evidence.generated, evidence.linkedToUseCase
+   └─ TraceabilityService.refreshDashboard()     → dashboard.refreshed, dashboard.kpi.updated
 ```
+
+The coordinator obtains the finished `TestRun` from `TestExecutionService.lastRun()` (recorded before the terminal event is published, so the synchronously-awaited handler sees the correct run). An `errored` run produced no report and is skipped. The dashboard refresh is **pushed** here so the KPI events fire even when no view is open (P2-6).
 
 ---
 

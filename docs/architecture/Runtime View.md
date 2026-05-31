@@ -18,7 +18,7 @@
 | RV-3 | Generate Feature Specification | UC-006 | User clicks **Generate Feature** in `UseCaseExplorerView`. |
 | RV-4 | Generate Step Definition Stub | UC-010 | User clicks **Generate Step Stubs** in `SpecificationExplorerView`. |
 | RV-5 | Execute Test Suite | UC-013, UC-015 | User clicks **Run** on a suite in `SuiteExplorerView`. |
-| RV-6 | Generate Evidence (post-run) | UC-016 | `testrun.completed` fires; runs as a continuation of any execution scenario. |
+| RV-6 | Generate Evidence (post-run) | UC-016 | A terminal run event fires; the `PostRunCoordinator` continues in-process as a continuation of any execution scenario. |
 | RV-7 | Generate CI Pipeline | UC-019 | User clicks **Generate CI** in `SettingsTab` or `TestHubView`. |
 | RV-8 | Repair Installation | UC-003 | User clicks **Repair Installation** in `TestHubView`. |
 
@@ -203,7 +203,6 @@ sequenceDiagram
     participant Suite as SuiteService
     participant Proc as ProcessAdapter
     participant Repo as TestRunRepository
-    participant Watch as ReportFileWatcher
     participant Bus as EventBus
 
     U->>V: Click "Run" on Smoke
@@ -235,10 +234,9 @@ sequenceDiagram
     else user cancelled
         Exec-->>Bus: testrun.cancelled
     end
-    Watch-->>Bus: report.detected
 ```
 
-**Terminal-event invariant.** Exactly one of `testrun.completed` / `testrun.failed` / `testrun.cancelled` per run (per EN-2). Subscribers waiting on terminal state listen to all three.
+**Terminal-event invariant.** Exactly one of `testrun.completed` / `testrun.failed` / `testrun.cancelled` per run (per EN-2). Subscribers waiting on terminal state listen to all three. The `PostRunCoordinator` is one such subscriber — it continues into RV-6 (import → evidence → dashboard refresh) in-process; there is no `ReportFileWatcher` and no `report.detected` event.
 
 **Correlation.** `correlationId = runId` for all `testrun.*`, `report.*`, and downstream `evidence.*` events.
 
@@ -246,36 +244,42 @@ sequenceDiagram
 
 ## RV-6 — Generate Evidence (UC-016)
 
-**Trigger.** `report.detected` fires (continuation of any RV-5 success path).
+**Trigger.** A terminal run event (`testrun.completed` / `testrun.failed` / `testrun.cancelled`) fires; the `PostRunCoordinator`, subscribed to all three, continues in-process (continuation of any RV-5 path). There is no `ReportFileWatcher` and no `report.detected` event.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Bus as EventBus
-    participant Watch as ReportFileWatcher
+    participant Exec as TestExecutionService
+    participant Coord as PostRunCoordinator
     participant Import as ReportImportService
     participant Parse as ReportParserAdapter
     participant Ev as EvidenceGenerationService
     participant Vault as ObsidianVaultAdapter
     participant FM as FrontmatterPort
     participant Trace as TraceabilityService
-    participant Hub as TestHubView
+    participant Hub as DashboardView
 
-    Watch-->>Bus: report.detected
-    Bus->>Import: import(run)
+    Bus-->>Coord: testrun.completed / failed / cancelled
+    Coord->>Exec: lastRun()
+    Exec-->>Coord: TestRun (just finished)
+    Note over Coord: skip errored runs (no report); serialize via evidence chain
+    Coord->>Import: import(run)
     Import->>Parse: parse(.testrunner/reports/...)
     Parse-->>Import: ImportedReport
     Import-->>Bus: report.imported
-    Bus->>Ev: generate({ run, report })
+    Coord->>Ev: generate({ run, report })
     Ev->>Vault: createFile(Test Evidence/.../summary.md)
     Ev-->>Bus: evidence.generated
     Ev->>FM: update(useCasePath, { last_evidence, last_test_status })
     Ev-->>Bus: evidence.linkedToUseCase
-    Bus->>Trace: refresh()
+    Coord->>Trace: refreshDashboard()
     Trace-->>Bus: dashboard.refreshed
     Trace-->>Bus: dashboard.kpi.updated
-    Bus-->>Hub: re-render dashboard
+    Bus-->>Hub: re-render (reads snapshot(), no re-emit)
 ```
+
+**Loop avoidance (P2-6).** The coordinator PUSHES `refreshDashboard()` (which emits `dashboard.refreshed`/`dashboard.kpi.updated`) so the KPIs update even when no view is open. A `DashboardView` reacting to those events re-renders from the **non-emitting** `TraceabilityService.snapshot()`, so the render cannot re-trigger a refresh.
 
 **Evidence note.** Markdown with frontmatter (`type: test-evidence`, `run_id`, `linked_use_cases`, etc.) plus a body section that **links** to artifacts in `.testrunner/reports/...` rather than copying them (per OQ-002 default resolution: link, do not duplicate).
 
