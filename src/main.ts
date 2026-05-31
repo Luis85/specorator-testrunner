@@ -218,6 +218,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // + recent runs for the live Test Hub Dashboard.
     this.traceabilityService = new DefaultTraceabilityService(
       this.useCaseService,
+      vault,
       eventBus,
       this.logger,
     );

@@ -8,7 +8,17 @@ import type { TestRunSummary } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
 import { ok, err, type Result } from "../src/shared/result/result";
 import { appError } from "../src/shared/errors/errors";
-import { recordingEventBus, silentLogger } from "./fakes";
+import { FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+
+/** A valid one-scenario Gherkin feature (non-@wip, has steps). */
+const FEATURE_CONTENT = "Feature: F\n  Scenario: S\n    Given a step\n    Then a result\n";
+
+/** A FakeVaultFileSystem seeding valid feature content for every UC feature file. */
+const fsWithFeatures = (useCases: UseCase[]): FakeVaultFileSystem => {
+  const fs = new FakeVaultFileSystem();
+  for (const uc of useCases) for (const path of uc.featureFiles) fs.files.set(path, FEATURE_CONTENT);
+  return fs;
+};
 
 const useCase = (over: Partial<UseCase> = {}): UseCase => ({
   id: "UC-001",
@@ -86,11 +96,25 @@ describe("projectDashboardSnapshot (ADR-0017 KPI definitions)", () => {
 describe("DefaultTraceabilityService.refreshDashboard", () => {
   it("returns the snapshot and emits dashboard.refreshed then dashboard.kpi.updated", async () => {
     const { bus, events, types } = recordingEventBus();
+    // Status is DERIVED via the policy from each UC's features + last run, so
+    // give each a feature file and a last run with the relevant outcome.
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: ["Specifications/features/UC-001-a.feature"],
+        lastTestRun: { runId: "RUN-A", status: "passed", date: "2026-06-01T09:00:00Z" },
+        suites: ["smoke"],
+      }),
+      useCase({
+        id: "UC-002",
+        featureFiles: ["Specifications/features/UC-002-a.feature"],
+        lastTestRun: { runId: "RUN-B", status: "failed", date: "2026-05-30T09:00:00Z" },
+        suites: ["smoke", "regression"],
+      }),
+    ];
     const service = new DefaultTraceabilityService(
-      stubUseCaseService([
-        useCase({ id: "UC-001", automationStatus: "passing", lastTestRun: run("RUN-A", "2026-06-01T09:00:00Z"), suites: ["smoke"] }),
-        useCase({ id: "UC-002", automationStatus: "failing", suites: ["smoke", "regression"] }),
-      ]),
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
       bus,
       silentLogger,
     );
@@ -128,7 +152,7 @@ describe("DefaultTraceabilityService.refreshDashboard", () => {
         return err(appError("VALIDATION_FAILED", "boom"));
       },
     };
-    const service = new DefaultTraceabilityService(failing, bus, silentLogger);
+    const service = new DefaultTraceabilityService(failing, new FakeVaultFileSystem(), bus, silentLogger);
 
     const result = await service.refreshDashboard();
     expect(result.ok).toBe(false);
@@ -149,6 +173,7 @@ describe("DefaultTraceabilityService.linksFor", () => {
           lastTestRun: run("RUN-A", "2026-06-01T09:00:00Z"),
         }),
       ]),
+      new FakeVaultFileSystem(),
       bus,
       silentLogger,
     );
@@ -167,7 +192,7 @@ describe("DefaultTraceabilityService.linksFor", () => {
 
   it("returns VALIDATION_FAILED for an unknown UC id", async () => {
     const { bus } = recordingEventBus();
-    const service = new DefaultTraceabilityService(stubUseCaseService([]), bus, silentLogger);
+    const service = new DefaultTraceabilityService(stubUseCaseService([]), new FakeVaultFileSystem(), bus, silentLogger);
     const result = await service.linksFor("UC-999");
     expect(result.ok).toBe(false);
     if (result.ok) return;

@@ -1,4 +1,8 @@
+import { parseFeature } from "../content/gherkin";
+import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { UseCaseService } from "./use-case-service";
+import { computeAutomationStatus } from "../../domain/policies/use-case-automation-policy";
+import type { FeatureSpecification } from "../../domain/entities/specification";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { TestRunSummary } from "../../domain/entities/test-run";
 import type {
@@ -94,9 +98,27 @@ export const projectDashboardSnapshot = (useCases: UseCase[]): DashboardSnapshot
 export class DefaultTraceabilityService implements TraceabilityService {
   constructor(
     private readonly useCaseService: UseCaseService,
+    private readonly fs: VaultFileSystem,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
   ) {}
+
+  /**
+   * Derives a UC's effective automation status via UseCaseAutomationPolicy
+   * (ADR-0017) from its parsed Features + last run, rather than trusting a
+   * possibly-stale persisted `automationStatus`. Best-effort: unreadable or
+   * unparseable feature files are skipped.
+   */
+  private async withDerivedStatus(useCase: UseCase): Promise<UseCase> {
+    const features: FeatureSpecification[] = [];
+    for (const path of useCase.featureFiles) {
+      const read = await this.fs.readFile(path);
+      if (!read.ok) continue;
+      const feature = parseFeature(read.value, path);
+      if (feature) features.push(feature);
+    }
+    return { ...useCase, automationStatus: computeAutomationStatus(useCase, features) };
+  }
 
   /**
    * Aggregates the Use Case index into KPI counts + recent runs (UC-018 steps
@@ -107,11 +129,17 @@ export class DefaultTraceabilityService implements TraceabilityService {
     const all = await this.useCaseService.findAll();
     if (!all.ok) return err(all.error);
 
-    const snapshot = projectDashboardSnapshot(all.value);
+    // Derive each UC's automation status from its Features + last run via the
+    // policy (ADR-0017) so KPI counts reflect reality, not a stale frontmatter
+    // value.
+    const derived: UseCase[] = [];
+    for (const useCase of all.value) derived.push(await this.withDerivedStatus(useCase));
+
+    const snapshot = projectDashboardSnapshot(derived);
 
     // Distinct suites across all UCs — `dashboard.refreshed` is a signal whose
     // counts subscribers re-query; an approximate suite count is sufficient.
-    const suiteCount = new Set(all.value.flatMap((uc) => uc.suites)).size;
+    const suiteCount = new Set(derived.flatMap((uc) => uc.suites)).size;
 
     await this.eventBus.publish(
       createEvent("dashboard.refreshed", {
