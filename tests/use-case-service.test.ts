@@ -47,6 +47,20 @@ describe("DefaultUseCaseService", () => {
     expect(types()).toContain("usecase.created");
   });
 
+  it("collapses a multi-line description into a single frontmatter line", async () => {
+    const { service, fs } = build();
+    const result = await service.create({
+      title: "Multi",
+      description: "First line.\nSecond line.\n\nThird.",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.description).toBe("First line. Second line. Third.");
+    // The written note must round-trip the full description (no truncation/corruption).
+    const reread = await service.findAll();
+    expect(reread.ok && reread.value[0].description).toBe("First line. Second line. Third.");
+  });
+
   it("allocates the next id from existing use cases", async () => {
     const { service, fs } = build();
     fs.files.set("Use Cases/UC-001 Demo.md", buildDemoUseCaseNote("Specifications/features/demo.feature"));
