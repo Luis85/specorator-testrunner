@@ -40,6 +40,13 @@ describe("DefaultSuiteService", () => {
     if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
   });
 
+  it("rejects a blank tag expression", async () => {
+    const { service } = build();
+    const result = await service.create({ name: "Empty Tags", tagExpression: "   " });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
   it("collapses a multi-line description into a single frontmatter line", async () => {
     const { service, fs } = build();
     const result = await service.create({

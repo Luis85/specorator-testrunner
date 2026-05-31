@@ -54,12 +54,17 @@ export class DefaultSuiteService implements SuiteService {
         appError("VALIDATION_FAILED", "A suite name with at least one letter or digit is required."),
       );
     }
+    // Membership/scope IS the tag expression (AD-4); a blank one resolves to ""
+    // and would run nothing meaningful, so reject it up front.
+    if (request.tagExpression.trim() === "") {
+      return err(appError("VALIDATION_FAILED", "A suite tag expression is required."));
+    }
     return this.createFromSeed({
       id,
       name,
       // Collapse newlines: frontmatter `description` is a single-line scalar.
       description: request.description?.replace(/\s+/g, " ").trim() ?? "",
-      tagExpression: request.tagExpression,
+      tagExpression: request.tagExpression.trim(),
     });
   }
 
