@@ -219,6 +219,32 @@ describe("DefaultSettingsService — ADR-0015 sibling Test Hub detection", () =>
     expect(siblingWarning(validation)).toBeUndefined();
   });
 
+  it("flags a sibling copy beside a RELOCATED (nested) Test Hub (review P2)", async () => {
+    // testHubPath relocated to QA/Test Hub; a sync/copy conflict lands in the
+    // same parent (QA/Test Hub copy) and must still be flagged.
+    const { service } = makeServiceWithVault(["QA/Test Hub", "QA/Test Hub copy"]);
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      paths: { ...DEFAULT_SETTINGS.paths, testHubPath: "QA/Test Hub" },
+    };
+    const validation = await service.validate(settings);
+    const warning = siblingWarning(validation);
+    expect(warning).toBeDefined();
+    expect(warning?.message).toContain("QA/Test Hub copy");
+  });
+
+  it("does not flag a same-named copy under a DIFFERENT parent", async () => {
+    // "Archive/Test Hub copy" is not a sibling of the configured "QA/Test Hub"
+    // (different parent), so it is not a one-project-per-vault conflict here.
+    const { service } = makeServiceWithVault(["QA/Test Hub", "Archive/Test Hub copy"]);
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      paths: { ...DEFAULT_SETTINGS.paths, testHubPath: "QA/Test Hub" },
+    };
+    const validation = await service.validate(settings);
+    expect(siblingWarning(validation)).toBeUndefined();
+  });
+
   it("names every conflicting folder", async () => {
     const { service } = makeServiceWithVault(["Test Hub", "Test Hub 1", "Test Hub 2"]);
     const validation = await service.validate(DEFAULT_SETTINGS);
