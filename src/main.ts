@@ -39,6 +39,10 @@ import {
   DefaultSpecificationService,
   type SpecificationService,
 } from "./application/services/specification-service";
+import {
+  DefaultStepDefinitionService,
+  type StepDefinitionService,
+} from "./application/services/step-definition-service";
 import { DefaultSuiteService, type SuiteService } from "./application/services/suite-service";
 import {
   DefaultTraceabilityService,
@@ -99,6 +103,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private pipelineService!: PipelineGenerationService;
   private useCaseService!: UseCaseService;
   private specificationService!: SpecificationService;
+  private stepDefinitionService!: StepDefinitionService;
   private suiteService!: SuiteService;
   private testExecutionService!: TestExecutionService;
   private reportImportService!: ReportImportService;
@@ -217,6 +222,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.specificationService = new DefaultSpecificationService(
       this.hubSettingsService,
       this.useCaseService,
+      vault,
+      eventBus,
+      this.logger,
+    );
+    // UC-010 / RV-4: generate step-definition stubs for a feature's undefined
+    // steps. Writes via the same VaultFileSystem + `.testrunner/src/steps` path
+    // that detectMissingSteps reads from, so a stub is picked up next detection.
+    this.stepDefinitionService = new DefaultStepDefinitionService(
+      this.hubSettingsService,
       vault,
       eventBus,
       this.logger,
@@ -385,6 +399,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       id: "detect-missing-steps",
       name: "Detect Missing Steps",
       callback: () => void this.detectMissingSteps(),
+    });
+    // UC-010 / RV-4: explicit user command (NOT auto-on-edit) — detect the
+    // active feature's missing steps, then generate non-destructive stubs.
+    this.addCommand({
+      id: "generate-step-definitions",
+      name: "Generate Step Definitions",
+      callback: () => void this.generateStepDefinitions(),
     });
 
     // EPIC-007 Test Execution (US-026/027/028/029/030).
@@ -734,6 +755,44 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
             "; ",
           )}`,
       10000,
+    );
+  }
+
+  /**
+   * UC-010 / RV-4: detect the active feature's undefined steps via
+   * `SpecificationService`, then generate non-destructive step-definition stubs
+   * via `StepDefinitionService`. Generation is an explicit user command (not
+   * auto-on-every-edit); the detection event's id is threaded through as the
+   * `causationId` of `stepdefinition.generated` (Event Catalog §5), so a future
+   * auto-path can reuse the same wiring. Logic lives in the services — this only
+   * orchestrates the two calls and surfaces the outcome as a Notice.
+   */
+  private async generateStepDefinitions(): Promise<void> {
+    const path = this.activeFeaturePath();
+    if (path === null) return;
+    const detected = await this.specificationService.detectMissingSteps(path);
+    if (!detected.ok) {
+      new Notice(`Detection failed: ${detected.error.message}`, 10000);
+      return;
+    }
+    if (detected.value.missingSteps.length === 0) {
+      new Notice("No missing steps — nothing to generate.");
+      return;
+    }
+    const generated = await this.stepDefinitionService.generate(
+      path,
+      detected.value.missingSteps,
+      detected.value.detectionEventId,
+    );
+    if (!generated.ok) {
+      new Notice(`Could not generate step definitions: ${generated.error.message}`, 10000);
+      return;
+    }
+    const count = generated.value.generatedSteps.length;
+    new Notice(
+      count === 0
+        ? "No missing steps — nothing to generate."
+        : `Generated ${count} step stub(s) in ${generated.value.stepFile}.`,
     );
   }
 
