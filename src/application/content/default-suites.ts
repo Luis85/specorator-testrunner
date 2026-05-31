@@ -20,8 +20,8 @@ export const DEFAULT_SUITES: DefaultSuiteSeed[] = [
   {
     id: "regression",
     name: "Regression Suite",
-    description: "All tests that are not work-in-progress.",
-    tagExpression: "not @wip",
+    description: "The full regression set. Tag scenarios @regression to include them.",
+    tagExpression: "@regression",
   },
 ];
 

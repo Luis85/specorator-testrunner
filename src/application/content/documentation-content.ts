@@ -71,7 +71,7 @@ The Test Hub turns requirements into executable specifications:
 Initialization creates two suites:
 
 - **Smoke** — \`@smoke\` critical-path scenarios.
-- **Regression** — \`not @wip\` everything that is not work-in-progress.
+- **Regression** — \`@regression\` the full regression set (empty until you tag scenarios).
 
 Tag a Feature \`@wip\` to keep half-built work out of the dashboard roll-up.
 
