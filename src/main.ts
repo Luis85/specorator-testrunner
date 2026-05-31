@@ -360,8 +360,16 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       id: "import-report-last-run",
       name: "Import Report for Last Run",
       callback: () => {
-        if (this.lastRun) void this.importAndGenerateEvidence(this.lastRun, true);
-        else new Notice("No test run to import a report for yet.");
+        // Only report-producing runs have a report to import. A cancelled/
+        // errored last run would otherwise attach a STALE report (the fixed
+        // reports path carries no run id) to the wrong run id.
+        if (!this.lastRun) {
+          new Notice("No test run to import a report for yet.");
+        } else if (this.lastRun.status === "passed" || this.lastRun.status === "failed") {
+          void this.importAndGenerateEvidence(this.lastRun, true);
+        } else {
+          new Notice(`The last run (${this.lastRun.status}) produced no report to import.`);
+        }
       },
     });
     this.addRibbonIcon("terminal", "Open Test Console", () =>

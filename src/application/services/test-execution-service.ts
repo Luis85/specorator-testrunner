@@ -220,9 +220,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
     await this.terminal(activeRun, "testrun.cancelled", { runId });
     this.logger.info("Test run cancelled", { runId });
 
-    // Free the slot now so the next execute() can start without awaiting the
-    // (already-cancelled) child's runStreaming promise to settle.
-    if (this.active === activeRun) this.active = null;
+    // Deliberately DO NOT free the slot here: childProcess.cancel() only sends
+    // SIGTERM and returns before the runner has actually exited, so a process
+    // can still be writing the shared reports dir. The slot is released by
+    // execute()'s finally when runStreaming settles (the real close event), so
+    // the next run can't overlap a still-terminating one (ADR-0018).
     return ok(undefined);
   }
 

@@ -185,7 +185,11 @@ export class DefaultReportImportService implements ReportImportService {
         const scenario = rawScenario as CucumberScenario;
         // Backgrounds run once per scenario and carry no independent result.
         if (scenario.type === "background") continue;
-        const steps = Array.isArray(scenario.steps) ? scenario.steps : [];
+        // Narrow to record steps so a malformed report (e.g. `steps: [null]`)
+        // can't throw when result/embeddings are dereferenced (defensive parse).
+        const steps = (Array.isArray(scenario.steps) ? scenario.steps : []).filter(
+          isRecord,
+        ) as CucumberStep[];
 
         const status = scenarioStatus(steps);
         const durationMs = this.totalDurationMs(steps);

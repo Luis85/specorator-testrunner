@@ -185,4 +185,19 @@ describe("DefaultReportImportService", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("REPORT_PARSE_FAILED");
   });
+
+  it("tolerates malformed (null) step entries without throwing", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.seed(
+      REPORT_ABS,
+      JSON.stringify([
+        { name: "F", uri: "features/UC-001-x.feature", elements: [{ name: "S", steps: [null, { result: { status: "passed" } }] }] },
+      ]),
+    );
+
+    const result = await service.import(run());
+    expect(result.ok).toBe(true); // defensive parse: corrupt step skipped, not thrown
+    if (!result.ok) return;
+    expect(result.value.scenarioResults[0].status).toBe("passed");
+  });
 });
