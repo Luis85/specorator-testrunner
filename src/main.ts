@@ -28,6 +28,11 @@ import {
   type SuiteService,
 } from "./application/services/suite-service";
 import {
+  DefaultTestExecutionService,
+  type ExecuteTestRequest,
+  type TestExecutionService,
+} from "./application/services/test-execution-service";
+import {
   DefaultUseCaseService,
   type UseCaseService,
 } from "./application/services/use-case-service";
@@ -49,6 +54,11 @@ import {
   SUITE_VIEW_TYPE,
   SuiteDashboardView,
 } from "./presentation/views/suite-dashboard-view";
+import { RunPickerModal } from "./presentation/views/run-picker-modal";
+import {
+  TEST_CONSOLE_VIEW_TYPE,
+  TestConsoleView,
+} from "./presentation/views/test-console-view";
 import {
   USE_CASE_VIEW_TYPE,
   UseCaseDashboardView,
@@ -72,6 +82,8 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private useCaseService!: UseCaseService;
   private specificationService!: SpecificationService;
   private suiteService!: SuiteService;
+  private testExecutionService!: TestExecutionService;
+  private vaultAdapter!: ObsidianVaultAdapter;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
 
   async onload(): Promise<void> {
@@ -86,6 +98,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.logger = new ConsoleLogger(this.hubSettings.logging.level);
 
     const vault = new ObsidianVaultAdapter(this.app);
+    this.vaultAdapter = vault;
     this.workspaceAdapter = new ObsidianWorkspaceAdapter(this.app);
 
     const documentation = new DefaultDocumentationGenerationService(
@@ -151,6 +164,19 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    // A dedicated runner instance for test execution: cancel() kills only the
+    // (single, ADR-0018) active test process, never a concurrent validation,
+    // repair, or install spawned on the shared `childProcess`.
+    this.testExecutionService = new DefaultTestExecutionService(
+      this.hubSettingsService,
+      this.suiteService,
+      this.useCaseService,
+      new NodeChildProcessRunner(),
+      absoluteFs,
+      commandSafety,
+      eventBus,
+      this.logger,
+    );
 
     this.registerView(
       USE_CASE_VIEW_TYPE,
@@ -171,6 +197,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           eventBus,
           onCreate: () => this.openCreateSuite(),
         }),
+    );
+    this.registerView(
+      TEST_CONSOLE_VIEW_TYPE,
+      (leaf) => new TestConsoleView(leaf, eventBus),
     );
 
     this.addSettingTab(new TestHubSettingTab(this, this));
@@ -233,13 +263,165 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       callback: () => void this.detectMissingSteps(),
     });
 
+    // EPIC-007 Test Execution (US-026/027/028/029/030).
+    this.addCommand({
+      id: "run-demo-test",
+      name: "Run Demo Test",
+      callback: () => void this.runTest({ scope: "demo", target: "demo" }),
+    });
+    this.addCommand({
+      id: "run-all-tests",
+      name: "Run All Tests",
+      callback: () => void this.runTest({ scope: "all", target: "all" }),
+    });
+    this.addCommand({
+      id: "run-suite",
+      name: "Run Suite…",
+      callback: () => void this.runSuite(),
+    });
+    this.addCommand({
+      id: "run-use-case",
+      name: "Run Use Case…",
+      callback: () => void this.runUseCase(),
+    });
+    this.addCommand({
+      id: "run-feature",
+      name: "Run Feature…",
+      callback: () => void this.runFeature(),
+    });
+    this.addCommand({
+      id: "cancel-test-run",
+      name: "Cancel Test Run",
+      callback: () => void this.cancelTestRun(),
+    });
+    this.addCommand({
+      id: "open-test-console",
+      name: "Open Test Console",
+      callback: () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
+    });
+    this.addRibbonIcon("terminal", "Open Test Console", () =>
+      void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
+    );
+
     this.logger.info("E2E Test Hub loaded");
   }
 
   async onunload(): Promise<void> {
+    // A disable/reload while a run is active would otherwise leave the runner's
+    // npm/Cucumber child alive inside Obsidian with no console subscribers and
+    // no command path to stop it — cancel it before tearing down the UI.
+    const active = this.testExecutionService?.activeRunId() ?? null;
+    if (active !== null) {
+      const cancelled = await this.testExecutionService.cancel(active);
+      if (!cancelled.ok) {
+        this.logger?.warn("Could not cancel active run on unload", {
+          runId: active,
+          reason: cancelled.error.message,
+        });
+      }
+    }
+    // cancel() only signals the child; the run settles when the runner process
+    // actually closes. Await the service's active-run completion so the
+    // npm/Cucumber process has exited (and stopped writing reports) before this
+    // instance tears down and a new one could start.
+    await this.testExecutionService?.whenActiveSettles().catch(() => undefined);
     this.app.workspace.detachLeavesOfType(USE_CASE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(SUITE_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(TEST_CONSOLE_VIEW_TYPE);
     this.logger?.info("E2E Test Hub unloaded");
+  }
+
+  /**
+   * Starts a run, revealing the live Test Console first so output streams in
+   * (US-030, UC-015). ADR-0018 surfaces `RUN_IN_PROGRESS` as a Notice with the
+   * active run id so the user can cancel it.
+   */
+  private async runTest(request: ExecuteTestRequest): Promise<void> {
+    // Reveal the live console FIRST so it is subscribed to testrun.started /
+    // output events before execute() publishes them (the bus doesn't replay).
+    // The single-active slot is reserved synchronously inside execute(), and the
+    // service owns the cancel-and-wait completion (whenActiveSettles), so onunload
+    // no longer needs to track the run promise here.
+    await this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
+    const result = await this.testExecutionService.execute(request);
+    if (!result.ok) {
+      const active = result.error.details?.activeRunId;
+      new Notice(
+        active
+          ? `A run is already in progress (${String(active)}). Cancel it first.`
+          : `Could not start run: ${result.error.message}`,
+        10000,
+      );
+    }
+  }
+
+  private async runSuite(): Promise<void> {
+    const suites = await this.suiteService.findAll();
+    if (!suites.ok) {
+      new Notice(`Could not load Test Suites: ${suites.error.message}`, 10000);
+      return;
+    }
+    if (suites.value.length === 0) {
+      new Notice("No Test Suites found. Create one first.");
+      return;
+    }
+    new RunPickerModal(
+      this.app,
+      "Select a Test Suite to run",
+      suites.value.map((s) => ({ id: s.id, label: `${s.id} — ${s.name}` })),
+      (id) => void this.runTest({ scope: "suite", target: id }),
+    ).open();
+  }
+
+  private async runUseCase(): Promise<void> {
+    const useCases = await this.useCaseService.findAll();
+    if (!useCases.ok) {
+      new Notice(`Could not load Use Cases: ${useCases.error.message}`, 10000);
+      return;
+    }
+    if (useCases.value.length === 0) {
+      new Notice("No Use Cases found. Create one first.");
+      return;
+    }
+    new RunPickerModal(
+      this.app,
+      "Select a Use Case to run",
+      useCases.value.map((u) => ({ id: u.id, label: `${u.id} — ${u.title}` })),
+      (id) => void this.runTest({ scope: "use-case", target: id }),
+    ).open();
+  }
+
+  private async runFeature(): Promise<void> {
+    const folder = this.hubSettings.paths.featureFilesPath;
+    const listed = await this.vaultAdapter.listFilesRecursive(folder);
+    if (!listed.ok) {
+      new Notice(`Could not list Feature files: ${listed.error.message}`, 10000);
+      return;
+    }
+    const features = listed.value.filter((p) => p.endsWith(".feature"));
+    if (features.length === 0) {
+      new Notice("No Feature files found. Generate one first.");
+      return;
+    }
+    new RunPickerModal(
+      this.app,
+      "Select a Feature file to run",
+      features.map((path) => ({ id: path, label: path.slice(folder.length + 1) })),
+      (path) => void this.runTest({ scope: "feature", target: path }),
+    ).open();
+  }
+
+  private async cancelTestRun(): Promise<void> {
+    const active = this.testExecutionService.activeRunId();
+    if (active === null) {
+      new Notice("No test run is in progress.");
+      return;
+    }
+    const result = await this.testExecutionService.cancel(active);
+    new Notice(
+      result.ok ? "Test run cancelled." : `Could not cancel run: ${result.error.message}`,
+      result.ok ? undefined : 10000,
+    );
   }
 
   private openWizard(): void {

@@ -91,14 +91,24 @@ export class TestWorld extends World {
 setWorldConstructor(TestWorld);
 `;
 
-const HOOKS_TS = `import { After, Before } from "@cucumber/cucumber";
+const HOOKS_TS = `import { After, Before, Status } from "@cucumber/cucumber";
 import { TestWorld } from "./world";
 
 Before(async function (this: TestWorld) {
   await this.openBrowser();
 });
 
-After(async function (this: TestWorld) {
+// On failure, capture a screenshot and attach it to the Cucumber report before
+// the browser closes. Attachments are written into the JSON report's
+// embeddings, which the Test Hub imports as screenshot evidence (US-033/034).
+After(async function (this: TestWorld, scenario) {
+  if (scenario.result?.status === Status.FAILED && this.page) {
+    try {
+      this.attach(await this.page.screenshot(), "image/png");
+    } catch {
+      // A page already crashed/closed shouldn't fail teardown.
+    }
+  }
   await this.closeBrowser();
 });
 `;

@@ -14,7 +14,9 @@ export interface ChildProcessRunner {
 }
 
 export interface RunCommandRequest {
-  command: string;
+  // argv array spawned WITHOUT a shell (no interpolation/word-splitting): args[0]
+  // is the program (e.g. "npm"), the rest are literal arguments (TIS §13.2).
+  args: string[];
   cwd: string; // absolute path, must resolve under .testrunner per RunnerExecutionPolicy
   env?: Record<string, string>;
 }

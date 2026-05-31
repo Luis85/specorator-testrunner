@@ -76,7 +76,7 @@ describe("DefaultMaintenanceService", () => {
     expect(result.value.reinstalledPackages).toBe(true);
     expect(result.value.reinstalledBrowsers).toBe(true);
     expect(templates.requests).toHaveLength(1); // re-synced once
-    const commands = childProcess.calls.map((c) => c.command);
+    const commands = childProcess.calls.map((c) => c.args.join(" "));
     expect(commands).toContain("npm install");
     expect(commands).toContain("npx playwright install chromium");
     expect(types()).toContain("testrunner.repaired");
@@ -92,7 +92,7 @@ describe("DefaultMaintenanceService", () => {
     if (!result.ok) return;
     expect(result.value.reinstalledPackages).toBe(false);
     expect(result.value.reinstalledBrowsers).toBe(true); // authoritative, idempotent
-    const commands = childProcess.calls.map((c) => c.command);
+    const commands = childProcess.calls.map((c) => c.args.join(" "));
     expect(commands).not.toContain("npm install");
     expect(commands).toContain("npx playwright install chromium");
   });
@@ -108,7 +108,7 @@ describe("DefaultMaintenanceService", () => {
     if (!result.ok) return;
     expect(result.value.reinstalledPackages).toBe(true);
     expect(result.value.reinstalledBrowsers).toBe(true);
-    expect(childProcess.calls.map((c) => c.command)).toContain("npm install");
+    expect(childProcess.calls.map((c) => c.args.join(" "))).toContain("npm install");
   });
 
   it("fails when a required reinstall fails", async () => {

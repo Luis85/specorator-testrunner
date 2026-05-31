@@ -114,9 +114,29 @@ export class FakeAbsoluteFileSystem implements AbsoluteFileSystem {
     return this.existing.has(path) || this.written.has(path);
   }
 
+  /** Seeds file contents so {@link readAbsolute} can serve them (e.g. a report). */
+  seed(path: string, content: string): void {
+    this.written.set(path, content);
+    this.existing.add(path);
+  }
+
+  async readAbsolute(path: string): Promise<Result<string>> {
+    const content = this.written.get(path);
+    if (content === undefined) {
+      return { ok: false, error: { code: "REPORT_NOT_FOUND", message: `missing ${path}` } };
+    }
+    return ok(content);
+  }
+
   async writeAbsolute(path: string, content: string): Promise<Result<void>> {
     this.written.set(path, content);
     this.existing.add(path);
+    return ok(undefined);
+  }
+
+  async deleteAbsolute(path: string): Promise<Result<void>> {
+    this.written.delete(path);
+    this.existing.delete(path);
     return ok(undefined);
   }
 
@@ -139,32 +159,71 @@ export class FakeChildProcessRunner implements ChildProcessRunner {
   readonly exitCodes = new Map<string, number>();
   /** command substrings whose spawn should fail outright. */
   readonly spawnFailures = new Set<string>();
-  cancelled = false;
+  /** Lines streamed via `onOutput` before a streaming run resolves. */
+  readonly streamLines: RunnerOutput[] = [];
+  /** process ids passed to `cancel`. */
+  readonly cancelled: string[] = [];
+  /**
+   * When true, `runStreaming` does not resolve until {@link release} is called.
+   * Lets tests overlap a second `execute()` or `cancel()` against an in-flight
+   * run deterministically (no real timers).
+   */
+  pending = false;
+  /**
+   * Pre-armed gate so {@link release} works even if it is called before
+   * `runStreaming` reaches the await — mirrors a child that is killed the
+   * instant it spawns.
+   */
+  private gate = this.makeGate();
+  private released = false;
 
   async run(request: RunCommandRequest): Promise<Result<RunnerCommandResult>> {
     this.calls.push(request);
+    return this.settle(request);
+  }
+
+  async runStreaming(
+    request: RunCommandRequest,
+    onOutput: (output: RunnerOutput) => void,
+  ): Promise<Result<RunnerCommandResult>> {
+    this.calls.push(request);
+    for (const line of this.streamLines) onOutput(line);
+    if (this.pending && !this.released) await this.gate.promise;
+    return this.settle(request);
+  }
+
+  /** Unblocks a `pending` streaming run so its promise resolves. */
+  release(): void {
+    this.released = true;
+    this.gate.resolve();
+  }
+
+  private makeGate(): { promise: Promise<void>; resolve: () => void } {
+    let resolve = (): void => {};
+    const promise = new Promise<void>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  async cancel(processId: string): Promise<Result<void>> {
+    this.cancelled.push(processId);
+    this.release();
+    return ok(undefined);
+  }
+
+  private settle(request: RunCommandRequest): Result<RunnerCommandResult> {
+    // Match on the joined argv (the runner spawns with shell: false; the PR #7
+    // rework to argv arrays), so test fixtures still match by command substring.
+    const command = request.args.join(" ");
     for (const fragment of this.spawnFailures) {
-      if (request.command.includes(fragment)) {
+      if (command.includes(fragment)) {
         return { ok: false, error: { code: "INIT_FAILED", message: "spawn failed" } };
       }
     }
     let exitCode = 0;
     for (const [fragment, code] of this.exitCodes) {
-      if (request.command.includes(fragment)) exitCode = code;
+      if (command.includes(fragment)) exitCode = code;
     }
     return ok({ exitCode, stdout: "", stderr: exitCode === 0 ? "" : "boom", durationMs: 1 });
-  }
-
-  async runStreaming(
-    request: RunCommandRequest,
-    _onOutput: (output: RunnerOutput) => void,
-  ): Promise<Result<RunnerCommandResult>> {
-    return this.run(request);
-  }
-
-  async cancel(): Promise<Result<void>> {
-    this.cancelled = true;
-    return ok(undefined);
   }
 }
 

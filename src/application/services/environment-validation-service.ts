@@ -82,10 +82,10 @@ export class DefaultEnvironmentValidationService
     };
 
     const nodeAvailable = await this.commandSucceeds(
-      `${settings.runner.nodeExecutable} --version`,
+      [settings.runner.nodeExecutable, "--version"],
       base.value,
     );
-    const packageManagerAvailable = await this.commandSucceeds("npm --version", base.value);
+    const packageManagerAvailable = await this.commandSucceeds(["npm", "--version"], base.value);
     const runnerFolderExists = await this.absoluteFs.existsAbsolute(runnerAbs);
     const missingFiles: string[] = [];
     for (const file of VALIDATED_RUNNER_FILES) {
@@ -104,7 +104,7 @@ export class DefaultEnvironmentValidationService
     const dependenciesInstalled = nodeModulesExists && missingDependencies.length === 0;
     const playwrightAvailable =
       dependenciesInstalled &&
-      (await this.commandSucceeds("npx playwright --version", cwd.value));
+      (await this.commandSucceeds(["npx", "playwright", "--version"], cwd.value));
     const browsersInstalled = await this.detectBrowsers(runnerAbs);
 
     if (!nodeAvailable)
@@ -183,9 +183,10 @@ export class DefaultEnvironmentValidationService
     return result;
   }
 
-  private async commandSucceeds(command: string, cwd: string): Promise<boolean> {
-    if (!this.commandSafety.assertSafe(command).ok) return false;
-    const result = await this.process.run({ command, cwd });
+  private async commandSucceeds(args: string[], cwd: string): Promise<boolean> {
+    // argv spawned without a shell (the PR #7 rework to argv arrays).
+    if (!this.commandSafety.assertSafe(args).ok) return false;
+    const result = await this.process.run({ args, cwd });
     return result.ok && result.value.exitCode === 0;
   }
 

@@ -79,20 +79,24 @@ export class DefaultRunnerInstallationService implements RunnerInstallationServi
     );
   }
 
-  /** Resolves the runner cwd, guards the command, spawns, and maps exit codes. */
+  /** Resolves the runner cwd, guards the argv, spawns, and maps exit codes. */
   private async spawnInRunner(
     settings: TestHubSettings,
     command: string,
     failureCode: ErrorCode,
     label: string,
   ): Promise<Result<RunnerCommandResult>> {
-    const safe = this.commandSafety.assertSafe(command);
+    // The trusted settings command (e.g. "npm install") is a simple space-
+    // separated string; split it into a literal argv spawned without a shell
+    // (the PR #7 decision to rework the runner to argv arrays).
+    const args = command.trim().split(/\s+/);
+    const safe = this.commandSafety.assertSafe(args);
     if (!safe.ok) return err(safe.error);
 
     const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
     if (!cwd.ok) return err(cwd.error);
 
-    const result = await this.process.run({ command, cwd: cwd.value });
+    const result = await this.process.run({ args, cwd: cwd.value });
     if (!result.ok) {
       return err(appError(failureCode, `Failed to start ${label}.`, { cause: result.error }));
     }
