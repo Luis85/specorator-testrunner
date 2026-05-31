@@ -7,7 +7,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      // NFR-002 target is Vitest coverage >= 80% (TIS §1527, Solution Design
+      // NFR-002 floor is Vitest coverage >= 80% (TIS §1527, Solution Design
       // §479). The suite currently sits well above that (statements/lines ~96%,
       // functions ~97%, branches ~85%); thresholds are pinned a few points
       // under the measured numbers so a real regression fails CI while normal
