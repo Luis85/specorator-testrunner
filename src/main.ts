@@ -346,7 +346,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     const completion = this.executeRun(request).finally(() => {
       if (this.activeRunTest === completion) this.activeRunTest = null;
     });
-    this.activeRunTest = completion;
+    // Only adopt this as THE tracked run when none is tracked yet. An overlapping
+    // Run is rejected by the service (RUN_IN_PROGRESS) and its short-lived promise
+    // must not replace the real active run's promise, or onunload would have
+    // nothing to await (ADR-0018 single-active).
+    if (this.activeRunTest === null) this.activeRunTest = completion;
     return completion;
   }
 
