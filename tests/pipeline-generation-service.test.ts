@@ -99,6 +99,7 @@ describe("DefaultPipelineGenerationService", () => {
       "runner with:bad", // YAML-significant ':'
       "../escape",
       "runner#comment",
+      "/tmp/runner", // absolute path points outside the Actions checkout
     ]) {
       const settings = {
         ...DEFAULT_SETTINGS,

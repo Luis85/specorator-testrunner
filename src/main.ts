@@ -116,6 +116,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
   /** Last run started this session, so report import can re-run on demand. */
   private lastRun: TestRun | null = null;
+  // Post-run import+evidence reads then writes Use Case frontmatter. The active
+  // run slot is already free by the time this runs, so back-to-back runs could
+  // interleave and clobber each other's evidence/last_run fields — serialize
+  // them through a single chain.
+  private evidenceChain: Promise<void> = Promise.resolve();
 
   async onload(): Promise<void> {
     const eventBus = new InMemoryEventBus((error) =>
@@ -529,7 +534,18 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
    * Imports a finished run's Cucumber report and generates linked evidence
    * (UC-016). Never rejects — every fault is logged and (when `notify`) shown.
    */
-  private async importAndGenerateEvidence(run: TestRun, notify = false): Promise<void> {
+  private importAndGenerateEvidence(run: TestRun, notify = false): Promise<void> {
+    // Queue behind any in-flight evidence task so two runs' Use Case frontmatter
+    // updates can't interleave (read-modify-write race). Callers await the
+    // chained task, so ordering and completion are preserved.
+    const task = this.evidenceChain
+      .catch(() => undefined)
+      .then(() => this.runImportAndGenerateEvidence(run, notify));
+    this.evidenceChain = task;
+    return task;
+  }
+
+  private async runImportAndGenerateEvidence(run: TestRun, notify = false): Promise<void> {
     try {
       const imported = await this.reportImportService.import(run);
       if (!imported.ok) {
