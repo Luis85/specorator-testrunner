@@ -212,15 +212,17 @@ export class DefaultSettingsService implements SettingsService {
    * because a warning (not a hard load failure) is the right severity for an
    * advisory data-hygiene problem:
    *
-   *  - Only TOP-LEVEL folders are considered. The canonical Test Hub lives at a
-   *    top-level `testHubPath` by convention, and sync/copy conflicts
-   *    ("Test Hub 1", "Test Hub copy", "Test Hub 2") land alongside it. A
-   *    nested folder that merely happens to be named "Test Hub" is ignored.
-   *  - A folder is a colliding sibling when its base name equals the configured
-   *    folder's base name, OR starts with it followed by a sync/copy-style
-   *    suffix (a space/dash + "copy"/digits/"(n)"). A distinct folder that only
-   *    shares a prefix word ("Test Hub Notes") is NOT flagged — avoiding false
-   *    positives on the normal vault.
+   *  - Only folders that are SIBLINGS of the configured Test Hub — i.e. share
+   *    its parent directory — are considered. The settings model permits
+   *    relocating `testHubPath` to a nested path (e.g. `QA/Test Hub`), and a
+   *    sync/copy conflict ("Test Hub copy", "Test Hub 2") lands beside it in the
+   *    SAME parent ("QA/Test Hub copy"); comparing by parent catches both the
+   *    top-level and relocated cases. A folder under a different parent that
+   *    merely happens to be named "Test Hub" is ignored (review P2).
+   *  - A sibling collides when its base name equals the configured folder's base
+   *    name, OR starts with it followed by a sync/copy-style suffix (a space/dash
+   *    + "copy"/digits/"(n)"). A distinct folder that only shares a prefix word
+   *    ("Test Hub Notes") is NOT flagged — avoiding false positives.
    *  - The configured folder itself is excluded; only an ADDITIONAL match
    *    triggers the warning.
    */
@@ -234,6 +236,10 @@ export class DefaultSettingsService implements SettingsService {
     const configuredBase = baseName(configured);
     if (configuredBase === "") return undefined;
     const configuredKey = configuredBase.toLowerCase();
+    // The parent the canonical Test Hub lives in ("" for a top-level folder,
+    // "QA" for a relocated "QA/Test Hub"). Only folders in this same parent are
+    // siblings; this is what makes the check work for a relocated testHubPath.
+    const configuredParent = parentDir(configured);
 
     const listed = await this.vaultFs.listFolders();
     if (!listed.ok) return undefined; // advisory: never fail validation on a listing error
@@ -243,9 +249,9 @@ export class DefaultSettingsService implements SettingsService {
     for (const folderPath of listed.value) {
       const trimmed = folderPath.trim();
       if (trimmed === "") continue;
-      if (trimmed.includes("/")) continue; // top-level folders only
+      if (parentDir(trimmed) !== configuredParent) continue; // siblings only (same parent)
       if (trimmed === configured) continue; // the canonical Test Hub itself
-      if (!isTestHubSibling(trimmed, configuredKey)) continue;
+      if (!isTestHubSibling(baseName(trimmed), configuredKey)) continue;
       const key = trimmed.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -272,14 +278,21 @@ const baseName = (path: string): string => {
   return parts.length === 0 ? "" : parts[parts.length - 1];
 };
 
+/** Parent directory of a vault path ("" for a top-level folder), normalized. */
+const parentDir = (path: string): string => {
+  const parts = path.split("/").filter((part) => part.length > 0);
+  return parts.slice(0, -1).join("/");
+};
+
 /**
- * True when `folderName` (a top-level folder) is a sync/copy-style duplicate of
- * the configured Test Hub. Matches an exact name or the base name followed by a
- * conflict suffix (" 1", "-2", " copy", "copy", " (1)"); a folder whose suffix
- * is a real alphabetic word (e.g. "test hub notes") is NOT a duplicate.
+ * True when `folderBaseName` (a folder's final segment) is a sync/copy-style
+ * duplicate of the configured Test Hub's base name. Matches an exact name or the
+ * base name followed by a conflict suffix (" 1", "-2", " copy", "copy", " (1)");
+ * a folder whose suffix is a real alphabetic word (e.g. "test hub notes") is NOT
+ * a duplicate.
  */
-const isTestHubSibling = (folderName: string, configuredKey: string): boolean => {
-  const key = folderName.toLowerCase();
+const isTestHubSibling = (folderBaseName: string, configuredKey: string): boolean => {
+  const key = folderBaseName.toLowerCase();
   if (key === configuredKey) return true;
   if (!key.startsWith(configuredKey)) return false;
   const suffix = key.slice(configuredKey.length).trim();
