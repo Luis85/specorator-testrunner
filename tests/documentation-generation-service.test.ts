@@ -73,6 +73,24 @@ describe("DefaultDocumentationGenerationService.open ensures silently", () => {
     expect(types()).not.toContain("documentation.generated");
     void events;
   });
+
+  it("materializes the full doc set (hub + guides) so links resolve, without an event", async () => {
+    const { service, fs, types } = makeService();
+    // Opening before any generate(): the index hub and the other guides must be
+    // created too, so the opened doc's links don't dangle.
+    const result = await service.open("getting-started");
+    expect(result.ok).toBe(true);
+    const expected = [
+      "Test Hub Documentation.md",
+      "Getting Started.md",
+      "User Manual.md",
+      "Troubleshooting.md",
+    ].map((name) => joinVaultPath(DOCS, name));
+    for (const path of expected) {
+      expect(fs.files.has(path), path).toBe(true);
+    }
+    expect(types()).not.toContain("documentation.generated");
+  });
 });
 
 describe("DefaultDocumentationGenerationService.generate (FEAT-024, US-043/044/045)", () => {

@@ -71,11 +71,14 @@ export class DefaultDocumentationGenerationService
       settings.paths.documentationPath,
       documentationFileName(settings, documentType),
     );
-    // Ensure the target note exists WITHOUT emitting documentation.generated —
-    // opening docs is access, not generation (Event Catalog / UC-021..023).
-    const doc = buildDocumentation(settings).find((d) => d.type === documentType);
-    if (doc) {
-      const ensured = await this.writeIfAbsent(path, doc.content);
+    // Ensure the WHOLE doc set exists WITHOUT emitting documentation.generated —
+    // opening docs is access, not generation (Event Catalog / UC-021..023). We
+    // write every doc (not just the requested one) so the entry point's links to
+    // the index hub / manual / troubleshooting resolve even when the user opens
+    // docs before ever running Generate Documentation.
+    for (const doc of buildDocumentation(settings)) {
+      const docPath = joinVaultPath(settings.paths.documentationPath, doc.fileName);
+      const ensured = await this.writeIfAbsent(docPath, doc.content);
       if (!ensured.ok) return err(ensured.error);
     }
     const opened = await this.workspace.openFile(path);
