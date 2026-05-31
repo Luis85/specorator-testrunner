@@ -297,6 +297,22 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(secretWarning).toContain("BASIC_AUTH_USER");
   });
 
+  it("validateCiReadiness rejects a traversal workflowPath like generation does", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, workflowPath: "../../outside/e2e.yml" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("invalid"))).toBe(true);
+  });
+
   it("validateCiReadiness is not ready when a managed runner file (cucumber.mjs) is missing", async () => {
     const { service, absoluteFs } = build();
     seedManagedRunnerFiles(absoluteFs);

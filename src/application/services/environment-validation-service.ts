@@ -214,7 +214,18 @@ export class DefaultEnvironmentValidationService
       // `.github\workflows\e2e.yml` is written to the POSIX path GitHub finds);
       // normalize here too or the readiness probe would miss the generated file.
       const workflowRel = settings.ci.workflowPath.replace(/\\/g, "/");
-      if (!(await this.absoluteFs.existsAbsolute(`${root}/${workflowRel}`))) {
+      // Generation refuses a traversal/absolute workflowPath (it would write
+      // outside the repo); reject it here too rather than probing outside the
+      // vault and possibly reporting ready for a path Generate CI Workflow won't
+      // accept.
+      if (
+        workflowRel.trim() === "" ||
+        workflowRel.startsWith("/") ||
+        /^[A-Za-z]:/.test(workflowRel) ||
+        workflowRel.split("/").includes("..")
+      ) {
+        missingItems.push(`CI workflow path is invalid (must be repo-relative, no ".."): ${workflowRel}.`);
+      } else if (!(await this.absoluteFs.existsAbsolute(`${root}/${workflowRel}`))) {
         missingItems.push(`CI workflow not generated at ${workflowRel}.`);
       }
       // node_modules being committed defeats `npm ci`; warn rather than block.
