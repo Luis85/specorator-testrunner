@@ -46,4 +46,6 @@ export interface TestRunSummary {
   status: TestRunStatus;
   date: string;
   evidencePath?: VaultPath;
+  /** Scope of the run, so the roll-up knows whether it covered the whole UC. */
+  scope?: ExecutionScope;
 }
