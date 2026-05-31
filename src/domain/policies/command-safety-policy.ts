@@ -28,7 +28,11 @@ export class DefaultCommandSafetyPolicy implements CommandSafetyPolicy {
       return err(appError("COMMAND_DISALLOWED", "Command must not be empty."));
     }
     const display = args.join(" ");
-    if (!ALLOWED_PROGRAMS.has(program)) {
+    // Match on the basename (sans .exe/.cmd) so a configured absolute or
+    // version-manager Node path (e.g. /opt/homebrew/bin/node, a Windows
+    // node.exe) is allowed — RunnerSettings.nodeExecutable exists to be set.
+    const basename = (program.split(/[/\\]/).pop() ?? program).replace(/\.(exe|cmd)$/i, "");
+    if (!ALLOWED_PROGRAMS.has(basename)) {
       return err(
         appError("COMMAND_DISALLOWED", `Command program is not allowed: "${program}".`, {
           details: { command: display },
