@@ -112,6 +112,8 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
   /** Last run started this session, so report import can re-run on demand. */
   private lastRun: TestRun | null = null;
+  /** In-flight run completion, so unload can await the process actually exiting. */
+  private activeRunTest: Promise<void> | null = null;
 
   async onload(): Promise<void> {
     const eventBus = new InMemoryEventBus((error) =>
@@ -437,6 +439,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         });
       }
     }
+    // cancel() only signals the child; the run's execute() promise settles when
+    // runStreaming observes the process close. Await the tracked in-flight run so
+    // the npm/Cucumber process has actually exited (and stopped writing reports)
+    // before this instance tears down and a new one could start.
+    if (this.activeRunTest !== null) {
+      await this.activeRunTest.catch(() => undefined);
+    }
     this.app.workspace.detachLeavesOfType(USE_CASE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(SUITE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(TEST_CONSOLE_VIEW_TYPE);
@@ -449,7 +458,17 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
    * (US-030, UC-015). ADR-0018 surfaces `RUN_IN_PROGRESS` as a Notice with the
    * active run id so the user can cancel it.
    */
-  private async runTest(request: ExecuteTestRequest): Promise<void> {
+  private runTest(request: ExecuteTestRequest): Promise<void> {
+    // Track the in-flight run so onunload can await the process actually exiting
+    // (cancel-and-wait shutdown), then clear the slot when it settles.
+    const completion = this.executeRun(request).finally(() => {
+      if (this.activeRunTest === completion) this.activeRunTest = null;
+    });
+    this.activeRunTest = completion;
+    return completion;
+  }
+
+  private async executeRun(request: ExecuteTestRequest): Promise<void> {
     await this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
     const result = await this.testExecutionService.execute(request);
     if (!result.ok) {
