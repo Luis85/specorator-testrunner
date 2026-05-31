@@ -10,6 +10,8 @@ export interface AbsoluteFileSystem {
   /** Absolute path to the vault root, used as the base for runner paths. */
   getVaultBasePath(): Promise<Result<string>>;
   existsAbsolute(path: string): Promise<boolean>;
+  /** UTF-8 contents of a file outside the vault index (e.g. a runner report). */
+  readAbsolute(path: string): Promise<Result<string>>;
   writeAbsolute(path: string, content: string): Promise<Result<void>>;
   /** Immediate child entry names of a directory; `[]` if it does not exist. */
   listAbsolute(path: string): Promise<string[]>;

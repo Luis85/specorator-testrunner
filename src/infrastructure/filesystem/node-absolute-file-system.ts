@@ -1,4 +1,4 @@
-import { access, mkdir, readdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { type App, FileSystemAdapter } from "obsidian";
 import type { AbsoluteFileSystem } from "../../application/ports/absolute-file-system";
@@ -25,6 +25,14 @@ export class NodeAbsoluteFileSystem implements AbsoluteFileSystem {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  async readAbsolute(path: string): Promise<Result<string>> {
+    try {
+      return ok(await readFile(path, "utf8"));
+    } catch (cause) {
+      return err(appError("REPORT_NOT_FOUND", `Could not read "${path}".`, { cause }));
     }
   }
 

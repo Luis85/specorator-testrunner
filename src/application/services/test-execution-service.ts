@@ -120,6 +120,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
       if (!cwd.ok) return err(cwd.error);
       run.command = command.value;
 
+      // A cancel() during setup (settings/command/cwd resolution) already
+      // published testrun.cancelled and freed the slot — bail before emitting
+      // run events or spawning an untracked process.
+      if (activeRun.terminated) return ok(run);
+
       await this.publish("testrun.requested", run.id, {
         scope: request.scope,
         target: request.target,
@@ -132,7 +137,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
       this.logger.info("Test run started", { runId: run.id, scope: run.scope });
 
       const result = await this.childProcess.runStreaming(
-        { command: command.value, cwd: cwd.value, env: {} },
+        { command: command.value, cwd: cwd.value, env: this.runEnv(settings) },
         (output) => {
           void this.publish("testrun.output.received", run.id, {
             runId: run.id,
@@ -207,6 +212,17 @@ export class DefaultTestExecutionService implements TestExecutionService {
     // (already-cancelled) child's runStreaming promise to settle.
     if (this.active === activeRun) this.active = null;
     return ok(undefined);
+  }
+
+  /**
+   * Builds the runner subprocess env from the Active SUT environment
+   * (ADR-0013/0014): `BASE_URL` plus any `auth.env` credentials, injected
+   * verbatim. The host process env is merged by the ChildProcessRunner adapter.
+   */
+  private runEnv(settings: TestHubSettings): Record<string, string> {
+    const active = settings.sut.environments[settings.sut.active];
+    if (!active) return {};
+    return { BASE_URL: active.baseUrl, ...(active.auth?.env ?? {}) };
   }
 
   /** Resolves the runner command for a scope (TIS §13.2). */
