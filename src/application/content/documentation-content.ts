@@ -12,12 +12,12 @@ export type DocumentationType =
   | "index";
 
 /**
- * A doc's `documentType` as carried by `documentation.opened` — constrained to
- * the Event Catalog enum (`getting-started | manual | troubleshooting`, TIS §12 /
- * UC-021,022,023). The `index` hub is generated and linked but is NOT an
- * `OpenableDocumentType`, so the event payload never carries an off-catalog value.
+ * A doc's `documentType` as carried by `documentation.opened`. The Event Catalog
+ * enum is extended to include `index` (TIS §12 / UC-021,022,023): the navigational
+ * hub is the natural default entry point for the "Open Documentation" command, so
+ * it must be openable and a valid event documentType.
  */
-export type OpenableDocumentType = Exclude<DocumentationType, "index">;
+export type OpenableDocumentType = DocumentationType;
 
 /** One generated documentation note. */
 export interface DocumentationFile {
