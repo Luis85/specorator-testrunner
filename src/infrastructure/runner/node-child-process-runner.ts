@@ -57,17 +57,29 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
 
       const [program, ...args] = request.args;
       const display = request.args.join(" ");
+      // On Windows, `npm`/`npx` are `.cmd` shims that Node refuses to launch
+      // without a shell (CVE-2024-27980), so a shell is required there; on POSIX
+      // we keep `shell: false` so args stay literal — no interpolation (TIS §13.2).
+      const useShell = process.platform === "win32";
+      // Under a shell the args are no longer literal, so reject cmd.exe
+      // metacharacters to prevent command splitting/injection on Windows. POSIX
+      // (shell: false) passes them through verbatim, so they're allowed there.
+      if (useShell && args.some((arg) => /[&|<>^()"%`]/.test(arg))) {
+        finish({
+          ok: false,
+          error: appError(
+            "COMMAND_DISALLOWED",
+            `Argument contains a shell metacharacter unsupported on Windows: ${display}`,
+          ),
+        });
+        return;
+      }
       let child: ChildProcess;
       try {
-        // On Windows, `npm`/`npx` are `.cmd` shims that Node refuses to launch
-        // without a shell (CVE-2024-27980), so a shell is required there; on
-        // POSIX we keep `shell: false` so args stay literal — no interpolation
-        // (TIS §13.2). CommandSafetyPolicy's program allowlist + control-char
-        // rejection bound the Windows shell exposure.
         child = spawn(program, args, {
           cwd: request.cwd,
           env: { ...process.env, ...request.env },
-          shell: process.platform === "win32",
+          shell: useShell,
         });
       } catch (cause) {
         finish({ ok: false, error: appError("INIT_FAILED", `Could not spawn: ${display}`, { cause }) });
