@@ -49,6 +49,12 @@ describe("buildRunnerTemplates", () => {
     expect(pkg).toContain("playwright install chromium");
   });
 
+  it("builds cross-platform fixture URLs with pathToFileURL", () => {
+    const paths = byPath.get("src/support/paths.ts")?.content ?? "";
+    expect(paths).toContain("pathToFileURL");
+    expect(paths).not.toContain("`file://${");
+  });
+
   it("preserves user-authored steps and page objects on repair", () => {
     expect(byPath.get("src/steps/example.steps.ts")?.overwrite).toBe(false);
     expect(byPath.get("src/pages/ExamplePage.ts")?.overwrite).toBe(false);

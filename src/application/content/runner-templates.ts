@@ -103,14 +103,16 @@ After(async function (this: TestWorld) {
 });
 `;
 
-const PATHS_TS = `import { fileURLToPath } from "node:url";
+const PATHS_TS = `import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const runnerRoot = resolve(here, "..", "..");
 
+// pathToFileURL produces a valid, URL-encoded file:// URL on every platform
+// (e.g. Windows drive letters, spaces) — string-prefixing does not.
 export const fixtureUrl = (file: string): string =>
-  \`file://\${resolve(runnerRoot, "src", "fixtures", file)}\`;
+  pathToFileURL(resolve(runnerRoot, "src", "fixtures", file)).href;
 `;
 
 const EXAMPLE_PAGE_TS = `import { Page } from "playwright";
