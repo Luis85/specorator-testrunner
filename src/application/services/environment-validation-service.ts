@@ -235,11 +235,12 @@ export class DefaultEnvironmentValidationService
         workflowRel.split("/").includes("..")
       ) {
         missingItems.push(`CI workflow path is invalid (must be repo-relative, no ".."): ${workflowRel}.`);
-      } else if (!workflowRel.startsWith(".github/workflows/")) {
-        // GitHub Actions only discovers workflows here; a path elsewhere would
-        // never run even though the file exists (matches generation's rule).
+      } else if (!/^\.github\/workflows\/[^/]+\.ya?ml$/.test(workflowRel)) {
+        // GitHub Actions only discovers `.yml`/`.yaml` files directly under
+        // `.github/workflows/`; anything else never runs even if it exists
+        // (matches generation's rule).
         missingItems.push(
-          `CI workflow must live under ".github/workflows/" to be discovered by Actions: ${workflowRel}.`,
+          `CI workflow must be a .yml/.yaml file under ".github/workflows/" to be discovered by Actions: ${workflowRel}.`,
         );
       } else if (!(await this.absoluteFs.existsAbsolute(`${root}/${workflowRel}`))) {
         missingItems.push(`CI workflow not generated at ${workflowRel}.`);
