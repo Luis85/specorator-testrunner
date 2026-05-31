@@ -21,6 +21,7 @@ export interface RunnerValidationResult {
   runnerFolderExists: boolean;
   packageJsonExists: boolean;
   dependenciesInstalled: boolean;
+  playwrightAvailable: boolean; // package + binary resolve (`npx playwright --version`)
   browsersInstalled: boolean; // Chromium per AD-5
   issues: RunnerValidationIssue[];
 }
@@ -57,19 +58,17 @@ export class DefaultEnvironmentValidationService
 
     if (!base.ok) {
       issues.push({ code: "VAULT_PATH_UNKNOWN", message: base.error.message, severity: "error" });
-      return this.finish(
-        {
-          valid: false,
-          nodeAvailable: false,
-          packageManagerAvailable: false,
-          runnerFolderExists: false,
-          packageJsonExists: false,
-          dependenciesInstalled: false,
-          browsersInstalled: false,
-          issues,
-        },
-        false,
-      );
+      return this.finish({
+        valid: false,
+        nodeAvailable: false,
+        packageManagerAvailable: false,
+        runnerFolderExists: false,
+        packageJsonExists: false,
+        dependenciesInstalled: false,
+        playwrightAvailable: false,
+        browsersInstalled: false,
+        issues,
+      });
     }
 
     const runnerAbs = `${base.value.replace(/[/\\]$/, "")}/${settings.paths.testRunnerPath}`;
@@ -102,7 +101,7 @@ export class DefaultEnvironmentValidationService
     if (!dependenciesInstalled)
       issues.push({ code: "DEPENDENCIES_MISSING", message: "Runner dependencies are not installed.", severity: "error" });
     else if (!playwrightAvailable)
-      issues.push({ code: "PLAYWRIGHT_MISSING", message: "Playwright is not available.", severity: "warning" });
+      issues.push({ code: "PLAYWRIGHT_MISSING", message: "Playwright is installed but not runnable.", severity: "error" });
     if (!browsersInstalled)
       issues.push({ code: "BROWSER_NOT_INSTALLED", message: "Chromium is not installed.", severity: "error" });
 
@@ -112,21 +111,20 @@ export class DefaultEnvironmentValidationService
       runnerFolderExists &&
       packageJsonExists &&
       dependenciesInstalled &&
+      playwrightAvailable &&
       browsersInstalled;
 
-    return this.finish(
-      {
-        valid,
-        nodeAvailable,
-        packageManagerAvailable,
-        runnerFolderExists,
-        packageJsonExists,
-        dependenciesInstalled,
-        browsersInstalled,
-        issues,
-      },
+    return this.finish({
+      valid,
+      nodeAvailable,
+      packageManagerAvailable,
+      runnerFolderExists,
+      packageJsonExists,
+      dependenciesInstalled,
       playwrightAvailable,
-    );
+      browsersInstalled,
+      issues,
+    });
   }
 
   async validateCiReadiness(settings: TestHubSettings): Promise<CiReadinessResult> {
@@ -152,15 +150,12 @@ export class DefaultEnvironmentValidationService
     return result;
   }
 
-  private async finish(
-    result: RunnerValidationResult,
-    playwrightAvailable: boolean,
-  ): Promise<RunnerValidationResult> {
+  private async finish(result: RunnerValidationResult): Promise<RunnerValidationResult> {
     await this.eventBus.publish(
       createEvent("testrunner.validated", {
         nodeAvailable: result.nodeAvailable,
         packageManagerAvailable: result.packageManagerAvailable,
-        playwrightAvailable,
+        playwrightAvailable: result.playwrightAvailable,
         browsersInstalled: result.browsersInstalled,
       }),
     );

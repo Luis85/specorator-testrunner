@@ -87,6 +87,23 @@ describe("DefaultMaintenanceService", () => {
     expect(childProcess.calls.map((c) => c.command)).not.toContain("npm install");
   });
 
+  it("reinstalls dependencies when Playwright is present but not runnable", async () => {
+    const { service, absoluteFs, childProcess } = build();
+    absoluteFs.existing.add("/vault/.testrunner");
+    absoluteFs.existing.add("/vault/.testrunner/package.json");
+    absoluteFs.existing.add("/vault/.testrunner/node_modules");
+    absoluteFs.existing.add("/home/u/.cache/ms-playwright");
+    childProcess.exitCodes.set("npx playwright --version", 1);
+
+    const result = await service.repair();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.reinstalledPackages).toBe(true);
+    expect(result.value.reinstalledBrowsers).toBe(false);
+    expect(childProcess.calls.map((c) => c.command)).toContain("npm install");
+  });
+
   it("fails when a required reinstall fails", async () => {
     const { service, childProcess } = build();
     childProcess.exitCodes.set("npm install", 1);

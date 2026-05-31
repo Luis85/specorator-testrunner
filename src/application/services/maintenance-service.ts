@@ -42,9 +42,11 @@ export class DefaultMaintenanceService implements MaintenanceService {
     const recreated = await this.runnerInstall.createRunner(settings);
     if (!recreated.ok) return err(recreated.error);
 
-    // 3. Reinstall only what's missing.
+    // 3. Reinstall only what's missing. A present-but-unrunnable Playwright
+    //    (node_modules exists yet `npx playwright --version` fails) counts as a
+    //    broken dependency set and triggers a reinstall.
     let reinstalledPackages = false;
-    if (!before.dependenciesInstalled) {
+    if (!before.dependenciesInstalled || !before.playwrightAvailable) {
       const deps = await this.runnerInstall.installDependencies(settings);
       if (!deps.ok) return err(deps.error);
       reinstalledPackages = true;

@@ -41,7 +41,7 @@ export class DefaultRunnerInstallationService implements RunnerInstallationServi
     const runnerPath = settings.paths.testRunnerPath;
     const written = await this.templates.writeTemplates({
       targetPath: runnerPath,
-      templates: buildRunnerTemplates(),
+      templates: buildRunnerTemplates(settings),
     });
     if (!written.ok) {
       return err(

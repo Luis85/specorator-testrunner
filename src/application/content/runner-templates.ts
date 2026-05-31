@@ -1,4 +1,6 @@
 import type { TemplateFile } from "../ports/template-writer";
+import type { TestHubSettings } from "../../domain/settings/settings";
+import { relativeVaultPath } from "../../shared/utils/vault-path";
 
 /**
  * The `.testrunner` standalone Node project (TIS §11, honouring AD-2 npm, AD-5
@@ -47,11 +49,14 @@ const TSCONFIG_JSON = `{
 }
 `;
 
-const CUCUMBER_MJS = `export default {
+// The runner runs with cwd = the runner folder, so the feature glob is the
+// path from the runner folder to the configured feature folder (per ADR-0008),
+// not a hard-coded default.
+const cucumberMjs = (featuresGlob: string): string => `export default {
   default: {
     loader: ["tsx"],
     import: ["src/support/**/*.ts", "src/steps/**/*.ts"],
-    paths: ["../Specifications/features/**/*.feature"],
+    paths: ["${featuresGlob}"],
     format: [
       "progress",
       "json:reports/cucumber-report.json",
@@ -208,10 +213,16 @@ Tests run serially in V1 (\`parallel: 0\`, AD-6).
 `;
 
 /** All `.testrunner` template files, paths relative to the runner root. */
-export const buildRunnerTemplates = (): TemplateFile[] => [
+export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] => [
   { path: "package.json", content: PACKAGE_JSON, overwrite: true },
   { path: "tsconfig.json", content: TSCONFIG_JSON, overwrite: true },
-  { path: "cucumber.mjs", content: CUCUMBER_MJS, overwrite: true },
+  {
+    path: "cucumber.mjs",
+    content: cucumberMjs(
+      `${relativeVaultPath(settings.paths.testRunnerPath, settings.paths.featureFilesPath)}/**/*.feature`,
+    ),
+    overwrite: true,
+  },
   { path: "README.md", content: README_MD, overwrite: true },
   { path: "src/support/world.ts", content: WORLD_TS, overwrite: true },
   { path: "src/support/hooks.ts", content: HOOKS_TS, overwrite: true },

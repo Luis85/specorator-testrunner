@@ -74,6 +74,19 @@ describe("DefaultEnvironmentValidationService", () => {
     );
   });
 
+  it("is invalid when node_modules exists but Playwright is not runnable", async () => {
+    const { service, absoluteFs, childProcess } = build();
+    markFullyInstalled(absoluteFs);
+    childProcess.exitCodes.set("npx playwright --version", 1);
+
+    const result = await service.validateEnvironment();
+
+    expect(result.dependenciesInstalled).toBe(true);
+    expect(result.playwrightAvailable).toBe(false);
+    expect(result.valid).toBe(false);
+    expect(result.issues.find((i) => i.code === "PLAYWRIGHT_MISSING")?.severity).toBe("error");
+  });
+
   it("does not probe Playwright until dependencies are installed", async () => {
     const { service, absoluteFs, childProcess } = build();
     absoluteFs.existing.add("/vault/.testrunner");

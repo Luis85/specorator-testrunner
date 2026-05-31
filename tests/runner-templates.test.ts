@@ -3,9 +3,13 @@ import {
   buildRunnerTemplates,
   REQUIRED_RUNNER_FILES,
 } from "../src/application/content/runner-templates";
+import { DEFAULT_SETTINGS, type TestHubSettings } from "../src/domain/settings/settings";
 
-const templates = buildRunnerTemplates();
+const templates = buildRunnerTemplates(DEFAULT_SETTINGS);
 const byPath = new Map(templates.map((t) => [t.path, t]));
+
+const cucumberFor = (settings: TestHubSettings): string =>
+  buildRunnerTemplates(settings).find((t) => t.path === "cucumber.mjs")?.content ?? "";
 
 describe("buildRunnerTemplates", () => {
   it("includes the files US-010 requires", () => {
@@ -23,6 +27,19 @@ describe("buildRunnerTemplates", () => {
     expect(cucumber?.content).toContain("parallel: 0");
     expect(cucumber?.content).toContain('loader: ["tsx"]');
     expect(cucumber?.content).toContain("../Specifications/features/**/*.feature");
+  });
+
+  it("derives the feature glob from configured runner and feature folders", () => {
+    expect(
+      cucumberFor({
+        ...DEFAULT_SETTINGS,
+        paths: {
+          ...DEFAULT_SETTINGS.paths,
+          testRunnerPath: "Tools/.testrunner",
+          featureFilesPath: "Specs/features",
+        },
+      }),
+    ).toContain('paths: ["../../Specs/features/**/*.feature"]');
   });
 
   it("defines the expected npm scripts and chromium-only install (AD-2, AD-5)", () => {
