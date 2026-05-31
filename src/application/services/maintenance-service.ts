@@ -7,7 +7,7 @@ import type { VaultFileSystem } from "../ports/vault-file-system";
 import { appError } from "../../shared/errors/errors";
 import { DEFAULT_SETTINGS } from "../../domain/settings/settings";
 import type { RunId, VaultPath } from "../../domain/value-objects/identifiers";
-import { createEvent } from "../../shared/event-bus/create-event";
+import { createEvent, newId } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
@@ -45,6 +45,25 @@ export interface ResetResult {
   /** The single reset-invocation correlationId stamped across the chain. */
   correlationId: string;
 }
+
+/** Case-insensitive, separator-normalized path segments (vault paths are relative). */
+const segmentsOf = (path: string): string[] =>
+  path
+    .split(/[\\/]+/)
+    .filter((s) => s.length > 0)
+    .map((s) => s.toLowerCase());
+
+/**
+ * True when two vault paths overlap: equal, or one is an ancestor of the other.
+ * An empty path collides with everything (deleting "" would target the vault root).
+ */
+const pathsOverlap = (a: string, b: string): boolean => {
+  const sa = segmentsOf(a);
+  const sb = segmentsOf(b);
+  if (sa.length === 0 || sb.length === 0) return true;
+  const [shorter, longer] = sa.length <= sb.length ? [sa, sb] : [sb, sa];
+  return shorter.every((seg, i) => seg === longer[i]);
+};
 
 export class DefaultMaintenanceService implements MaintenanceService {
   constructor(
@@ -124,7 +143,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
   /**
    * UC-024 Reset Test Hub: restore the Test Hub to a clean state.
    *
-   * Order (Event Catalog §14): `settings.reset` → `testhub.initialization.started`
+   * Order (UC-024 "Domain Events"): `settings.reset` → `testhub.initialization.started`
    * → … → `testhub.initialization.completed`/`.failed`. One reset-invocation
    * `correlationId` is minted up front and stamped across the whole chain so the
    * `settings.reset` and the re-initialization events group (Event Catalog §19).
@@ -164,7 +183,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
       if (!lock) await this.activeRun?.whenActiveSettles().catch(() => undefined);
 
       // One id for the whole reset flow (Event Catalog §19 "reset invocation id").
-      const correlationId = createEvent("settings.reset", { profile: "default" }).id;
+      const correlationId = newId();
 
       const settings = await this.settingsService.load();
 
@@ -172,6 +191,34 @@ export class DefaultMaintenanceService implements MaintenanceService {
       //    not an error). This is the only destructive step — see the method-level
       //    comment for the deliberately preserved user content.
       const runnerPath = settings.paths.testRunnerPath;
+
+      // SAFETY GUARD (review M1): `testRunnerPath` is settings-controlled and only
+      // validated by PathSafetyPolicy for traversal/injection — NOT for its target.
+      // A tampered/synced data.json could repoint it at a user-content folder (e.g.
+      // "Use Cases"), turning this recursive delete into data loss. Refuse to reset
+      // if the runner path overlaps ANY user-content path rather than delete it.
+      const contentPaths: Record<string, string> = {
+        useCasesPath: settings.paths.useCasesPath,
+        specificationsPath: settings.paths.specificationsPath,
+        featureFilesPath: settings.paths.featureFilesPath,
+        testSuitesPath: settings.paths.testSuitesPath,
+        evidencePath: settings.paths.evidencePath,
+        documentationPath: settings.paths.documentationPath,
+        testHubPath: settings.paths.testHubPath,
+      };
+      const collision = Object.entries(contentPaths).find(([, p]) => pathsOverlap(runnerPath, p));
+      if (collision) {
+        return err(
+          appError(
+            "PATH_UNSAFE",
+            `Refusing to reset: the runner folder "${runnerPath}" overlaps user content ` +
+              `("${collision[0]}" = "${collision[1]}"). Point the Runner folder at a dedicated ` +
+              `path (e.g. ".testrunner") before resetting.`,
+            { details: { runnerPath, collidesWith: collision[0], collisionPath: collision[1] } },
+          ),
+        );
+      }
+
       const deleted = await this.fs.deleteFolder(runnerPath);
       if (!deleted.ok) return err(deleted.error);
       this.logger.info("Removed regenerable runner runtime for reset", {
@@ -180,7 +227,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
       });
 
       // 2. Restore default settings, stamping the shared correlationId on
-      //    `settings.reset` (emitted before the init chain, per Event Catalog §14).
+      //    `settings.reset` (emitted before the init chain, per UC-024 ordering).
       const resetSettings = await this.settingsService.reset(correlationId);
       if (!resetSettings.ok) return err(resetSettings.error);
 

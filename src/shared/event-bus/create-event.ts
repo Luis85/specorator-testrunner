@@ -5,7 +5,8 @@ import type {
   EventSource,
 } from "../../domain/events/domain-event";
 
-const newId = (): string => {
+/** Generates a unique id for an event envelope or a flow correlation id. */
+export const newId = (): string => {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   if (c?.randomUUID) return c.randomUUID();
   // Fallback for environments without the Web Crypto API.

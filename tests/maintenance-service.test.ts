@@ -6,6 +6,7 @@ import { DefaultInitializationService } from "../src/application/services/initia
 import { DefaultMaintenanceService } from "../src/application/services/maintenance-service";
 import { DefaultRunnerInstallationService } from "../src/application/services/runner-installation-service";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
+import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import { DefaultSuiteService } from "../src/application/services/suite-service";
 import { DefaultTestExecutionService } from "../src/application/services/test-execution-service";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
@@ -274,6 +275,27 @@ describe("DefaultMaintenanceService.reset (UC-024)", () => {
     for (const event of flowEvents) {
       expect(event.correlationId).toBe(correlationId);
     }
+  });
+
+  it("refuses to reset (no deletion) when testRunnerPath overlaps user content (review M1)", async () => {
+    const { service, vault, settings } = buildReset();
+    // A tampered/synced data.json repoints the runner folder at a user-content
+    // folder. "Use Cases" passes PathSafetyPolicy (no traversal/injection), so
+    // only the reset target-guard can stop the recursive delete from eating it.
+    const tampered = {
+      ...DEFAULT_SETTINGS,
+      paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: "Use Cases" },
+    };
+    expect((await settings.save(tampered)).ok).toBe(true);
+    vault.files.set("Use Cases/UC-099.md", "user-authored use case");
+
+    const result = await service.reset();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("PATH_UNSAFE");
+    // Nothing was deleted — user content survives.
+    expect(vault.files.get("Use Cases/UC-099.md")).toBe("user-authored use case");
   });
 
   it("removes the regenerable .testrunner runtime and re-creates defaults", async () => {
