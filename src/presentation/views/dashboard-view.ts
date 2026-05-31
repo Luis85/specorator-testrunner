@@ -88,6 +88,12 @@ export class DashboardView extends ItemView {
     container.empty();
     container.createEl("h2", { text: "Test Hub Dashboard" });
 
+    // Documentation access (AC-016): open the Getting Started guide / User
+    // Manual without leaving the dashboard. Rendered FIRST — before the refresh
+    // call and its error early-return — so the manual is reachable even when the
+    // dashboard can't load (exactly when a user may need it).
+    this.renderDocumentationActions(container);
+
     // refreshDashboard() emits dashboard.refreshed + dashboard.kpi.updated and
     // returns the snapshot the tiles/rows are projected from (UC-018 steps 2–3).
     const result = await this.deps.traceabilityService.refreshDashboard();
@@ -105,11 +111,6 @@ export class DashboardView extends ItemView {
       tile.createDiv({ cls: "e2e-test-hub-kpi-value", text: String(kpi.value) });
       tile.createDiv({ cls: "e2e-test-hub-kpi-label", text: kpi.label });
     }
-
-    // Documentation access (AC-016): open the Getting Started guide / User
-    // Manual without leaving the dashboard. Rendered before the recent-runs
-    // early return so the actions are always available.
-    this.renderDocumentationActions(container);
 
     // Recent runs (US-038).
     container.createEl("h3", { text: "Recent Runs" });
