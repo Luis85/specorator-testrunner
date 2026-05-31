@@ -3,6 +3,7 @@ import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import { RenderScheduler } from "./render-scheduler";
 import { projectUseCaseRows } from "./use-case-rows";
 
 export const USE_CASE_VIEW_TYPE = "e2e-test-hub-use-cases";
@@ -29,6 +30,9 @@ export interface UseCaseDashboardDeps {
  */
 export class UseCaseDashboardView extends ItemView {
   private readonly subscriptions: Unsubscribe[] = [];
+  // Renders await findAll(); coalesce concurrent event-driven renders so a
+  // slow render with stale data can't empty + rebuild the list last (PRES-M2).
+  private readonly scheduler = new RenderScheduler(() => this.render());
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -51,9 +55,11 @@ export class UseCaseDashboardView extends ItemView {
 
   async onOpen(): Promise<void> {
     for (const type of REFRESH_ON) {
-      this.subscriptions.push(this.deps.eventBus.subscribe(type, () => void this.render()));
+      this.subscriptions.push(
+        this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()),
+      );
     }
-    await this.render();
+    await this.scheduler.schedule();
   }
 
   async onClose(): Promise<void> {
@@ -92,9 +98,12 @@ export class UseCaseDashboardView extends ItemView {
     const body = table.createEl("tbody");
     for (const row of rows) {
       const tr = body.createEl("tr");
-      const link = tr.createEl("td").createEl("a", { text: row.id, href: "#" });
-      link.addEventListener("click", (event) => {
-        event.preventDefault();
+      const open = tr.createEl("td").createEl("button", {
+        text: row.id,
+        cls: "e2e-test-hub-link-button",
+        attr: { "aria-label": `Open Use Case ${row.id}` },
+      });
+      open.addEventListener("click", () => {
         void this.deps.workspace.openFile(row.path);
       });
       tr.createEl("td", { text: row.title });
