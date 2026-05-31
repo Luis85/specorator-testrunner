@@ -218,7 +218,7 @@ describe("DefaultEnvironmentValidationService", () => {
   it("validateCiReadiness warns about committed node_modules and an empty BASE_URL", async () => {
     const { service, absoluteFs } = build();
     absoluteFs.existing.add("/vault/.testrunner");
-    absoluteFs.existing.add("/vault/.testrunner/package.json");
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
     absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
     absoluteFs.existing.add("/vault/.testrunner/node_modules");
     absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);

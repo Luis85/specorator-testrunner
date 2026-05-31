@@ -184,6 +184,10 @@ export class DefaultEnvironmentValidationService
           } catch {
             missingItems.push("Runner package.json is not valid JSON.");
           }
+        } else {
+          // Couldn't read it (permissions / transient I/O) — can't confirm the
+          // test:ci script, so don't silently report ready.
+          missingItems.push("Runner package.json could not be read to verify the test:ci script.");
         }
       }
       // Lockfile: `npm ci` (the CI install command) fails without it (US-041).

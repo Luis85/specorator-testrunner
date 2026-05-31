@@ -197,32 +197,23 @@ export class DefaultReportImportService implements ReportImportService {
       const featureName =
         typeof feature.name === "string" ? feature.name : (featureUri ?? "");
       const elements = Array.isArray(feature.elements) ? feature.elements : [];
+      // A failed Background fails every scenario it precedes (Cucumber marks
+      // their steps skipped), so fold it into those scenarios rather than
+      // counting it AND the skipped scenarios (no double-count).
+      let bgFailedSteps: CucumberStep[] | null = null;
+      let scenarioCount = 0;
 
       for (const rawScenario of elements) {
         if (!isRecord(rawScenario)) continue;
         const scenario = rawScenario as CucumberScenario;
-        // A Background runs before every scenario; if one of its steps failed,
-        // Cucumber may show only skipped steps on the scenarios, so surface the
-        // Background failure as its own failed result instead of dropping it.
         if (scenario.type === "background") {
           const bgSteps = (Array.isArray(scenario.steps) ? scenario.steps : []).filter(
             isRecord,
           ) as CucumberStep[];
-          if (scenarioStatus(bgSteps) === "failed") {
-            scenarioResults.push({
-              feature: featureName,
-              featureUri,
-              scenario: typeof scenario.name === "string" ? scenario.name : "Background",
-              status: "failed",
-              durationMs: this.totalDurationMs(bgSteps),
-              errorMessage: this.firstErrorMessage(bgSteps),
-            });
-            result.failed += 1;
-            result.total += 1;
-            this.collectArtifacts(bgSteps, runnerPath, artifacts);
-          }
+          if (scenarioStatus(bgSteps) === "failed") bgFailedSteps = bgSteps;
           continue;
         }
+        scenarioCount += 1;
         // Narrow to record steps so a malformed report (e.g. `steps: [null]`)
         // can't throw when result/embeddings are dereferenced (defensive parse).
         const steps = (Array.isArray(scenario.steps) ? scenario.steps : []).filter(
@@ -234,9 +225,11 @@ export class DefaultReportImportService implements ReportImportService {
           ...(Array.isArray(scenario.before) ? scenario.before : []),
           ...(Array.isArray(scenario.after) ? scenario.after : []),
         ].filter(isRecord) as CucumberStep[];
-        const stepsAndHooks = [...steps, ...hooks];
+        const stepsAndHooks = bgFailedSteps ? [...bgFailedSteps, ...steps, ...hooks] : [...steps, ...hooks];
 
-        const status = scenarioStatus(steps, hooks);
+        // A preceding failed Background fails this scenario even when its own
+        // steps are skipped.
+        const status = bgFailedSteps ? "failed" : scenarioStatus(steps, hooks);
         const durationMs = this.totalDurationMs(stepsAndHooks);
         const errorMessage = this.firstErrorMessage(stepsAndHooks);
         scenarioResults.push({
@@ -251,6 +244,22 @@ export class DefaultReportImportService implements ReportImportService {
         result.total += 1;
 
         this.collectArtifacts(stepsAndHooks, runnerPath, artifacts);
+      }
+
+      // A failed Background with no scenarios after it: surface it on its own so
+      // the failure isn't lost (no scenario to fold it into).
+      if (bgFailedSteps && scenarioCount === 0) {
+        scenarioResults.push({
+          feature: featureName,
+          featureUri,
+          scenario: "Background",
+          status: "failed",
+          durationMs: this.totalDurationMs(bgFailedSteps),
+          errorMessage: this.firstErrorMessage(bgFailedSteps),
+        });
+        result.failed += 1;
+        result.total += 1;
+        this.collectArtifacts(bgFailedSteps, runnerPath, artifacts);
       }
     }
 
