@@ -59,11 +59,15 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       const display = request.args.join(" ");
       let child: ChildProcess;
       try {
-        // shell: false — args are literal, never re-parsed by a shell (TIS §13.2).
+        // On Windows, `npm`/`npx` are `.cmd` shims that Node refuses to launch
+        // without a shell (CVE-2024-27980), so a shell is required there; on
+        // POSIX we keep `shell: false` so args stay literal — no interpolation
+        // (TIS §13.2). CommandSafetyPolicy's program allowlist + control-char
+        // rejection bound the Windows shell exposure.
         child = spawn(program, args, {
           cwd: request.cwd,
           env: { ...process.env, ...request.env },
-          shell: false,
+          shell: process.platform === "win32",
         });
       } catch (cause) {
         finish({ ok: false, error: appError("INIT_FAILED", `Could not spawn: ${display}`, { cause }) });
