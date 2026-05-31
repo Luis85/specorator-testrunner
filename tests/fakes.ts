@@ -134,6 +134,12 @@ export class FakeAbsoluteFileSystem implements AbsoluteFileSystem {
     return ok(undefined);
   }
 
+  async deleteAbsolute(path: string): Promise<Result<void>> {
+    this.written.delete(path);
+    this.existing.delete(path);
+    return ok(undefined);
+  }
+
   async listAbsolute(path: string): Promise<string[]> {
     const prefix = `${path}/`;
     const children = new Set<string>();

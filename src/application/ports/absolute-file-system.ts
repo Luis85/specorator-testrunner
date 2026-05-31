@@ -13,6 +13,8 @@ export interface AbsoluteFileSystem {
   /** UTF-8 contents of a file outside the vault index (e.g. a runner report). */
   readAbsolute(path: string): Promise<Result<string>>;
   writeAbsolute(path: string, content: string): Promise<Result<void>>;
+  /** Removes a file if it exists; a missing file is not an error. */
+  deleteAbsolute(path: string): Promise<Result<void>>;
   /** Immediate child entry names of a directory; `[]` if it does not exist. */
   listAbsolute(path: string): Promise<string[]>;
 }

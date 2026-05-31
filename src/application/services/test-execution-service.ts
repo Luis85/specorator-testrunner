@@ -135,6 +135,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
 
       const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
       if (!cwd.ok) return err(cwd.error);
+      // Delete any prior report so a run that fails BEFORE producing one (bad
+      // config, missing deps, glob miss) can't have a previous run's stale
+      // report imported and attributed to it (the path is fixed, no run id).
+      await this.absoluteFs.deleteAbsolute(`${cwd.value}/reports/cucumber-report.json`);
       // Human-readable display string; the runner is given the raw argv below.
       run.command = displayCommand(argv);
 

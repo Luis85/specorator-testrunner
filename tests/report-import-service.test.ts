@@ -92,8 +92,8 @@ describe("DefaultReportImportService", () => {
     if (!result.ok) return;
 
     const report = result.value;
-    // passed + failed + (skipped: all-skipped) + (skipped: undefined) = 4 scenarios.
-    expect(report.result).toEqual({ passed: 1, failed: 1, skipped: 2, total: 4 });
+    // passed + (failed: declined) + (skipped: all-skipped) + (failed: undefined) = 4.
+    expect(report.result).toEqual({ passed: 1, failed: 2, skipped: 1, total: 4 });
 
     const byName = Object.fromEntries(
       report.scenarioResults.map((s) => [s.scenario, s.status]),
@@ -101,7 +101,8 @@ describe("DefaultReportImportService", () => {
     expect(byName["Successful checkout"]).toBe("passed");
     expect(byName["Declined card"]).toBe("failed");
     expect(byName["All skipped"]).toBe("skipped");
-    expect(byName["Undefined step"]).toBe("skipped");
+    // undefined step → failure-like, not skipped (the run exits non-zero).
+    expect(byName["Undefined step"]).toBe("failed");
     // Background excluded.
     expect(report.scenarioResults).toHaveLength(4);
 
