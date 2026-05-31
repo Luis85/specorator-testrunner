@@ -226,4 +226,27 @@ describe("DefaultReportImportService", () => {
     if (!result.ok) return;
     expect(result.value.scenarioResults[0].status).toBe("passed");
   });
+
+  it("surfaces a failed Background as a failed result instead of dropping it", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.seed(
+      REPORT_ABS,
+      JSON.stringify([
+        {
+          name: "F",
+          uri: "features/UC-001-x.feature",
+          elements: [
+            { name: "BG", type: "background", steps: [{ result: { status: "failed", error_message: "setup boom" } }] },
+            { name: "S", type: "scenario", steps: [{ result: { status: "skipped" } }] },
+          ],
+        },
+      ]),
+    );
+
+    const result = await service.import(run());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.result.failed).toBe(1);
+    expect(result.value.scenarioResults.some((s) => s.status === "failed")).toBe(true);
+  });
 });

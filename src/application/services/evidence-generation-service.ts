@@ -93,7 +93,11 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     );
     this.logger.info("Evidence generated", { runId: run.id, path: evidencePath });
 
-    await this.link(evidence, this.summaryStatus(run, report.result));
+    // Honor the opt-out: only write the evidence link into Use Case frontmatter
+    // when the user hasn't disabled it (TIS §settings.automation).
+    if (settings.automation.updateUseCaseFrontmatterAfterRun) {
+      await this.link(evidence, this.summaryStatus(run, report.result));
+    }
     return ok(evidence);
   }
 

@@ -192,8 +192,28 @@ export class DefaultReportImportService implements ReportImportService {
       for (const rawScenario of elements) {
         if (!isRecord(rawScenario)) continue;
         const scenario = rawScenario as CucumberScenario;
-        // Backgrounds run once per scenario and carry no independent result.
-        if (scenario.type === "background") continue;
+        // A Background runs before every scenario; if one of its steps failed,
+        // Cucumber may show only skipped steps on the scenarios, so surface the
+        // Background failure as its own failed result instead of dropping it.
+        if (scenario.type === "background") {
+          const bgSteps = (Array.isArray(scenario.steps) ? scenario.steps : []).filter(
+            isRecord,
+          ) as CucumberStep[];
+          if (scenarioStatus(bgSteps) === "failed") {
+            scenarioResults.push({
+              feature: featureName,
+              featureUri,
+              scenario: typeof scenario.name === "string" ? scenario.name : "Background",
+              status: "failed",
+              durationMs: this.totalDurationMs(bgSteps),
+              errorMessage: this.firstErrorMessage(bgSteps),
+            });
+            result.failed += 1;
+            result.total += 1;
+            this.collectArtifacts(bgSteps, runnerPath, artifacts);
+          }
+          continue;
+        }
         // Narrow to record steps so a malformed report (e.g. `steps: [null]`)
         // can't throw when result/embeddings are dereferenced (defensive parse).
         const steps = (Array.isArray(scenario.steps) ? scenario.steps : []).filter(
