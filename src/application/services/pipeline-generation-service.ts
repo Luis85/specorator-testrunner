@@ -56,7 +56,10 @@ export class DefaultPipelineGenerationService
     // VaultPath: it must live where GitHub Actions discovers it (TIS §8.13).
     // `ci.workflowPath` isn't validated by SettingsService, so reject traversal
     // / absolute paths here before writing (or overwrite-checking) outside root.
-    const relativePath = request.settings.ci.workflowPath;
+    // Normalize separators to POSIX so a Windows-configured `a\b.yml` writes the
+    // intended `.github/workflows/...` path GitHub discovers, not a literal
+    // backslash filename on a POSIX vault.
+    const relativePath = request.settings.ci.workflowPath.replace(/\\/g, "/");
     if (
       relativePath.trim() === "" ||
       relativePath.startsWith("/") ||

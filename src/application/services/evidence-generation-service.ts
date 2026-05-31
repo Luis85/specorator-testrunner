@@ -74,7 +74,13 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     await this.fs.createFolder(folder);
     // writeFile (overwrite) so re-importing the same run refreshes the note;
     // the evidence path is deterministic per runId and createFile would throw.
-    const written = await this.fs.writeFile(evidencePath, this.renderNote(evidence, report));
+    // Resolve each linked UC's note basename so the wikilink resolves in
+    // Obsidian (the note is `UC-001 Title.md`, so bare `[[UC-001]]` would not).
+    const ucNoteNames = await this.resolveUseCaseNoteNames(linkedUseCases);
+    const written = await this.fs.writeFile(
+      evidencePath,
+      this.renderNote(evidence, report, ucNoteNames),
+    );
     if (!written.ok) {
       return err(
         appError("EVIDENCE_WRITE_FAILED", `Could not write evidence note "${evidencePath}".`, {
@@ -197,8 +203,24 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     return `EV-${runId.replace(/^RUN-/, "")}`;
   }
 
+  /** Resolves each UC id to its note basename (without `.md`) for wikilinks. */
+  private async resolveUseCaseNoteNames(ids: UseCaseId[]): Promise<Map<UseCaseId, string>> {
+    const names = new Map<UseCaseId, string>();
+    for (const id of ids) {
+      const found = await this.useCaseService.findById(id);
+      if (found.ok && found.value) {
+        names.set(id, (found.value.path.split("/").pop() ?? id).replace(/\.md$/, ""));
+      }
+    }
+    return names;
+  }
+
   /** Renders the evidence note (frontmatter TIS §10.3, body ADR-0005). */
-  private renderNote(evidence: Evidence, report: ImportedReport): string {
+  private renderNote(
+    evidence: Evidence,
+    report: ImportedReport,
+    ucNoteNames: Map<UseCaseId, string>,
+  ): string {
     const { result } = evidence;
     const screenshots = evidence.artifacts.filter((a) => a.type === "screenshot");
     const traces = evidence.artifacts.filter((a) => a.type === "trace");
@@ -218,11 +240,15 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
         screenshots: screenshots.length > 0 ? screenshots.map((a) => a.path) : undefined,
         traces: traces.length > 0 ? traces.map((a) => a.path) : undefined,
       },
-      this.renderBody(evidence, report),
+      this.renderBody(evidence, report, ucNoteNames),
     );
   }
 
-  private renderBody(evidence: Evidence, report: ImportedReport): string {
+  private renderBody(
+    evidence: Evidence,
+    report: ImportedReport,
+    ucNoteNames: Map<UseCaseId, string>,
+  ): string {
     const { result } = evidence;
     const sections = [
       `# Test Evidence — ${evidence.runId}`,
@@ -245,7 +271,11 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     ];
     if (evidence.linkedUseCases.length > 0) {
       sections.push("", "## Linked Use Cases", "");
-      for (const id of evidence.linkedUseCases) sections.push(`- [[${id}]]`);
+      for (const id of evidence.linkedUseCases) {
+        const noteName = ucNoteNames.get(id);
+        // [[Note Name|UC-001]] resolves to the real note while showing the id.
+        sections.push(noteName ? `- [[${noteName}|${id}]]` : `- [[${id}]]`);
+      }
     }
     return `${sections.join("\n")}\n`;
   }
