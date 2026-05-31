@@ -74,6 +74,19 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
           // args array — DEP0190 — so spaces/metacharacters break boundaries),
           // invoke cmd.exe with each token explicitly quoted and pass it
           // verbatim, so args stay literal (spaces + `&` etc. preserved).
+          // `%` is the one char cmd still expands inside quotes (%VAR%) with no
+          // reliable command-line escape, so reject it on Windows (a rare
+          // filename/tag case; POSIX passes it through literally below).
+          if (request.args.some((arg) => arg.includes("%"))) {
+            finish({
+              ok: false,
+              error: appError(
+                "COMMAND_DISALLOWED",
+                `Argument contains "%", which cmd.exe would expand on Windows: ${display}`,
+              ),
+            });
+            return;
+          }
           const comspec = process.env.ComSpec ?? "cmd.exe";
           const line = request.args.map(quoteForCmd).join(" ");
           child = spawn(comspec, ["/d", "/s", "/c", line], {
