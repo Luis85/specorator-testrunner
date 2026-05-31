@@ -70,6 +70,21 @@ describe("DefaultUseCaseService", () => {
     expect(result.ok && result.value.id).toBe("UC-002");
   });
 
+  it("indexes use cases nested in subfolders (recursive)", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Use Cases/archive/UC-002 Old.md",
+      buildNote({ type: "use-case", id: "UC-002", title: "Old", status: "deprecated" }, "# UC-002"),
+    );
+
+    const all = await service.findAll();
+    expect(all.ok && all.value.map((u) => u.id)).toEqual(["UC-002"]);
+
+    // create() must see the nested id so it does not reallocate UC-002.
+    const created = await service.create({ title: "New" });
+    expect(created.ok && created.value.id).toBe("UC-003");
+  });
+
   it("rejects an empty title", async () => {
     const { service } = build();
     const result = await service.create({ title: "   " });

@@ -87,7 +87,9 @@ export class DefaultUseCaseService implements UseCaseService {
 
   async findAll(): Promise<Result<UseCase[]>> {
     const settings = await this.settingsService.load();
-    const listed = await this.fs.listFiles(settings.paths.useCasesPath);
+    // Recurse so use cases organised into subfolders are still indexed (and so
+    // id allocation in create() can't collide with a nested note).
+    const listed = await this.fs.listFilesRecursive(settings.paths.useCasesPath);
     if (!listed.ok) return err(listed.error);
 
     const useCases: UseCase[] = [];
