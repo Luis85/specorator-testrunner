@@ -303,21 +303,9 @@ export class DefaultTestExecutionService implements TestExecutionService {
         const found = await this.useCaseService.findById(request.target);
         const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
         if (featureFiles.length > 0) {
-          return ok([
-            "npm",
-            "run",
-            "test",
-            "--",
-            ...featureFiles.map((path) => this.featureArg(settings, path)),
-          ]);
+          return ok([...base, "--", ...featureFiles.map((path) => this.featureArg(settings, path))]);
         }
-        return ok([
-          "npm",
-          "run",
-          "test",
-          "--",
-          `${this.featurePrefix(settings)}/${request.target}-*.feature`,
-        ]);
+        return ok([...base, "--", `${this.featurePrefix(settings)}/${request.target}-*.feature`]);
       }
     }
   }
