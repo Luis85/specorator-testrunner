@@ -86,7 +86,10 @@ export class DashboardView extends ItemView {
         this.deps.eventBus.subscribe(type, () => this.scheduleRender()),
       );
     }
-    await this.render();
+    // Route the initial render through the same chain so an event arriving while
+    // its async refresh is in flight can't start a concurrent render that
+    // finishes first and is then clobbered by this stale initial render.
+    await this.scheduleRender();
   }
 
   /**
