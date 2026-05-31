@@ -214,9 +214,11 @@ Defined in the [Event Catalog](./Event%20Catalog.md). The Domain Layer exports t
 | `CiReadinessPolicy` | Encode the rules for `EnvironmentValidationService` CI check. |
 | `UseCaseAutomationPolicy` | Derive `UseCase.automationStatus` from Feature states with `@wip` exclusion (per ADR-0017). |
 
-### 6.5 Repositories (ports)
+### 6.5 Persistence (no repository ports — `VaultFileSystem`)
 
-`UseCaseRepository`, `FeatureRepository`, `SuiteRepository`, `TestRunRepository`, `EvidenceRepository` — declared as interfaces in the Domain; implemented in Infrastructure.
+> **Not built.** The per-aggregate repository interfaces (`UseCaseRepository`, `FeatureRepository`, `SuiteRepository`, `TestRunRepository`, `EvidenceRepository`) this section once described do **not** exist. There is no `src/domain/repositories/` directory.
+>
+> **Actual choice:** all persistence is read and written through one infrastructure adapter, `VaultFileSystem` (`src/infrastructure/persistence/vault-file-system.ts`), behind a single file-system port the application services depend on. Aggregates are stored as Markdown/`.feature` notes in the vault rather than reconstituted through dedicated repositories. A move to per-aggregate repository ports is a possible future refinement, not a V1 building block.
 
 ---
 
