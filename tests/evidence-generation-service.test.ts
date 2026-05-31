@@ -114,6 +114,9 @@ describe("DefaultEvidenceGenerationService", () => {
     const fm = parseFrontmatter(ucNote ?? "");
     expect(fm.evidence).toEqual([EVIDENCE_PATH]);
     expect(ucNote).toContain(EVIDENCE_PATH);
+    // lastTestRun must be persisted (US-031), not silently dropped.
+    expect(fm.last_run_id).toBe(run().id);
+    expect(fm.last_run_evidence).toBe(EVIDENCE_PATH);
   });
 
   it("emits evidence.generated then evidence.linkedToUseCase", async () => {

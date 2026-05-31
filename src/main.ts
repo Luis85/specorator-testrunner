@@ -207,8 +207,6 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // After a run reaches a terminal completed/failed state, import + generate
     // evidence best-effort. Subscribers must never throw into the bus (EN-1), so
     // every fault is caught, logged, and surfaced as a Notice.
-    eventBus.subscribe("testrun.completed", () => void this.importAndGenerateEvidence());
-    eventBus.subscribe("testrun.failed", () => void this.importAndGenerateEvidence());
 
     this.registerView(
       USE_CASE_VIEW_TYPE,
@@ -336,7 +334,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.addCommand({
       id: "import-report-last-run",
       name: "Import Report for Last Run",
-      callback: () => void this.importAndGenerateEvidence(true),
+      callback: () => {
+        if (this.lastRun) void this.importAndGenerateEvidence(this.lastRun, true);
+        else new Notice("No test run to import a report for yet.");
+      },
     });
     this.addRibbonIcon("terminal", "Open Test Console", () =>
       void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
@@ -360,7 +361,6 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private async runTest(request: ExecuteTestRequest): Promise<void> {
     await this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
     const result = await this.testExecutionService.execute(request);
-    if (result.ok) this.lastRun = result.value;
     if (!result.ok) {
       const active = result.error.details?.activeRunId;
       new Notice(
@@ -369,20 +369,22 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           : `Could not start run: ${result.error.message}`,
         10000,
       );
+      return;
+    }
+    this.lastRun = result.value;
+    // Import the report + generate evidence for THIS finished run (UC-016).
+    // Driven from the returned run — not event/instance state — so the report
+    // is attributed to the correct run. Skip non-report terminal states.
+    if (result.value.status === "passed" || result.value.status === "failed") {
+      await this.importAndGenerateEvidence(result.value);
     }
   }
 
   /**
-   * Imports the last run's Cucumber report and generates linked evidence
-   * (UC-016). Resilient by design: invoked from the EventBus subscriber, so it
-   * never rejects — every fault is logged and (when surfaced) shown as a Notice.
+   * Imports a finished run's Cucumber report and generates linked evidence
+   * (UC-016). Never rejects — every fault is logged and (when `notify`) shown.
    */
-  private async importAndGenerateEvidence(notify = false): Promise<void> {
-    const run = this.lastRun;
-    if (!run) {
-      if (notify) new Notice("No test run to import a report for yet.");
-      return;
-    }
+  private async importAndGenerateEvidence(run: TestRun, notify = false): Promise<void> {
     try {
       const imported = await this.reportImportService.import(run);
       if (!imported.ok) {
