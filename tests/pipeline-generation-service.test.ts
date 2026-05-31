@@ -59,6 +59,25 @@ describe("DefaultPipelineGenerationService", () => {
     expect(absoluteFs.written.size).toBe(0);
   });
 
+  it("rejects multiline CI commands / node version (YAML injection) and writes nothing", async () => {
+    const { service, absoluteFs } = build();
+    const cases = [
+      { runner: { ciRunCommand: "npm run test:ci\n      - run: evil" } },
+      { runner: { ciInstallCommand: "npm ci\n      - run: evil" } },
+      { ci: { nodeVersion: "22\n      - run: evil" } },
+    ];
+    for (const over of cases) {
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        runner: { ...DEFAULT_SETTINGS.runner, ...(over.runner ?? {}) },
+        ci: { ...DEFAULT_SETTINGS.ci, ...(over.ci ?? {}) },
+      };
+      const result = await service.generate({ provider: "github-actions", settings });
+      expect(result.ok, JSON.stringify(over)).toBe(false);
+    }
+    expect(absoluteFs.written.size).toBe(0);
+  });
+
   it("rejects an unsafe configured CI command and writes nothing", async () => {
     const { service, absoluteFs } = build();
     for (const ci of [
