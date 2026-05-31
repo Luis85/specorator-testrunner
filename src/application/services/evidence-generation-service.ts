@@ -124,6 +124,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
         this.summaryStatus(run, report.result),
         run.finishedAt ?? run.startedAt,
         run.scope,
+        settings.automation.generateEvidenceMarkdown,
       );
     }
     return ok(evidence);
@@ -155,12 +156,19 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     return result.failed > 0 ? "failed" : "passed";
   }
 
-  /** Appends the evidence path + last-run summary to each owning Use Case. */
+  /**
+   * Appends the evidence path + last-run summary to each owning Use Case. When
+   * `wroteNote` is false (Markdown generation disabled) the note at
+   * `evidence.path` was never created, so we record `lastTestRun` WITHOUT an
+   * evidence path and don't append it to `evidence[]` — otherwise the Use Case
+   * and Recent Runs would link to a non-existent note.
+   */
   private async link(
     evidence: Evidence,
     summaryStatus: TestRunStatus,
     runDate: string,
     runScope: ExecutionScope,
+    wroteNote: boolean,
   ): Promise<void> {
     for (const useCaseId of evidence.linkedUseCases) {
       const found = await this.useCaseService.findById(useCaseId);
@@ -173,13 +181,14 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
       const alreadyLinked = useCase.evidence.includes(evidence.path);
       const updated = {
         ...useCase,
-        evidence: alreadyLinked ? useCase.evidence : [...useCase.evidence, evidence.path],
+        evidence:
+          !wroteNote || alreadyLinked ? useCase.evidence : [...useCase.evidence, evidence.path],
         lastTestRun: {
           runId: evidence.runId,
           status: summaryStatus,
           date: runDate,
           scope: runScope,
-          evidencePath: evidence.path,
+          evidencePath: wroteNote ? evidence.path : undefined,
         },
       };
       const result = await this.useCaseService.update(updated);

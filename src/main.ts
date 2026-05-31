@@ -818,7 +818,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // hub and emit `documentation.opened`. Generates the docs first if absent so
   // the command is self-sufficient (generate() is idempotent / skip-existing).
   private async openDocumentation(
-    documentType: "getting-started" | "manual" | "troubleshooting" = "getting-started",
+    documentType: "getting-started" | "manual" | "troubleshooting" | "index" = "index",
   ): Promise<void> {
     // open() ensures the target note exists silently (no documentation.generated).
     const opened = await this.documentationService.open(documentType);
