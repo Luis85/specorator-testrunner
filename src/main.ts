@@ -387,6 +387,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       id: "import-report-last-run",
       name: "Import Report for Last Run",
       callback: () => {
+        // A run in progress has already deleted and is reusing the fixed
+        // reports path, so re-importing now would attach the active run's
+        // missing/partial report to the PREVIOUS run id. Block until it settles.
+        if (this.testExecutionService.activeRunId() !== null) {
+          new Notice("A test run is in progress; import its report once it finishes.");
+          return;
+        }
         // Only report-producing runs have a report to import. A cancelled/
         // errored last run would otherwise attach a STALE report (the fixed
         // reports path carries no run id) to the wrong run id.
