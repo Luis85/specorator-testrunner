@@ -134,10 +134,30 @@ describe("parseFeature", () => {
     );
     expect(feature).not.toBeNull();
     if (!feature) return;
+    // Background is its own block, NOT a scenario, and collected for missing-steps.
+    expect(feature.background?.map((s) => s.text)).toEqual(["I am logged in"]);
+    expect(feature.scenarios).toHaveLength(1);
     expect(collectStepTexts(feature)).toEqual([
       "I am logged in",
       "I do a thing",
       "it works",
     ]);
+  });
+
+  it("does not treat doc-string content as steps", () => {
+    const feature = parseFeature(
+      `Feature: F
+  Scenario: S
+    Given a payload:
+      """
+      Given this is data, not a step
+      When neither is this
+      """
+    Then it is accepted`,
+      "UC-003-x.feature",
+    );
+    expect(feature).not.toBeNull();
+    if (!feature) return;
+    expect(collectStepTexts(feature)).toEqual(["a payload:", "it is accepted"]);
   });
 });
