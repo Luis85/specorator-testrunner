@@ -37,6 +37,40 @@ export interface TestExecutionService {
    * promise itself.
    */
   whenActiveSettles(): Promise<void>;
+  /**
+   * Synchronous mutual-exclusion handle the maintenance flows (reset/repair)
+   * acquire so a run cannot start while `.testrunner`/settings are being
+   * mutated, and vice-versa. See {@link MaintenanceLock}.
+   */
+  readonly maintenanceLock: MaintenanceLock;
+}
+
+/**
+ * Synchronous lock that mutually excludes maintenance (UC-003 repair / UC-024
+ * reset) and test runs, closing the reset/run TOCTOU (security review L1).
+ *
+ * Both directions are check-then-act races without it: `reset()`/`repair()`
+ * historically checked `activeRunId() !== null` then `await`-ed, and a `runTest`
+ * issued in that gap could reserve the single-run slot while maintenance
+ * proceeded to mutate `.testrunner`. The lock is consulted/mutated SYNCHRONOUSLY
+ * (no `await` between check and set) on both sides, so there is no window:
+ *
+ * - {@link begin} fails if a run is active OR maintenance is already in
+ *   progress, and otherwise flips the flag before any caller `await`.
+ * - {@link TestExecutionService.execute} reads {@link inProgress} synchronously
+ *   before it reserves its slot and returns `MAINTENANCE_IN_PROGRESS` if set.
+ */
+export interface MaintenanceLock {
+  /** True while a maintenance flow holds the lock. */
+  inProgress(): boolean;
+  /**
+   * Acquires the lock synchronously. Returns `RUN_IN_PROGRESS` if a run is
+   * active, or `MAINTENANCE_IN_PROGRESS` if another maintenance flow already
+   * holds it. On success the caller MUST pair it with {@link end} in a finally.
+   */
+  begin(): Result<void>;
+  /** Releases the lock. Safe to call when not held. */
+  end(): void;
 }
 
 export interface ExecuteTestRequest {
@@ -171,6 +205,37 @@ export class DefaultTestExecutionService implements TestExecutionService {
   // first run keeps the clean id; later same-second runs get a -2/-3/… suffix.
   private lastIdBase: RunId | null = null;
   private idSeq = 0;
+  // Set synchronously while a maintenance flow (reset/repair) holds the lock.
+  // execute() reads it before reserving its slot so a run started concurrently
+  // with maintenance is rejected with MAINTENANCE_IN_PROGRESS (security L1).
+  private maintenanceActive = false;
+
+  readonly maintenanceLock: MaintenanceLock = {
+    inProgress: () => this.maintenanceActive,
+    begin: () => {
+      // Reject if a run is active: maintenance must not mutate `.testrunner`
+      // under a live runner (the existing ADR-0018 / P0-3 guard).
+      if (this.active) {
+        return err(
+          appError("RUN_IN_PROGRESS", "A test run is in progress.", {
+            details: { activeRunId: this.active.run.id },
+          }),
+        );
+      }
+      if (this.maintenanceActive) {
+        return err(
+          appError("MAINTENANCE_IN_PROGRESS", "A maintenance operation is already in progress."),
+        );
+      }
+      // Synchronous check-then-set: no await between the guards above and this
+      // assignment, so a run racing in cannot slip through (security L1 TOCTOU).
+      this.maintenanceActive = true;
+      return ok(undefined);
+    },
+    end: () => {
+      this.maintenanceActive = false;
+    },
+  };
 
   constructor(
     private readonly settingsService: SettingsService,
@@ -197,6 +262,18 @@ export class DefaultTestExecutionService implements TestExecutionService {
   }
 
   async execute(request: ExecuteTestRequest): Promise<Result<TestRun>> {
+    // Maintenance (reset/repair) and runs are mutually exclusive (security L1).
+    // Read the lock SYNCHRONOUSLY here — before reserving the slot below and
+    // before any await — so a run started in the gap between reset()'s active-
+    // run check and its mutations cannot reserve the slot (TOCTOU close).
+    if (this.maintenanceLock.inProgress()) {
+      return err(
+        appError(
+          "MAINTENANCE_IN_PROGRESS",
+          "A maintenance operation is in progress; try again once it completes.",
+        ),
+      );
+    }
     // ADR-0018: reject overlapping runs; caller must cancel(activeRunId) first.
     if (this.active) {
       return err(

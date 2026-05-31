@@ -103,6 +103,27 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     }
   }
 
+  async deleteFolder(path: VaultPath): Promise<Result<void>> {
+    const normalized = normalizePath(path);
+    try {
+      // Idempotent: a missing folder is not an error (UC-024 reset may run when
+      // the runtime was never created or a previous reset already removed it).
+      if (!(await this.app.vault.adapter.exists(normalized))) return ok(undefined);
+      // Prefer the TFolder-aware path so Obsidian's index is updated; fall back
+      // to the raw adapter (recursive) when the folder is outside the index
+      // (e.g. dot-folders like `.testrunner` that Obsidian does not track).
+      const folder = this.app.vault.getAbstractFileByPath(normalized);
+      if (folder) {
+        await this.app.vault.delete(folder, true);
+      } else {
+        await this.app.vault.adapter.rmdir(normalized, true);
+      }
+      return ok(undefined);
+    } catch (cause) {
+      return err(appError("INIT_FAILED", `Could not delete folder "${path}".`, { cause }));
+    }
+  }
+
   /** Ensures the parent folder tree exists before a file write. */
   private async ensureParentFolder(normalizedPath: string): Promise<Result<void>> {
     const lastSlash = normalizedPath.lastIndexOf("/");

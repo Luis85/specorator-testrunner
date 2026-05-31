@@ -124,6 +124,59 @@ describe("appendScopedArgs", () => {
   });
 });
 
+describe("DefaultTestExecutionService maintenance lock (security L1 TOCTOU)", () => {
+  it("rejects execute() while maintenance holds the lock, reserving no slot", async () => {
+    const { service } = build();
+    expect(service.maintenanceLock.begin().ok).toBe(true);
+    try {
+      const result = await service.execute({ scope: "demo", target: "demo" });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("MAINTENANCE_IN_PROGRESS");
+      // No slot reserved while maintenance is in progress.
+      expect(service.activeRunId()).toBeNull();
+    } finally {
+      service.maintenanceLock.end();
+    }
+  });
+
+  it("lets a run start once maintenance releases the lock", async () => {
+    const { service } = build();
+    service.maintenanceLock.begin();
+    service.maintenanceLock.end();
+    const result = await service.execute({ scope: "demo", target: "demo" });
+    expect(result.ok).toBe(true);
+  });
+
+  it("begin() refuses (RUN_IN_PROGRESS) while a run is active, no maintenance window", async () => {
+    const { service, childProcess } = build();
+    childProcess.pending = true; // keep the run in flight
+    void service.execute({ scope: "demo", target: "demo" });
+    await waitForActive(service);
+    expect(service.activeRunId()).not.toBeNull();
+
+    const begin = service.maintenanceLock.begin();
+    expect(begin.ok).toBe(false);
+    if (!begin.ok) {
+      expect(begin.error.code).toBe("RUN_IN_PROGRESS");
+      expect(begin.error.details?.activeRunId).toBe(service.activeRunId());
+    }
+    // The run was never disturbed; maintenance did not acquire the lock.
+    expect(service.maintenanceLock.inProgress()).toBe(false);
+
+    childProcess.release();
+    await service.whenActiveSettles();
+  });
+
+  it("begin() refuses a second concurrent maintenance flow (MAINTENANCE_IN_PROGRESS)", () => {
+    const { service } = build();
+    expect(service.maintenanceLock.begin().ok).toBe(true);
+    const second = service.maintenanceLock.begin();
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.error.code).toBe("MAINTENANCE_IN_PROGRESS");
+    service.maintenanceLock.end();
+  });
+});
+
 describe("DefaultTestExecutionService", () => {
   it("resolves the demo command and derives passed from exit 0", async () => {
     const { service, childProcess, types } = build();
