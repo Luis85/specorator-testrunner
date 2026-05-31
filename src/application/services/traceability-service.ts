@@ -6,7 +6,6 @@ import type { FeatureSpecification } from "../../domain/entities/specification";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { TestRunSummary } from "../../domain/entities/test-run";
 import type {
-  EvidenceId,
   RunId,
   SuiteId,
   UseCaseId,
@@ -34,7 +33,12 @@ export interface TraceabilityRecord {
   featurePath?: VaultPath;
   suites: SuiteId[];
   runs: RunId[];
-  evidence: EvidenceId[];
+  /**
+   * Evidence note PATHS the UC frontmatter tracks (V1 records evidence as
+   * vault-relative note paths, not a separate EV-id registry), e.g.
+   * `Test Evidence/2026/06/.../summary.md`.
+   */
+  evidence: VaultPath[];
 }
 
 /**

@@ -272,7 +272,14 @@ export class DefaultTestExecutionService implements TestExecutionService {
       );
 
       // A cancel that landed mid-flight already published the terminal event.
-      if (activeRun.terminated) return ok(run);
+      // The cancelled process may still have flushed a partial Cucumber report,
+      // so snapshot it to reports/<runId>.json before returning — otherwise the
+      // (now slot-free) cancelled-run import would race a new run's cleanup of
+      // the fixed report and lose/mis-attribute that evidence.
+      if (activeRun.terminated) {
+        await this.snapshotReport(run, cwd.value);
+        return ok(run);
+      }
       // The process has closed: from here only best-effort snapshot I/O remains
       // before the terminal event. Mark it so a cancel() racing that I/O window
       // can't relabel this finished run as cancelled.
@@ -293,19 +300,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
       run.status = exitCode === 0 ? "passed" : "failed";
       this.finish(run, startedAt, result.value.durationMs);
 
-      // Snapshot the fixed report to a run-specific path BEFORE the slot frees,
-      // so a later run's pre-run cleanup of reports/cucumber-report.json can't
-      // delete it while evidence import (which now reads the snapshot) runs.
-      const liveReport = await this.absoluteFs.readAbsolute(`${cwd.value}/reports/cucumber-report.json`);
-      if (liveReport.ok) {
-        const snapshot = await this.absoluteFs.writeAbsolute(
-          `${cwd.value}/reports/${run.id}.json`,
-          liveReport.value,
-        );
-        if (snapshot.ok) {
-          run.reportPaths.json = joinVaultPath(run.workingDirectory, "reports", `${run.id}.json`);
-        }
-      }
+      await this.snapshotReport(run, cwd.value);
 
       if (run.scope === "suite") {
         // UC-013 supporting event, before the terminal event.
@@ -386,6 +381,22 @@ export class DefaultTestExecutionService implements TestExecutionService {
     this.lastIdBase = base;
     this.idSeq = 1;
     return base;
+  }
+
+  /**
+   * Snapshots the fixed Cucumber report to a run-specific path
+   * (reports/<runId>.json) BEFORE the active slot frees, so a later run's
+   * pre-run cleanup of reports/cucumber-report.json can't delete it while the
+   * (passed/failed/cancelled) run's evidence import reads it. Best-effort: a
+   * run with no report (e.g. spawn fault) simply leaves reportPaths.json unset.
+   */
+  private async snapshotReport(run: TestRun, cwd: string): Promise<void> {
+    const liveReport = await this.absoluteFs.readAbsolute(`${cwd}/reports/cucumber-report.json`);
+    if (!liveReport.ok) return;
+    const snapshot = await this.absoluteFs.writeAbsolute(`${cwd}/reports/${run.id}.json`, liveReport.value);
+    if (snapshot.ok) {
+      run.reportPaths.json = joinVaultPath(run.workingDirectory, "reports", `${run.id}.json`);
+    }
   }
 
   private runEnv(settings: TestHubSettings): Record<string, string> {

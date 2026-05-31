@@ -41,6 +41,24 @@ describe("buildGitHubActionsWorkflow", () => {
     expect(yaml).not.toContain("secrets.");
   });
 
+  it("never overrides BASE_URL from a configured auth.env key", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: {
+        ...DEFAULT_SETTINGS.sut,
+        environments: {
+          ...DEFAULT_SETTINGS.sut.environments,
+          staging: { baseUrl: "https://staging.example.com", auth: { kind: "env", env: { BASE_URL: "x", E2E_TOKEN: "t" } } },
+        },
+      },
+    } as typeof DEFAULT_SETTINGS;
+    const yaml = buildGitHubActionsWorkflow(settings);
+    // BASE_URL stays mapped from the repository variable, never from secrets.
+    expect(yaml).toContain("BASE_URL: ${{ vars.E2E_BASE_URL }}");
+    expect(yaml).not.toContain("secrets.BASE_URL");
+    expect(yaml).toContain("E2E_TOKEN: ${{ secrets.E2E_TOKEN }}");
+  });
+
   it("runs the standalone runner commands in the runner folder (US-042, ADR-0006)", () => {
     const yaml = buildGitHubActionsWorkflow(DEFAULT_SETTINGS);
     expect(yaml).toContain(`working-directory: ${DEFAULT_SETTINGS.paths.testRunnerPath}`);

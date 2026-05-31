@@ -64,7 +64,12 @@ export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string =>
     ...new Set(
       Object.values(settings.sut.environments).flatMap((e) => Object.keys(e.auth?.env ?? {})),
     ),
-  ].sort();
+  ]
+    // BASE_URL is already mapped from the repository variable (ADR-0011); a
+    // configured auth.env key named BASE_URL would emit a second, conflicting
+    // line that overrides it, so skip reserved keys.
+    .filter((key) => key !== "BASE_URL")
+    .sort();
   const authEnvLines =
     authKeys.length > 0
       ? "\n" + authKeys.map((key) => `          ${key}: \${{ secrets.${key} }}`).join("\n")
