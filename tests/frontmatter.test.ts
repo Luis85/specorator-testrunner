@@ -77,6 +77,13 @@ describe("parseNote / parseFrontmatter", () => {
   it("treats a key with no value or items as an empty string", () => {
     expect(parseFrontmatter("---\ndescription:\n---\n")).toEqual({ description: "" });
   });
+
+  it("parses frontmatter with CRLF line endings", () => {
+    const crlf = "---\r\ntype: use-case\r\nid: UC-001\r\nsuites:\r\n  - smoke\r\n---\r\n\r\n# Body";
+    const { frontmatter, body } = parseNote(crlf);
+    expect(frontmatter).toEqual({ type: "use-case", id: "UC-001", suites: ["smoke"] });
+    expect(body).toBe("# Body");
+  });
 });
 
 describe("relativeVaultPath", () => {
