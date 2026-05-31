@@ -58,6 +58,19 @@ const markFullyInstalled = (absoluteFs: FakeAbsoluteFileSystem) => {
   absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome-linux/chrome");
 };
 
+/** Seeds the managed runner files the CI readiness check requires (except
+ *  package.json, which callers seed with content for the test:ci check). */
+const seedManagedRunnerFiles = (
+  absoluteFs: FakeAbsoluteFileSystem,
+  runnerDir = "/vault/.testrunner",
+) => {
+  absoluteFs.existing.add(runnerDir);
+  for (const file of VALIDATED_RUNNER_FILES) {
+    if (file === "package.json") continue;
+    absoluteFs.existing.add(`${runnerDir}/${file}`);
+  }
+};
+
 describe("DefaultEnvironmentValidationService", () => {
   it("reports a healthy environment as valid with no issues", async () => {
     const { service, absoluteFs, types } = build();
@@ -175,5 +188,272 @@ describe("DefaultEnvironmentValidationService", () => {
     const result = await service.validateCiReadiness(DEFAULT_SETTINGS);
     expect(result.ready).toBe(false);
     expect(result.missingItems.some((m) => m.includes("CI workflow"))).toBe(true);
+  });
+
+  it("validateCiReadiness lists package.json, lockfile and workflow when nothing exists (US-041)", async () => {
+    const { service } = build();
+    const result = await service.validateCiReadiness(DEFAULT_SETTINGS);
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("package.json"))).toBe(true);
+    expect(result.missingItems.some((m) => m.includes("package-lock.json"))).toBe(true);
+    expect(result.missingItems.some((m) => m.includes("CI workflow"))).toBe(true);
+  });
+
+  it("validateCiReadiness flags a package.json without a test:ci script (UC-020)", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.existing.add("/vault/.testrunner");
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { test: "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const result = await service.validateCiReadiness(DEFAULT_SETTINGS);
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("test:ci"))).toBe(true);
+  });
+
+  it("validateCiReadiness is ready when runner, lockfile, test:ci script and workflow are present (UC-020)", async () => {
+    const { service, absoluteFs, types } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed(
+      "/vault/.testrunner/package.json",
+      JSON.stringify({ scripts: { "test:ci": "cucumber-js" } }),
+    );
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const result = await service.validateCiReadiness(DEFAULT_SETTINGS);
+
+    expect(result.ready).toBe(true);
+    expect(result.missingItems).toHaveLength(0);
+    expect(types()).toContain("ci.readiness.checked");
+  });
+
+  it("validateCiReadiness finds the workflow when workflowPath uses Windows separators", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed(
+      "/vault/.testrunner/package.json",
+      JSON.stringify({ scripts: { "test:ci": "x" } }),
+    );
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    // Generation normalizes `\`→`/`, so the file lives at the POSIX path.
+    absoluteFs.existing.add("/vault/.github/workflows/e2e.yml");
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, workflowPath: ".github\\workflows\\e2e.yml" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.missingItems.some((m) => m.includes("CI workflow"))).toBe(false);
+    expect(result.ready).toBe(true);
+  });
+
+  it("validateCiReadiness normalizes a Windows-separator testRunnerPath", async () => {
+    const { service, absoluteFs } = build();
+    // Files exist at the POSIX path a CI checkout uses.
+    seedManagedRunnerFiles(absoluteFs, "/vault/e2e/runner");
+    absoluteFs.seed(
+      "/vault/e2e/runner/package.json",
+      JSON.stringify({ scripts: { "test:ci": "x" } }),
+    );
+    absoluteFs.existing.add("/vault/e2e/runner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: "e2e\\runner" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.missingItems).toHaveLength(0);
+    expect(result.ready).toBe(true);
+  });
+
+  it("validateCiReadiness warns to set repository secrets for configured auth keys (ADR-0014)", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: {
+        active: "prod",
+        environments: {
+          demo: { baseUrl: "https://demo", auth: { env: { API_TOKEN: "x" } } },
+          prod: { baseUrl: "https://prod", auth: { env: { BASIC_AUTH_USER: "u", API_TOKEN: "y" } } },
+        },
+      },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(true);
+    const secretWarning = result.warnings.find((w) => w.includes("repository secrets"));
+    expect(secretWarning).toBeDefined();
+    // Union across environments, deduped + sorted.
+    expect(secretWarning).toContain("API_TOKEN");
+    expect(secretWarning).toContain("BASIC_AUTH_USER");
+  });
+
+  it("validateCiReadiness rejects a traversal workflowPath like generation does", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, workflowPath: "../../outside/e2e.yml" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("invalid"))).toBe(true);
+  });
+
+  it("validateCiReadiness checks the script named by a configured ciRunCommand", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    // package.json provides only test:ci, but CI is configured to run e2e:ci.
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, ciRunCommand: "npm run e2e:ci" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("e2e:ci"))).toBe(true);
+  });
+
+  it("validateCiReadiness still requires a lockfile for an npm ci variant", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    // No package-lock.json.
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, ciInstallCommand: "npm ci --no-audit" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("package-lock"))).toBe(true);
+  });
+
+  it("validateCiReadiness does not require a lockfile when the install command omits one", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    // No package-lock.json present.
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, ciInstallCommand: "npm install --no-package-lock" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(true);
+    expect(result.missingItems.some((m) => m.includes("package-lock"))).toBe(false);
+  });
+
+  it("validateCiReadiness is not ready for a non-github-actions provider", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, provider: "none" as const },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("provider"))).toBe(true);
+  });
+
+  it("validateCiReadiness flags a CI command Generate CI Workflow would reject", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ name: "runner" }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    // `npx cucumber-js ...` is not an npm ci/run shape, so Generate CI Workflow
+    // refuses it — readiness must flag it rather than green-light a config the
+    // generator can't produce.
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, ciRunCommand: "npx cucumber-js --config cucumber.mjs" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("not supported by Generate CI Workflow"))).toBe(true);
+  });
+
+  it("validateCiReadiness is not ready when a managed runner file (cucumber.mjs) is missing", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+    // A damaged runner missing the Cucumber config the test:ci script needs.
+    absoluteFs.existing.delete("/vault/.testrunner/cucumber.mjs");
+
+    const result = await service.validateCiReadiness(DEFAULT_SETTINGS);
+
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("cucumber.mjs"))).toBe(true);
+  });
+
+  it("validateCiReadiness always warns to set E2E_BASE_URL even with a local base URL", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    // Active env HAS a non-empty local baseUrl — CI still reads from the repo var.
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: { active: "demo", environments: { demo: { baseUrl: "https://example.test" } } },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(true);
+    expect(result.warnings.some((w) => w.includes("E2E_BASE_URL"))).toBe(true);
+  });
+
+  it("validateCiReadiness warns about committed node_modules and an empty BASE_URL", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add("/vault/.testrunner/node_modules");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: {
+        active: "demo",
+        environments: { demo: { baseUrl: "" } },
+      },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(true);
+    expect(result.warnings.some((w) => w.includes("node_modules"))).toBe(true);
+    expect(result.warnings.some((w) => w.includes("E2E_BASE_URL"))).toBe(true);
   });
 });
