@@ -17,7 +17,7 @@ export interface RunCommandRequest {
   // argv array spawned WITHOUT a shell (no interpolation/word-splitting): args[0]
   // is the program (e.g. "npm"), the rest are literal arguments (TIS §13.2).
   args: string[];
-  cwd: string; // absolute path, must resolve under .testrunner per RunnerExecutionPolicy
+  cwd: string; // absolute path, must resolve under .testrunner per CommandSafetyPolicy
   env?: Record<string, string>;
   // Optional caller-owned cancellation handle. When set, the runner registers
   // the spawned child under THIS id so `cancel(processId)` targets exactly this
