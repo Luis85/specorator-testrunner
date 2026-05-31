@@ -57,6 +57,9 @@ export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string =>
   // Auth credentials are injected from CI secrets so authenticated suites match
   // local execution (runEnv merges active.auth.env, ADR-0014). Emit every
   // auth.env key configured across environments as `${{ secrets.<KEY> }}`.
+  // These are scoped to the "Run tests" STEP (not the job), mirroring local
+  // execution where only the runner process receives auth — so install/Playwright
+  // lifecycle scripts can't read CI credentials. Step-level env is indented 10.
   const authKeys = [
     ...new Set(
       Object.values(settings.sut.environments).flatMap((e) => Object.keys(e.auth?.env ?? {})),
@@ -64,7 +67,7 @@ export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string =>
   ].sort();
   const authEnvLines =
     authKeys.length > 0
-      ? "\n" + authKeys.map((key) => `      ${key}: \${{ secrets.${key} }}`).join("\n")
+      ? "\n" + authKeys.map((key) => `          ${key}: \${{ secrets.${key} }}`).join("\n")
       : "";
 
   // US-042: every step runs with cwd = the runner folder, so the same commands
@@ -87,8 +90,6 @@ jobs:
     defaults:
       run:
         working-directory: ${runnerPath}
-    env:
-      BASE_URL: \${{ vars.E2E_BASE_URL }}${authEnvLines}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -101,6 +102,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Run tests
+        env:
+          BASE_URL: \${{ vars.E2E_BASE_URL }}${authEnvLines}
         run: ${ciRunCommand}
       - name: Upload reports
         if: always()
