@@ -79,11 +79,20 @@ const AUTOMATED_STATUSES = new Set(["implemented", "passing", "failing"]);
 export const projectDashboardSnapshot = (useCases: UseCase[]): DashboardSnapshot => {
   const active = useCases.filter((useCase) => useCase.status !== "deprecated");
 
+  // A broad run (all/suite/demo) writes the SAME lastTestRun.runId onto every
+  // resolved UC, so the same run would otherwise appear once per UC and crowd
+  // out older runs. De-dupe by runId, keeping the newest occurrence.
+  const seenRunIds = new Set<string>();
   const recentRuns = active
     .map((useCase) => useCase.lastTestRun)
     .filter((run): run is TestRunSummary => run !== undefined)
     // Newest first; ISO-8601 dates sort lexicographically.
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .filter((run) => {
+      if (seenRunIds.has(run.runId)) return false;
+      seenRunIds.add(run.runId);
+      return true;
+    });
 
   return {
     totalUseCases: active.length,

@@ -370,6 +370,39 @@ describe("DefaultTestExecutionService", () => {
     );
   });
 
+  it("excludes deprecated Use Cases' features from Run All (ADR-0012)", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Use Cases/UC-001 Active.md",
+      buildNote(
+        {
+          type: "use-case",
+          id: "UC-001",
+          title: "Active",
+          feature_files: ["Specifications/features/UC-001-happy.feature"],
+        },
+        "# UC-001",
+      ),
+    );
+    fs.files.set(
+      "Use Cases/UC-002 Retired.md",
+      buildNote(
+        {
+          type: "use-case",
+          id: "UC-002",
+          title: "Retired",
+          status: "deprecated",
+          feature_files: ["Specifications/features/UC-002-old.feature"],
+        },
+        "# UC-002",
+      ),
+    );
+    const result = await service.execute({ scope: "all", target: "all" });
+    expect(result.ok && result.value.command).toBe(
+      "npm run test -- ../Specifications/features/UC-001-happy.feature",
+    );
+  });
+
   it("derives failed from a non-zero exit code", async () => {
     const { service, childProcess, events } = build();
     childProcess.exitCodes.set("test:smoke", 1);
