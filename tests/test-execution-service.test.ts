@@ -3,6 +3,7 @@ import { DefaultSettingsService } from "../src/application/services/settings-ser
 import { DefaultSuiteService } from "../src/application/services/suite-service";
 import {
   DefaultTestExecutionService,
+  tokenizeCommand,
   type TestExecutionService,
 } from "../src/application/services/test-execution-service";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
@@ -62,6 +63,35 @@ const seedSuite = (fs: FakeVaultFileSystem, id: string, tagExpression: string): 
     buildSuiteNote({ id, name: id, description: "", tagExpression }),
   );
 };
+
+describe("tokenizeCommand", () => {
+  it("splits a plain command on whitespace", () => {
+    expect(tokenizeCommand("npm run test")).toEqual(["npm", "run", "test"]);
+    expect(tokenizeCommand("  npm   run  test  ")).toEqual(["npm", "run", "test"]);
+  });
+
+  it("keeps a double-quoted argument with spaces as one token", () => {
+    expect(
+      tokenizeCommand('npm run test -- --format "json:reports/cucumber report.json"'),
+    ).toEqual(["npm", "run", "test", "--", "--format", "json:reports/cucumber report.json"]);
+  });
+
+  it("keeps single-quoted arguments literal and honors backslash escapes", () => {
+    expect(tokenizeCommand("npm run test -- --tags '@a and @b'")).toEqual([
+      "npm",
+      "run",
+      "test",
+      "--",
+      "--tags",
+      "@a and @b",
+    ]);
+    expect(tokenizeCommand('node -e "a\\"b"')).toEqual(["node", "-e", 'a"b']);
+  });
+
+  it("returns an empty array for a blank command", () => {
+    expect(tokenizeCommand("   ")).toEqual([]);
+  });
+});
 
 describe("DefaultTestExecutionService", () => {
   it("resolves the demo command and derives passed from exit 0", async () => {
