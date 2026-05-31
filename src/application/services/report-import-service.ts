@@ -248,9 +248,22 @@ export class DefaultReportImportService implements ReportImportService {
     artifacts: EvidenceArtifact[],
   ): void {
     for (const step of steps) {
-      const attachments = [...(step.embeddings ?? []), ...(step.attachments ?? [])];
+      // Defensive: a malformed report may have non-array embeddings/attachments
+      // or null entries — narrow before spreading/dereferencing so import()
+      // returns a Result instead of throwing.
+      const attachments = [
+        ...(Array.isArray(step.embeddings) ? step.embeddings : []),
+        ...(Array.isArray(step.attachments) ? step.attachments : []),
+      ];
       for (const attachment of attachments) {
-        const mime = attachment.mime_type ?? attachment.media?.type ?? "";
+        if (!isRecord(attachment)) continue;
+        const media = attachment.media;
+        const mime =
+          typeof attachment.mime_type === "string"
+            ? attachment.mime_type
+            : isRecord(media) && typeof media.type === "string"
+              ? media.type
+              : "";
         const type = this.artifactType(mime);
         if (!type) continue;
         artifacts.push({
