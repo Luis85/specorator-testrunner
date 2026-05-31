@@ -26,6 +26,12 @@ const REFRESH_ON: DomainEventType[] = [
   // KPI automation status is derived from parsed feature files, so a feature
   // edit (steps/scenarios/@wip) changes the counts — refresh on it too.
   "specification.updated",
+  // The PostRunCoordinator PUSHES a refresh after a run settles, even when no
+  // view was open during the run (P2-6); react to it so an already-open
+  // dashboard repaints with the new run/KPIs. Re-rendering reads the
+  // NON-emitting snapshot() (see render()), so reacting here cannot loop.
+  "dashboard.refreshed",
+  "dashboard.kpi.updated",
 ];
 
 /** The documentation entry points reachable from the dashboard (AC-016). */
@@ -84,6 +90,11 @@ export class DashboardView extends ItemView {
     for (const type of REFRESH_ON) {
       this.subscriptions.push(this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()));
     }
+    // First paint: PUSH a refresh once (emits dashboard.refreshed + kpi.updated
+    // per UC-018 steps 2–3). Subsequent event-driven re-renders read the
+    // non-emitting snapshot() so they never loop. The subscriptions above ignore
+    // this self-published refresh while it is already rendering (coalesced).
+    await this.deps.traceabilityService.refreshDashboard().catch(() => undefined);
     // Route the initial render through the same chain so an event arriving while
     // its async refresh is in flight can't start a concurrent render that
     // finishes first and is then clobbered by this stale initial render.
@@ -107,9 +118,11 @@ export class DashboardView extends ItemView {
     // dashboard can't load (exactly when a user may need it).
     this.renderDocumentationActions(container);
 
-    // refreshDashboard() emits dashboard.refreshed + dashboard.kpi.updated and
-    // returns the snapshot the tiles/rows are projected from (UC-018 steps 2–3).
-    const result = await this.deps.traceabilityService.refreshDashboard();
+    // Read the NON-emitting snapshot (P2-6): the tiles/rows are projected from
+    // it without re-publishing dashboard.* events, so a render driven by a
+    // dashboard.refreshed/kpi.updated event can't re-trigger a refresh (no loop).
+    // The one-time emitting push happens in onOpen and from the coordinator.
+    const result = await this.deps.traceabilityService.snapshot();
     if (!result.ok) {
       container.createEl("p", { text: `Could not load dashboard: ${result.error.message}` });
       return;
