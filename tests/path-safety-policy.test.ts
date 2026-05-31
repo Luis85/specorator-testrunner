@@ -54,4 +54,12 @@ describe("DefaultPathSafetyPolicy", () => {
       expect(policy.validate(path).ok, JSON.stringify(path)).toBe(false);
     }
   });
+
+  it("accepts non-English (Unicode) vault folder names (M2)", () => {
+    // An ASCII-only allowlist would reject these and silently reset the user's
+    // config to defaults; the denylist allows them while still blocking metachars.
+    for (const path of ["Especificações", "テスト/features", "Spécifications", "Müll"]) {
+      expect(policy.validate(path).ok, path).toBe(true);
+    }
+  });
 });

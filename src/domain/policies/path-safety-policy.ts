@@ -11,13 +11,21 @@ export interface PathSafetyPolicy {
 }
 
 /**
- * The only path characters that may reach a generated artifact: alphanumerics,
- * space, `_`, `.`, `/`, `-`. This is an allowlist, so it implicitly rejects
- * control characters and newlines as well as the JS/shell/YAML metacharacters
- * `"` `'` `` ` `` `$` `{` `}` `\`. Mirrors the strict screening in
- * pipeline-generation-service.ts (SEC-1 / P0-1).
+ * Characters that must never reach a generated artifact. A path can be
+ * interpolated into a `cucumber.mjs` feature glob (a JS string literal), so we
+ * reject the JS/shell/YAML metacharacters that could break out of a literal —
+ * `"` `'` `` ` `` `$` `{` `}` `\` — plus control characters and newlines.
+ *
+ * This is a DENYLIST rather than an ASCII allowlist on purpose: Obsidian vault
+ * folders legitimately use non-English names (e.g. `Especificações`, `テスト`),
+ * and an ASCII-only rule would reject them and silently reset the user's config
+ * to defaults (security review M2). The injection protection does not depend on
+ * rejecting Unicode — the primary defence is `JSON.stringify` at the generation
+ * sink (P0-1); this is defence-in-depth.
  */
-const SAFE_PATH_CHARS = /^[A-Za-z0-9 _./-]+$/;
+const UNSAFE_PATH_CHARS = /["'`${}\\]/;
+// eslint-disable-next-line no-control-regex -- deliberately rejecting C0 controls + DEL
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 
 export class DefaultPathSafetyPolicy implements PathSafetyPolicy {
   validate(path: VaultPath): Result<void> {
@@ -43,7 +51,7 @@ export class DefaultPathSafetyPolicy implements PathSafetyPolicy {
     // feature glob (a JS string literal) — so it must not carry control
     // characters, newlines, or metacharacters (`"` `'` `` ` `` `$` `{` `}` `\`)
     // that could break out of a literal and inject code (SEC-1 / P0-1).
-    if (!SAFE_PATH_CHARS.test(path)) {
+    if (CONTROL_CHARS.test(path) || UNSAFE_PATH_CHARS.test(path)) {
       return err(
         appError("PATH_UNSAFE", `Path contains unsafe characters: "${path}".`, {
           details: { path },

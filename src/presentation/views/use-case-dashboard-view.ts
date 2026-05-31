@@ -61,6 +61,7 @@ export class UseCaseDashboardView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.scheduler.dispose();
     for (const unsubscribe of this.subscriptions) unsubscribe();
     this.subscriptions.length = 0;
   }

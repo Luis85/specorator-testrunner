@@ -75,7 +75,7 @@ describe("DefaultSettingsService", () => {
     expect(loaded.logging.path).toBe(DEFAULT_SETTINGS.logging.path);
   });
 
-  it("collectCredentialValues gathers non-empty auth.env values across environments (P0-2)", () => {
+  it("collectCredentialValues gathers credential auth.env values across environments (P0-2)", () => {
     const settings = {
       ...DEFAULT_SETTINGS,
       sut: {
@@ -91,6 +91,22 @@ describe("DefaultSettingsService", () => {
     expect(values).toContain("fixture-value-one");
     expect(values).toContain("fixture-value-two");
     expect(values).not.toContain("");
+  });
+
+  it("collectCredentialValues drops trivially short values so they can't over-redact (M3)", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: {
+        active: "demo",
+        environments: {
+          demo: { baseUrl: "http://x", auth: { env: { FLAG: "ok", N: "1", VAR_B: "fixture-value-two" } } },
+        },
+      },
+    };
+    const values = collectCredentialValues(settings);
+    expect(values).not.toContain("ok");
+    expect(values).not.toContain("1");
+    expect(values).toContain("fixture-value-two");
   });
 
   it("reset restores defaults and emits settings.reset", async () => {

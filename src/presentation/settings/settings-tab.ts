@@ -37,6 +37,9 @@ const PERSIST_DEBOUNCE_MS = 600;
 
 /** Edit paths, validate, reset (US-003, BBV §4 `SettingsTab`). */
 export class TestHubSettingTab extends PluginSettingTab {
+  /** Pending per-field persist debouncers, cancelled on re-render / close. */
+  private readonly pendingFlushes: { cancel(): void }[] = [];
+
   constructor(
     plugin: Plugin,
     private readonly host: SettingsHost,
@@ -44,8 +47,19 @@ export class TestHubSettingTab extends PluginSettingTab {
     super(plugin.app, plugin);
   }
 
+  /** Cancels any debounced saves still queued from a prior render (PRES-L2). */
+  private cancelPendingFlushes(): void {
+    for (const flush of this.pendingFlushes) flush.cancel();
+    this.pendingFlushes.length = 0;
+  }
+
+  hide(): void {
+    this.cancelPendingFlushes();
+  }
+
   display(): void {
     const { containerEl } = this;
+    this.cancelPendingFlushes();
     containerEl.empty();
     const settings = this.host.getSettings();
 
@@ -66,6 +80,7 @@ export class TestHubSettingTab extends PluginSettingTab {
             PERSIST_DEBOUNCE_MS,
             true,
           );
+          this.pendingFlushes.push(flush);
           text.onChange((value) => flush(value));
           // Also persist immediately on blur so a quick edit + tab-away isn't
           // lost to the still-pending debounce.

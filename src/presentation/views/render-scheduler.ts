@@ -15,6 +15,7 @@
 export class RenderScheduler {
   private chain: Promise<void> = Promise.resolve();
   private pending = false;
+  private disposed = false;
 
   constructor(private readonly render: () => Promise<void>) {}
 
@@ -25,14 +26,22 @@ export class RenderScheduler {
    * queued render already picks up the latest state.
    */
   schedule(): Promise<void> {
-    if (this.pending) return this.chain;
+    if (this.disposed || this.pending) return this.chain;
     this.pending = true;
     this.chain = this.chain
       .catch(() => undefined)
       .then(() => {
         this.pending = false;
+        // A render already in flight when dispose() lands still completes, but
+        // we never START a queued one after the view closed (presentation M1).
+        if (this.disposed) return;
         return this.render();
       });
     return this.chain;
+  }
+
+  /** Stops scheduling further renders once the owning view closes. */
+  dispose(): void {
+    this.disposed = true;
   }
 }

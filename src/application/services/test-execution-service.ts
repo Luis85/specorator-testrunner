@@ -269,6 +269,12 @@ export class DefaultTestExecutionService implements TestExecutionService {
       const result = await this.childProcess.runStreaming(
         { args: argv, cwd: cwd.value, env: this.runEnv(settings), processId: run.id },
         (output) => {
+          // V1 scope: the live console streams raw runner output WITHOUT
+          // credential redaction. It is ephemeral, local-only UI (not vault-
+          // persisted), so the ADR-0019 sync-leak risk doesn't apply here;
+          // persisted logs ARE redacted (ConsoleLogger value-scrubbing). Routing
+          // streamed lines through redaction is a documented post-V1 follow-up
+          // (security review M1).
           void this.publish("testrun.output.received", run.id, {
             runId: run.id,
             stream: output.stream,

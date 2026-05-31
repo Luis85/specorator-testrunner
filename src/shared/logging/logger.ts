@@ -24,6 +24,28 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 
 const SENSITIVE_KEY = /pass|secret|token|key|auth|credential/i;
 const REDACTED = "***";
+/**
+ * Minimum length for a secret to be scrubbed as a SUBSTRING of a larger value.
+ * Short values (e.g. a credential that happens to be `true`/`node`) are matched
+ * only as whole values — substring-scrubbing them would mangle unrelated
+ * diagnostics. Real credentials/tokens are high-entropy and well past this
+ * (security review M1/M3).
+ */
+const MIN_SUBSTRING_SECRET_LEN = 8;
+
+/** Scrubs whole-value and (for long, high-entropy values) embedded secrets. */
+const redactValue = (value: string, secrets: ReadonlySet<string>): string => {
+  if (secrets.has(value)) return REDACTED;
+  let out = value;
+  for (const secret of secrets) {
+    // Substring-scrub only long secrets so a credential leaked inside a larger
+    // string (e.g. a runner `stderr` blob logged on install failure) is caught.
+    if (secret.length >= MIN_SUBSTRING_SECRET_LEN && out.includes(secret)) {
+      out = out.split(secret).join(REDACTED);
+    }
+  }
+  return out;
+};
 
 /** Replaces values whose key looks sensitive, or that match a known secret. */
 export const redactFields = (
@@ -35,8 +57,8 @@ export const redactFields = (
   for (const [key, value] of Object.entries(fields)) {
     if (SENSITIVE_KEY.test(key)) {
       out[key] = REDACTED;
-    } else if (typeof value === "string" && secrets.has(value)) {
-      out[key] = REDACTED;
+    } else if (typeof value === "string") {
+      out[key] = redactValue(value, secrets);
     } else {
       out[key] = value;
     }

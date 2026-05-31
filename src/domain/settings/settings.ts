@@ -80,10 +80,12 @@ export interface TestHubSettings {
  * non-sensitive key (e.g. streamed runner stderr) is still scrubbed (P0-2 /
  * T3). Pure: trivially testable, no I/O.
  */
+const MIN_CREDENTIAL_LEN = 4;
+
 export const collectCredentialValues = (settings: TestHubSettings): string[] =>
   Object.values(settings.sut.environments)
     .flatMap((env) => Object.values(env.auth?.env ?? {}))
-    .filter((value) => value.length > 0);
+    .filter((value) => value.length >= MIN_CREDENTIAL_LEN);
 
 export const DEFAULT_SETTINGS: TestHubSettings = {
   paths: {
