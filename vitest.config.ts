@@ -24,7 +24,8 @@ export default defineConfig({
         // such as RunnerTemplateWriter stay covered.
         "src/main.ts",
         "src/infrastructure/obsidian/**",
-        "src/infrastructure/runner/node-child-process-runner.ts",
+        // node-child-process-runner.ts is now covered by an integration-style
+        // adapter test (tests/node-child-process-runner.test.ts, P4-1).
         "src/infrastructure/filesystem/node-absolute-file-system.ts",
         "src/presentation/**",
       ],
