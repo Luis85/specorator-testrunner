@@ -355,7 +355,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   }
 
   private async executeRun(request: ExecuteTestRequest): Promise<void> {
-    await this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
+    // Reserve the single-active slot (execute() does so synchronously) BEFORE
+    // yielding. Opening the console is fire-and-forget so a second Run command
+    // can't slip in during an `await` and win the slot while runTest tracked the
+    // first command's promise (the run that actually starts is the one tracked).
+    void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
     const result = await this.testExecutionService.execute(request);
     if (!result.ok) {
       const active = result.error.details?.activeRunId;
