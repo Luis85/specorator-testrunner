@@ -59,11 +59,25 @@ export class CreateSuiteModal extends Modal {
 
   private async submit(): Promise<void> {
     if (this.submitting) return;
+
+    // Client-side guard so an empty/whitespace name doesn't round-trip to the
+    // service (which stays the authoritative validator). Mirrors SlugPromptModal.
+    const name = this.suiteName.trim();
+    const tagExpression = this.tagExpression.trim();
+    if (name === "") {
+      new Notice("Please enter a name for the Test Suite.");
+      return;
+    }
+    if (tagExpression === "") {
+      new Notice("Please enter a tag expression for the Test Suite.");
+      return;
+    }
+
     this.submitting = true;
     const result = await this.deps.suiteService.create({
-      name: this.suiteName,
-      description: this.description,
-      tagExpression: this.tagExpression,
+      name,
+      description: this.description.trim(),
+      tagExpression,
     });
     this.submitting = false;
 

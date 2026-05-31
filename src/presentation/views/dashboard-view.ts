@@ -4,6 +4,7 @@ import type { DomainEventType } from "../../domain/events/domain-event";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import { projectDashboard } from "./dashboard-rows";
+import { RenderScheduler } from "./render-scheduler";
 
 export const DASHBOARD_VIEW_TYPE = "e2e-test-hub-dashboard";
 
@@ -52,10 +53,9 @@ export class DashboardView extends ItemView {
   private readonly subscriptions: Unsubscribe[] = [];
   // Renders are async (they await refreshDashboard). Firing them concurrently
   // lets a slower render with STALE data empty + rebuild the container last,
-  // clobbering fresher output. Chain them so they run one at a time, and
-  // coalesce a burst of events into a single trailing render.
-  private renderChain: Promise<void> = Promise.resolve();
-  private renderPending = false;
+  // clobbering fresher output. The scheduler chains them so they run one at a
+  // time, and coalesces a burst of events into a single trailing render.
+  private readonly scheduler = new RenderScheduler(() => this.render());
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -83,31 +83,13 @@ export class DashboardView extends ItemView {
     );
     for (const type of REFRESH_ON) {
       this.subscriptions.push(
-        this.deps.eventBus.subscribe(type, () => this.scheduleRender()),
+        this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()),
       );
     }
     // Route the initial render through the same chain so an event arriving while
     // its async refresh is in flight can't start a concurrent render that
     // finishes first and is then clobbered by this stale initial render.
-    await this.scheduleRender();
-  }
-
-  /**
-   * Serializes renders so concurrent events can't interleave their async
-   * refresh + rebuild. Returns the chain so the (handler-awaiting) event bus
-   * preserves ordering; a burst collapses into one trailing render since the
-   * queued render already picks up the latest state.
-   */
-  private scheduleRender(): Promise<void> {
-    if (this.renderPending) return this.renderChain;
-    this.renderPending = true;
-    this.renderChain = this.renderChain
-      .catch(() => undefined)
-      .then(() => {
-        this.renderPending = false;
-        return this.render();
-      });
-    return this.renderChain;
+    await this.scheduler.schedule();
   }
 
   async onClose(): Promise<void> {

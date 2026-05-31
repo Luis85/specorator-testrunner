@@ -47,10 +47,19 @@ export class CreateUseCaseModal extends Modal {
 
   private async submit(): Promise<void> {
     if (this.submitting) return;
+
+    // Client-side guard so an empty/whitespace title doesn't round-trip to the
+    // service (which stays the authoritative validator). Mirrors SlugPromptModal.
+    const title = this.useCaseTitle.trim();
+    if (title === "") {
+      new Notice("Please enter a title for the Use Case.");
+      return;
+    }
+
     this.submitting = true;
     const result = await this.deps.useCaseService.create({
-      title: this.useCaseTitle,
-      description: this.description,
+      title,
+      description: this.description.trim(),
     });
     this.submitting = false;
 
