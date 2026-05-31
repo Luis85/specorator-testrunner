@@ -26,6 +26,14 @@ describe("buildGitHubActionsWorkflow", () => {
     expect(yaml).toContain("E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}");
     // Secret VALUES are never baked in.
     expect(yaml).not.toContain("u\n");
+    // Secrets are scoped to the "Run tests" STEP, not the job — install/Playwright
+    // steps must not receive credentials (their lifecycle scripts could read them).
+    const installToRun = yaml.slice(
+      yaml.indexOf("Install dependencies"),
+      yaml.indexOf("Run tests"),
+    );
+    expect(installToRun).not.toContain("secrets.");
+    expect(installToRun).not.toContain("BASE_URL");
   });
 
   it("emits no auth env lines when no environment configures auth", () => {

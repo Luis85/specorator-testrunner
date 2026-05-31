@@ -25,15 +25,21 @@ const NPM_CI_SUBCOMMANDS = new Set([
 /**
  * True when a (already charset-screened) command is an npm install/ci/run
  * invocation. Used to permit configured CI commands — including custom scripts
- * and install flags — while still rejecting arbitrary programs. A `run` form
- * additionally requires a script-name token so `npm run` alone is rejected.
+ * and install flags — while still rejecting arbitrary programs.
+ *
+ * - `npm run <script> [...]` requires a script-name token.
+ * - `npm install`/`npm ci` (and aliases) accept only FLAG arguments (tokens
+ *   starting with `-`). A positional `<package-spec>` is rejected so a tampered
+ *   `npm install left-pad` can't install arbitrary packages (and run their
+ *   lifecycle scripts) in CI instead of the runner's locked dependencies.
  */
 const isNpmCiShape = (command: string): boolean => {
   const tokens = command.split(/\s+/).filter(Boolean);
   if (tokens[0] !== "npm" || tokens[1] === undefined) return false;
   if (!NPM_CI_SUBCOMMANDS.has(tokens[1])) return false;
-  if (tokens[1] === "run" && tokens[2] === undefined) return false;
-  return true;
+  if (tokens[1] === "run") return tokens[2] !== undefined;
+  // install / ci forms: every extra token must be a flag, never a package spec.
+  return tokens.slice(2).every((token) => token.startsWith("-"));
 };
 
 /** CI pipeline generation contract (TIS §8.13, US-040, UC-019). */
