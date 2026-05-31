@@ -30,9 +30,11 @@ export interface CommandSafetyPolicy {
 const ALLOWED_PROGRAMS = new Set(["npm", "npx", "node"]);
 // npm subcommands the runner legitimately spawns.
 const ALLOWED_NPM_SUBCOMMANDS = new Set(["--version", "install", "ci", "run"]);
-// npm script names (`npm run <script>`) — letters, digits, and the `:_.-` that
-// appear in scripts like `test:smoke` / `test:ci`. No whitespace or shell chars.
-const SCRIPT_NAME = /^[A-Za-z0-9][A-Za-z0-9:_.-]*$/;
+// The only npm scripts the runner ever invokes (the generated package.json,
+// runner-templates.ts). Restricting `npm run` to these — rather than any
+// regex-valid name — stops synced/tampered settings from running an arbitrary
+// package script (e.g. `npm run prepare`) under the V1 allowlist (ADR-0010).
+const ALLOWED_NPM_SCRIPTS = new Set(["test", "test:smoke", "test:ci"]);
 // NUL / newline / carriage return in an argv entry would be a smuggling attempt.
 const CONTROL_CHARS = /[\0\n\r]/;
 
@@ -73,11 +75,11 @@ export class DefaultCommandSafetyPolicy implements CommandSafetyPolicy {
           return disallow(`npm subcommand is not allowed: "${display}".`);
         }
         if (sub === "run") {
-          // `npm run <script> [-- …]` — the script name must be a safe token;
+          // `npm run <script> [-- …]` — the script must be one the runner owns;
           // anything after `--` is forwarded literally to the runner (shell:false).
           const script = rest[1];
-          if (script === undefined || !SCRIPT_NAME.test(script)) {
-            return disallow(`npm run needs a valid script name: "${display}".`);
+          if (script === undefined || !ALLOWED_NPM_SCRIPTS.has(script)) {
+            return disallow(`npm run script is not allowed: "${display}".`);
           }
         }
         return ok(undefined);
