@@ -52,6 +52,9 @@ describe("DefaultCommandSafetyPolicy", () => {
       ["npm", "exec", "--", "rm"],
       ["npm", "run"],
       ["npm", "run", "test; rm -rf /"],
+      // A valid-but-unknown package script must not run under the V1 allowlist.
+      ["npm", "run", "prepare"],
+      ["npm", "run", "build"],
       ["npm"],
     ]) {
       const result = policy.assertSafe(args);

@@ -396,6 +396,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       id: "import-report-last-run",
       name: "Import Report for Last Run",
       callback: () => {
+        // A run in progress has already deleted and is reusing the fixed
+        // reports path, so re-importing now would attach the active run's
+        // missing/partial report to the PREVIOUS run id. Block until it settles.
+        if (this.testExecutionService.activeRunId() !== null) {
+          new Notice("A test run is in progress; import its report once it finishes.");
+          return;
+        }
         // Only report-producing runs have a report to import. A cancelled/
         // errored last run would otherwise attach a STALE report (the fixed
         // reports path carries no run id) to the wrong run id.
@@ -729,13 +736,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private async checkCiReadiness(): Promise<void> {
     new Notice("Checking CI readiness…");
     const result = await this.validationService.validateCiReadiness(this.hubSettings);
+    // Spell out the warnings (e.g. which repository secrets to create), not just
+    // a count — this Notice is the only UI surface for the readiness result.
+    const warnings =
+      result.warnings.length > 0 ? `\nWarnings: ${result.warnings.join("; ")}` : "";
     if (result.ready) {
-      const suffix =
-        result.warnings.length > 0 ? ` (${result.warnings.length} warning(s))` : "";
-      new Notice(`CI is ready${suffix}.`);
+      new Notice(`CI is ready.${warnings}`, warnings ? 10000 : undefined);
     } else {
       new Notice(
-        `CI not ready — missing: ${result.missingItems.join("; ")}`,
+        `CI not ready — missing: ${result.missingItems.join("; ")}${warnings}`,
         10000,
       );
     }
