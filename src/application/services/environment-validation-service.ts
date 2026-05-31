@@ -162,6 +162,16 @@ export class DefaultEnvironmentValidationService
     const missingItems: string[] = [];
     const warnings: string[] = [];
 
+    // V1 only generates/validates GitHub Actions (PipelineGenerationService
+    // refuses other providers). For azure-devops / none, the GitHub workflow
+    // checks below are meaningless, so report not-ready rather than passing on a
+    // stale `.github/workflows/e2e.yml` (UC-019/020).
+    if (settings.ci.provider !== "github-actions") {
+      missingItems.push(
+        `CI provider "${settings.ci.provider}" is not supported in V1 (only "github-actions").`,
+      );
+    }
+
     if (!base.ok) {
       missingItems.push("Vault base path could not be resolved.");
     } else {

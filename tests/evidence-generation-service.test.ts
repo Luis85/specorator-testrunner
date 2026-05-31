@@ -126,6 +126,24 @@ describe("DefaultEvidenceGenerationService", () => {
     expect(note).toContain("Status: **CANCELLED**");
   });
 
+  it("records a failed run as failed even when the report shows no failures", async () => {
+    const { service, fs } = build();
+    seedUseCase(fs);
+
+    // The run failed (e.g. a posttest step) after an all-passing report.
+    const result = await service.generate({
+      run: run({ status: "failed" }),
+      report: report({
+        result: { passed: 2, failed: 0, skipped: 0, total: 2 },
+        scenarioResults: [{ feature: "Checkout", scenario: "Pays", status: "passed" }],
+      }),
+    });
+    expect(result.ok).toBe(true);
+
+    const fm = parseFrontmatter(fs.files.get(EVIDENCE_PATH) ?? "");
+    expect(fm.status).toBe("failed");
+  });
+
   it("links evidence into the owning Use Case (evidence[] + lastTestRun)", async () => {
     const { service, fs } = build();
     seedUseCase(fs);

@@ -58,6 +58,19 @@ describe("buildGitHubActionsWorkflow", () => {
     expect(yaml).toContain("run: npm install --no-audit");
   });
 
+  it("enables the npm cache only for the lockfile-based default npm ci", () => {
+    const defaultYaml = buildGitHubActionsWorkflow(DEFAULT_SETTINGS);
+    expect(defaultYaml).toContain("cache: npm");
+    expect(defaultYaml).toContain("cache-dependency-path:");
+
+    const customYaml = buildGitHubActionsWorkflow({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, ciInstallCommand: "npm install" },
+    });
+    expect(customYaml).not.toContain("cache: npm");
+    expect(customYaml).not.toContain("cache-dependency-path:");
+  });
+
   it("uses the configured Node version and checks out the repo", () => {
     const yaml = buildGitHubActionsWorkflow({
       ...DEFAULT_SETTINGS,
