@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import type {
   ChildProcessRunner,
   RunCommandRequest,
@@ -44,8 +44,26 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
   async cancel(_processId: string): Promise<Result<void>> {
     // V1 cancels the active install/run; finer-grained targeting arrives with
     // the test-execution epic.
-    for (const child of this.active.values()) child.kill();
+    for (const child of this.active.values()) this.killTree(child);
     return ok(undefined);
+  }
+
+  /**
+   * Terminates a child and the whole process tree it launched. On Windows the
+   * tracked child is the `cmd.exe` shim wrapper (`.cmd` shims need a shell), and
+   * `child.kill()` only stops that wrapper — leaving the npm/node/Cucumber tree
+   * running and still writing the shared reports directory. `taskkill /T` kills
+   * the wrapper and its descendants; `/F` forces it. POSIX has no shim wrapper,
+   * so a direct kill suffices.
+   */
+  private killTree(child: ChildProcess): void {
+    if (process.platform === "win32" && child.pid !== undefined) {
+      const killed = spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
+      // Fall back to a direct kill if taskkill is unavailable for any reason.
+      if (killed.error) child.kill();
+      return;
+    }
+    child.kill();
   }
 
   private spawn(
