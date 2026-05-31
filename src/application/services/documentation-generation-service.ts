@@ -55,10 +55,11 @@ export class DefaultDocumentationGenerationService
   }
 
   // FEAT-025 / US-046 (UC-021/022/023): open a generated doc in the workspace
-  // and record the access. Defaults to the `index` hub — the entry point the
-  // "Open Documentation" command opens, which links out to every other doc.
+  // and record the access. Defaults to the Getting Started guide — a cataloged
+  // documentType (the index hub isn't in the documentation.opened enum) that is
+  // the natural entry point and links out to every other doc.
   async open(
-    documentType: OpenableDocumentType = "index",
+    documentType: OpenableDocumentType = "getting-started",
   ): Promise<Result<OpenedDocumentation>> {
     if (!this.workspace) {
       return err(
