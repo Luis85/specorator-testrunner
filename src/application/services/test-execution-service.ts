@@ -13,7 +13,7 @@ import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
-import { relativeVaultPath } from "../../shared/utils/vault-path";
+import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
 
 /** Test execution contract (TIS §8.10). */
 export interface TestExecutionService {
@@ -39,6 +39,13 @@ interface ActiveRun {
   run: TestRun;
   /** True once a terminal event (completed/failed/cancelled) has been published. */
   terminated: boolean;
+  /**
+   * True once the runner process has actually closed. cancel() refuses after
+   * this point: the run is already finishing (only best-effort snapshot I/O
+   * remains before the terminal event), so a late cancel must not relabel a
+   * completed/failed run as cancelled.
+   */
+  processClosed: boolean;
   /** Resolves when `execute()` settles (runner process closed) — for unload. */
   completion: Promise<void>;
   settle: () => void;
@@ -199,7 +206,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
     const completion = new Promise<void>((resolve) => {
       settle = resolve;
     });
-    const activeRun: ActiveRun = { run, terminated: false, completion, settle };
+    const activeRun: ActiveRun = { run, terminated: false, processClosed: false, completion, settle };
     this.active = activeRun;
 
     try {
@@ -265,7 +272,18 @@ export class DefaultTestExecutionService implements TestExecutionService {
       );
 
       // A cancel that landed mid-flight already published the terminal event.
-      if (activeRun.terminated) return ok(run);
+      // The cancelled process may still have flushed a partial Cucumber report,
+      // so snapshot it to reports/<runId>.json before returning — otherwise the
+      // (now slot-free) cancelled-run import would race a new run's cleanup of
+      // the fixed report and lose/mis-attribute that evidence.
+      if (activeRun.terminated) {
+        await this.snapshotReport(run, cwd.value);
+        return ok(run);
+      }
+      // The process has closed: from here only best-effort snapshot I/O remains
+      // before the terminal event. Mark it so a cancel() racing that I/O window
+      // can't relabel this finished run as cancelled.
+      activeRun.processClosed = true;
 
       if (!result.ok) {
         // Spawn fault (crash / missing dependency): errored, never completed.
@@ -281,6 +299,8 @@ export class DefaultTestExecutionService implements TestExecutionService {
       const { exitCode } = result.value;
       run.status = exitCode === 0 ? "passed" : "failed";
       this.finish(run, startedAt, result.value.durationMs);
+
+      await this.snapshotReport(run, cwd.value);
 
       if (run.scope === "suite") {
         // UC-013 supporting event, before the terminal event.
@@ -317,6 +337,17 @@ export class DefaultTestExecutionService implements TestExecutionService {
         }),
       );
     }
+    // The process has already closed (terminal snapshot I/O may still be in
+    // flight): the run is effectively complete, so refuse to cancel it rather
+    // than relabel a completed/failed run as cancelled and suppress its real
+    // terminal event (EN-2).
+    if (activeRun.processClosed || activeRun.terminated) {
+      return err(
+        appError("RUN_CANCELLED", `Test run "${runId}" has already finished; nothing to cancel.`, {
+          details: { requestedRunId: runId },
+        }),
+      );
+    }
 
     // Single active process per ADR-0018: the runId is the process handle.
     const cancelled = await this.childProcess.cancel(runId);
@@ -350,6 +381,22 @@ export class DefaultTestExecutionService implements TestExecutionService {
     this.lastIdBase = base;
     this.idSeq = 1;
     return base;
+  }
+
+  /**
+   * Snapshots the fixed Cucumber report to a run-specific path
+   * (reports/<runId>.json) BEFORE the active slot frees, so a later run's
+   * pre-run cleanup of reports/cucumber-report.json can't delete it while the
+   * (passed/failed/cancelled) run's evidence import reads it. Best-effort: a
+   * run with no report (e.g. spawn fault) simply leaves reportPaths.json unset.
+   */
+  private async snapshotReport(run: TestRun, cwd: string): Promise<void> {
+    const liveReport = await this.absoluteFs.readAbsolute(`${cwd}/reports/cucumber-report.json`);
+    if (!liveReport.ok) return;
+    const snapshot = await this.absoluteFs.writeAbsolute(`${cwd}/reports/${run.id}.json`, liveReport.value);
+    if (snapshot.ok) {
+      run.reportPaths.json = joinVaultPath(run.workingDirectory, "reports", `${run.id}.json`);
+    }
   }
 
   private runEnv(settings: TestHubSettings): Record<string, string> {

@@ -1,6 +1,7 @@
 import { buildUseCaseNote, useCaseFileName } from "../content/use-case-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
+import type { ExecutionScope, TestRunStatus } from "../../domain/entities/test-run";
 import type {
   AutomationStatus,
   UseCase,
@@ -135,17 +136,29 @@ export class DefaultUseCaseService implements UseCaseService {
           feature_file: undefined,
           suites: useCase.suites.length > 0 ? useCase.suites : undefined,
           evidence: useCase.evidence.length > 0 ? useCase.evidence : undefined,
+          // lastTestRun (TestRunSummary) flattened — the frontmatter serialiser
+          // only handles scalars/arrays, not nested objects (US-031).
+          last_run_id: useCase.lastTestRun?.runId,
+          last_run_status: useCase.lastTestRun?.status,
+          last_run_date: useCase.lastTestRun?.date,
+          last_run_evidence: useCase.lastTestRun?.evidencePath,
+          last_run_scope: useCase.lastTestRun?.scope,
         })
       : buildUseCaseNote(useCase);
 
     const written = await this.fs.writeFile(useCase.path, content);
     if (!written.ok) return err(written.error);
 
+    const changedFields = [
+      ...(useCase.featureFiles.length > 0 ? ["featureFiles"] : []),
+      ...(useCase.evidence.length > 0 ? ["evidence"] : []),
+      ...(useCase.lastTestRun ? ["lastTestRun"] : []),
+    ];
     await this.eventBus.publish(
       createEvent("usecase.updated", {
         useCaseId: useCase.id,
         path: useCase.path,
-        changedFields: ["featureFiles"],
+        changedFields,
       }),
     );
     this.logger.info("Use Case updated", { id: useCase.id, path: useCase.path });
@@ -171,6 +184,22 @@ export class DefaultUseCaseService implements UseCaseService {
       featureFiles: [...toArray(fm.feature_files), ...toArray(fm.feature_file)],
       suites: toArray(fm.suites),
       evidence: toArray(fm.evidence),
+      lastTestRun:
+        typeof fm.last_run_id === "string"
+          ? {
+              runId: fm.last_run_id,
+              status: (typeof fm.last_run_status === "string"
+                ? fm.last_run_status
+                : "passed") as TestRunStatus,
+              date: typeof fm.last_run_date === "string" ? fm.last_run_date : "",
+              evidencePath:
+                typeof fm.last_run_evidence === "string" ? fm.last_run_evidence : undefined,
+              scope:
+                typeof fm.last_run_scope === "string"
+                  ? (fm.last_run_scope as ExecutionScope)
+                  : undefined,
+            }
+          : undefined,
       path,
     };
   }

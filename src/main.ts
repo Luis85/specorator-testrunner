@@ -14,6 +14,14 @@ import {
   DefaultMaintenanceService,
   type MaintenanceService,
 } from "./application/services/maintenance-service";
+import {
+  DefaultEvidenceGenerationService,
+  type EvidenceGenerationService,
+} from "./application/services/evidence-generation-service";
+import {
+  DefaultReportImportService,
+  type ReportImportService,
+} from "./application/services/report-import-service";
 import { DefaultRunnerInstallationService } from "./application/services/runner-installation-service";
 import {
   DefaultSettingsService,
@@ -38,6 +46,7 @@ import {
 } from "./application/services/use-case-service";
 import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
+import type { TestRun } from "./domain/entities/test-run";
 import { DEFAULT_SETTINGS, type TestHubSettings } from "./domain/settings/settings";
 import { NodeAbsoluteFileSystem } from "./infrastructure/filesystem/node-absolute-file-system";
 import { ObsidianDataStore } from "./infrastructure/obsidian/obsidian-data-store";
@@ -83,8 +92,17 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private specificationService!: SpecificationService;
   private suiteService!: SuiteService;
   private testExecutionService!: TestExecutionService;
+  private reportImportService!: ReportImportService;
+  private evidenceGenerationService!: EvidenceGenerationService;
   private vaultAdapter!: ObsidianVaultAdapter;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
+  /** Last run started this session, so report import can re-run on demand. */
+  private lastRun: TestRun | null = null;
+  // Post-run import+evidence reads then writes Use Case frontmatter. The active
+  // run slot is already free by the time this runs, so back-to-back runs could
+  // interleave and clobber each other's evidence/last_run fields — serialize
+  // them through a single chain.
+  private evidenceChain: Promise<void> = Promise.resolve();
 
   async onload(): Promise<void> {
     const eventBus = new InMemoryEventBus((error) =>
@@ -177,6 +195,25 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+
+    // EPIC-008 Reporting & Evidence (UC-016): import the runner's JSON report
+    // and generate linked Markdown evidence once a run finishes.
+    this.reportImportService = new DefaultReportImportService(
+      this.hubSettingsService,
+      absoluteFs,
+      eventBus,
+      this.logger,
+    );
+    this.evidenceGenerationService = new DefaultEvidenceGenerationService(
+      this.hubSettingsService,
+      vault,
+      this.useCaseService,
+      eventBus,
+      this.logger,
+    );
+    // After a run reaches a terminal completed/failed state, import + generate
+    // evidence best-effort. Subscribers must never throw into the bus (EN-1), so
+    // every fault is caught, logged, and surfaced as a Notice.
 
     this.registerView(
       USE_CASE_VIEW_TYPE,
@@ -299,6 +336,37 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Open Test Console",
       callback: () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
     });
+
+    // EPIC-008 (US-032 / UC-016): re-run report import + evidence for the last run.
+    this.addCommand({
+      id: "import-report-last-run",
+      name: "Import Report for Last Run",
+      callback: () => {
+        // A run in progress has already deleted and is reusing the fixed
+        // reports path, so re-importing now would attach the active run's
+        // missing/partial report to the PREVIOUS run id. Block until it settles.
+        if (this.testExecutionService.activeRunId() !== null) {
+          new Notice("A test run is in progress; import its report once it finishes.");
+          return;
+        }
+        // Import for runs that can produce a report: passed/failed, and
+        // cancelled (which may have flushed a valid partial report — the
+        // pre-run cleanup means any report on disk is this run's). The importer
+        // returns a safe logged failure when no report exists. An errored spawn
+        // fault never produced one.
+        if (!this.lastRun) {
+          new Notice("No test run to import a report for yet.");
+        } else if (
+          this.lastRun.status === "passed" ||
+          this.lastRun.status === "failed" ||
+          this.lastRun.status === "cancelled"
+        ) {
+          void this.importAndGenerateEvidence(this.lastRun, true);
+        } else {
+          new Notice(`The last run (${this.lastRun.status}) produced no report to import.`);
+        }
+      },
+    });
     this.addRibbonIcon("terminal", "Open Test Console", () =>
       void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
     );
@@ -352,6 +420,72 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           : `Could not start run: ${result.error.message}`,
         10000,
       );
+      return;
+    }
+    this.lastRun = result.value;
+    // Import the report + generate evidence for THIS finished run (UC-016).
+    // Driven from the returned run — not event/instance state — so the report
+    // is attributed to the correct run. A cancelled run may have flushed a valid
+    // partial report (the pre-run cleanup means it can only be THIS run's), so
+    // import it too; a spawn-error `errored` run never produced one. Missing/
+    // invalid reports return a logged Result, so this is always safe.
+    if (
+      result.value.status === "passed" ||
+      result.value.status === "failed" ||
+      result.value.status === "cancelled"
+    ) {
+      await this.importAndGenerateEvidence(result.value);
+    }
+  }
+
+  /**
+   * Imports a finished run's Cucumber report and generates linked evidence
+   * (UC-016). Never rejects — every fault is logged and (when `notify`) shown.
+   */
+  private importAndGenerateEvidence(run: TestRun, notify = false): Promise<void> {
+    // Queue behind any in-flight evidence task so two runs' Use Case frontmatter
+    // updates can't interleave (read-modify-write race). Callers await the
+    // chained task, so ordering and completion are preserved.
+    const task = this.evidenceChain
+      .catch(() => undefined)
+      .then(() => this.runImportAndGenerateEvidence(run, notify));
+    this.evidenceChain = task;
+    return task;
+  }
+
+  private async runImportAndGenerateEvidence(run: TestRun, notify = false): Promise<void> {
+    try {
+      const imported = await this.reportImportService.import(run);
+      if (!imported.ok) {
+        this.logger.warn("Report import failed", {
+          runId: run.id,
+          reason: imported.error.message,
+        });
+        if (notify) new Notice(`Report import failed: ${imported.error.message}`, 10000);
+        return;
+      }
+      // Honor the opt-out: skip evidence-note generation when disabled.
+      if (!this.hubSettings.automation.generateEvidenceMarkdown) {
+        if (notify) new Notice("Evidence Markdown generation is disabled in settings.");
+        return;
+      }
+      const evidence = await this.evidenceGenerationService.generate({
+        run,
+        report: imported.value,
+      });
+      if (!evidence.ok) {
+        this.logger.warn("Evidence generation failed", {
+          runId: run.id,
+          reason: evidence.error.message,
+        });
+        if (notify) new Notice(`Evidence generation failed: ${evidence.error.message}`, 10000);
+        return;
+      }
+      if (notify) new Notice(`Evidence written to ${evidence.value.path}`);
+    } catch (error) {
+      // The subscriber must not throw into the bus (EN-1).
+      this.logger.error("Report import / evidence generation threw", error as Error);
+      if (notify) new Notice("Report import / evidence generation failed unexpectedly.", 10000);
     }
   }
 

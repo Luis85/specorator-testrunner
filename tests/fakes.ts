@@ -110,14 +110,14 @@ export class FakeAbsoluteFileSystem implements AbsoluteFileSystem {
     return ok(this.basePath);
   }
 
-  async existsAbsolute(path: string): Promise<boolean> {
-    return this.existing.has(path) || this.written.has(path);
-  }
-
   /** Seeds file contents so {@link readAbsolute} can serve them (e.g. a report). */
   seed(path: string, content: string): void {
     this.written.set(path, content);
     this.existing.add(path);
+  }
+
+  async existsAbsolute(path: string): Promise<boolean> {
+    return this.existing.has(path) || this.written.has(path);
   }
 
   async readAbsolute(path: string): Promise<Result<string>> {
