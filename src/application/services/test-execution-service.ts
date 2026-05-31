@@ -39,6 +39,13 @@ interface ActiveRun {
   run: TestRun;
   /** True once a terminal event (completed/failed/cancelled) has been published. */
   terminated: boolean;
+  /**
+   * True once the runner process has actually closed. cancel() refuses after
+   * this point: the run is already finishing (only best-effort snapshot I/O
+   * remains before the terminal event), so a late cancel must not relabel a
+   * completed/failed run as cancelled.
+   */
+  processClosed: boolean;
   /** Resolves when `execute()` settles (runner process closed) — for unload. */
   completion: Promise<void>;
   settle: () => void;
@@ -199,7 +206,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
     const completion = new Promise<void>((resolve) => {
       settle = resolve;
     });
-    const activeRun: ActiveRun = { run, terminated: false, completion, settle };
+    const activeRun: ActiveRun = { run, terminated: false, processClosed: false, completion, settle };
     this.active = activeRun;
 
     try {
@@ -266,6 +273,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
 
       // A cancel that landed mid-flight already published the terminal event.
       if (activeRun.terminated) return ok(run);
+      // The process has closed: from here only best-effort snapshot I/O remains
+      // before the terminal event. Mark it so a cancel() racing that I/O window
+      // can't relabel this finished run as cancelled.
+      activeRun.processClosed = true;
 
       if (!result.ok) {
         // Spawn fault (crash / missing dependency): errored, never completed.
@@ -328,6 +339,17 @@ export class DefaultTestExecutionService implements TestExecutionService {
       return err(
         appError("RUN_CANCELLED", `No active test run with id "${runId}" to cancel.`, {
           details: { requestedRunId: runId, activeRunId: activeRun?.run.id },
+        }),
+      );
+    }
+    // The process has already closed (terminal snapshot I/O may still be in
+    // flight): the run is effectively complete, so refuse to cancel it rather
+    // than relabel a completed/failed run as cancelled and suppress its real
+    // terminal event (EN-2).
+    if (activeRun.processClosed || activeRun.terminated) {
+      return err(
+        appError("RUN_CANCELLED", `Test run "${runId}" has already finished; nothing to cancel.`, {
+          details: { requestedRunId: runId },
         }),
       );
     }
@@ -407,8 +429,32 @@ export class DefaultTestExecutionService implements TestExecutionService {
         }
         return ok(smoke);
       }
-      case "all":
+      case "all": {
+        // ADR-0012: a Use Case with status "deprecated" excludes all of its
+        // Features from Run All. The bare `base` runs the runner's config glob
+        // over every feature file, so when any UC is deprecated we instead pass
+        // the explicit union of the NON-deprecated UCs' feature files (every
+        // feature in this system is generated from a UC, so that union is "all
+        // features minus the retired ones"). With no deprecated UCs we keep the
+        // cheap glob. If the UC index can't be read we fall back to the glob
+        // rather than silently running nothing.
+        const all = await this.useCaseService.findAll();
+        if (all.ok && all.value.some((uc) => uc.status === "deprecated")) {
+          const activeFiles = all.value
+            .filter((uc) => uc.status !== "deprecated")
+            .flatMap((uc) => uc.featureFiles);
+          if (activeFiles.length > 0) {
+            return ok(
+              appendScopedArgs(base, activeFiles.map((path) => this.featureArg(settings, path))),
+            );
+          }
+          // Every non-deprecated UC is unautomated (or all UCs are deprecated):
+          // there is no active coverage to run, so target a path that matches no
+          // feature instead of falling back to the all-features glob.
+          return ok(appendScopedArgs(base, [`${this.featurePrefix(settings)}/__no_active_features__.feature`]));
+        }
         return ok([...base]);
+      }
       case "suite": {
         const tags = await this.suiteService.resolveTagExpression(request.target);
         if (!tags.ok) return err(tags.error);
