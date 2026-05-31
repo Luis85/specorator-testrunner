@@ -23,7 +23,10 @@ import {
   DefaultSpecificationService,
   type SpecificationService,
 } from "./application/services/specification-service";
-import { DefaultSuiteService } from "./application/services/suite-service";
+import {
+  DefaultSuiteService,
+  type SuiteService,
+} from "./application/services/suite-service";
 import {
   DefaultUseCaseService,
   type UseCaseService,
@@ -38,9 +41,14 @@ import { ObsidianWorkspaceAdapter } from "./infrastructure/obsidian/obsidian-wor
 import { NodeChildProcessRunner } from "./infrastructure/runner/node-child-process-runner";
 import { RunnerTemplateWriter } from "./infrastructure/runner/runner-template-writer";
 import { TestHubSettingTab, type SettingsHost } from "./presentation/settings/settings-tab";
+import { CreateSuiteModal } from "./presentation/views/create-suite-modal";
 import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
 import { GenerateFeatureModal } from "./presentation/views/generate-feature-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
+import {
+  SUITE_VIEW_TYPE,
+  SuiteDashboardView,
+} from "./presentation/views/suite-dashboard-view";
 import {
   USE_CASE_VIEW_TYPE,
   UseCaseDashboardView,
@@ -63,6 +71,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private maintenanceService!: MaintenanceService;
   private useCaseService!: UseCaseService;
   private specificationService!: SpecificationService;
+  private suiteService!: SuiteService;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
 
   async onload(): Promise<void> {
@@ -84,7 +93,8 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       vault,
       eventBus,
     );
-    const suites = new DefaultSuiteService(this.hubSettingsService, vault, eventBus);
+    this.suiteService = new DefaultSuiteService(this.hubSettingsService, vault, eventBus);
+    const suites = this.suiteService;
     const demo = new DefaultDemoContentService(this.hubSettingsService, vault, eventBus);
 
     const absoluteFs = new NodeAbsoluteFileSystem(this.app);
@@ -152,6 +162,16 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           onCreate: () => this.openCreateUseCase(),
         }),
     );
+    this.registerView(
+      SUITE_VIEW_TYPE,
+      (leaf) =>
+        new SuiteDashboardView(leaf, {
+          suiteService: this.suiteService,
+          workspace: this.workspaceAdapter,
+          eventBus,
+          onCreate: () => this.openCreateSuite(),
+        }),
+    );
 
     this.addSettingTab(new TestHubSettingTab(this, this));
 
@@ -185,6 +205,19 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
     );
     this.addCommand({
+      id: "create-test-suite",
+      name: "Create Test Suite",
+      callback: () => this.openCreateSuite(),
+    });
+    this.addCommand({
+      id: "open-test-suites",
+      name: "Open Test Suites",
+      callback: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
+    });
+    this.addRibbonIcon("layers", "Open Test Suites", () =>
+      void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
+    );
+    this.addCommand({
       id: "generate-feature",
       name: "Generate Feature from Use Case",
       callback: () => void this.openGenerateFeature(),
@@ -205,6 +238,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
 
   async onunload(): Promise<void> {
     this.app.workspace.detachLeavesOfType(USE_CASE_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(SUITE_VIEW_TYPE);
     this.logger?.info("E2E Test Hub unloaded");
   }
 
@@ -219,6 +253,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private openCreateUseCase(): void {
     new CreateUseCaseModal(this.app, {
       useCaseService: this.useCaseService,
+      workspace: this.workspaceAdapter,
+    }).open();
+  }
+
+  private openCreateSuite(): void {
+    new CreateSuiteModal(this.app, {
+      suiteService: this.suiteService,
       workspace: this.workspaceAdapter,
     }).open();
   }
