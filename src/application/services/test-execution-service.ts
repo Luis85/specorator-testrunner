@@ -100,6 +100,19 @@ const toArgv = (command: string, fallback: string[]): string[] => {
 export const appendScopedArgs = (base: string[], scoped: string[]): string[] =>
   base.includes("--") ? [...base, ...scoped] : [...base, "--", ...scoped];
 
+/**
+ * A test-execution command must be an `npm run <script>` form (TIS §13.2).
+ * CommandSafetyPolicy also accepts install/probe commands (`npm install`,
+ * `node --version`, `npx playwright install …`) because validation/maintenance
+ * need them, so the run path needs this stricter, context-specific check —
+ * otherwise a synced/edited `defaultRunCommand` could make a non-test command
+ * exit 0 and be reported as a passing run.
+ */
+const isNpmRun = (argv: string[]): boolean => {
+  const program = (argv[0]?.split(/[/\\]/).pop() ?? "").replace(/\.(exe|cmd)$/i, "");
+  return program === "npm" && argv[1] === "run";
+};
+
 /** UTC `RUN-YYYY-MM-DD-HHMMSS` id (TIS §3.3). */
 const runId = (now: Date): RunId => {
   const iso = now.toISOString(); // 2026-06-01T10:00:00.000Z
@@ -341,9 +354,27 @@ export class DefaultTestExecutionService implements TestExecutionService {
     // Cucumber flags, a different npm script). Scoped runs append their args
     // after the configured base command's tokens (TIS §13.2).
     const base = toArgv(settings.runner.defaultRunCommand, ["npm", "run", "test"]);
+    if (!isNpmRun(base)) {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `Configured run command must be "npm run <script>": "${settings.runner.defaultRunCommand}".`,
+        ),
+      );
+    }
     switch (request.scope) {
-      case "demo":
-        return ok(toArgv(settings.runner.smokeRunCommand, ["npm", "run", "test:smoke"]));
+      case "demo": {
+        const smoke = toArgv(settings.runner.smokeRunCommand, ["npm", "run", "test:smoke"]);
+        if (!isNpmRun(smoke)) {
+          return err(
+            appError(
+              "VALIDATION_FAILED",
+              `Configured smoke command must be "npm run <script>": "${settings.runner.smokeRunCommand}".`,
+            ),
+          );
+        }
+        return ok(smoke);
+      }
       case "all":
         return ok([...base]);
       case "suite": {
