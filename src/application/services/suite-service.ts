@@ -156,18 +156,26 @@ export class DefaultSuiteService implements SuiteService {
    * createFromSeed can skip / repair / refuse appropriately:
    *  - `absent`  — no note there.
    *  - `valid`   — a parseable Test Suite (leave it; idempotent seeding).
-   *  - `repair`  — a `test-suite`-typed note that fails to parse (e.g. missing
+   *  - `repair`  — a malformed `test-suite` note for THIS SAME suite (its `id`
+   *                matches the seed) that fails to parse (e.g. missing
    *                tag_expression); safe to overwrite with valid content.
-   *  - `foreign` — some other note (or unreadable); must NOT be clobbered.
+   *  - `foreign` — some other note: a non-suite note, an unreadable note, OR a
+   *                malformed suite note for a DIFFERENT id. Must NOT be clobbered
+   *                (overwriting it would destroy unrelated content, review P2).
    */
   private async classifyExistingNote(
     path: VaultPath,
+    seedId: SuiteId,
   ): Promise<"absent" | "valid" | "repair" | "foreign"> {
     if (!(await this.fs.exists(path))) return "absent";
     const read = await this.fs.readFile(path);
     if (!read.ok) return "foreign"; // unreadable — don't overwrite blindly
     if (this.parse(read.value, path)) return "valid";
-    return parseFrontmatter(read.value).type === "test-suite" ? "repair" : "foreign";
+    const fm = parseFrontmatter(read.value);
+    // Only repair a malformed note that IS this suite (same id). A malformed
+    // test-suite note with a different/absent id is someone else's content that
+    // merely collides on the sanitized filename — refuse rather than overwrite.
+    return fm.type === "test-suite" && fm.id === seedId ? "repair" : "foreign";
   }
 
   private async createFromSeed(
@@ -196,14 +204,15 @@ export class DefaultSuiteService implements SuiteService {
     // findAll() by parse() (P3-2), so create()'s duplicate-id scan can't see it;
     // a plain skip-if-exists would then emit suite.created over a note that
     // resolveTagExpression() can't resolve (review P2). So: skip a VALID suite
-    // (idempotent seeding, preserve customisation), REPAIR a malformed
-    // test-suite note, and refuse to clobber a FOREIGN (non-suite) note.
-    const existing = await this.classifyExistingNote(path);
+    // (idempotent seeding, preserve customisation), REPAIR a malformed note that
+    // IS this same suite, and refuse to clobber a FOREIGN note (non-suite, or a
+    // malformed suite note for a DIFFERENT id that only collides on the filename).
+    const existing = await this.classifyExistingNote(path, suite.id);
     if (existing === "foreign") {
       return err(
         appError(
           "VALIDATION_FAILED",
-          `A note that is not a Test Suite already exists at "${path}"; ` +
+          `A different note already exists at "${path}"; ` +
             `rename it or choose a different suite name.`,
         ),
       );
