@@ -188,19 +188,6 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       commandSafety,
     );
-    // Guard repair() against an active run (P0-3). The execution service is
-    // built further down, so delegate lazily through `this`.
-    this.maintenanceService = new DefaultMaintenanceService(
-      this.hubSettingsService,
-      this.validationService,
-      runnerInstall,
-      eventBus,
-      this.logger,
-      {
-        activeRunId: () => this.testExecutionService.activeRunId(),
-        whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
-      },
-    );
     this.initializationService = new DefaultInitializationService(
       this.hubSettingsService,
       vault,
@@ -212,6 +199,29 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       pathSafety,
       eventBus,
       this.logger,
+    );
+    // Maintenance (repair/reset). The execution service — which owns the
+    // synchronous maintenance lock that closes the reset/run TOCTOU (security
+    // L1) — is built further down, so delegate to it lazily through `this`. The
+    // lock's begin() performs the ADR-0018 active-run refusal synchronously, so
+    // the active-run guard here is the legacy fallback only.
+    this.maintenanceService = new DefaultMaintenanceService(
+      this.hubSettingsService,
+      this.validationService,
+      runnerInstall,
+      eventBus,
+      this.logger,
+      {
+        activeRunId: () => this.testExecutionService.activeRunId(),
+        whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
+      },
+      this.initializationService,
+      vault,
+      {
+        inProgress: () => this.testExecutionService.maintenanceLock.inProgress(),
+        begin: () => this.testExecutionService.maintenanceLock.begin(),
+        end: () => this.testExecutionService.maintenanceLock.end(),
+      },
     );
     this.useCaseService = new DefaultUseCaseService(
       this.hubSettingsService,
@@ -896,25 +906,36 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   }
 
   async resetSettings(): Promise<void> {
-    // A reset overwrites settings/credentials; refuse while a run is active so
-    // it can't redirect evidence writes or swap credentials mid-run (P0-3).
-    if (this.testExecutionService.activeRunId() !== null) {
-      new Notice("A test run is in progress; cancel it before resetting settings.", 10000);
+    // Full UC-024 reset: remove the regenerable `.testrunner` runtime, restore
+    // default settings, and re-initialize — all under one reset correlationId.
+    // The active-run refusal and the run/maintenance mutual exclusion are
+    // enforced SYNCHRONOUSLY inside MaintenanceService.reset() via the shared
+    // maintenance lock (security L1 TOCTOU close), so the run can't reserve a
+    // slot in a check-then-act gap here.
+    //
+    // Evidence I/O outlives the active run slot (the coordinator writes Use Case
+    // frontmatter after the slot frees), so drain it first — but only when no run
+    // is active, so we never block while a live run is in flight (the reset would
+    // be refused anyway). This wait happens BEFORE acquiring the lock; a run
+    // racing in afterwards is rejected by the lock, with nothing yet mutated.
+    if (this.testExecutionService.activeRunId() === null) {
+      await this.postRunCoordinator.whenSettled();
+    }
+    const result = await this.maintenanceService.reset();
+    if (!result.ok) {
+      new Notice(
+        result.error.code === "RUN_IN_PROGRESS"
+          ? "A test run is in progress; cancel it before resetting."
+          : `Reset failed: ${result.error.message}`,
+        10000,
+      );
       return;
     }
-    // Let the active-run completion + in-flight evidence writes settle before
-    // mutating settings (defensive: the guard above already covers the common
-    // case, but evidence I/O outlives the active slot — see evidenceChain).
-    await this.testExecutionService.whenActiveSettles().catch(() => undefined);
-    // The active-run completion frees the slot before evidence I/O finishes, so
-    // also let the coordinator's in-flight import/evidence chain settle (it
-    // writes Use Case frontmatter) before mutating settings (P0-3).
-    await this.postRunCoordinator.whenSettled();
-    const result = await this.hubSettingsService.reset();
-    if (result.ok) {
-      this.hubSettings = result.value;
-      this.refreshLoggerSecrets();
-    }
+    // Re-load the now-default settings so the in-memory copy + redaction set
+    // match the persisted reset.
+    this.hubSettings = await this.hubSettingsService.load();
+    this.refreshLoggerSecrets();
+    new Notice("Test Hub reset to a clean state.");
   }
 
   /**

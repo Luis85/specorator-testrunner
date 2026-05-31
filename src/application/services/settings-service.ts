@@ -23,7 +23,13 @@ const NOOP_LOGGER: Logger = {
 export interface SettingsService {
   load(): Promise<TestHubSettings>;
   save(settings: TestHubSettings): Promise<Result<void>>;
-  reset(): Promise<Result<TestHubSettings>>;
+  /**
+   * Restores defaults and emits `settings.reset`. A `correlationId` may be
+   * threaded in by {@link MaintenanceService.reset} (UC-024) so `settings.reset`
+   * shares the single reset-invocation id with the re-initialization chain that
+   * follows it (Event Catalog §19).
+   */
+  reset(correlationId?: string): Promise<Result<TestHubSettings>>;
   validate(settings: TestHubSettings): Promise<SettingsValidationResult>;
 }
 
@@ -119,9 +125,11 @@ export class DefaultSettingsService implements SettingsService {
     return ok(undefined);
   }
 
-  async reset(): Promise<Result<TestHubSettings>> {
+  async reset(correlationId?: string): Promise<Result<TestHubSettings>> {
     await this.store.save(DEFAULT_SETTINGS);
-    await this.eventBus.publish(createEvent("settings.reset", { profile: "default" }));
+    await this.eventBus.publish(
+      createEvent("settings.reset", { profile: "default" }, { correlationId }),
+    );
     return ok(DEFAULT_SETTINGS);
   }
 

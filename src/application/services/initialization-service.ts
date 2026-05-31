@@ -16,9 +16,17 @@ import { err, ok, type Result } from "../../shared/result/result";
 
 /** Initialization contract (TIS §8.1). */
 export interface InitializationService {
+  /**
+   * Runs the full init flow. A `correlationId` may be supplied by
+   * {@link MaintenanceService.reset} (UC-024) so the whole reset flow —
+   * `settings.reset` plus this `testhub.initialization.*` chain — shares one
+   * reset-invocation id (Event Catalog §19). When omitted, the id of the
+   * `testhub.initialization.started` event is used (the UC-001 wizard path).
+   */
   initialize(
     request: InitializeTestHubRequest,
     onProgress?: ProgressReporter,
+    correlationId?: string,
   ): Promise<Result<InitializeTestHubResult>>;
 }
 
@@ -76,6 +84,7 @@ export class DefaultInitializationService implements InitializationService {
   async initialize(
     request: InitializeTestHubRequest,
     onProgress: ProgressReporter = () => {},
+    suppliedCorrelationId?: string,
   ): Promise<Result<InitializeTestHubResult>> {
     // The Test Hub folder is the in-vault root the wizard initializes; the
     // catalog's `vaultPath` is reported as that configured path (the service
@@ -86,7 +95,10 @@ export class DefaultInitializationService implements InitializationService {
       { vaultPath },
       { source: "user" },
     );
-    const correlationId = started.id;
+    // A reset threads in its own invocation id so `settings.reset` and this
+    // chain group under one correlationId (UC-024, Event Catalog §19); the
+    // wizard path falls back to the started event's id (UC-001).
+    const correlationId = suppliedCorrelationId ?? started.id;
     await this.eventBus.publish({ ...started, correlationId });
     this.logger.info("Initializing Test Hub", { correlationId });
 

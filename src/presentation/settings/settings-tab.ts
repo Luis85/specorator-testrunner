@@ -93,15 +93,17 @@ export class TestHubSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName("Maintenance").setHeading();
     new Setting(containerEl)
-      .setName("Reset to defaults")
-      .setDesc("Restore the shipped configuration. Does not delete vault content.")
+      .setName("Reset Test Hub")
+      .setDesc(
+        "Restore a clean install: remove the regenerable .testrunner runtime, restore default settings, and re-initialize. Your Use Cases, Specifications, Features, Suites and Evidence are preserved.",
+      )
       .addButton((button) =>
         button
           .setButtonText("Reset")
           .setWarning()
           .onClick(async () => {
+            // The Notice + re-init outcome is owned by resetSettings() (UC-024).
             await this.host.resetSettings();
-            new Notice("Settings reset to defaults.");
             this.display();
           }),
       );

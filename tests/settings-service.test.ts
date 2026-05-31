@@ -156,4 +156,11 @@ describe("DefaultSettingsService", () => {
     const event = events.find((e) => e.type === "settings.reset");
     expect(event?.payload).toEqual({ profile: "default" });
   });
+
+  it("stamps a supplied correlationId on settings.reset (UC-024 shared reset id)", async () => {
+    const { service, events } = makeService();
+    await service.reset("RESET-correlation-id");
+    const event = events.find((e) => e.type === "settings.reset");
+    expect(event?.correlationId).toBe("RESET-correlation-id");
+  });
 });
