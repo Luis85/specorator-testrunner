@@ -488,29 +488,39 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.logger.info("E2E Test Hub loaded");
   }
 
-  async onunload(): Promise<void> {
-    // A disable/reload while a run is active would otherwise leave the runner's
-    // npm/Cucumber child alive inside Obsidian with no console subscribers and
-    // no command path to stop it — cancel it before tearing down the UI.
+  onunload(): void {
+    // Best-effort SYNCHRONOUS teardown (PRES-H1, P1-4). Obsidian does NOT await
+    // the promise onunload returns, so we cannot meaningfully `await` the cancel
+    // or `whenActiveSettles()` here — the awaits would be fire-and-forget and the
+    // "wait for the child to exit before teardown" guarantee would not hold.
+    //
+    // Instead: issue the kill signal immediately so a run active during a
+    // disable/reload doesn't leave the runner's npm/Cucumber child alive inside
+    // Obsidian with no console subscribers and no command path to stop it. We
+    // `void` the discarded promise — cancel() reserves nothing and only signals
+    // the child; the service's single-active-run slot (reserved synchronously in
+    // execute(), freed only when the process actually closes) prevents overlap
+    // WITHIN this instance.
+    //
+    // Residual limitation: a brand-new plugin instance can onload() while this
+    // instance's child is still closing. That cross-instance overlap is inherent
+    // without a cross-instance lock and is acceptable for V1 (the per-run report
+    // snapshot already protects evidence attribution).
     const active = this.testExecutionService?.activeRunId() ?? null;
     if (active !== null) {
-      const cancelled = await this.testExecutionService.cancel(active);
-      if (!cancelled.ok) {
-        this.logger?.warn("Could not cancel active run on unload", {
-          runId: active,
-          reason: cancelled.error.message,
-        });
-      }
+      void this.testExecutionService.cancel(active).then((cancelled) => {
+        if (!cancelled.ok) {
+          this.logger?.warn("Could not cancel active run on unload", {
+            runId: active,
+            reason: cancelled.error.message,
+          });
+        }
+      });
     }
-    // cancel() only signals the child; the run settles when the runner process
-    // actually closes. Await the service's active-run completion so the
-    // npm/Cucumber process has exited (and stopped writing reports) before this
-    // instance tears down and a new one could start.
-    await this.testExecutionService?.whenActiveSettles().catch(() => undefined);
-    this.app.workspace.detachLeavesOfType(USE_CASE_VIEW_TYPE);
-    this.app.workspace.detachLeavesOfType(SUITE_VIEW_TYPE);
-    this.app.workspace.detachLeavesOfType(TEST_CONSOLE_VIEW_TYPE);
-    this.app.workspace.detachLeavesOfType(DASHBOARD_VIEW_TYPE);
+    // registerView + each view's onClose already tear the views down on unload;
+    // detachLeavesOfType is explicitly discouraged (it destroys the user's saved
+    // workspace layout across reloads/updates), so it is intentionally NOT called
+    // here (P1-3 / PRES-H2).
     this.logger?.info("E2E Test Hub unloaded");
   }
 
