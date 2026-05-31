@@ -9,6 +9,7 @@ import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-p
 import type { DomainEventType, EventPayloads } from "../../domain/events/domain-event";
 import { collectCredentialValues, type TestHubSettings } from "../../domain/settings/settings";
 import type { RunId } from "../../domain/value-objects/identifiers";
+import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -295,7 +296,8 @@ export class DefaultTestExecutionService implements TestExecutionService {
       status: "running",
       startedAt: startedAt.toISOString(),
       command: "",
-      workingDirectory: "",
+      // Placeholder filled in below once setup resolves the runner directory.
+      workingDirectory: unsafeVaultPath(""),
       reportPaths: {},
     };
     let settle!: () => void;

@@ -6,6 +6,8 @@ import {
   type TestHubPathSettings,
   type TestHubSettings,
 } from "../../domain/settings/settings";
+import type { VaultPath } from "../../domain/value-objects/identifiers";
+import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -96,6 +98,10 @@ export class DefaultSettingsService implements SettingsService {
           { field, value: paths[field], fallback: DEFAULT_SETTINGS.paths[field] },
         );
         paths[field] = DEFAULT_SETTINGS.paths[field];
+      } else {
+        // Validated above — brand the value so the loaded settings carry a
+        // genuine VaultPath out of this ADR-0008 load-time chokepoint.
+        paths[field] = unsafeVaultPath(paths[field]);
       }
     }
     const loggingPath = this.pathSafety.validate(settings.logging.path);
@@ -111,7 +117,11 @@ export class DefaultSettingsService implements SettingsService {
         logging: { ...settings.logging, path: DEFAULT_SETTINGS.logging.path },
       };
     }
-    return { ...settings, paths };
+    return {
+      ...settings,
+      paths,
+      logging: { ...settings.logging, path: unsafeVaultPath(settings.logging.path) },
+    };
   }
 
   async save(settings: TestHubSettings): Promise<Result<void>> {
@@ -146,7 +156,7 @@ export class DefaultSettingsService implements SettingsService {
 
     for (const [field, value] of Object.entries(settings.paths) as [
       keyof TestHubPathSettings,
-      string,
+      VaultPath,
     ][]) {
       const safe = this.pathSafety.validate(value);
       if (!safe.ok) {

@@ -3,13 +3,20 @@ import type { VaultPath } from "../../domain/value-objects/identifiers";
 /**
  * Joins vault path segments with "/", collapsing duplicate and trailing
  * separators. Vault paths are always "/"-separated regardless of platform.
+ *
+ * Returns a branded {@link VaultPath}. The recombination is safe by construction:
+ * it only concatenates segments that are themselves already-valid paths or
+ * trusted literals, so the result is branded via an internal unchecked cast
+ * rather than re-validated (P3-4 / ADR-0008). This `shared` util cannot import
+ * the domain `unsafeVaultPath` brander without inverting the layering, so the
+ * cast lives here and is part of the same auditable trusted surface.
  */
-export const joinVaultPath = (...segments: string[]): VaultPath =>
+export const joinVaultPath = (...segments: (string | VaultPath)[]): VaultPath =>
   segments
     .filter((segment) => segment !== "")
     .join("/")
     .replace(/\/+/g, "/")
-    .replace(/\/$/, "");
+    .replace(/\/$/, "") as VaultPath;
 
 /**
  * POSIX relative path from one vault folder to another (both vault-relative).

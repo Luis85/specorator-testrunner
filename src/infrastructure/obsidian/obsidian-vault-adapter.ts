@@ -1,6 +1,7 @@
 import { type App, normalizePath, TFile } from "obsidian";
 import type { VaultFileSystem } from "../../application/ports/vault-file-system";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
+import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import { appError } from "../../shared/errors/errors";
 import { err, ok, type Result } from "../../shared/result/result";
 
@@ -54,7 +55,7 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
         await this.app.vault.modify(existing, content);
         return ok(undefined);
       }
-      return this.createFile(normalized, content);
+      return this.createFile(unsafeVaultPath(normalized), content);
     } catch (cause) {
       return err(appError("INIT_FAILED", `Could not write file "${path}".`, { cause }));
     }
@@ -79,7 +80,8 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     try {
       if (!(await this.app.vault.adapter.exists(normalized))) return ok([]);
       const listing = await this.app.vault.adapter.list(normalized);
-      return ok(listing.files);
+      // Listings under an already-validated path are trusted vault-relative paths.
+      return ok(listing.files.map(unsafeVaultPath));
     } catch (cause) {
       return err(appError("INIT_FAILED", `Could not list "${path}".`, { cause }));
     }
@@ -94,7 +96,7 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
       while (queue.length > 0) {
         const dir = queue.shift() as string;
         const listing = await this.app.vault.adapter.list(dir);
-        files.push(...listing.files);
+        files.push(...listing.files.map(unsafeVaultPath));
         queue.push(...listing.folders);
       }
       return ok(files);
@@ -118,7 +120,7 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
         const dir = queue.shift() as string;
         const listing = await this.app.vault.adapter.list(dir);
         for (const folder of listing.folders) {
-          folders.push(folder);
+          folders.push(unsafeVaultPath(folder));
           queue.push(folder);
         }
       }
@@ -153,6 +155,6 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
   private async ensureParentFolder(normalizedPath: string): Promise<Result<void>> {
     const lastSlash = normalizedPath.lastIndexOf("/");
     if (lastSlash <= 0) return ok(undefined);
-    return this.createFolder(normalizedPath.slice(0, lastSlash));
+    return this.createFolder(unsafeVaultPath(normalizedPath.slice(0, lastSlash)));
   }
 }

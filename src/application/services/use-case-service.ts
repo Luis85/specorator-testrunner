@@ -4,6 +4,7 @@ import type { SettingsService } from "./settings-service";
 import type { ExecutionScope, TestRunStatus } from "../../domain/entities/test-run";
 import type { AutomationStatus, UseCase, UseCaseStatus } from "../../domain/entities/use-case";
 import type { SuiteId, UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
+import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -172,6 +173,10 @@ export class DefaultUseCaseService implements UseCaseService {
 
     const toArray = (value: string | string[] | undefined): string[] =>
       Array.isArray(value) ? value : typeof value === "string" && value !== "" ? [value] : [];
+    // These paths come from plugin-authored Use Case frontmatter (written by this
+    // plugin), so they are trusted on read-back — branded, not re-validated.
+    const toVaultPaths = (value: string | string[] | undefined): VaultPath[] =>
+      toArray(value).map(unsafeVaultPath);
 
     return {
       id: fm.id,
@@ -181,9 +186,9 @@ export class DefaultUseCaseService implements UseCaseService {
       automationStatus: (typeof fm.automation_status === "string"
         ? fm.automation_status
         : "not-planned") as AutomationStatus,
-      featureFiles: [...toArray(fm.feature_files), ...toArray(fm.feature_file)],
+      featureFiles: [...toVaultPaths(fm.feature_files), ...toVaultPaths(fm.feature_file)],
       suites: toArray(fm.suites),
-      evidence: toArray(fm.evidence),
+      evidence: toVaultPaths(fm.evidence),
       lastTestRun:
         typeof fm.last_run_id === "string"
           ? {
@@ -193,7 +198,9 @@ export class DefaultUseCaseService implements UseCaseService {
                 : "passed") as TestRunStatus,
               date: typeof fm.last_run_date === "string" ? fm.last_run_date : "",
               evidencePath:
-                typeof fm.last_run_evidence === "string" ? fm.last_run_evidence : undefined,
+                typeof fm.last_run_evidence === "string"
+                  ? unsafeVaultPath(fm.last_run_evidence)
+                  : undefined,
               scope:
                 typeof fm.last_run_scope === "string"
                   ? (fm.last_run_scope as ExecutionScope)

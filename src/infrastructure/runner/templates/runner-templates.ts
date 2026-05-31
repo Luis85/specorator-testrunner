@@ -1,5 +1,6 @@
 import type { TemplateFile } from "../../../application/ports/template-writer";
 import type { TestHubSettings } from "../../../domain/settings/settings";
+import { unsafeVaultPath } from "../../../domain/value-objects/vault-path";
 import { relativeVaultPath } from "../../../shared/utils/vault-path";
 
 /**
@@ -240,21 +241,34 @@ Tests run serially in V1 (\`parallel: 0\`, AD-6).
 
 /** All `.testrunner` template files, paths relative to the runner root. */
 export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] => [
-  { path: "package.json", content: PACKAGE_JSON, overwrite: true },
-  { path: "tsconfig.json", content: TSCONFIG_JSON, overwrite: true },
+  // Template paths are trusted compile-time literals relative to the runner root.
+  { path: unsafeVaultPath("package.json"), content: PACKAGE_JSON, overwrite: true },
+  { path: unsafeVaultPath("tsconfig.json"), content: TSCONFIG_JSON, overwrite: true },
   {
-    path: "cucumber.mjs",
+    path: unsafeVaultPath("cucumber.mjs"),
     content: cucumberMjs(
       `${relativeVaultPath(settings.paths.testRunnerPath, settings.paths.featureFilesPath)}/**/*.feature`,
     ),
     overwrite: true,
   },
-  { path: "README.md", content: README_MD, overwrite: true },
-  { path: "src/support/world.ts", content: WORLD_TS, overwrite: true },
-  { path: "src/support/hooks.ts", content: HOOKS_TS, overwrite: true },
-  { path: "src/support/paths.ts", content: PATHS_TS, overwrite: true },
-  { path: "src/fixtures/example.html", content: EXAMPLE_HTML, overwrite: true },
+  { path: unsafeVaultPath("README.md"), content: README_MD, overwrite: true },
+  { path: unsafeVaultPath("src/support/world.ts"), content: WORLD_TS, overwrite: true },
+  { path: unsafeVaultPath("src/support/hooks.ts"), content: HOOKS_TS, overwrite: true },
+  { path: unsafeVaultPath("src/support/paths.ts"), content: PATHS_TS, overwrite: true },
+  {
+    path: unsafeVaultPath("src/fixtures/example.html"),
+    content: EXAMPLE_HTML,
+    overwrite: true,
+  },
   // User-authored automation — preserved on repair (RV-8).
-  { path: "src/pages/ExamplePage.ts", content: EXAMPLE_PAGE_TS, overwrite: false },
-  { path: "src/steps/example.steps.ts", content: EXAMPLE_STEPS_TS, overwrite: false },
+  {
+    path: unsafeVaultPath("src/pages/ExamplePage.ts"),
+    content: EXAMPLE_PAGE_TS,
+    overwrite: false,
+  },
+  {
+    path: unsafeVaultPath("src/steps/example.steps.ts"),
+    content: EXAMPLE_STEPS_TS,
+    overwrite: false,
+  },
 ];
