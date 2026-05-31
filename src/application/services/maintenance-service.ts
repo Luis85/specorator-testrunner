@@ -52,12 +52,13 @@ export class DefaultMaintenanceService implements MaintenanceService {
       reinstalledPackages = true;
     }
 
-    let reinstalledBrowsers = false;
-    if (!before.browsersInstalled) {
-      const browsers = await this.runnerInstall.installBrowsers(settings);
-      if (!browsers.ok) return err(browsers.error);
-      reinstalledBrowsers = true;
-    }
+    // The cache heuristic cannot prove the cached Chromium revision matches the
+    // installed Playwright, so repair always runs the idempotent browser
+    // installer (a no-op when the correct browser is already present) — making
+    // repair the authoritative path to a launchable browser.
+    const browsers = await this.runnerInstall.installBrowsers(settings);
+    if (!browsers.ok) return err(browsers.error);
+    const reinstalledBrowsers = true;
 
     // 4. Re-validate (publishes testrunner.validated, RV-8 step "validate").
     await this.validation.validateEnvironment();

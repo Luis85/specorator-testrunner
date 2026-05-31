@@ -22,10 +22,10 @@ describe("buildRunnerTemplates", () => {
     expect(byPath.has("playwright.config.ts")).toBe(false);
   });
 
-  it("ships a serial cucumber config with the tsx loader (AD-6, AD-7)", () => {
+  it("ships a serial cucumber config without the deprecated loader hook (AD-6, AD-7)", () => {
     const cucumber = byPath.get("cucumber.mjs");
     expect(cucumber?.content).toContain("parallel: 0");
-    expect(cucumber?.content).toContain('loader: ["tsx"]');
+    expect(cucumber?.content).not.toContain("loader:");
     expect(cucumber?.content).toContain("../Specifications/features/**/*.feature");
   });
 
@@ -42,8 +42,10 @@ describe("buildRunnerTemplates", () => {
     ).toContain('paths: ["../../Specs/features/**/*.feature"]');
   });
 
-  it("defines the expected npm scripts and chromium-only install (AD-2, AD-5)", () => {
+  it("registers tsx via `node --import tsx` and pins chromium-only install (AD-2, AD-5, AD-7)", () => {
     const pkg = byPath.get("package.json")?.content ?? "";
+    expect(pkg).toContain("node --import tsx");
+    expect(pkg).toContain("@cucumber/cucumber/bin/cucumber.js");
     expect(pkg).toContain('"test:smoke"');
     expect(pkg).toContain('"test:ci"');
     expect(pkg).toContain("playwright install chromium");

@@ -19,9 +19,9 @@ const PACKAGE_JSON = `{
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "cucumber-js --config cucumber.mjs",
-    "test:smoke": "cucumber-js --config cucumber.mjs --tags @smoke",
-    "test:ci": "cucumber-js --config cucumber.mjs --format json:reports/cucumber-report.json",
+    "test": "node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.mjs",
+    "test:smoke": "node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.mjs --tags @smoke",
+    "test:ci": "node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.mjs --format json:reports/cucumber-report.json",
     "install:browsers": "playwright install chromium",
     "install:browsers:ci": "playwright install --with-deps chromium"
   },
@@ -49,12 +49,12 @@ const TSCONFIG_JSON = `{
 }
 `;
 
-// The runner runs with cwd = the runner folder, so the feature glob is the
-// path from the runner folder to the configured feature folder (per ADR-0008),
-// not a hard-coded default.
+// tsx is registered via `node --import tsx` in the npm scripts (the cucumber-js
+// documented setup for tsx 4 / Node 20.6+, AD-7), so no deprecated `loader`
+// hook here. The runner runs with cwd = the runner folder, so the feature glob
+// is the path from the runner folder to the configured feature folder (ADR-0008).
 const cucumberMjs = (featuresGlob: string): string => `export default {
   default: {
-    loader: ["tsx"],
     import: ["src/support/**/*.ts", "src/steps/**/*.ts"],
     paths: ["${featuresGlob}"],
     format: [

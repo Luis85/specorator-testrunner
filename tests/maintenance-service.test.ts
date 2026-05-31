@@ -71,7 +71,7 @@ describe("DefaultMaintenanceService", () => {
     expect(types()).toContain("testrunner.repaired");
   });
 
-  it("recreates files but skips installs when everything is already present", async () => {
+  it("skips the dependency reinstall when deps are healthy, but always (re)verifies the browser", async () => {
     const { service, absoluteFs, childProcess } = build();
     absoluteFs.existing.add("/vault/.testrunner");
     absoluteFs.existing.add("/vault/.testrunner/package.json");
@@ -83,8 +83,10 @@ describe("DefaultMaintenanceService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.reinstalledPackages).toBe(false);
-    expect(result.value.reinstalledBrowsers).toBe(false);
-    expect(childProcess.calls.map((c) => c.command)).not.toContain("npm install");
+    expect(result.value.reinstalledBrowsers).toBe(true); // authoritative, idempotent
+    const commands = childProcess.calls.map((c) => c.command);
+    expect(commands).not.toContain("npm install");
+    expect(commands).toContain("npx playwright install chromium");
   });
 
   it("reinstalls dependencies when Playwright is present but not runnable", async () => {
@@ -100,7 +102,7 @@ describe("DefaultMaintenanceService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.reinstalledPackages).toBe(true);
-    expect(result.value.reinstalledBrowsers).toBe(false);
+    expect(result.value.reinstalledBrowsers).toBe(true);
     expect(childProcess.calls.map((c) => c.command)).toContain("npm install");
   });
 
