@@ -3,6 +3,7 @@ import { DefaultReportImportService } from "../src/application/services/report-i
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { TestRun } from "../src/domain/entities/test-run";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { FakeAbsoluteFileSystem, FakeDataStore, recordingEventBus, silentLogger } from "./fakes";
 
 const REPORT_ABS = "/vault/.testrunner/reports/cucumber-report.json";
@@ -15,7 +16,7 @@ const run = (overrides: Partial<TestRun> = {}): TestRun => ({
   status: "passed",
   startedAt: "2026-05-31T10:00:00.000Z",
   command: "npm run test",
-  workingDirectory: ".testrunner",
+  workingDirectory: vp(".testrunner"),
   reportPaths: {},
   ...overrides,
 });

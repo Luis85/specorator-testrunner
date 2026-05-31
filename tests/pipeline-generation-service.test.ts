@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DefaultPipelineGenerationService } from "../src/application/services/pipeline-generation-service";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { FakeAbsoluteFileSystem, recordingEventBus } from "./fakes";
 
 const build = () => {
@@ -103,7 +104,7 @@ describe("DefaultPipelineGenerationService", () => {
     ]) {
       const settings = {
         ...DEFAULT_SETTINGS,
-        paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath },
+        paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: vp(testRunnerPath) },
       };
       const result = await service.generate({ provider: "github-actions", settings });
       expect(result.ok, testRunnerPath).toBe(false);

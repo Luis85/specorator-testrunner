@@ -6,6 +6,7 @@ import {
 } from "../src/application/services/traceability-service";
 import type { TestRunSummary } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { ok, err, type Result } from "../src/shared/result/result";
 import { appError } from "../src/shared/errors/errors";
 import { FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
@@ -29,7 +30,7 @@ const useCase = (over: Partial<UseCase> = {}): UseCase => ({
   featureFiles: [],
   suites: [],
   evidence: [],
-  path: "Use Cases/UC-001 Demo.md",
+  path: vp("Use Cases/UC-001 Demo.md"),
   ...over,
 });
 
@@ -135,13 +136,13 @@ describe("DefaultTraceabilityService.refreshDashboard", () => {
     const ucs = [
       useCase({
         id: "UC-001",
-        featureFiles: ["Specifications/features/UC-001-a.feature"],
+        featureFiles: [vp("Specifications/features/UC-001-a.feature")],
         lastTestRun: { runId: "RUN-A", status: "passed", date: "2026-06-01T09:00:00Z" },
         suites: ["smoke"],
       }),
       useCase({
         id: "UC-002",
-        featureFiles: ["Specifications/features/UC-002-a.feature"],
+        featureFiles: [vp("Specifications/features/UC-002-a.feature")],
         lastTestRun: { runId: "RUN-B", status: "failed", date: "2026-05-30T09:00:00Z" },
         suites: ["smoke", "regression"],
       }),
@@ -205,13 +206,13 @@ describe("DefaultTraceabilityService.snapshot", () => {
     const ucs = [
       useCase({
         id: "UC-001",
-        featureFiles: ["Specifications/features/UC-001-a.feature"],
+        featureFiles: [vp("Specifications/features/UC-001-a.feature")],
         lastTestRun: { runId: "RUN-A", status: "passed", date: "2026-06-01T09:00:00Z" },
         suites: ["smoke"],
       }),
       useCase({
         id: "UC-002",
-        featureFiles: ["Specifications/features/UC-002-a.feature"],
+        featureFiles: [vp("Specifications/features/UC-002-a.feature")],
         lastTestRun: { runId: "RUN-B", status: "failed", date: "2026-05-30T09:00:00Z" },
         suites: ["smoke", "regression"],
       }),
@@ -243,11 +244,11 @@ describe("DefaultTraceabilityService.linksFor", () => {
         useCase({
           id: "UC-001",
           featureFiles: [
-            "Specifications/features/UC-001.feature",
-            "Specifications/features/UC-001b.feature",
+            vp("Specifications/features/UC-001.feature"),
+            vp("Specifications/features/UC-001b.feature"),
           ],
           suites: ["smoke"],
-          evidence: ["Test Evidence/runs/EV-1.md"],
+          evidence: [vp("Test Evidence/runs/EV-1.md")],
           lastTestRun: run("RUN-A", "2026-06-01T09:00:00Z"),
         }),
       ]),
@@ -264,7 +265,7 @@ describe("DefaultTraceabilityService.linksFor", () => {
       featurePath: "Specifications/features/UC-001.feature",
       suites: ["smoke"],
       runs: ["RUN-A"],
-      evidence: ["Test Evidence/runs/EV-1.md"],
+      evidence: [vp("Test Evidence/runs/EV-1.md")],
     });
   });
 

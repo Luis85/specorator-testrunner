@@ -4,6 +4,7 @@ import {
   parseFeature,
   useCaseIdFromPath,
 } from "../src/application/content/gherkin";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const FEATURE = `@demo @smoke
 Feature: Open Example Page
@@ -38,7 +39,7 @@ describe("useCaseIdFromPath", () => {
 
 describe("parseFeature", () => {
   it("extracts feature name, feature tags, scenarios, tags and steps", () => {
-    const feature = parseFeature(FEATURE, "Specifications/features/UC-001-demo.feature");
+    const feature = parseFeature(FEATURE, vp("Specifications/features/UC-001-demo.feature"));
     expect(feature).not.toBeNull();
     if (!feature) return;
 
@@ -64,7 +65,7 @@ describe("parseFeature", () => {
   it("ignores comments and tolerates description lines", () => {
     const feature = parseFeature(
       `# a comment\nFeature: F\n  free text description\n  Scenario: S\n    Given x`,
-      "UC-002-x.feature",
+      vp("UC-002-x.feature"),
     );
     expect(feature?.scenarios[0].steps).toEqual([{ keyword: "Given", text: "x" }]);
   });
@@ -76,7 +77,7 @@ describe("parseFeature", () => {
     Given
     a doc-string-ish line that is not a step
     Then done`,
-      "UC-003-x.feature",
+      vp("UC-003-x.feature"),
     );
     expect(feature?.scenarios[0].steps).toEqual([
       { keyword: "Given", text: "" },
@@ -91,7 +92,7 @@ describe("parseFeature", () => {
     Given a real step
     Andrew is a name, not an And step
     Then done`,
-      "UC-003-x.feature",
+      vp("UC-003-x.feature"),
     );
     expect(feature?.scenarios[0].steps).toEqual([
       { keyword: "Given", text: "a real step" },
@@ -100,17 +101,17 @@ describe("parseFeature", () => {
   });
 
   it("returns null when there is no Feature line", () => {
-    expect(parseFeature("just some text\nGiven x", "x.feature")).toBeNull();
-    expect(parseFeature("", "x.feature")).toBeNull();
+    expect(parseFeature("just some text\nGiven x", vp("x.feature"))).toBeNull();
+    expect(parseFeature("", vp("x.feature"))).toBeNull();
   });
 
   it("leaves useCaseId empty for an orphan filename", () => {
-    const feature = parseFeature("Feature: F\n  Scenario: S\n    Given x", "orphan.feature");
+    const feature = parseFeature("Feature: F\n  Scenario: S\n    Given x", vp("orphan.feature"));
     expect(feature?.useCaseId).toBe("");
   });
 
   it("collectStepTexts flattens steps across scenarios", () => {
-    const feature = parseFeature(FEATURE, "UC-001-demo.feature");
+    const feature = parseFeature(FEATURE, vp("UC-001-demo.feature"));
     expect(feature).not.toBeNull();
     if (!feature) return;
     expect(collectStepTexts(feature)).toEqual([
@@ -130,7 +131,7 @@ describe("parseFeature", () => {
   Scenario: S
     When I do a thing
     Then it works`,
-      "UC-002-x.feature",
+      vp("UC-002-x.feature"),
     );
     expect(feature).not.toBeNull();
     if (!feature) return;
@@ -150,7 +151,7 @@ describe("parseFeature", () => {
       When neither is this
       """
     Then it is accepted`,
-      "UC-003-x.feature",
+      vp("UC-003-x.feature"),
     );
     expect(feature).not.toBeNull();
     if (!feature) return;

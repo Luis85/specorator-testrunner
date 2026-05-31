@@ -13,6 +13,7 @@ import { DefaultUseCaseService } from "../src/application/services/use-case-serv
 import { REQUIRED_RUNNER_DEPENDENCIES } from "../src/application/content/runner-manifest";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import {
   FakeAbsoluteFileSystem,
   FakeChildProcessRunner,
@@ -284,7 +285,7 @@ describe("DefaultMaintenanceService.reset (UC-024)", () => {
     // only the reset target-guard can stop the recursive delete from eating it.
     const tampered = {
       ...DEFAULT_SETTINGS,
-      paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: "Use Cases" },
+      paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: vp("Use Cases") },
     };
     expect((await settings.save(tampered)).ok).toBe(true);
     vault.files.set("Use Cases/UC-099.md", "user-authored use case");
@@ -308,7 +309,7 @@ describe("DefaultMaintenanceService.reset (UC-024)", () => {
         (
           await settings.save({
             ...DEFAULT_SETTINGS,
-            paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: hostile },
+            paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: vp(hostile) },
           })
         ).ok,
       ).toBe(true);
@@ -326,7 +327,7 @@ describe("DefaultMaintenanceService.reset (UC-024)", () => {
   it("removes the regenerable .testrunner runtime and re-creates defaults", async () => {
     const { service, vault } = buildReset();
     // Seed a stale runner artefact + user-authored business content.
-    await vault.createFolder(".testrunner");
+    await vault.createFolder(vp(".testrunner"));
     vault.files.set(".testrunner/cucumber.mjs", "stale generated config");
     vault.files.set(".testrunner/src/steps/old.ts", "stale stub");
     vault.files.set("Use Cases/UC-099.md", "user-authored use case");

@@ -4,6 +4,7 @@ import { DefaultUseCaseService, nextUseCaseId } from "../src/application/service
 import { buildDemoUseCaseNote } from "../src/application/content/demo-content";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { UseCase } from "../src/domain/entities/use-case";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
@@ -75,7 +76,7 @@ describe("DefaultUseCaseService", () => {
     const { service, fs } = build();
     fs.files.set(
       "Use Cases/UC-001 Demo.md",
-      buildDemoUseCaseNote("Specifications/features/demo.feature"),
+      buildDemoUseCaseNote(vp("Specifications/features/demo.feature")),
     );
 
     const result = await service.create({ title: "Second" });
@@ -183,7 +184,7 @@ describe("DefaultUseCaseService", () => {
       ...loaded.value,
       featureFiles: [
         ...loaded.value.featureFiles,
-        "Specifications/features/UC-001-feature-2.feature",
+        vp("Specifications/features/UC-001-feature-2.feature"),
       ],
     });
 
@@ -192,7 +193,7 @@ describe("DefaultUseCaseService", () => {
     if (!reread.ok || !reread.value) throw new Error("expected UC-001");
     expect(reread.value.featureFiles).toEqual([
       "Specifications/features/UC-001-happy-path.feature",
-      "Specifications/features/UC-001-feature-2.feature",
+      vp("Specifications/features/UC-001-feature-2.feature"),
     ]);
     expect(fs.files.get(path)).not.toContain("feature_file:");
   });
@@ -221,7 +222,7 @@ describe("DefaultUseCaseService", () => {
 
     const updated = await service.update({
       ...loaded.value,
-      featureFiles: ["Specifications/features/UC-001-happy-path.feature"],
+      featureFiles: [vp("Specifications/features/UC-001-happy-path.feature")],
     });
     expect(updated.ok).toBe(true);
 

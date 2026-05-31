@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { projectUseCaseRows } from "../src/presentation/views/use-case-rows";
 import type { UseCase } from "../src/domain/entities/use-case";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const useCase = (over: Partial<UseCase>): UseCase => ({
   id: "UC-001",
@@ -10,7 +11,7 @@ const useCase = (over: Partial<UseCase>): UseCase => ({
   featureFiles: [],
   suites: [],
   evidence: [],
-  path: "Use Cases/UC-001 Demo.md",
+  path: vp("Use Cases/UC-001 Demo.md"),
   ...over,
 });
 
@@ -30,7 +31,7 @@ describe("projectUseCaseRows", () => {
         title: "Open Example",
         status: "specified",
         automationStatus: "implemented",
-        path: "Use Cases/UC-001 Demo.md",
+        path: vp("Use Cases/UC-001 Demo.md"),
       },
     ]);
   });

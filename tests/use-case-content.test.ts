@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildUseCaseNote, useCaseFileName } from "../src/application/content/use-case-content";
 import { parseNote } from "../src/shared/utils/frontmatter";
 import type { UseCase } from "../src/domain/entities/use-case";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const useCase: UseCase = {
   id: "UC-002",
@@ -12,7 +13,7 @@ const useCase: UseCase = {
   featureFiles: [],
   suites: [],
   evidence: [],
-  path: "Use Cases/UC-002 Checkout with a saved card.md",
+  path: vp("Use Cases/UC-002 Checkout with a saved card.md"),
 };
 
 describe("useCaseFileName", () => {
@@ -49,7 +50,7 @@ describe("buildUseCaseNote", () => {
     const linked = parseNote(
       buildUseCaseNote({
         ...useCase,
-        featureFiles: ["Specifications/features/uc-002.feature"],
+        featureFiles: [vp("Specifications/features/uc-002.feature")],
         suites: ["smoke"],
       }),
     ).frontmatter;

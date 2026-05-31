@@ -5,6 +5,7 @@ import { parseFeature } from "../src/application/content/gherkin";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
@@ -40,7 +41,7 @@ describe("DefaultSpecificationService.createFromUseCase", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const path = "Specifications/features/UC-001-happy-path.feature";
+    const path = vp("Specifications/features/UC-001-happy-path.feature");
     expect(result.value.path).toBe(path);
     expect(result.value.useCaseId).toBe("UC-001");
     expect(fs.files.has(path)).toBe(true);
@@ -101,7 +102,7 @@ describe("DefaultSpecificationService.update", () => {
   it("serialises the feature back to Gherkin and emits specification.updated", async () => {
     const { service, fs, types } = build();
     const spec: FeatureSpecification = {
-      path: "Specifications/features/UC-002-edit.feature",
+      path: vp("Specifications/features/UC-002-edit.feature"),
       useCaseId: "UC-002",
       featureName: "Edited",
       tags: ["@regression"],
@@ -140,7 +141,7 @@ describe("DefaultSpecificationService.update", () => {
     When I act
     Then it works
 `;
-    const path = "Specifications/features/UC-003-bg.feature";
+    const path = vp("Specifications/features/UC-003-bg.feature");
     fs.files.set(path, source);
 
     const parsed = parseFeature(source, path);
@@ -158,7 +159,7 @@ describe("DefaultSpecificationService.update", () => {
 describe("DefaultSpecificationService.validate", () => {
   it("passes a well-formed feature with a UC prefix", async () => {
     const { service, fs } = build();
-    const path = "Specifications/features/UC-001-ok.feature";
+    const path = vp("Specifications/features/UC-001-ok.feature");
     fs.files.set(path, "Feature: Ok\n  Scenario: S\n    Given a step\n");
 
     const result = await service.validate(path);
@@ -170,7 +171,7 @@ describe("DefaultSpecificationService.validate", () => {
 
   it("flags orphan filename, missing scenarios, and stepless scenarios", async () => {
     const { service, fs, events } = build();
-    const path = "Specifications/features/orphan.feature";
+    const path = vp("Specifications/features/orphan.feature");
     fs.files.set(path, "Feature: Lonely\n  Scenario: Empty\n");
 
     const result = await service.validate(path);
@@ -187,7 +188,7 @@ describe("DefaultSpecificationService.validate", () => {
 
   it("flags a file with no Feature declaration", async () => {
     const { service, fs } = build();
-    const path = "Specifications/features/UC-001-bad.feature";
+    const path = vp("Specifications/features/UC-001-bad.feature");
     fs.files.set(path, "not gherkin at all\n");
 
     const result = await service.validate(path);
@@ -199,7 +200,7 @@ describe("DefaultSpecificationService.validate", () => {
 
   it("returns an error when the feature file is missing", async () => {
     const { service } = build();
-    const result = await service.validate("Specifications/features/UC-001-nope.feature");
+    const result = await service.validate(vp("Specifications/features/UC-001-nope.feature"));
     expect(result.ok).toBe(false);
   });
 });
@@ -207,7 +208,7 @@ describe("DefaultSpecificationService.validate", () => {
 describe("DefaultSpecificationService.detectMissingSteps", () => {
   it("reports steps not matched by any step definition", async () => {
     const { service, fs, types } = build();
-    const path = "Specifications/features/UC-001-demo.feature";
+    const path = vp("Specifications/features/UC-001-demo.feature");
     fs.files.set(
       path,
       `Feature: Demo
@@ -233,7 +234,7 @@ When("I click the {string} button", async () => {});`,
 
   it("finds step definitions in nested steps subfolders (recursive, matches src/steps/**)", async () => {
     const { service, fs } = build();
-    const path = "Specifications/features/UC-001-nested.feature";
+    const path = vp("Specifications/features/UC-001-nested.feature");
     fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a nested step\n");
     fs.files.set(
       ".testrunner/src/steps/auth/login.steps.ts",
@@ -248,7 +249,7 @@ When("I click the {string} button", async () => {});`,
 
   it("treats every step as missing when no steps folder exists", async () => {
     const { service, fs } = build();
-    const path = "Specifications/features/UC-001-demo.feature";
+    const path = vp("Specifications/features/UC-001-demo.feature");
     fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
 
     const result = await service.detectMissingSteps(path);
@@ -259,7 +260,7 @@ When("I click the {string} button", async () => {});`,
 
   it("fails when the feature does not parse", async () => {
     const { service, fs } = build();
-    const path = "Specifications/features/UC-001-bad.feature";
+    const path = vp("Specifications/features/UC-001-bad.feature");
     fs.files.set(path, "no feature here\n");
     const result = await service.detectMissingSteps(path);
     expect(result.ok).toBe(false);

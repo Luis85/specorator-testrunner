@@ -4,6 +4,7 @@ import { DefaultSpecificationService } from "../../src/application/services/spec
 import { DefaultStepDefinitionService } from "../../src/application/services/step-definition-service";
 import { DefaultUseCaseService } from "../../src/application/services/use-case-service";
 import { DefaultPathSafetyPolicy } from "../../src/domain/policies/path-safety-policy";
+import { unsafeVaultPath as vp } from "../../src/domain/value-objects/vault-path";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "../fakes";
 
 /**
@@ -18,7 +19,7 @@ import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } f
  * command's causation wiring can't silently regress.
  */
 
-const FEATURE = "Specifications/features/UC-001-demo.feature";
+const FEATURE = vp("Specifications/features/UC-001-demo.feature");
 const STEP_FILE = ".testrunner/src/steps/UC-001-demo.steps.ts";
 
 const build = () => {

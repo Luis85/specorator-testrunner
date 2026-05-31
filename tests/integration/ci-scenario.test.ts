@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildGitHubActionsWorkflow } from "../../src/application/content/ci-workflow-content";
 import { buildRunnerTemplates } from "../../src/infrastructure/runner/templates/runner-templates";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/settings";
+import { unsafeVaultPath as vp } from "../../src/domain/value-objects/vault-path";
 
 /**
  * US-050 — Validate CI Scenario (FEAT-028, UC-019/UC-020).
@@ -59,7 +60,7 @@ describe("US-050 CI scenario: workflow and runner scripts stay in lockstep", () 
   it("runs all steps with cwd = the configured runner folder", () => {
     const settings = {
       ...DEFAULT_SETTINGS,
-      paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: "Tools/.runner" },
+      paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: vp("Tools/.runner") },
     };
     const workflow = buildGitHubActionsWorkflow(settings);
     // working-directory must track the runner path, or `npm ci`/`npm run test:ci`

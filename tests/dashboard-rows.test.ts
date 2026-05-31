@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DashboardSnapshot } from "../src/application/services/traceability-service";
 import { projectDashboard } from "../src/presentation/views/dashboard-rows";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const snapshot = (over: Partial<DashboardSnapshot> = {}): DashboardSnapshot => ({
   totalUseCases: 5,
@@ -32,14 +33,19 @@ describe("projectDashboard", () => {
             runId: "RUN-B",
             status: "passed",
             date: "2026-06-02T00:00:00Z",
-            evidencePath: "ev/B.md",
+            evidencePath: vp("ev/B.md"),
           },
           { runId: "RUN-A", status: "failed", date: "2026-06-01T00:00:00Z" },
         ],
       }),
     );
     expect(view.recentRuns).toEqual([
-      { runId: "RUN-B", status: "passed", date: "2026-06-02T00:00:00Z", evidencePath: "ev/B.md" },
+      {
+        runId: "RUN-B",
+        status: "passed",
+        date: "2026-06-02T00:00:00Z",
+        evidencePath: vp("ev/B.md"),
+      },
       { runId: "RUN-A", status: "failed", date: "2026-06-01T00:00:00Z", evidencePath: undefined },
     ]);
   });

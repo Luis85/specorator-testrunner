@@ -7,10 +7,11 @@ import { buildUseCaseNote } from "../src/application/content/use-case-content";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { TestRun } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { parseFrontmatter } from "../src/shared/utils/frontmatter";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
-const EVIDENCE_PATH = "Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md";
+const EVIDENCE_PATH = vp("Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md");
 const FIXED_NOW = new Date("2026-05-31T10:05:00.000Z");
 
 const run = (overrides: Partial<TestRun> = {}): TestRun => ({
@@ -20,7 +21,7 @@ const run = (overrides: Partial<TestRun> = {}): TestRun => ({
   status: "failed",
   startedAt: "2026-05-31T10:00:00.000Z",
   command: "npm run test",
-  workingDirectory: ".testrunner",
+  workingDirectory: vp(".testrunner"),
   reportPaths: {},
   ...overrides,
 });
@@ -33,8 +34,8 @@ const report = (overrides: Partial<ImportedReport> = {}): ImportedReport => ({
     { feature: "Checkout", scenario: "Declines", status: "failed", errorMessage: "boom" },
   ],
   artifacts: [
-    { type: "report", path: ".testrunner/reports/cucumber-report.json", label: "JSON" },
-    { type: "screenshot", path: ".testrunner/reports", label: "image/png" },
+    { type: "report", path: vp(".testrunner/reports/cucumber-report.json"), label: "JSON" },
+    { type: "screenshot", path: vp(".testrunner/reports"), label: "image/png" },
   ],
   ...overrides,
 });
@@ -48,7 +49,7 @@ const seedUseCase = (fs: FakeVaultFileSystem, id = "UC-001"): void => {
     featureFiles: [],
     suites: [],
     evidence: [],
-    path: `Use Cases/${id} Checkout.md`,
+    path: vp(`Use Cases/${id} Checkout.md`),
   };
   fs.files.set(useCase.path, buildUseCaseNote(useCase));
 };

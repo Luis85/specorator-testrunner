@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createFeatureSpecification } from "../src/domain/entities/specification";
 import { createSuite } from "../src/domain/entities/suite";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 describe("createFeatureSpecification (ADR-0012 no orphans)", () => {
   it("builds a feature specification when the useCaseId is present", () => {
     const result = createFeatureSpecification({
-      path: "Specifications/features/UC-001-demo.feature",
+      path: vp("Specifications/features/UC-001-demo.feature"),
       useCaseId: "UC-001",
       featureName: "Demo",
       scenarios: [{ name: "S", tags: [], steps: [] }],
@@ -20,7 +21,7 @@ describe("createFeatureSpecification (ADR-0012 no orphans)", () => {
 
   it("rejects an empty useCaseId at construction", () => {
     const result = createFeatureSpecification({
-      path: "Specifications/features/orphan.feature",
+      path: vp("Specifications/features/orphan.feature"),
       useCaseId: "",
       featureName: "Orphan",
     });
@@ -30,7 +31,7 @@ describe("createFeatureSpecification (ADR-0012 no orphans)", () => {
 
   it("rejects a blank (whitespace-only) useCaseId", () => {
     const result = createFeatureSpecification({
-      path: "x.feature",
+      path: vp("x.feature"),
       useCaseId: "   ",
       featureName: "F",
     });
@@ -39,7 +40,7 @@ describe("createFeatureSpecification (ADR-0012 no orphans)", () => {
 
   it("omits the background key when there are no background steps", () => {
     const result = createFeatureSpecification({
-      path: "UC-002-x.feature",
+      path: vp("UC-002-x.feature"),
       useCaseId: "UC-002",
       featureName: "F",
     });
@@ -55,7 +56,7 @@ describe("createSuite (ADR-0011 tag expression is the source of truth)", () => {
       id: "smoke",
       name: "Smoke",
       tagExpression: "@smoke and not @wip",
-      path: "Test Suites/Smoke.md",
+      path: vp("Test Suites/Smoke.md"),
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -67,7 +68,7 @@ describe("createSuite (ADR-0011 tag expression is the source of truth)", () => {
       id: "smoke",
       name: "Smoke",
       tagExpression: "   ",
-      path: "Test Suites/Smoke.md",
+      path: vp("Test Suites/Smoke.md"),
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
@@ -78,7 +79,7 @@ describe("createSuite (ADR-0011 tag expression is the source of truth)", () => {
       id: "smoke",
       name: "  ",
       tagExpression: "@smoke",
-      path: "Test Suites/Smoke.md",
+      path: vp("Test Suites/Smoke.md"),
     });
     expect(result.ok).toBe(false);
   });
@@ -88,7 +89,7 @@ describe("createSuite (ADR-0011 tag expression is the source of truth)", () => {
       id: "smoke",
       name: "Smoke",
       tagExpression: "@smoke",
-      path: "Test Suites/Smoke.md",
+      path: vp("Test Suites/Smoke.md"),
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
