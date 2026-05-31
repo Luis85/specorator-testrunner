@@ -39,6 +39,13 @@ const slugify = (name: string): SuiteId =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
+/** Strips path separators / filename-reserved chars from a note filename. */
+const sanitizeFileName = (name: string): string =>
+  name
+    .replace(/[\\/:*?"<>|#^[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 export class DefaultSuiteService implements SuiteService {
   constructor(
     private readonly settingsService: SettingsService,
@@ -135,7 +142,9 @@ export class DefaultSuiteService implements SuiteService {
 
   private async createFromSeed(seed: DefaultSuiteSeed): Promise<Result<TestSuite>> {
     const settings = await this.settingsService.load();
-    const path = joinVaultPath(settings.paths.testSuitesPath, `${seed.name}.md`);
+    // Sanitize the filename segment (preserve the display title in frontmatter)
+    // so a name with "/" or reserved chars can't create subfolders or fail.
+    const path = joinVaultPath(settings.paths.testSuitesPath, `${sanitizeFileName(seed.name)}.md`);
     const suite: TestSuite = {
       id: seed.id,
       name: seed.name,
