@@ -311,9 +311,10 @@ export class DefaultReportImportService implements ReportImportService {
         if (!type) continue;
         artifacts.push({
           type,
-          // Embedded artifacts live inside the report; reference the reports
-          // folder (a stable VaultPath) rather than fabricating a per-file path.
-          path: joinVaultPath(runnerPath, "reports"),
+          // Embedded artifacts live inline (base64) inside the report file, so
+          // reference the concrete report — the directory alone can't be opened
+          // to review the bytes from the evidence note.
+          path: joinVaultPath(runnerPath, REPORT_FILE),
           label: mime || type,
         });
       }
