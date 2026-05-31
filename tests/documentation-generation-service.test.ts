@@ -60,6 +60,21 @@ const makeService = () => {
   return { service, fs, events, types, workspace };
 };
 
+describe("DefaultDocumentationGenerationService.open ensures silently", () => {
+  it("creates the target doc if absent and opens it WITHOUT emitting documentation.generated", async () => {
+    const { service, fs, events, types, workspace } = makeService();
+    // No prior generate(): open() must still work and not emit a generation event.
+    const result = await service.open("manual");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(fs.files.has(result.value.path)).toBe(true); // ensured silently
+    expect(workspace.opened).toEqual([result.value.path]);
+    expect(types()).toContain("documentation.opened");
+    expect(types()).not.toContain("documentation.generated");
+    void events;
+  });
+});
+
 describe("DefaultDocumentationGenerationService.generate (FEAT-024, US-043/044/045)", () => {
   it("writes the full EPIC-011 document set into documentationPath", async () => {
     const { service, fs } = makeService();

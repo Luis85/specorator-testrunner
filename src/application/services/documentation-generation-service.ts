@@ -71,6 +71,13 @@ export class DefaultDocumentationGenerationService
       settings.paths.documentationPath,
       documentationFileName(settings, documentType),
     );
+    // Ensure the target note exists WITHOUT emitting documentation.generated —
+    // opening docs is access, not generation (Event Catalog / UC-021..023).
+    const doc = buildDocumentation(settings).find((d) => d.type === documentType);
+    if (doc) {
+      const ensured = await this.writeIfAbsent(path, doc.content);
+      if (!ensured.ok) return err(ensured.error);
+    }
     const opened = await this.workspace.openFile(path);
     if (!opened.ok) {
       return err(

@@ -432,6 +432,16 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Open Documentation",
       callback: () => void this.openDocumentation(),
     });
+    this.addCommand({
+      id: "open-user-manual",
+      name: "Open User Manual",
+      callback: () => void this.openDocumentation("manual"),
+    });
+    this.addCommand({
+      id: "open-troubleshooting",
+      name: "Open Troubleshooting",
+      callback: () => void this.openDocumentation("troubleshooting"),
+    });
 
     this.logger.info("E2E Test Hub loaded");
   }
@@ -745,13 +755,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // EPIC-011 FEAT-025 (US-046, UC-021/022/023): open the documentation index
   // hub and emit `documentation.opened`. Generates the docs first if absent so
   // the command is self-sufficient (generate() is idempotent / skip-existing).
-  private async openDocumentation(): Promise<void> {
-    const generated = await this.documentationService.generate();
-    if (!generated.ok) {
-      new Notice(`Could not prepare documentation: ${generated.error.message}`, 10000);
-      return;
-    }
-    const opened = await this.documentationService.open();
+  private async openDocumentation(
+    documentType: "getting-started" | "manual" | "troubleshooting" = "getting-started",
+  ): Promise<void> {
+    // open() ensures the target note exists silently (no documentation.generated).
+    const opened = await this.documentationService.open(documentType);
     if (!opened.ok) {
       new Notice(`Could not open documentation: ${opened.error.message}`, 10000);
     }
