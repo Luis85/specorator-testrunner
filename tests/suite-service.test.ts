@@ -47,6 +47,17 @@ describe("DefaultSuiteService", () => {
     if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
   });
 
+  it("sanitizes path separators / reserved chars in the suite filename", async () => {
+    const { service, fs } = build();
+    const result = await service.create({ name: "Checkout/Smoke?", tagExpression: "@checkout" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // No subfolder and no reserved chars in the path; display name kept in note.
+    expect(result.value.path).toBe("Test Suites/Checkout Smoke.md");
+    expect(result.value.name).toBe("Checkout/Smoke?");
+    expect(fs.files.has(result.value.path)).toBe(true);
+  });
+
   it("rejects a duplicate suite id", async () => {
     const { service } = build();
     const first = await service.create({ name: "Checkout", tagExpression: "@checkout" });
