@@ -72,6 +72,6 @@ describe("US-050 CI scenario: workflow and runner scripts stay in lockstep", () 
       ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "20" },
     };
     const workflow = buildGitHubActionsWorkflow(settings);
-    expect(workflow).toContain("node-version: 20");
+    expect(workflow).toContain('node-version: "20"');
   });
 });
