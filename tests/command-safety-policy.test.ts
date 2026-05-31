@@ -62,6 +62,19 @@ describe("DefaultCommandSafetyPolicy", () => {
     }
   });
 
+  it("rejects npm run options that precede the -- separator (ADR-0010)", () => {
+    for (const args of [
+      ["npm", "run", "test", "--script-shell", "./evil.sh"],
+      ["npm", "run", "test", "--prefix", "/tmp"],
+    ]) {
+      const result = policy.assertSafe(args);
+      expect(result.ok, args.join(" ")).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("COMMAND_DISALLOWED");
+    }
+    // Forwarded args after `--` remain allowed.
+    expect(policy.assertSafe(["npm", "run", "test", "--", "--tags", "@x"]).ok).toBe(true);
+  });
+
   it("rejects npm install/ci with a package spec or flag (ADR-0010)", () => {
     for (const args of [
       ["npm", "install", "lodash"],
