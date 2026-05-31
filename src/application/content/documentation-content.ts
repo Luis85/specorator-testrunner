@@ -1,26 +1,97 @@
 import type { TestHubSettings } from "../../domain/settings/settings";
 
+/**
+ * Stable identity for a generated doc. The first three map to the
+ * `documentation.opened` payload's `documentType` (TIS §12); `index` is the
+ * navigational hub the "Open Documentation" command opens (UC-021/022/023).
+ */
+export type DocumentationType =
+  | "getting-started"
+  | "manual"
+  | "troubleshooting"
+  | "index";
+
+/**
+ * A generated doc's `documentType` as carried by `documentation.opened`
+ * (US-046 / UC-021,022,023). Every type is openable, including the `index`
+ * hub that the "Open Documentation" command opens by default.
+ */
+export type OpenableDocumentType = DocumentationType;
+
 /** One generated documentation note. */
 export interface DocumentationFile {
+  type: DocumentationType;
   fileName: string; // relative to settings.paths.documentationPath
   content: string;
 }
 
 /**
- * Getting Started, User Manual, Troubleshooting (per G5: three docs, no
- * Reference). Content is intentionally aligned with the V1 flow so the notes
- * are useful the moment initialization completes.
+ * The EPIC-011 document set written into the user's vault (US-043/044/045):
+ * an index/overview hub, a Getting Started guide, a User Manual (core how-tos
+ * for the full Requirements→Evidence→CI workflow), and a Troubleshooting guide.
+ * Content is intentionally aligned with the V1 flow so the notes are useful the
+ * moment initialization completes; builders are pure functions of settings.
  */
-export const buildDocumentation = (settings: TestHubSettings): DocumentationFile[] => {
-  const { paths, runner } = settings;
-  return [
-    {
-      fileName: "Getting Started.md",
-      content: `# Getting Started
+export const buildDocumentation = (settings: TestHubSettings): DocumentationFile[] => [
+  buildIndexDoc(settings),
+  buildGettingStartedDoc(settings),
+  buildUserManualDoc(settings),
+  buildTroubleshootingDoc(settings),
+];
 
-Welcome to the **E2E Test Hub**. This vault is now a Markdown-native,
-local-first BDD workbench: you define Use Cases, write Gherkin specifications,
-execute Playwright tests, and review evidence — all without leaving Obsidian.
+/** File name of a doc by type, so callers (e.g. access) can resolve it. */
+export const documentationFileName = (
+  settings: TestHubSettings,
+  type: DocumentationType,
+): string => {
+  const file = buildDocumentation(settings).find((doc) => doc.type === type);
+  // Every type is always built, so this is total; assert for the type system.
+  if (!file) throw new Error(`Unknown documentation type "${type}".`);
+  return file.fileName;
+};
+
+// US-046 / UC-021,022,023: the index is the entry point the access command
+// opens; it links out to every other generated doc.
+const buildIndexDoc = (settings: TestHubSettings): DocumentationFile => ({
+  type: "index",
+  fileName: "Test Hub Documentation.md",
+  content: `# Test Hub Documentation
+
+Welcome to the **E2E Test Hub** docs. This vault is a Markdown-native,
+local-first BDD workbench: define Use Cases, write Gherkin specifications,
+execute Playwright tests, review evidence, and ship a CI pipeline — all from
+Obsidian.
+
+## Contents
+
+- [[Getting Started]] — install the runner and run your first test.
+- [[User Manual]] — the full Requirements → Evidence → CI workflow and every
+  Test Hub command.
+- [[Troubleshooting]] — fixes for the problems you are most likely to hit.
+
+## The workflow at a glance
+
+> Requirements → Specification → Automation → Execution → Evidence → CI
+
+1. **Initialize** the Test Hub (ribbon flask icon or **Initialize Test Hub**).
+2. **Create a Use Case** and **Generate a Feature** from it.
+3. **Run** a suite, use case, or feature.
+4. **Review evidence** under \`${settings.paths.evidencePath}/\` and the live
+   **Test Hub Dashboard**.
+5. **Generate the CI workflow** to run the same suite on every push.
+`,
+});
+
+// US-043 / UC-022: onboard a brand-new user end to end.
+const buildGettingStartedDoc = (settings: TestHubSettings): DocumentationFile => {
+  const { paths, runner } = settings;
+  return {
+    type: "getting-started",
+    fileName: "Getting Started.md",
+    content: `# Getting Started
+
+Welcome to the **E2E Test Hub**. This guide takes you from an empty vault to a
+passing test.
 
 ## What initialization created
 
@@ -30,24 +101,38 @@ execute Playwright tests, and review evidence — all without leaving Obsidian.
 - \`${paths.evidencePath}/\` — audit trail for each Test Run.
 - \`${paths.testRunnerPath}/\` — the self-contained Playwright + Cucumber-JS runner.
 
+## Install the runner
+
+The runner is a standalone Node project. Run **Validate Environment** to confirm
+Node.js is available, then let initialization (or **Repair Installation**)
+install dependencies with \`${runner.installCommand}\` and the Chromium browser
+with \`${runner.browserInstallCommand}\`.
+
 ## Your first test
 
 1. Open **Use Cases → UC-001 Open Example Page** to see the demo Use Case.
 2. Open its Feature Specification under \`${paths.featureFilesPath}/\`.
-3. Once the runner is installed, run the **@smoke** suite to execute the demo.
+3. Run **Run Demo Test** to execute it; output streams into the Test Console.
 
 The demo drives a local static HTML fixture over \`file://\`, so it needs no
 network access and behaves identically in CI.
 
 ## Next steps
 
-- Read the **User Manual** for the full workflow.
+- Read the **User Manual** for the full workflow and command reference.
 - Read **Troubleshooting** if something does not work as expected.
 `,
-    },
-    {
-      fileName: "User Manual.md",
-      content: `# User Manual
+  };
+};
+
+// US-044 / UC-021: the reference manual — core concepts and how-tos for every
+// step of the workflow, plus the command surface.
+const buildUserManualDoc = (settings: TestHubSettings): DocumentationFile => {
+  const { paths, runner } = settings;
+  return {
+    type: "manual",
+    fileName: "User Manual.md",
+    content: `# User Manual
 
 The Test Hub turns requirements into executable specifications:
 
@@ -66,41 +151,80 @@ The Test Hub turns requirements into executable specifications:
 - **Evidence** — a Markdown note recording the audit trail for a Run; it links
   to reports, never duplicates them.
 
-## Suites
+## How to: create a Use Case
+
+Run **Create Use Case**, give it a title, and the plugin writes a \`UC-NNN\` note
+into \`${paths.useCasesPath}/\`. Browse them from the **Open Use Cases** view.
+
+## How to: generate a Feature
+
+Run **Generate Feature from Use Case**, pick a Use Case, and a Gherkin
+\`.feature\` scaffold is written under \`${paths.featureFilesPath}/\` and linked
+back to the Use Case. **Validate Feature** checks the Gherkin; **Detect Missing
+Steps** lists step definitions you still need.
+
+## How to: organize Suites
 
 Initialization creates two suites:
 
 - **Smoke** — \`@smoke\` critical-path scenarios.
 - **Regression** — \`@regression\` the full regression set (empty until you tag scenarios).
 
-Tag a Feature \`@wip\` to keep half-built work out of the dashboard roll-up.
+Create more with **Create Test Suite** (a tag expression). Tag a Feature
+\`@wip\` to keep half-built work out of the dashboard roll-up.
 
-## The runner
+## How to: run tests
 
 The \`${paths.testRunnerPath}/\` folder is a standalone Node project. Locally it runs
 with \`${runner.defaultRunCommand}\`; in CI it runs with \`${runner.ciRunCommand}\` —
-identical behavior in both places.
+identical behavior in both places. Use the commands:
+
+- **Run Demo Test**, **Run All Tests**
+- **Run Suite…**, **Run Use Case…**, **Run Feature…** (pick from a list)
+- **Cancel Test Run** stops the single active run.
+
+Output streams live into the **Open Test Console** view.
+
+## How to: review evidence and the dashboard
+
+When a run finishes, its report is imported and a linked **Evidence** note is
+written under \`${paths.evidencePath}/\` (toggle in settings). **Import Report for
+Last Run** re-runs that import. **Open Dashboard** shows live KPI tiles (total /
+specified / automated / passing / failing) and recent runs.
+
+## How to: set up CI
+
+Run **Generate CI Workflow** to write a GitHub Actions workflow that installs
+the runner and runs the suite on every push; **Overwrite CI Workflow** replaces
+an existing one. **Check CI Readiness** reports anything still missing.
 
 ## Settings
 
 Open **Settings → E2E Test Hub** to review folder locations, runner commands,
 and environments. Use **Reset to defaults** to restore the shipped configuration.
 `,
-    },
-    {
-      fileName: "Troubleshooting.md",
-      content: `# Troubleshooting
+  };
+};
+
+// US-045 / UC-023: self-service the common failure modes.
+const buildTroubleshootingDoc = (settings: TestHubSettings): DocumentationFile => {
+  const { paths, runner } = settings;
+  return {
+    type: "troubleshooting",
+    fileName: "Troubleshooting.md",
+    content: `# Troubleshooting
 
 ## Node.js is not installed
 
 The runner needs **Node.js ${settings.ci.nodeVersion}+**. Install it from
-<https://nodejs.org>, restart Obsidian, and re-run validation.
+<https://nodejs.org>, restart Obsidian, and re-run **Validate Environment**.
 
 ## Dependencies or browsers are missing
 
 The runner installs dependencies with \`${runner.installCommand}\` and the
 Chromium browser with \`${runner.browserInstallCommand}\`. The first install
-downloads a browser (~150 MB) and can take a few minutes.
+downloads a browser (~150 MB) and can take a few minutes. Run **Repair
+Installation** to re-sync.
 
 ## The demo test cannot find the fixture
 
@@ -116,8 +240,12 @@ surrounding filesystem path matters too.
 
 Reports are written under \`${paths.testRunnerPath}/reports/\` and linked from
 \`${paths.evidencePath}/\`. Confirm a Test Run actually completed before expecting
-evidence.
+evidence, then run **Import Report for Last Run**.
+
+## CI is not ready
+
+Run **Check CI Readiness** — it lists what is missing (e.g. a generated
+workflow). Run **Generate CI Workflow** to create one.
 `,
-    },
-  ];
+  };
 };

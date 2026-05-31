@@ -1,7 +1,10 @@
 import { Notice, Plugin } from "obsidian";
 
 import { DefaultDemoContentService } from "./application/services/demo-content-service";
-import { DefaultDocumentationGenerationService } from "./application/services/documentation-generation-service";
+import {
+  DefaultDocumentationGenerationService,
+  type DocumentationGenerationService,
+} from "./application/services/documentation-generation-service";
 import {
   DefaultEnvironmentValidationService,
   type EnvironmentValidationService,
@@ -100,6 +103,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private initializationService!: InitializationService;
   private validationService!: EnvironmentValidationService;
   private maintenanceService!: MaintenanceService;
+  private documentationService!: DocumentationGenerationService;
   private pipelineService!: PipelineGenerationService;
   private useCaseService!: UseCaseService;
   private specificationService!: SpecificationService;
@@ -128,11 +132,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.vaultAdapter = vault;
     this.workspaceAdapter = new ObsidianWorkspaceAdapter(this.app);
 
-    const documentation = new DefaultDocumentationGenerationService(
+    // EPIC-011 Documentation (FEAT-024/025). The workspace adapter is passed so
+    // the "Open Documentation" command (US-046) can open a generated note.
+    this.documentationService = new DefaultDocumentationGenerationService(
       this.hubSettingsService,
       vault,
       eventBus,
+      this.workspaceAdapter,
     );
+    const documentation = this.documentationService;
     this.suiteService = new DefaultSuiteService(this.hubSettingsService, vault, eventBus);
     const suites = this.suiteService;
     const demo = new DefaultDemoContentService(this.hubSettingsService, vault, eventBus);
@@ -412,6 +420,18 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.addRibbonIcon("gauge", "Open Test Hub Dashboard", () =>
       void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
     );
+
+    // EPIC-011 Documentation (FEAT-024 US-043/044/045, FEAT-025 US-046).
+    this.addCommand({
+      id: "generate-documentation",
+      name: "Generate Documentation",
+      callback: () => void this.generateDocumentation(),
+    });
+    this.addCommand({
+      id: "open-documentation",
+      name: "Open Documentation",
+      callback: () => void this.openDocumentation(),
+    });
 
     this.logger.info("E2E Test Hub loaded");
   }
@@ -707,6 +727,33 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         `CI not ready — missing: ${result.missingItems.join("; ")}`,
         10000,
       );
+    }
+  }
+
+  // EPIC-011 FEAT-024 (US-043/044/045, UC-021/022/023): write the document set
+  // into the vault's documentation folder and emit `documentation.generated`.
+  private async generateDocumentation(): Promise<void> {
+    new Notice("Generating Test Hub documentation…");
+    const result = await this.documentationService.generate();
+    if (result.ok) {
+      new Notice(`Documentation generated (${result.value.documents.length} note(s)).`);
+    } else {
+      new Notice(`Could not generate documentation: ${result.error.message}`, 10000);
+    }
+  }
+
+  // EPIC-011 FEAT-025 (US-046, UC-021/022/023): open the documentation index
+  // hub and emit `documentation.opened`. Generates the docs first if absent so
+  // the command is self-sufficient (generate() is idempotent / skip-existing).
+  private async openDocumentation(): Promise<void> {
+    const generated = await this.documentationService.generate();
+    if (!generated.ok) {
+      new Notice(`Could not prepare documentation: ${generated.error.message}`, 10000);
+      return;
+    }
+    const opened = await this.documentationService.open();
+    if (!opened.ok) {
+      new Notice(`Could not open documentation: ${opened.error.message}`, 10000);
     }
   }
 
