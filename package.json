@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "node esbuild.config.mjs production",
+    "test-build": "node scripts/test-build.mjs",
     "dev": "node esbuild.config.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
