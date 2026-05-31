@@ -10,10 +10,18 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         node-version: [20, 22]
+        # Also run the suite on Windows so the security-critical `cmd.exe` shim
+        # branch in NodeChildProcessRunner (and the rest of the adapter) executes
+        # on the real platform, not just via the injected-platform unit tests.
+        include:
+          - os: windows-latest
+            node-version: 22
     steps:
       - uses: actions/checkout@v4
 

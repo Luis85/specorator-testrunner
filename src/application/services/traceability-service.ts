@@ -52,7 +52,22 @@ export interface TraceabilityRecord {
  * changing this interface.
  */
 export interface TraceabilityService {
+  /**
+   * Aggregates the Use Case index into a {@link DashboardSnapshot} AND publishes
+   * `dashboard.refreshed` + `dashboard.kpi.updated` (UC-018). Use this to PUSH a
+   * refresh from orchestration (the PostRunCoordinator after a run, P2-6).
+   *
+   * It emits, so a view MUST NOT call it in response to `dashboard.*` — that
+   * would loop. Views read {@link snapshot} (non-emitting) for their renders.
+   */
   refreshDashboard(): Promise<Result<DashboardSnapshot>>;
+  /**
+   * Computes the same {@link DashboardSnapshot} WITHOUT publishing any events.
+   * The dashboard views project their tiles/rows from this when re-rendering in
+   * response to events (including the pushed `dashboard.refreshed`/`kpi.updated`),
+   * so a render never re-triggers a refresh (no loop, P2-6).
+   */
+  snapshot(): Promise<Result<DashboardSnapshot>>;
   linksFor(useCaseId: UseCaseId): Promise<Result<TraceabilityRecord>>;
 }
 
@@ -134,10 +149,11 @@ export class DefaultTraceabilityService implements TraceabilityService {
 
   /**
    * Aggregates the Use Case index into KPI counts + recent runs (UC-018 steps
-   * 2–3), then emits `dashboard.refreshed` (signal-only) followed by
-   * `dashboard.kpi.updated` (the counts) per the UC-018 ordering.
+   * 2–3) WITHOUT publishing — used by the views to project their tiles/rows when
+   * re-rendering in response to events (P2-6: a render must not re-emit, or a
+   * view reacting to `dashboard.*` would loop).
    */
-  async refreshDashboard(): Promise<Result<DashboardSnapshot>> {
+  async snapshot(): Promise<Result<DashboardSnapshot>> {
     const all = await this.useCaseService.findAll();
     if (!all.ok) return err(all.error);
 
@@ -147,11 +163,27 @@ export class DefaultTraceabilityService implements TraceabilityService {
     const derived: UseCase[] = [];
     for (const useCase of all.value) derived.push(await this.withDerivedStatus(useCase));
 
-    const snapshot = projectDashboardSnapshot(derived);
+    return ok(projectDashboardSnapshot(derived));
+  }
 
-    // Distinct suites across all UCs — `dashboard.refreshed` is a signal whose
-    // counts subscribers re-query; an approximate suite count is sufficient.
-    const suiteCount = new Set(derived.flatMap((uc) => uc.suites)).size;
+  /**
+   * Aggregates the Use Case index, then emits `dashboard.refreshed`
+   * (signal-only) followed by `dashboard.kpi.updated` (the counts) per the
+   * UC-018 ordering. PUSHED from orchestration (the PostRunCoordinator after a
+   * run, P2-6), and from a dashboard view's initial open.
+   */
+  async refreshDashboard(): Promise<Result<DashboardSnapshot>> {
+    const result = await this.snapshot();
+    if (!result.ok) return result;
+    const snapshot = result.value;
+
+    // Distinct suites across all active UCs — `dashboard.refreshed` is a signal
+    // whose counts subscribers re-query; an approximate suite count is enough.
+    const all = await this.useCaseService.findAll();
+    const suiteCount = all.ok
+      ? new Set(all.value.filter((uc) => uc.status !== "deprecated").flatMap((uc) => uc.suites))
+          .size
+      : 0;
 
     await this.eventBus.publish(
       createEvent("dashboard.refreshed", {

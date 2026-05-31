@@ -199,6 +199,42 @@ describe("DefaultTraceabilityService.refreshDashboard", () => {
   });
 });
 
+describe("DefaultTraceabilityService.snapshot", () => {
+  it("returns the same KPI counts as refreshDashboard but emits NO events (no loop, P2-6)", async () => {
+    const { bus, types } = recordingEventBus();
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: ["Specifications/features/UC-001-a.feature"],
+        lastTestRun: { runId: "RUN-A", status: "passed", date: "2026-06-01T09:00:00Z" },
+        suites: ["smoke"],
+      }),
+      useCase({
+        id: "UC-002",
+        featureFiles: ["Specifications/features/UC-002-a.feature"],
+        lastTestRun: { runId: "RUN-B", status: "failed", date: "2026-05-30T09:00:00Z" },
+        suites: ["smoke", "regression"],
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+    );
+
+    const result = await service.snapshot();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.totalUseCases).toBe(2);
+    expect(result.value.passingUseCases).toBe(1);
+    expect(result.value.failingUseCases).toBe(1);
+    // The whole point: a render reads this WITHOUT re-publishing dashboard.*.
+    expect(types()).toEqual([]);
+  });
+});
+
 describe("DefaultTraceabilityService.linksFor", () => {
   it("resolves a UC's traceability links from its frontmatter", async () => {
     const { bus } = recordingEventBus();

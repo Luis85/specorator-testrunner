@@ -36,7 +36,7 @@ const buildHarness = () => {
   const fs = new FakeVaultFileSystem();
   const pathSafety = new DefaultPathSafetyPolicy();
   const commandSafety = new DefaultCommandSafetyPolicy();
-  const { bus, types } = recordingEventBus();
+  const { bus, types, events } = recordingEventBus();
   const settings = new DefaultSettingsService(store, pathSafety, bus);
   const docs = new DefaultDocumentationGenerationService(settings, fs, bus);
   const suites = new DefaultSuiteService(settings, fs, bus);
@@ -72,7 +72,7 @@ const buildHarness = () => {
     bus,
     silentLogger,
   );
-  return { service, fs, types, childProcess, templates };
+  return { service, fs, types, events, childProcess, templates };
 };
 
 const request: InitializeTestHubRequest = {
@@ -126,7 +126,7 @@ describe("DefaultInitializationService", () => {
   });
 
   it("publishes the UC-001 event sequence", async () => {
-    const { service, types } = buildHarness();
+    const { service, types, events } = buildHarness();
     await service.initialize(request);
 
     const emitted = types();
@@ -139,6 +139,74 @@ describe("DefaultInitializationService", () => {
     expect(emitted).toContain("testrunner.validated");
     expect(emitted.at(-1)).toBe("testhub.initialization.completed");
     expect(emitted).not.toContain("testhub.initialization.failed");
+
+    // The demo specification.created uses the `featurePath` key (Event Catalog
+    // §5), matching the non-demo specification-service path.
+    const specCreated = events.find((e) => e.type === "specification.created");
+    expect(specCreated?.payload).toHaveProperty(
+      "featurePath",
+      "Specifications/features/UC-001-open-example-page.feature",
+    );
+    expect(specCreated?.payload).not.toHaveProperty("path");
+  });
+
+  it("stamps every init sub-event with the wizard correlationId (Event Catalog §19, RV-1)", async () => {
+    const { service, events } = buildHarness();
+    await service.initialize(request);
+
+    const started = events.find((e) => e.type === "testhub.initialization.started");
+    expect(started?.correlationId).toBeTruthy();
+    const correlationId = started?.correlationId;
+
+    // Every event in the one wizard flow shares the started event's id. The demo
+    // use-case/specification events follow the §19 "useCaseId" correlation rule
+    // (a separate flow), so they are excluded from the wizard-flow assertion.
+    const wizardFlowTypes = new Set<string>([
+      "testhub.initialization.started",
+      "documentation.generated",
+      "suite.created",
+      "testrunner.installed",
+      "testrunner.validated",
+      "testhub.initialization.completed",
+    ]);
+    const wizardEvents = events.filter((e) => wizardFlowTypes.has(e.type));
+    // Sanity: the sub-service events we threaded the id through are present.
+    expect(wizardEvents.map((e) => e.type)).toEqual(
+      expect.arrayContaining([
+        "documentation.generated",
+        "suite.created",
+        "testrunner.installed",
+        "testrunner.validated",
+      ]),
+    );
+    for (const event of wizardEvents) {
+      expect(event.correlationId).toBe(correlationId);
+    }
+  });
+
+  it("emits init events with the Event Catalog payload shapes", async () => {
+    const { service, events } = buildHarness();
+    await service.initialize(request);
+
+    const started = events.find((e) => e.type === "testhub.initialization.started");
+    expect(started?.payload).toEqual({ vaultPath: DEFAULT_SETTINGS.paths.testHubPath });
+
+    const completed = events.find((e) => e.type === "testhub.initialization.completed");
+    expect(completed?.payload).toEqual({
+      testHubPath: DEFAULT_SETTINGS.paths.testHubPath,
+      runnerPath: DEFAULT_SETTINGS.paths.testRunnerPath,
+    });
+  });
+
+  it("emits initialization.failed with { reason, step }", async () => {
+    const { service, fs, events } = buildHarness();
+    fs.failOn = { path: "Test Hub/Getting Started.md", message: "disk full" };
+
+    await service.initialize(request);
+
+    const failed = events.find((e) => e.type === "testhub.initialization.failed");
+    expect(failed?.payload).toMatchObject({ step: "documentation" });
+    expect((failed?.payload as { reason: string }).reason).toContain("documentation");
   });
 
   it("installs dependencies and browsers when requested, failing init on a non-zero exit", async () => {

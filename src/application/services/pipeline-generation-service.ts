@@ -277,9 +277,11 @@ export class DefaultPipelineGenerationService implements PipelineGenerationServi
       path: relativePath,
     };
     await this.eventBus.publish(
-      // Event Catalog payload: { provider, path } (UC-019).
+      // Event Catalog payload: { provider, path } (UC-019). V1 only ever writes
+      // a GitHub Actions workflow (per SDD §17), so the provider is the literal
+      // catalog member regardless of the wider GeneratedPipeline.provider type.
       createEvent("ci.pipeline.generated", {
-        provider: pipeline.provider,
+        provider: "github-actions",
         path: pipeline.path,
       }),
     );

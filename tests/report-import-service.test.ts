@@ -124,12 +124,14 @@ describe("DefaultReportImportService", () => {
     }
   });
 
-  it("emits report.detected then report.imported on success", async () => {
+  it("emits only report.imported on success", async () => {
     const { service, absoluteFs, types } = build();
     absoluteFs.seed(REPORT_ABS, REPORT);
 
     await service.import(run());
-    expect(types()).toEqual(["report.detected", "report.imported"]);
+    // report.detected was removed (it triggered a never-built FS watcher); the
+    // PostRunCoordinator now drives the import from the terminal run event.
+    expect(types()).toEqual(["report.imported"]);
   });
 
   it("report.imported payload references the vault path and scenario count", async () => {
@@ -152,7 +154,7 @@ describe("DefaultReportImportService", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("REPORT_NOT_FOUND");
-    expect(types()).toEqual(["report.detected", "report.import.failed"]);
+    expect(types()).toEqual(["report.import.failed"]);
     expect(events.find((e) => e.type === "report.import.failed")?.payload).toMatchObject({
       runId: "RUN-2026-05-31-100000",
       reportPath: REPORT_VAULT,

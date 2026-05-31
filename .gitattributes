@@ -1,0 +1,16 @@
+# Normalize line endings to LF on checkout for every OS (including the
+# windows-latest CI leg), so `prettier --check` and line-ending-sensitive tests
+# behave identically everywhere. Without this, a Windows checkout would convert
+# tracked files to CRLF and the format check would fail.
+* text=auto eol=lf
+
+# Be explicit for the source/config/doc types the toolchain checks.
+*.ts   text eol=lf
+*.mjs  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+
+# Leave true binaries alone.
+*.png binary
+*.jpg binary
+*.ico binary

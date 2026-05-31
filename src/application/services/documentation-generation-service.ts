@@ -15,7 +15,12 @@ import { joinVaultPath } from "../../shared/utils/vault-path";
 
 /** Documentation generation + access contract (TIS §8.5, FEAT-024/025). */
 export interface DocumentationGenerationService {
-  generate(): Promise<Result<GeneratedDocumentation>>;
+  /**
+   * @param correlationId optional flow id; when supplied (e.g. by the
+   * initialization wizard) it is stamped onto `documentation.generated` so all
+   * events in one flow share a correlationId (Event Catalog §19, RV-1).
+   */
+  generate(correlationId?: string): Promise<Result<GeneratedDocumentation>>;
   /** Opens a generated doc and emits `documentation.opened` (US-046). */
   open(documentType?: OpenableDocumentType): Promise<Result<OpenedDocumentation>>;
 }
@@ -37,7 +42,7 @@ export class DefaultDocumentationGenerationService implements DocumentationGener
     private readonly workspace?: WorkspacePort,
   ) {}
 
-  async generate(): Promise<Result<GeneratedDocumentation>> {
+  async generate(correlationId?: string): Promise<Result<GeneratedDocumentation>> {
     const settings = await this.settingsService.load();
     const documents: VaultPath[] = [];
 
@@ -48,7 +53,9 @@ export class DefaultDocumentationGenerationService implements DocumentationGener
       documents.push(path);
     }
 
-    await this.eventBus.publish(createEvent("documentation.generated", { documents }));
+    await this.eventBus.publish(
+      createEvent("documentation.generated", { documents }, { correlationId }),
+    );
     return ok({ documents });
   }
 

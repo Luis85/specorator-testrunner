@@ -176,8 +176,8 @@ export type DomainEventType =
   | "testrun.completed"
   | "testrun.failed"
   | "testrun.cancelled"
-  // report
-  | "report.detected"
+  // report (report.detected removed — the in-process PostRunCoordinator drives
+  // the import from the terminal run event; no ReportFileWatcher. See §9.7.)
   | "report.imported"
   | "report.import.failed"
   // evidence
@@ -1046,15 +1046,9 @@ export interface TemplateWriteResult {
 }
 ```
 
-### 9.7 ReportFileWatcher
+### 9.7 ReportFileWatcher — _not built (removed)_
 
-```ts
-export interface ReportFileWatcher {
-  start(runnerPath: VaultPath): Promise<Result<void>>;
-  stop(): Promise<void>;
-  // emits `report.detected` events through the EventBus.
-}
-```
+The originally-planned `ReportFileWatcher` (which would have emitted `report.detected`) was **never built and is removed**. The post-run import is driven **in-process** by the application-layer `PostRunCoordinator`, which subscribes to the EN-2 terminal run events (`testrun.completed`/`failed`/`cancelled`) and reads the runner's report files after the run ends. See Building Block View §5.11a, Runtime View RV-6, and Event Catalog §8.
 
 ### 9.7.1 FeatureFileWatcher (per SDD AD-10)
 

@@ -14,7 +14,14 @@ import { err, ok, type Result } from "../../shared/result/result";
 
 /** Runner installation contract (TIS §8.2). */
 export interface RunnerInstallationService {
-  createRunner(settings: TestHubSettings): Promise<Result<RunnerInstallationResult>>;
+  /**
+   * @param correlationId optional init/reset flow id stamped onto
+   * `testrunner.installed` so a wizard run's events share one id (§19, RV-1).
+   */
+  createRunner(
+    settings: TestHubSettings,
+    correlationId?: string,
+  ): Promise<Result<RunnerInstallationResult>>;
   installDependencies(settings: TestHubSettings): Promise<Result<RunnerCommandResult>>;
   installBrowsers(settings: TestHubSettings): Promise<Result<RunnerCommandResult>>;
 }
@@ -34,7 +41,10 @@ export class DefaultRunnerInstallationService implements RunnerInstallationServi
     private readonly logger: Logger,
   ) {}
 
-  async createRunner(settings: TestHubSettings): Promise<Result<RunnerInstallationResult>> {
+  async createRunner(
+    settings: TestHubSettings,
+    correlationId?: string,
+  ): Promise<Result<RunnerInstallationResult>> {
     const runnerPath = settings.paths.testRunnerPath;
     const written = await this.templates.writeTemplates({
       targetPath: runnerPath,
@@ -49,7 +59,7 @@ export class DefaultRunnerInstallationService implements RunnerInstallationServi
     }
 
     await this.eventBus.publish(
-      createEvent("testrunner.installed", { runnerPath, packageManager: "npm" }),
+      createEvent("testrunner.installed", { runnerPath, packageManager: "npm" }, { correlationId }),
     );
     this.logger.info("Runner project created", {
       runnerPath,

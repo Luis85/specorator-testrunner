@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildStepDefinitionStubFile,
   findMissingSteps,
   isStepDefined,
   parseStepDefinitions,
@@ -126,5 +127,43 @@ describe("findMissingSteps", () => {
     // With a matching def (placeholder ↔ param), it is satisfied.
     const defs = parseStepDefinitions(`When("I select {string} from the menu", () => {});`);
     expect(findMissingSteps(["I select <option> from the menu"], defs)).toEqual([]);
+  });
+});
+
+describe("buildStepDefinitionStubFile", () => {
+  it("emits a cucumber/world import header and one Given stub per step", () => {
+    const file = buildStepDefinitionStubFile(["I open the page", "the result is shown"]);
+    expect(file).toContain(`import { Given } from "@cucumber/cucumber";`);
+    expect(file).toContain(`import { TestWorld } from "../support/world";`);
+    expect(file).toContain(`Given("I open the page", async function (this: TestWorld) {`);
+    expect(file).toContain(`Given("the result is shown", async function (this: TestWorld) {`);
+    // Every stub is pending and TODO-flagged for the user to fill in.
+    expect(file.match(/throw new Error\("Pending"\);/g)).toHaveLength(2);
+    expect(file).toContain("// TODO: implement this step");
+  });
+
+  it("parameterises quoted literals to {string} with one typed arg each", () => {
+    const file = buildStepDefinitionStubFile([`I click the "Continue" button`]);
+    expect(file).toContain(
+      `Given("I click the {string} button", async function (this: TestWorld, arg1: string) {`,
+    );
+  });
+
+  it("parameterises Scenario Outline placeholders to {string}", () => {
+    const file = buildStepDefinitionStubFile(["I select <option> from <menu>"]);
+    expect(file).toContain(
+      `Given("I select {string} from {string}", async function (this: TestWorld, arg1: string, arg2: string) {`,
+    );
+  });
+
+  it("squashes whitespace and escapes embedded double quotes in the comment", () => {
+    const file = buildStepDefinitionStubFile(["I   have    spaced   text"]);
+    expect(file).toContain(`Given("I have spaced text"`);
+  });
+
+  it("round-trips with isStepDefined — a generated stub matches its own step", () => {
+    const file = buildStepDefinitionStubFile([`I click the "Continue" button`]);
+    const defs = parseStepDefinitions(file);
+    expect(isStepDefined(`I click the "Save" button`, defs)).toBe(true);
   });
 });

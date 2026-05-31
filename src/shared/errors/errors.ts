@@ -6,6 +6,7 @@
 export type ErrorCode =
   // execution
   | "RUN_IN_PROGRESS" // ADR-0018
+  | "MAINTENANCE_IN_PROGRESS" // reset/repair vs run mutual exclusion (security L1)
   | "RUN_TIMEOUT"
   | "RUN_CANCELLED"
   // path / command safety

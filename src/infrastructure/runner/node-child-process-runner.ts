@@ -17,6 +17,23 @@ import { ok, type Result } from "../../shared/result/result";
 export const quoteForCmd = (token: string): string => `"${token.replace(/"/g, '""')}"`;
 
 /**
+ * Composes the single command-line string passed to `cmd.exe /d /s /c` for the
+ * `.cmd` shim path. Each token is quoted via {@link quoteForCmd}, then the whole
+ * joined line is wrapped in ONE extra outer quote pair: `cmd /s /c` strips the
+ * first and last quote of the command string, so without the wrapper the
+ * per-token quotes would be mangled. After `/s` strips the outer pair, the inner
+ * `"npm" "run" …` boundaries survive (the documented `cmd /s /c ""x" "y""` form).
+ *
+ * Pure (no spawning) so the Windows command-line composition is unit-testable on
+ * any OS without launching a real `cmd.exe`.
+ */
+export const buildCmdShimCommandLine = (args: readonly string[]): string =>
+  `"${args.map(quoteForCmd).join(" ")}"`;
+
+/** Subset of `child_process.spawn` the runner depends on — injectable as a seam. */
+export type SpawnFn = typeof spawn;
+
+/**
  * Node `child_process.spawn`-backed runner (BBV §7 `ProcessAdapter`).
  *
  * Commands are spawned from an argv array with `shell: false` — there is no
@@ -29,6 +46,19 @@ export const quoteForCmd = (token: string): string => `"${token.replace(/"/g, '"
 export class NodeChildProcessRunner implements ChildProcessRunner {
   private readonly active = new Map<string, ChildProcess>();
   private counter = 0;
+
+  /**
+   * @param platform Which OS path to take. Defaults to the real
+   *   `process.platform`, so production behaviour is unchanged; tests inject
+   *   `"win32"` to exercise the cmd-shim branch deterministically on Linux.
+   * @param spawnFn Seam over `child_process.spawn`. Defaults to the real spawn;
+   *   tests inject a fake to assert the composed cmd argv WITHOUT launching a
+   *   real Windows process.
+   */
+  constructor(
+    private readonly platform: NodeJS.Platform = process.platform,
+    private readonly spawnFn: SpawnFn = spawn,
+  ) {}
 
   run(request: RunCommandRequest): Promise<Result<RunnerCommandResult>> {
     return this.spawn(request);
@@ -59,7 +89,7 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
    * so a direct kill suffices.
    */
   private killTree(child: ChildProcess): void {
-    if (process.platform === "win32" && child.pid !== undefined) {
+    if (this.platform === "win32" && child.pid !== undefined) {
       const killed = spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
       // Fall back to a direct kill if taskkill is unavailable for any reason.
       if (killed.error) child.kill();
@@ -104,7 +134,7 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
         const spawnOptions = { cwd: request.cwd, env: { ...process.env, ...request.env } };
         const programBase = (program.split(/[/\\]/).pop() ?? program).toLowerCase();
         const isCmdShim = /^(npm|npx)(\.cmd)?$/.test(programBase);
-        if (process.platform === "win32" && isCmdShim) {
+        if (this.platform === "win32" && isCmdShim) {
           // ONLY the `npm`/`npx` `.cmd` shims need a shell (Node refuses to launch
           // .cmd without one, CVE-2024-27980); other programs — e.g. a configured
           // `node.exe` path, possibly with spaces — are spawned directly below
@@ -130,12 +160,11 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
             return;
           }
           const comspec = process.env.ComSpec ?? "cmd.exe";
-          // `cmd /s /c` strips the first and last quote of the whole command
-          // string, so the per-token quotes would be mangled. Wrap the joined
-          // line in one extra outer quote pair — after /s strips it, the inner
-          // `"npm" "run" …` boundaries survive (the documented `cmd /s /c ""x" "y""` form).
-          const line = `"${request.args.map(quoteForCmd).join(" ")}"`;
-          child = spawn(comspec, ["/d", "/s", "/c", line], {
+          // The per-token quoting + outer-quote wrapping is a pure builder
+          // (buildCmdShimCommandLine) so the exact `cmd /s /c` command line is
+          // unit-testable without spawning a real cmd.exe.
+          const line = buildCmdShimCommandLine(request.args);
+          child = this.spawnFn(comspec, ["/d", "/s", "/c", line], {
             ...spawnOptions,
             windowsVerbatimArguments: true,
           });
@@ -143,7 +172,7 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
           // POSIX: no shell — args are literal, never re-parsed (TIS §13.2).
           // `detached` puts the child in its own process group so cancel() can
           // signal the WHOLE tree (npm → node → Cucumber), not just the wrapper.
-          child = spawn(program, args, {
+          child = this.spawnFn(program, args, {
             ...spawnOptions,
             shell: false,
             detached: true,

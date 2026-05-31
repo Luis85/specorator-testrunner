@@ -1,6 +1,11 @@
+import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
 import type { RunnerOutput } from "../src/application/ports/child-process-runner";
-import { NodeChildProcessRunner } from "../src/infrastructure/runner/node-child-process-runner";
+import {
+  buildCmdShimCommandLine,
+  NodeChildProcessRunner,
+  type SpawnFn,
+} from "../src/infrastructure/runner/node-child-process-runner";
 
 /**
  * Integration-style unit tests for the security-critical process boundary
@@ -10,9 +15,11 @@ import { NodeChildProcessRunner } from "../src/infrastructure/runner/node-child-
  * cancellation are verified against actual `child_process.spawn` behaviour
  * rather than a fake.
  *
- * The `.cmd` shim path and the cmd `%`-rejection are Windows-only (the source
- * gates them on `process.platform === "win32"`); CI runs on ubuntu, so those
- * assertions are guarded behind a platform check and otherwise skipped.
+ * The `.cmd` shim path and the cmd `%`-rejection are Windows-only in the source.
+ * Rather than leave them to a Windows-only CI leg, the runner takes an
+ * INJECTABLE platform (default `process.platform`) plus a `spawn` seam, so the
+ * win32 composition is exercised deterministically here ON LINUX — see the
+ * "win32 cmd-shim path (injected platform)" block below.
  */
 
 const NODE = process.execPath;
@@ -133,20 +140,111 @@ describe("NodeChildProcessRunner (real spawn, POSIX)", () => {
     expect(result.error.code).toBe("INIT_FAILED");
   });
 
-  it("rejects a cmd `%` argument on Windows only (platform-gated source path)", async () => {
-    if (process.platform !== "win32") {
-      // The %-rejection is Windows-only in the adapter (POSIX passes % literally),
-      // and CI runs on ubuntu — nothing to assert here.
-      expect(process.platform).not.toBe("win32");
-      return;
-    }
+  it("passes a literal `%` arg through verbatim on POSIX (no Windows expansion)", async () => {
+    // The cmd `%`-rejection is win32-only; on POSIX `%` is an ordinary character
+    // and must reach the child untouched (this run uses the REAL spawn).
     const runner = new NodeChildProcessRunner();
     const result = await runner.run({
-      args: ["npm", "run", "%PATH%"],
+      args: [NODE, "-e", "process.stdout.write(process.argv[1])", "%PATH%"],
       cwd: process.cwd(),
     });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.stdout).toBe("%PATH%");
+  });
+});
+
+/**
+ * Builds a minimal fake `child_process.spawn` (a recording seam): every call is
+ * captured and the returned object is just enough of a ChildProcess for the
+ * runner to attach listeners and resolve on `close`. NO real process launches,
+ * so the win32 cmd composition can be asserted on any OS.
+ */
+const fakeSpawn = () => {
+  const calls: { command: string; args: readonly string[]; options: unknown }[] = [];
+  const spawnFn = ((command: string, args: readonly string[], options: unknown) => {
+    calls.push({ command, args, options });
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: null;
+      stderr: null;
+      pid: number;
+    };
+    child.stdout = null;
+    child.stderr = null;
+    child.pid = 4242;
+    // Resolve the run on the next tick by signalling a clean exit.
+    queueMicrotask(() => child.emit("close", 0));
+    return child;
+  }) as unknown as SpawnFn;
+  return { spawnFn, calls };
+};
+
+describe("buildCmdShimCommandLine (pure cmd /s /c composition)", () => {
+  it("quotes each token and wraps the joined line in one outer quote pair", () => {
+    // The documented `cmd /s /c ""x" "y""` form: per-token quotes inside, plus an
+    // outer pair `/s` strips so the inner argv boundaries survive.
+    expect(buildCmdShimCommandLine(["npm", "run", "test"])).toBe('""npm" "run" "test""');
+  });
+
+  it("keeps spaces and cmd metacharacters literal inside the quotes", () => {
+    expect(buildCmdShimCommandLine(["npm", "run", "test -- --tags @a and @b"])).toBe(
+      '""npm" "run" "test -- --tags @a and @b""',
+    );
+  });
+});
+
+describe("NodeChildProcessRunner (win32 cmd-shim path, injected platform)", () => {
+  it("rejects a `%` argument with COMMAND_DISALLOWED without spawning", async () => {
+    const { spawnFn, calls } = fakeSpawn();
+    const runner = new NodeChildProcessRunner("win32", spawnFn);
+    const result = await runner.run({ args: ["npm", "run", "%PATH%"], cwd: "C:\\work" });
+
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("COMMAND_DISALLOWED");
+    // The `%` is rejected BEFORE any spawn — cmd never sees it.
+    expect(calls).toHaveLength(0);
+  });
+
+  it("invokes cmd.exe /d /s /c with the quoted, outer-wrapped command line", async () => {
+    const { spawnFn, calls } = fakeSpawn();
+    const runner = new NodeChildProcessRunner("win32", spawnFn);
+    const result = await runner.run({
+      args: ["npm", "run", "test", "--", "--tags", "@smoke and not @wip"],
+      cwd: "C:\\work",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    // cmd.exe (or %ComSpec%) launched with the documented /d /s /c flags…
+    expect(call.command).toMatch(/cmd(\.exe)?$/i);
+    expect(call.args.slice(0, 3)).toEqual(["/d", "/s", "/c"]);
+    // …and the final arg is the pure builder's output: each token quoted, the
+    // whole line wrapped in one outer quote pair.
+    expect(call.args[3]).toBe(
+      buildCmdShimCommandLine(["npm", "run", "test", "--", "--tags", "@smoke and not @wip"]),
+    );
+    expect(call.args[3]).toBe('""npm" "run" "test" "--" "--tags" "@smoke and not @wip""');
+    // Verbatim args so Node doesn't re-quote our hand-built command line.
+    expect((call.options as { windowsVerbatimArguments?: boolean }).windowsVerbatimArguments).toBe(
+      true,
+    );
+  });
+
+  it("spawns a non-shim program (e.g. node.exe) DIRECTLY, not via cmd", async () => {
+    const { spawnFn, calls } = fakeSpawn();
+    const runner = new NodeChildProcessRunner("win32", spawnFn);
+    // A configured `node.exe` is not an npm/npx .cmd shim, so it bypasses the cmd
+    // wrapper even on win32 — and a literal `%` is therefore allowed here.
+    const result = await runner.run({
+      args: ["C:\\Program Files\\nodejs\\node.exe", "-v", "%KEEP%"],
+      cwd: "C:\\work",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].command).toBe("C:\\Program Files\\nodejs\\node.exe");
+    expect(calls[0].args).toEqual(["-v", "%KEEP%"]);
   });
 });

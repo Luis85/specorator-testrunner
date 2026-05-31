@@ -29,6 +29,7 @@ import {
   DefaultReportImportService,
   type ReportImportService,
 } from "./application/services/report-import-service";
+import { PostRunCoordinator } from "./application/services/post-run-coordinator";
 import { DefaultRunnerInstallationService } from "./application/services/runner-installation-service";
 import {
   DefaultSettingsService,
@@ -38,6 +39,10 @@ import {
   DefaultSpecificationService,
   type SpecificationService,
 } from "./application/services/specification-service";
+import {
+  DefaultStepDefinitionService,
+  type StepDefinitionService,
+} from "./application/services/step-definition-service";
 import { DefaultSuiteService, type SuiteService } from "./application/services/suite-service";
 import {
   DefaultTraceabilityService,
@@ -54,7 +59,6 @@ import {
 } from "./application/services/use-case-service";
 import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
-import type { TestRun } from "./domain/entities/test-run";
 import {
   collectCredentialValues,
   DEFAULT_SETTINGS,
@@ -99,6 +103,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private pipelineService!: PipelineGenerationService;
   private useCaseService!: UseCaseService;
   private specificationService!: SpecificationService;
+  private stepDefinitionService!: StepDefinitionService;
   private suiteService!: SuiteService;
   private testExecutionService!: TestExecutionService;
   private reportImportService!: ReportImportService;
@@ -106,13 +111,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private traceabilityService!: TraceabilityService;
   private vaultAdapter!: ObsidianVaultAdapter;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
-  /** Last run started this session, so report import can re-run on demand. */
-  private lastRun: TestRun | null = null;
-  // Post-run import+evidence reads then writes Use Case frontmatter. The active
-  // run slot is already free by the time this runs, so back-to-back runs could
-  // interleave and clobber each other's evidence/last_run fields — serialize
-  // them through a single chain.
-  private evidenceChain: Promise<void> = Promise.resolve();
+  // In-process post-run flow (P2-1/P2-6/P2-7). Subscribes to the EN-2 terminal
+  // run events and runs import→evidence→dashboard-refresh, owning the `lastRun`
+  // state, the run-status eligibility rule, and the serializing evidence chain
+  // that used to live here.
+  private postRunCoordinator!: PostRunCoordinator;
 
   async onload(): Promise<void> {
     const eventBus = new InMemoryEventBus((error) =>
@@ -185,19 +188,6 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       commandSafety,
     );
-    // Guard repair() against an active run (P0-3). The execution service is
-    // built further down, so delegate lazily through `this`.
-    this.maintenanceService = new DefaultMaintenanceService(
-      this.hubSettingsService,
-      this.validationService,
-      runnerInstall,
-      eventBus,
-      this.logger,
-      {
-        activeRunId: () => this.testExecutionService.activeRunId(),
-        whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
-      },
-    );
     this.initializationService = new DefaultInitializationService(
       this.hubSettingsService,
       vault,
@@ -210,6 +200,29 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    // Maintenance (repair/reset). The execution service — which owns the
+    // synchronous maintenance lock that closes the reset/run TOCTOU (security
+    // L1) — is built further down, so delegate to it lazily through `this`. The
+    // lock's begin() performs the ADR-0018 active-run refusal synchronously, so
+    // the active-run guard here is the legacy fallback only.
+    this.maintenanceService = new DefaultMaintenanceService(
+      this.hubSettingsService,
+      this.validationService,
+      runnerInstall,
+      eventBus,
+      this.logger,
+      {
+        activeRunId: () => this.testExecutionService.activeRunId(),
+        whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
+      },
+      this.initializationService,
+      vault,
+      {
+        inProgress: () => this.testExecutionService.maintenanceLock.inProgress(),
+        begin: () => this.testExecutionService.maintenanceLock.begin(),
+        end: () => this.testExecutionService.maintenanceLock.end(),
+      },
+    );
     this.useCaseService = new DefaultUseCaseService(
       this.hubSettingsService,
       vault,
@@ -219,6 +232,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.specificationService = new DefaultSpecificationService(
       this.hubSettingsService,
       this.useCaseService,
+      vault,
+      eventBus,
+      this.logger,
+    );
+    // UC-010 / RV-4: generate step-definition stubs for a feature's undefined
+    // steps. Writes via the same VaultFileSystem + `.testrunner/src/steps` path
+    // that detectMissingSteps reads from, so a stub is picked up next detection.
+    this.stepDefinitionService = new DefaultStepDefinitionService(
+      this.hubSettingsService,
       vault,
       eventBus,
       this.logger,
@@ -261,9 +283,24 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
-    // After a run reaches a terminal completed/failed state, import + generate
-    // evidence best-effort. Subscribers must never throw into the bus (EN-1), so
-    // every fault is caught, logged, and surfaced as a Notice.
+
+    // After a run reaches a terminal state (EN-2), the coordinator reacts to the
+    // bus event and runs import → evidence → dashboard refresh for the just-
+    // finished run, serialized so back-to-back runs can't clobber each other's
+    // Use Case frontmatter. It replaces the never-built ReportFileWatcher / the
+    // imperative await chain that previously lived in `main.ts` (P2-1/P2-6/P2-7).
+    this.postRunCoordinator = new PostRunCoordinator({
+      reportImportService: this.reportImportService,
+      evidenceGenerationService: this.evidenceGenerationService,
+      traceabilityService: this.traceabilityService,
+      eventBus,
+      logger: this.logger,
+      lastRun: () => this.testExecutionService.lastRun(),
+      activeRunId: () => this.testExecutionService.activeRunId(),
+      whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
+      isEvidenceMarkdownEnabled: () => this.hubSettings.automation.generateEvidenceMarkdown,
+    });
+    this.postRunCoordinator.start();
 
     this.registerView(
       USE_CASE_VIEW_TYPE,
@@ -374,6 +411,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Detect Missing Steps",
       callback: () => void this.detectMissingSteps(),
     });
+    // UC-010 / RV-4: explicit user command (NOT auto-on-edit) — detect the
+    // active feature's missing steps, then generate non-destructive stubs.
+    this.addCommand({
+      id: "generate-step-definitions",
+      name: "Generate Step Definitions",
+      callback: () => void this.generateStepDefinitions(),
+    });
 
     // EPIC-007 Test Execution (US-026/027/028/029/030).
     this.addCommand({
@@ -416,31 +460,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.addCommand({
       id: "import-report-last-run",
       name: "Import Report for Last Run",
-      callback: () => {
-        // A run in progress has already deleted and is reusing the fixed
-        // reports path, so re-importing now would attach the active run's
-        // missing/partial report to the PREVIOUS run id. Block until it settles.
-        if (this.testExecutionService.activeRunId() !== null) {
-          new Notice("A test run is in progress; import its report once it finishes.");
-          return;
-        }
-        // Import for runs that can produce a report: passed/failed, and
-        // cancelled (which may have flushed a valid partial report — the
-        // pre-run cleanup means any report on disk is this run's). The importer
-        // returns a safe logged failure when no report exists. An errored spawn
-        // fault never produced one.
-        if (!this.lastRun) {
-          new Notice("No test run to import a report for yet.");
-        } else if (
-          this.lastRun.status === "passed" ||
-          this.lastRun.status === "failed" ||
-          this.lastRun.status === "cancelled"
-        ) {
-          void this.importAndGenerateEvidence(this.lastRun, true);
-        } else {
-          new Notice(`The last run (${this.lastRun.status}) produced no report to import.`);
-        }
-      },
+      callback: () => void this.importLastRun(),
     });
     this.addRibbonIcon(
       "terminal",
@@ -514,6 +534,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         }
       });
     }
+    // Detach the post-run coordinator's bus subscriptions so a late terminal
+    // event after unload can't drive a new import (synchronous, race-free).
+    // Any in-flight import/evidence task is awaited where evidence I/O must
+    // settle before mutating settings (resetSettings); onunload is best-effort
+    // synchronous per PRES-H1, and the per-run snapshot already protects
+    // attribution, so we do not block teardown on whenSettled() here.
+    this.postRunCoordinator?.stop();
     // registerView + each view's onClose already tear the views down on unload;
     // detachLeavesOfType is explicitly discouraged (it destroys the user's saved
     // workspace layout across reloads/updates), so it is intentionally NOT called
@@ -549,78 +576,41 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       );
       return;
     }
-    this.lastRun = result.value;
-    // Import the report + generate evidence for THIS finished run (UC-016).
-    // Driven from the returned run — not event/instance state — so the report
-    // is attributed to the correct run. A cancelled run may have flushed a valid
-    // partial report (the pre-run cleanup means it can only be THIS run's), so
-    // import it too; a spawn-error `errored` run never produced one. Missing/
-    // invalid reports return a logged Result, so this is always safe.
-    if (
-      result.value.status === "passed" ||
-      result.value.status === "failed" ||
-      result.value.status === "cancelled"
-    ) {
-      await this.importAndGenerateEvidence(result.value);
-    }
+    // The PostRunCoordinator reacts to the terminal run event (EN-2) and runs
+    // import → evidence → dashboard refresh for the finished run; runTest no
+    // longer imports here, so the flow happens exactly once (no double-process).
   }
 
   /**
-   * Imports a finished run's Cucumber report and generates linked evidence
-   * (UC-016). Never rejects — every fault is logged and (when `notify`) shown.
+   * Re-runs report import + evidence for the last finished run on demand
+   * (UC-016, US-032). The eligibility rule and serialization live in the
+   * coordinator; this surfaces its typed outcome as a Notice.
    */
-  private importAndGenerateEvidence(run: TestRun, notify = false): Promise<void> {
-    // Queue behind any in-flight evidence task so two runs' Use Case frontmatter
-    // updates can't interleave (read-modify-write race). Callers await the
-    // chained task, so ordering and completion are preserved.
-    const task = this.evidenceChain
-      .catch(() => undefined)
-      .then(() => this.runImportAndGenerateEvidence(run, notify));
-    this.evidenceChain = task;
-    return task;
-  }
-
-  private async runImportAndGenerateEvidence(run: TestRun, notify = false): Promise<void> {
-    try {
-      const imported = await this.reportImportService.import(run);
-      if (!imported.ok) {
-        this.logger.warn("Report import failed", {
-          runId: run.id,
-          reason: imported.error.message,
-        });
-        if (notify) new Notice(`Report import failed: ${imported.error.message}`, 10000);
-        return;
-      }
-      // Always call generate(): it honors BOTH opt-outs internally — skipping
-      // the Markdown note when generateEvidenceMarkdown is off, but still writing
-      // the Use Case lastTestRun (Recent Runs) when updateUseCaseFrontmatterAfterRun
-      // is on. Gating the whole call on the note opt-out dropped runs from the
-      // dashboard (US-038).
-      const evidence = await this.evidenceGenerationService.generate({
-        run,
-        report: imported.value,
-      });
-      if (!evidence.ok) {
-        this.logger.warn("Evidence generation failed", {
-          runId: run.id,
-          reason: evidence.error.message,
-        });
-        if (notify) new Notice(`Evidence generation failed: ${evidence.error.message}`, 10000);
-        return;
-      }
-      if (notify) {
-        // generate() may return ok without writing a note (Markdown disabled) —
-        // don't point the user at a deliberately non-existent file.
-        new Notice(
-          this.hubSettings.automation.generateEvidenceMarkdown
-            ? `Evidence written to ${evidence.value.path}`
-            : "Last run recorded (evidence Markdown generation is disabled).",
-        );
-      }
-    } catch (error) {
-      // The subscriber must not throw into the bus (EN-1).
-      this.logger.error("Report import / evidence generation threw", error as Error);
-      if (notify) new Notice("Report import / evidence generation failed unexpectedly.", 10000);
+  private async importLastRun(): Promise<void> {
+    const result = await this.postRunCoordinator.importLastRun();
+    if (!result.ok) {
+      new Notice(`Report import failed: ${result.error.message}`, 10000);
+      return;
+    }
+    switch (result.value.kind) {
+      case "imported":
+        new Notice(`Evidence written to ${result.value.evidencePath}`);
+        break;
+      case "recorded":
+        new Notice("Last run recorded (evidence Markdown generation is disabled).");
+        break;
+      case "no-run":
+        new Notice("No test run to import a report for yet.");
+        break;
+      case "no-report":
+        new Notice("The last run produced no report to import (it did not finish a test run).");
+        break;
+      case "run-in-progress":
+        new Notice("A test run is in progress; import its report once it finishes.");
+        break;
+      case "ineligible":
+        new Notice(`The last run (${result.value.status}) produced no report to import.`);
+        break;
     }
   }
 
@@ -782,6 +772,44 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     );
   }
 
+  /**
+   * UC-010 / RV-4: detect the active feature's undefined steps via
+   * `SpecificationService`, then generate non-destructive step-definition stubs
+   * via `StepDefinitionService`. Generation is an explicit user command (not
+   * auto-on-every-edit); the detection event's id is threaded through as the
+   * `causationId` of `stepdefinition.generated` (Event Catalog §5), so a future
+   * auto-path can reuse the same wiring. Logic lives in the services — this only
+   * orchestrates the two calls and surfaces the outcome as a Notice.
+   */
+  private async generateStepDefinitions(): Promise<void> {
+    const path = this.activeFeaturePath();
+    if (path === null) return;
+    const detected = await this.specificationService.detectMissingSteps(path);
+    if (!detected.ok) {
+      new Notice(`Detection failed: ${detected.error.message}`, 10000);
+      return;
+    }
+    if (detected.value.missingSteps.length === 0) {
+      new Notice("No missing steps — nothing to generate.");
+      return;
+    }
+    const generated = await this.stepDefinitionService.generate(
+      path,
+      detected.value.missingSteps,
+      detected.value.detectionEventId,
+    );
+    if (!generated.ok) {
+      new Notice(`Could not generate step definitions: ${generated.error.message}`, 10000);
+      return;
+    }
+    const count = generated.value.generatedSteps.length;
+    new Notice(
+      count === 0
+        ? "No missing steps — nothing to generate."
+        : `Generated ${count} step stub(s) in ${generated.value.stepFile}.`,
+    );
+  }
+
   private async validateEnvironment(): Promise<void> {
     new Notice("Validating environment…");
     const result = await this.validationService.validateEnvironment();
@@ -882,22 +910,36 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   }
 
   async resetSettings(): Promise<void> {
-    // A reset overwrites settings/credentials; refuse while a run is active so
-    // it can't redirect evidence writes or swap credentials mid-run (P0-3).
-    if (this.testExecutionService.activeRunId() !== null) {
-      new Notice("A test run is in progress; cancel it before resetting settings.", 10000);
+    // Full UC-024 reset: remove the regenerable `.testrunner` runtime, restore
+    // default settings, and re-initialize — all under one reset correlationId.
+    // The active-run refusal and the run/maintenance mutual exclusion are
+    // enforced SYNCHRONOUSLY inside MaintenanceService.reset() via the shared
+    // maintenance lock (security L1 TOCTOU close), so the run can't reserve a
+    // slot in a check-then-act gap here.
+    //
+    // Evidence I/O outlives the active run slot (the coordinator writes Use Case
+    // frontmatter after the slot frees), so drain it first — but only when no run
+    // is active, so we never block while a live run is in flight (the reset would
+    // be refused anyway). This wait happens BEFORE acquiring the lock; a run
+    // racing in afterwards is rejected by the lock, with nothing yet mutated.
+    if (this.testExecutionService.activeRunId() === null) {
+      await this.postRunCoordinator.whenSettled();
+    }
+    const result = await this.maintenanceService.reset();
+    if (!result.ok) {
+      new Notice(
+        result.error.code === "RUN_IN_PROGRESS"
+          ? "A test run is in progress; cancel it before resetting."
+          : `Reset failed: ${result.error.message}`,
+        10000,
+      );
       return;
     }
-    // Let the active-run completion + in-flight evidence writes settle before
-    // mutating settings (defensive: the guard above already covers the common
-    // case, but evidence I/O outlives the active slot — see evidenceChain).
-    await this.testExecutionService.whenActiveSettles().catch(() => undefined);
-    await this.evidenceChain.catch(() => undefined);
-    const result = await this.hubSettingsService.reset();
-    if (result.ok) {
-      this.hubSettings = result.value;
-      this.refreshLoggerSecrets();
-    }
+    // Re-load the now-default settings so the in-memory copy + redaction set
+    // match the persisted reset.
+    this.hubSettings = await this.hubSettingsService.load();
+    this.refreshLoggerSecrets();
+    new Notice("Test Hub reset to a clean state.");
   }
 
   /**

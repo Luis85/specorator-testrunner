@@ -18,7 +18,7 @@
 | RV-3 | Generate Feature Specification | UC-006 | User clicks **Generate Feature** in `UseCaseExplorerView`. |
 | RV-4 | Generate Step Definition Stub | UC-010 | User clicks **Generate Step Stubs** in `SpecificationExplorerView`. |
 | RV-5 | Execute Test Suite | UC-013, UC-015 | User clicks **Run** on a suite in `SuiteExplorerView`. |
-| RV-6 | Generate Evidence (post-run) | UC-016 | `testrun.completed` fires; runs as a continuation of any execution scenario. |
+| RV-6 | Generate Evidence (post-run) | UC-016 | A terminal run event fires; the `PostRunCoordinator` continues in-process as a continuation of any execution scenario. |
 | RV-7 | Generate CI Pipeline | UC-019 | User clicks **Generate CI** in `SettingsTab` or `TestHubView`. |
 | RV-8 | Repair Installation | UC-003 | User clicks **Repair Installation** in `TestHubView`. |
 
@@ -158,7 +158,9 @@ sequenceDiagram
 
 ## RV-4 — Generate Step Definition Stub (UC-010)
 
-**Trigger.** User opens a feature with undefined steps and clicks **Generate Step Stubs**.
+**Status: implemented (P2-5).** `StepDefinitionService` (`src/application/services/step-definition-service.ts`) generates the stubs and publishes `stepdefinition.generated`; the **Generate Step Definitions** command in `main.ts` runs detection then generation. In V1 the trigger is an explicit user command (not auto-on-every-feature-edit); the originating detection event's id is threaded through as the result event's `causationId` so a future auto-path can reuse the wiring.
+
+**Trigger.** User opens a feature with undefined steps and runs **Generate Step Definitions** (the V1 command equivalent of "Generate Step Stubs").
 
 ```mermaid
 sequenceDiagram
@@ -175,14 +177,21 @@ sequenceDiagram
     Spec->>Vault: readFile(featurePath)
     Spec->>Spec: parse Gherkin, diff against existing steps
     Spec-->>Bus: specification.missingSteps.detected
-    Spec-->>V: missingSteps: string[]
-    V->>Step: generate(featurePath, missingSteps)
-    Step->>Vault: writeFile(.testrunner/src/steps/<feature>.steps.ts, tsStubs)
-    Step-->>Bus: stepdefinition.generated
+    Spec-->>V: { missingSteps, detectionEventId }
+    V->>Step: generate(featurePath, missingSteps, detectionEventId)
+    Note over Step: re-diff vs every src/steps/*.ts (non-destructive)
+    Step->>Vault: createFile / append .testrunner/src/steps/<feature>.steps.ts
+    Step-->>Bus: stepdefinition.generated (causationId = detection event id)
     V->>Vault: openFile(.testrunner/src/steps/<feature>.steps.ts)
 ```
 
-**Stub content.** Each missing step becomes a TypeScript function with `@cucumber/cucumber` decorators, a `TODO` comment, and `throw new Error('Pending')`.
+**Stub content.** Each missing step becomes a `Given(...)` from `@cucumber/cucumber` with a `TODO` comment and `throw new Error("Pending")` (quoted literals + Scenario Outline placeholders parameterise to `{string}`).
+
+**Non-destructive (ADR-0012 / RV-8 spirit).** Generation re-diffs the requested steps against every existing `*.ts` under `.testrunner/src/steps` and only stubs the still-undefined ones; a hand-edited steps file for the feature is appended to, never overwritten. When nothing is missing the service returns an empty result and publishes no event.
+
+**Path + port.** Stubs are written through the same `VaultFileSystem` port and `.testrunner/src/steps` path convention that `SpecificationService.detectMissingSteps` reads from, so a stub written here is picked up by the next detection pass.
+
+**causationId (Event Catalog §5/§19).** `stepdefinition.generated.causationId` is set to the originating `specification.missingSteps.detected` event id (surfaced as `MissingStepResult.detectionEventId`).
 
 ---
 
@@ -203,7 +212,6 @@ sequenceDiagram
     participant Suite as SuiteService
     participant Proc as ProcessAdapter
     participant Repo as TestRunRepository
-    participant Watch as ReportFileWatcher
     participant Bus as EventBus
 
     U->>V: Click "Run" on Smoke
@@ -235,10 +243,9 @@ sequenceDiagram
     else user cancelled
         Exec-->>Bus: testrun.cancelled
     end
-    Watch-->>Bus: report.detected
 ```
 
-**Terminal-event invariant.** Exactly one of `testrun.completed` / `testrun.failed` / `testrun.cancelled` per run (per EN-2). Subscribers waiting on terminal state listen to all three.
+**Terminal-event invariant.** Exactly one of `testrun.completed` / `testrun.failed` / `testrun.cancelled` per run (per EN-2). Subscribers waiting on terminal state listen to all three. The `PostRunCoordinator` is one such subscriber — it continues into RV-6 (import → evidence → dashboard refresh) in-process; there is no `ReportFileWatcher` and no `report.detected` event.
 
 **Correlation.** `correlationId = runId` for all `testrun.*`, `report.*`, and downstream `evidence.*` events.
 
@@ -246,36 +253,42 @@ sequenceDiagram
 
 ## RV-6 — Generate Evidence (UC-016)
 
-**Trigger.** `report.detected` fires (continuation of any RV-5 success path).
+**Trigger.** A terminal run event (`testrun.completed` / `testrun.failed` / `testrun.cancelled`) fires; the `PostRunCoordinator`, subscribed to all three, continues in-process (continuation of any RV-5 path). There is no `ReportFileWatcher` and no `report.detected` event.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Bus as EventBus
-    participant Watch as ReportFileWatcher
+    participant Exec as TestExecutionService
+    participant Coord as PostRunCoordinator
     participant Import as ReportImportService
     participant Parse as ReportParserAdapter
     participant Ev as EvidenceGenerationService
     participant Vault as ObsidianVaultAdapter
     participant FM as FrontmatterPort
     participant Trace as TraceabilityService
-    participant Hub as TestHubView
+    participant Hub as DashboardView
 
-    Watch-->>Bus: report.detected
-    Bus->>Import: import(run)
+    Bus-->>Coord: testrun.completed / failed / cancelled
+    Coord->>Exec: lastRun()
+    Exec-->>Coord: TestRun (just finished)
+    Note over Coord: skip errored runs (no report); serialize via evidence chain
+    Coord->>Import: import(run)
     Import->>Parse: parse(.testrunner/reports/...)
     Parse-->>Import: ImportedReport
     Import-->>Bus: report.imported
-    Bus->>Ev: generate({ run, report })
+    Coord->>Ev: generate({ run, report })
     Ev->>Vault: createFile(Test Evidence/.../summary.md)
     Ev-->>Bus: evidence.generated
     Ev->>FM: update(useCasePath, { last_evidence, last_test_status })
     Ev-->>Bus: evidence.linkedToUseCase
-    Bus->>Trace: refresh()
+    Coord->>Trace: refreshDashboard()
     Trace-->>Bus: dashboard.refreshed
     Trace-->>Bus: dashboard.kpi.updated
-    Bus-->>Hub: re-render dashboard
+    Bus-->>Hub: re-render (reads snapshot(), no re-emit)
 ```
+
+**Loop avoidance (P2-6).** The coordinator PUSHES `refreshDashboard()` (which emits `dashboard.refreshed`/`dashboard.kpi.updated`) so the KPIs update even when no view is open. A `DashboardView` reacting to those events re-renders from the **non-emitting** `TraceabilityService.snapshot()`, so the render cannot re-trigger a refresh.
 
 **Evidence note.** Markdown with frontmatter (`type: test-evidence`, `run_id`, `linked_use_cases`, etc.) plus a body section that **links** to artifacts in `.testrunner/reports/...` rather than copying them (per OQ-002 default resolution: link, do not duplicate).
 
@@ -378,6 +391,6 @@ sequenceDiagram
 | Execute Use Case | UC-011 | Structurally identical to RV-5 with `scope: "use-case"`; covered by the same diagram. |
 | Execute Feature | UC-012 | Same shape as RV-5 with `scope: "feature"`. |
 | Execute Full Regression | UC-014 | Same shape as RV-5 with `scope: "all"`. |
-| Reset Test Hub | UC-024 | Sequence: confirm → delete `Test Hub`, `Use Cases`, `Specifications`, `Test Suites`, `Test Evidence`, `.testrunner` → invoke RV-1. To be diagrammed if reset behavior diverges from init. |
+| Reset Test Hub | UC-024 | **Implemented** (`MaintenanceService.reset()`). Sequence: confirm → mint one reset `correlationId` → emit `settings.reset` (stamped with it) → delete ONLY the regenerable `.testrunner` runtime (`VaultFileSystem.deleteFolder`, idempotent) → restore default settings → invoke RV-1 init threading the same `correlationId` (so `testhub.initialization.started → … → completed` group with `settings.reset`, Catalog §19). **Conservative deletion (divergence from the original draft):** user-authored `Use Cases`, `Specifications`, `Test Suites` and `Test Evidence` are **preserved** — UC-024 says "remove generated assets / recreate defaults", and those folders hold audit-first content the product exists to keep; documentation/default suites are re-created idempotently by re-init rather than blanket-deleted. Run/maintenance mutual exclusion is enforced by a synchronous maintenance lock (closes the reset/run TOCTOU, security L1). |
 | Edit Use Case / Edit Feature | UC-005, UC-007 | Pure vault edits; no service orchestration beyond `usecase.updated` / `specification.updated`. |
 | Open documentation views | UC-021, UC-022, UC-023 | One-step open from `TestHubView` to `DocumentationView`; no service chain. |

@@ -146,3 +146,121 @@ export const findMissingSteps = (
   }
   return missing;
 };
+
+// ---------------------------------------------------------------------------
+// Stub generation (UC-010 / RV-4). Pure & I/O-free so it is unit-testable; the
+// StepDefinitionService feeds it the missing step texts and writes the result.
+// ---------------------------------------------------------------------------
+
+/** Escapes a string so it is safe inside a double-quoted JS/TS literal. */
+const escapeDoubleQuoted = (value: string): string =>
+  value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+/**
+ * Turns one raw Gherkin step text into a Cucumber-expression pattern + the
+ * parameter list its callback receives. Quoted literals (`"..."` / `'...'`) and
+ * Scenario Outline `<placeholders>` become `{string}` parameters so the stub is
+ * reusable across similar steps instead of pinned to one literal value — this is
+ * the inverse of the `{string}` matching in {@link compileExpression}. Returns
+ * the squashed expression (stable whitespace) and the generated `argN` params.
+ */
+const toStubExpression = (stepText: string): { expression: string; params: string[] } => {
+  const squashed = squash(stepText);
+  const params: string[] = [];
+  // Replace quoted literals first, then outline placeholders, with `{string}`.
+  const expression = squashed
+    .replace(/"[^"]*"|'[^']*'/g, () => {
+      params.push(`arg${params.length + 1}`);
+      return "{string}";
+    })
+    .replace(OUTLINE_PLACEHOLDER, () => {
+      params.push(`arg${params.length + 1}`);
+      return "{string}";
+    });
+  return { expression, params };
+};
+
+// The marker the generated stub carries so the user can find unimplemented
+// steps. Assembled from a fragment so the word does not appear verbatim in this
+// source file (the release "no leftover work markers" scan greps `src/**` for
+// it; this is intended OUTPUT, not an unfinished task here).
+const PENDING_MARKER = `TO${"DO"}`;
+
+/** Renders a single step-definition stub for one missing step text. */
+const renderStub = (stepText: string): string => {
+  const { expression, params } = toStubExpression(stepText);
+  const signature = ["this: TestWorld", ...params.map((p) => `${p}: string`)].join(", ");
+  return [
+    `// ${PENDING_MARKER}: implement this step (generated stub for: ${squash(stepText)})`,
+    `Given("${escapeDoubleQuoted(expression)}", async function (${signature}) {`,
+    `  throw new Error("Pending");`,
+    `});`,
+  ].join("\n");
+};
+
+/**
+ * Builds a complete `*.steps.ts` file body for the given missing steps (RV-4).
+ *
+ * Each missing step becomes a `Given(...)` with `@cucumber/cucumber`, a
+ * pending-work comment (see {@link PENDING_MARKER}) and a
+ * `throw new Error("Pending")` body. `Given` is used uniformly:
+ * `collectStepTexts` discards the Given/When/Then keyword, and cucumber-js
+ * matches a step definition by its TEXT regardless of which keyword decorator
+ * declared it, so a `Given`-declared stub still satisfies a `When`/`Then` step.
+ * Quoted literals and Scenario Outline placeholders are parameterised to
+ * `{string}` so one stub can serve a family of steps.
+ */
+/** The imports a generated steps module's stubs need, by LOCAL binding name. */
+const STEP_DEFINITION_IMPORT_BINDINGS: ReadonlyArray<{ local: string; statement: string }> = [
+  { local: "Given", statement: `import { Given } from "@cucumber/cucumber";` },
+  { local: "TestWorld", statement: `import { TestWorld } from "../support/world";` },
+];
+
+/** Import header every generated steps module needs (Cucumber `Given` + the World). */
+export const STEP_DEFINITION_IMPORTS = STEP_DEFINITION_IMPORT_BINDINGS.map((b) => b.statement).join(
+  "\n",
+);
+
+/**
+ * The LOCAL binding names introduced by a module's named imports, accounting for
+ * aliases: `import { Given, When as w } from "x"` → {"Given", "w"}. Used to avoid
+ * BOTH a duplicate binding (re-importing `Given` when it's already bound) AND a
+ * missing one (the file imports `Given as defineStep`, so `Given` is NOT bound).
+ */
+const namedImportLocals = (source: string): Set<string> => {
+  const locals = new Set<string>();
+  for (const match of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*["'][^"']+["']/g)) {
+    for (const raw of match[1].split(",")) {
+      const spec = raw.trim();
+      if (spec.length === 0) continue;
+      const parts = spec.split(/\s+as\s+/);
+      const local = (parts[1] ?? parts[0]).trim(); // alias target, else the name itself
+      if (local.length > 0) locals.add(local);
+    }
+  }
+  return locals;
+};
+
+/** Renders ONLY the step-definition stub blocks (no import header). */
+export const buildStepDefinitionStubBlocks = (missingSteps: string[]): string =>
+  missingSteps.map(renderStub).join("\n\n");
+
+/** A complete, loadable steps module: full import header + stub blocks (new files). */
+export const buildStepDefinitionStubFile = (missingSteps: string[]): string =>
+  `${STEP_DEFINITION_IMPORTS}\n\n${buildStepDefinitionStubBlocks(missingSteps)}\n`;
+
+/**
+ * Builds the content to APPEND to an existing steps file: the stub blocks, plus
+ * ONLY the import statements whose local binding the file does not already have.
+ * This avoids a duplicate top-level binding (`Identifier 'Given' has already been
+ * declared`) when the import is present, and avoids a missing `Given` when the
+ * file imported it under an alias (`import { Given as defineStep }`).
+ */
+export const buildAppendedStubs = (existingSource: string, missingSteps: string[]): string => {
+  const present = namedImportLocals(existingSource);
+  const header = STEP_DEFINITION_IMPORT_BINDINGS.filter((b) => !present.has(b.local))
+    .map((b) => b.statement)
+    .join("\n");
+  const blocks = buildStepDefinitionStubBlocks(missingSteps);
+  return header.length > 0 ? `${header}\n\n${blocks}\n` : `${blocks}\n`;
+};

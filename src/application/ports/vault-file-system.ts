@@ -15,4 +15,11 @@ export interface VaultFileSystem {
   listFiles(path: VaultPath): Promise<Result<VaultPath[]>>;
   /** All file descendants of a folder, at any depth. */
   listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>>;
+  /**
+   * Recursively deletes a folder and everything under it. Used by
+   * {@link MaintenanceService.reset} (UC-024) to remove the regenerable
+   * `.testrunner` runtime before re-initialization. A missing folder is NOT an
+   * error (the delete is idempotent); a real I/O failure returns `err`.
+   */
+  deleteFolder(path: VaultPath): Promise<Result<void>>;
 }

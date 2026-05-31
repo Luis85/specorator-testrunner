@@ -79,6 +79,22 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   async listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>> {
     return ok([...this.files.keys()].filter((p) => p.startsWith(`${path}/`)));
   }
+
+  async deleteFolder(path: VaultPath): Promise<Result<void>> {
+    if (this.failOn && this.failOn.path === path) {
+      return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
+    }
+    // Remove the folder itself and every file/folder nested under it.
+    this.folders.delete(path);
+    const prefix = `${path}/`;
+    for (const file of [...this.files.keys()]) {
+      if (file === path || file.startsWith(prefix)) this.files.delete(file);
+    }
+    for (const folder of [...this.folders]) {
+      if (folder.startsWith(prefix)) this.folders.delete(folder);
+    }
+    return ok(undefined);
+  }
 }
 
 /** In-memory {@link DataStore}. */

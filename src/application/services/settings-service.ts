@@ -23,7 +23,13 @@ const NOOP_LOGGER: Logger = {
 export interface SettingsService {
   load(): Promise<TestHubSettings>;
   save(settings: TestHubSettings): Promise<Result<void>>;
-  reset(): Promise<Result<TestHubSettings>>;
+  /**
+   * Restores defaults and emits `settings.reset`. A `correlationId` may be
+   * threaded in by {@link MaintenanceService.reset} (UC-024) so `settings.reset`
+   * shares the single reset-invocation id with the re-initialization chain that
+   * follows it (Event Catalog §19).
+   */
+  reset(correlationId?: string): Promise<Result<TestHubSettings>>;
   validate(settings: TestHubSettings): Promise<SettingsValidationResult>;
 }
 
@@ -110,14 +116,20 @@ export class DefaultSettingsService implements SettingsService {
         }),
       );
     }
+    // Diff the persisted settings against the incoming ones so the event
+    // carries the real changed field names (Event Catalog §13: { changedFields }).
+    const previous = await this.load();
     await this.store.save(settings);
-    await this.eventBus.publish(createEvent("settings.updated", { settings }));
+    const changedFields = diffSettings(previous, settings);
+    await this.eventBus.publish(createEvent("settings.updated", { changedFields }));
     return ok(undefined);
   }
 
-  async reset(): Promise<Result<TestHubSettings>> {
+  async reset(correlationId?: string): Promise<Result<TestHubSettings>> {
     await this.store.save(DEFAULT_SETTINGS);
-    await this.eventBus.publish(createEvent("settings.reset", {}));
+    await this.eventBus.publish(
+      createEvent("settings.reset", { profile: "default" }, { correlationId }),
+    );
     return ok(DEFAULT_SETTINGS);
   }
 
@@ -165,7 +177,39 @@ export class DefaultSettingsService implements SettingsService {
       errors,
       warnings,
     };
-    await this.eventBus.publish(createEvent("settings.validated", { result }));
+    // Event Catalog §13: { valid, warnings: string[] }. The full validation
+    // messages stay on the returned result; the event carries warning text only.
+    await this.eventBus.publish(
+      createEvent("settings.validated", {
+        valid: result.valid,
+        warnings: warnings.map((warning) => warning.message),
+      }),
+    );
     return result;
   }
 }
+
+/**
+ * Dotted field paths whose values differ between two settings objects, compared
+ * section-by-section (one level deep, matching the mergeWithDefaults shape).
+ * Each leaf is compared by JSON value so nested structures (e.g. environments)
+ * register as a single changed field.
+ */
+const diffSettings = (before: TestHubSettings, after: TestHubSettings): string[] => {
+  const changed: string[] = [];
+  const sections = Object.keys(after) as (keyof TestHubSettings)[];
+  for (const section of sections) {
+    const beforeSection = before[section] as unknown as Record<string, unknown>;
+    const afterSection = after[section] as unknown as Record<string, unknown>;
+    const fields = new Set([
+      ...Object.keys(beforeSection ?? {}),
+      ...Object.keys(afterSection ?? {}),
+    ]);
+    for (const field of fields) {
+      if (JSON.stringify(beforeSection?.[field]) !== JSON.stringify(afterSection?.[field])) {
+        changed.push(`${section}.${field}`);
+      }
+    }
+  }
+  return changed;
+};

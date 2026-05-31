@@ -16,9 +16,17 @@ import { err, ok, type Result } from "../../shared/result/result";
 
 /** Initialization contract (TIS §8.1). */
 export interface InitializationService {
+  /**
+   * Runs the full init flow. A `correlationId` may be supplied by
+   * {@link MaintenanceService.reset} (UC-024) so the whole reset flow —
+   * `settings.reset` plus this `testhub.initialization.*` chain — shares one
+   * reset-invocation id (Event Catalog §19). When omitted, the id of the
+   * `testhub.initialization.started` event is used (the UC-001 wizard path).
+   */
   initialize(
     request: InitializeTestHubRequest,
     onProgress?: ProgressReporter,
+    correlationId?: string,
   ): Promise<Result<InitializeTestHubResult>>;
 }
 
@@ -76,11 +84,22 @@ export class DefaultInitializationService implements InitializationService {
   async initialize(
     request: InitializeTestHubRequest,
     onProgress: ProgressReporter = () => {},
+    suppliedCorrelationId?: string,
   ): Promise<Result<InitializeTestHubResult>> {
-    const correlationId = createEvent("testhub.initialization.started", {}).id;
-    await this.eventBus.publish(
-      createEvent("testhub.initialization.started", {}, { correlationId, source: "user" }),
+    // The Test Hub folder is the in-vault root the wizard initializes; the
+    // catalog's `vaultPath` is reported as that configured path (the service
+    // has no handle to the absolute vault root, and only writes vault-relative).
+    const vaultPath = request.settings.paths.testHubPath;
+    const started = createEvent(
+      "testhub.initialization.started",
+      { vaultPath },
+      { source: "user" },
     );
+    // A reset threads in its own invocation id so `settings.reset` and this
+    // chain group under one correlationId (UC-024, Event Catalog §19); the
+    // wizard path falls back to the started event's id (UC-001).
+    const correlationId = suppliedCorrelationId ?? started.id;
+    await this.eventBus.publish({ ...started, correlationId });
     this.logger.info("Initializing Test Hub", { correlationId });
 
     const result: InitializeTestHubResult = {
@@ -96,7 +115,11 @@ export class DefaultInitializationService implements InitializationService {
       onProgress({ step, label: step, status: "failed", detail: error.message });
       this.logger.error("Initialization failed", error, { correlationId, step });
       await this.eventBus.publish(
-        createEvent("testhub.initialization.failed", { step, error }, { correlationId }),
+        createEvent(
+          "testhub.initialization.failed",
+          { reason: error.message, step },
+          { correlationId },
+        ),
       );
       return err(error);
     };
@@ -122,7 +145,7 @@ export class DefaultInitializationService implements InitializationService {
     // 3. Documentation (US-009).
     if (request.generateDocumentation) {
       onProgress({ step: "documentation", label: "Generating documentation", status: "running" });
-      const docs = await this.documentation.generate();
+      const docs = await this.documentation.generate(correlationId);
       if (!docs.ok) return fail("documentation", docs.error);
       result.createdFiles.push(...docs.value.documents);
       result.documentationGenerated = true;
@@ -133,7 +156,7 @@ export class DefaultInitializationService implements InitializationService {
 
     // 4. Default suites (US-008): Smoke + Regression.
     onProgress({ step: "suites", label: "Creating default suites", status: "running" });
-    const suites = await this.suites.createDefaults();
+    const suites = await this.suites.createDefaults(correlationId);
     if (!suites.ok) return fail("suites", suites.error);
     result.defaultSuitesCreated = suites.value.map((suite) => suite.id);
     result.createdFiles.push(...suites.value.map((suite) => suite.path));
@@ -153,7 +176,7 @@ export class DefaultInitializationService implements InitializationService {
 
     // 6. Materialise the .testrunner project (US-010, RV-1).
     onProgress({ step: "runner", label: "Creating runner project", status: "running" });
-    const runner = await this.runnerInstall.createRunner(request.settings);
+    const runner = await this.runnerInstall.createRunner(request.settings, correlationId);
     if (!runner.ok) return fail("runner", runner.error);
     result.runnerInstalled = true;
     result.createdFiles.push(...runner.value.createdFiles);
@@ -180,7 +203,7 @@ export class DefaultInitializationService implements InitializationService {
     // 9. Validate the environment (US-013, UC-002). Diagnostic only — an
     //    incomplete environment (e.g. skipped install) does not fail init.
     onProgress({ step: "validate", label: "Validating environment", status: "running" });
-    const validation = await this.validation.validateEnvironment();
+    const validation = await this.validation.validateEnvironment(correlationId);
     onProgress({
       step: "validate",
       label: "Validating environment",
@@ -189,7 +212,14 @@ export class DefaultInitializationService implements InitializationService {
     });
 
     await this.eventBus.publish(
-      createEvent("testhub.initialization.completed", { result }, { correlationId }),
+      createEvent(
+        "testhub.initialization.completed",
+        {
+          testHubPath: request.settings.paths.testHubPath,
+          runnerPath: request.settings.paths.testRunnerPath,
+        },
+        { correlationId },
+      ),
     );
     this.logger.info("Test Hub initialized", {
       correlationId,

@@ -6,10 +6,10 @@ import { FakeDataStore, recordingEventBus, silentLogger } from "./fakes";
 
 const makeService = (initial?: unknown) => {
   const store = new FakeDataStore(initial);
-  const { bus, types } = recordingEventBus();
+  const { bus, types, events } = recordingEventBus();
   const logger = { ...silentLogger, error: vi.fn() };
   const service = new DefaultSettingsService(store, new DefaultPathSafetyPolicy(), bus, logger);
-  return { service, store, types, logger };
+  return { service, store, types, events, logger };
 };
 
 describe("DefaultSettingsService", () => {
@@ -32,6 +32,39 @@ describe("DefaultSettingsService", () => {
     expect(result.ok).toBe(true);
     expect(await store.load()).toEqual(DEFAULT_SETTINGS);
     expect(types()).toContain("settings.updated");
+  });
+
+  it("settings.updated carries the real changedFields diff (Event Catalog §13)", async () => {
+    const { service, events } = makeService();
+    const updated = {
+      ...DEFAULT_SETTINGS,
+      logging: { ...DEFAULT_SETTINGS.logging, level: "debug" as const },
+    };
+    await service.save(updated);
+    const event = events.find((e) => e.type === "settings.updated");
+    expect(event?.payload).toEqual({ changedFields: ["logging.level"] });
+  });
+
+  it("settings.updated reports no changedFields when nothing changed", async () => {
+    const { service, events } = makeService();
+    await service.save(DEFAULT_SETTINGS);
+    const event = events.find((e) => e.type === "settings.updated");
+    expect(event?.payload).toEqual({ changedFields: [] });
+  });
+
+  it("settings.validated emits { valid, warnings: string[] }", async () => {
+    const { service, events } = makeService();
+    const withEmptyNodeVersion = {
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "" },
+    };
+    await service.validate(withEmptyNodeVersion);
+    const event = events.find((e) => e.type === "settings.validated");
+    expect(event?.payload).toMatchObject({ valid: true });
+    expect((event?.payload as { warnings: string[] }).warnings.length).toBeGreaterThan(0);
+    expect(
+      (event?.payload as { warnings: string[] }).warnings.every((w) => typeof w === "string"),
+    ).toBe(true);
   });
 
   it("refuses to save settings with an unsafe path", async () => {
@@ -114,11 +147,20 @@ describe("DefaultSettingsService", () => {
     expect(values).toContain("fixture-value-one");
   });
 
-  it("reset restores defaults and emits settings.reset", async () => {
-    const { service, store, types } = makeService({ logging: { level: "debug" } });
+  it("reset restores defaults and emits settings.reset with { profile: 'default' }", async () => {
+    const { service, store, types, events } = makeService({ logging: { level: "debug" } });
     const result = await service.reset();
     expect(result.ok).toBe(true);
     expect(await store.load()).toEqual(DEFAULT_SETTINGS);
     expect(types()).toContain("settings.reset");
+    const event = events.find((e) => e.type === "settings.reset");
+    expect(event?.payload).toEqual({ profile: "default" });
+  });
+
+  it("stamps a supplied correlationId on settings.reset (UC-024 shared reset id)", async () => {
+    const { service, events } = makeService();
+    await service.reset("RESET-correlation-id");
+    const event = events.find((e) => e.type === "settings.reset");
+    expect(event?.correlationId).toBe("RESET-correlation-id");
   });
 });

@@ -6,12 +6,14 @@ import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { ExecutionScope, TestRun } from "../../domain/entities/test-run";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
-import type { TestHubSettings } from "../../domain/settings/settings";
+import type { DomainEventType, EventPayloads } from "../../domain/events/domain-event";
+import { collectCredentialValues, type TestHubSettings } from "../../domain/settings/settings";
 import type { RunId } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
+import { redactSecrets } from "../../shared/logging/redact";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
 
@@ -22,11 +24,54 @@ export interface TestExecutionService {
   /** Id of the single active run per ADR-0018, or `null` when idle. */
   activeRunId(): RunId | null;
   /**
+   * The most recently finished run this session, or `null` before the first run
+   * completes. Lets the {@link PostRunCoordinator} (and the "Import report for
+   * last run" command) obtain the just-finished run without reconstructing it.
+   * ADR-0018 guarantees a single active run, and the bus awaits terminal-event
+   * handlers synchronously during publish, so this is stable when the
+   * coordinator's terminal-event handler reads it.
+   */
+  lastRun(): TestRun | null;
+  /**
    * Resolves when the active run's process has actually closed (or immediately
    * when idle). Lets the UI cancel-and-wait on unload without tracking the run
    * promise itself.
    */
   whenActiveSettles(): Promise<void>;
+  /**
+   * Synchronous mutual-exclusion handle the maintenance flows (reset/repair)
+   * acquire so a run cannot start while `.testrunner`/settings are being
+   * mutated, and vice-versa. See {@link MaintenanceLock}.
+   */
+  readonly maintenanceLock: MaintenanceLock;
+}
+
+/**
+ * Synchronous lock that mutually excludes maintenance (UC-003 repair / UC-024
+ * reset) and test runs, closing the reset/run TOCTOU (security review L1).
+ *
+ * Both directions are check-then-act races without it: `reset()`/`repair()`
+ * historically checked `activeRunId() !== null` then `await`-ed, and a `runTest`
+ * issued in that gap could reserve the single-run slot while maintenance
+ * proceeded to mutate `.testrunner`. The lock is consulted/mutated SYNCHRONOUSLY
+ * (no `await` between check and set) on both sides, so there is no window:
+ *
+ * - {@link begin} fails if a run is active OR maintenance is already in
+ *   progress, and otherwise flips the flag before any caller `await`.
+ * - {@link TestExecutionService.execute} reads {@link inProgress} synchronously
+ *   before it reserves its slot and returns `MAINTENANCE_IN_PROGRESS` if set.
+ */
+export interface MaintenanceLock {
+  /** True while a maintenance flow holds the lock. */
+  inProgress(): boolean;
+  /**
+   * Acquires the lock synchronously. Returns `RUN_IN_PROGRESS` if a run is
+   * active, or `MAINTENANCE_IN_PROGRESS` if another maintenance flow already
+   * holds it. On success the caller MUST pair it with {@link end} in a finally.
+   */
+  begin(): Result<void>;
+  /** Releases the lock. Safe to call when not held. */
+  end(): void;
 }
 
 export interface ExecuteTestRequest {
@@ -153,10 +198,45 @@ const runId = (now: Date): RunId => {
  */
 export class DefaultTestExecutionService implements TestExecutionService {
   private active: ActiveRun | null = null;
+  // The most recently FINISHED run (terminal event published), exposed via
+  // lastRun() so the post-run coordinator and the manual re-import command can
+  // read the just-finished run without reconstructing it from event payloads.
+  private lastFinishedRun: TestRun | null = null;
   // De-dupe run ids within the same UTC second (the id has 1s resolution): the
   // first run keeps the clean id; later same-second runs get a -2/-3/… suffix.
   private lastIdBase: RunId | null = null;
   private idSeq = 0;
+  // Set synchronously while a maintenance flow (reset/repair) holds the lock.
+  // execute() reads it before reserving its slot so a run started concurrently
+  // with maintenance is rejected with MAINTENANCE_IN_PROGRESS (security L1).
+  private maintenanceActive = false;
+
+  readonly maintenanceLock: MaintenanceLock = {
+    inProgress: () => this.maintenanceActive,
+    begin: () => {
+      // Reject if a run is active: maintenance must not mutate `.testrunner`
+      // under a live runner (the existing ADR-0018 / P0-3 guard).
+      if (this.active) {
+        return err(
+          appError("RUN_IN_PROGRESS", "A test run is in progress.", {
+            details: { activeRunId: this.active.run.id },
+          }),
+        );
+      }
+      if (this.maintenanceActive) {
+        return err(
+          appError("MAINTENANCE_IN_PROGRESS", "A maintenance operation is already in progress."),
+        );
+      }
+      // Synchronous check-then-set: no await between the guards above and this
+      // assignment, so a run racing in cannot slip through (security L1 TOCTOU).
+      this.maintenanceActive = true;
+      return ok(undefined);
+    },
+    end: () => {
+      this.maintenanceActive = false;
+    },
+  };
 
   constructor(
     private readonly settingsService: SettingsService,
@@ -174,11 +254,27 @@ export class DefaultTestExecutionService implements TestExecutionService {
     return this.active?.run.id ?? null;
   }
 
+  lastRun(): TestRun | null {
+    return this.lastFinishedRun;
+  }
+
   whenActiveSettles(): Promise<void> {
     return this.active?.completion ?? Promise.resolve();
   }
 
   async execute(request: ExecuteTestRequest): Promise<Result<TestRun>> {
+    // Maintenance (reset/repair) and runs are mutually exclusive (security L1).
+    // Read the lock SYNCHRONOUSLY here — before reserving the slot below and
+    // before any await — so a run started in the gap between reset()'s active-
+    // run check and its mutations cannot reserve the slot (TOCTOU close).
+    if (this.maintenanceLock.inProgress()) {
+      return err(
+        appError(
+          "MAINTENANCE_IN_PROGRESS",
+          "A maintenance operation is in progress; try again once it completes.",
+        ),
+      );
+    }
     // ADR-0018: reject overlapping runs; caller must cancel(activeRunId) first.
     if (this.active) {
       return err(
@@ -251,7 +347,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
       if (activeRun.terminated) return ok(run);
 
       await this.publish("testrun.requested", run.id, {
-        scope: request.scope,
+        // The catalog's `testrun.requested.scope` is the four public scopes; the
+        // internal "demo" scope (a smoke run over demo content) surfaces as
+        // "suite" on the bus, which is the suite it executes.
+        scope: request.scope === "demo" ? "suite" : request.scope,
         target: request.target,
       });
       await this.publish("testrun.started", run.id, {
@@ -266,19 +365,20 @@ export class DefaultTestExecutionService implements TestExecutionService {
       // we never start an untracked runner the UI already saw as cancelled.
       if (activeRun.terminated) return ok(run);
 
+      // Redact the live console too (security review M1): the runner can echo a
+      // configured `auth.env` credential into stdout/stderr (e.g. a login error),
+      // so scrub each streamed line with the SAME ADR-0019 helper the Logger uses
+      // before publishing testrun.output.received. The secret set is built ONCE
+      // per run from the active settings; an empty set makes redactSecrets a
+      // no-op pass-through, so a run with no credentials keeps the hot path cheap.
+      const runSecrets = new Set(collectCredentialValues(settings));
       const result = await this.childProcess.runStreaming(
         { args: argv, cwd: cwd.value, env: this.runEnv(settings), processId: run.id },
         (output) => {
-          // V1 scope: the live console streams raw runner output WITHOUT
-          // credential redaction. It is ephemeral, local-only UI (not vault-
-          // persisted), so the ADR-0019 sync-leak risk doesn't apply here;
-          // persisted logs ARE redacted (ConsoleLogger value-scrubbing). Routing
-          // streamed lines through redaction is a documented post-V1 follow-up
-          // (security review M1).
           void this.publish("testrun.output.received", run.id, {
             runId: run.id,
             stream: output.stream,
-            line: output.line,
+            line: redactSecrets(output.line, runSecrets),
           });
         },
       );
@@ -542,21 +642,25 @@ export class DefaultTestExecutionService implements TestExecutionService {
   }
 
   /** Publishes a terminal event once, honouring the EN-2 single-terminal guard. */
-  private async terminal(
+  private async terminal<T extends "testrun.completed" | "testrun.failed" | "testrun.cancelled">(
     activeRun: ActiveRun,
-    type: "testrun.completed" | "testrun.failed" | "testrun.cancelled",
-    payload: Record<string, unknown>,
+    type: T,
+    payload: EventPayloads[T],
   ): Promise<void> {
     if (activeRun.terminated) return;
     activeRun.terminated = true;
+    // Record the just-finished run BEFORE publishing the terminal event so a
+    // subscriber (the PostRunCoordinator) reading lastRun() inside its
+    // synchronously-awaited handler sees this run, not the previous one.
+    this.lastFinishedRun = activeRun.run;
     await this.publish(type, activeRun.run.id, payload);
   }
 
   /** Stamps `correlationId = runId` so a run's events group (Event Catalog §correlation). */
-  private publish(
-    type: Parameters<typeof createEvent>[0],
+  private publish<T extends DomainEventType>(
+    type: T,
     correlationId: RunId,
-    payload: Record<string, unknown>,
+    payload: EventPayloads[T],
   ): Promise<void> {
     return this.eventBus.publish(createEvent(type, payload, { correlationId }));
   }
