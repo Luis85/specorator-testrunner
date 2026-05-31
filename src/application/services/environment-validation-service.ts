@@ -4,7 +4,7 @@ import {
   REQUIRED_RUNNER_DEPENDENCIES,
   VALIDATED_RUNNER_FILES,
 } from "../content/runner-templates";
-import { isNpmCiCommand } from "../content/ci-workflow-content";
+import { buildGitHubActionsWorkflow, isNpmCiCommand } from "../content/ci-workflow-content";
 import { isSafeCiCommand } from "./pipeline-generation-service";
 import { playwrightBrowsersCandidates, resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
@@ -277,6 +277,17 @@ export class DefaultEnvironmentValidationService
         );
       } else if (!(await this.absoluteFs.existsAbsolute(`${root}/${workflowRel}`))) {
         missingItems.push(`CI workflow not generated at ${workflowRel}.`);
+      } else {
+        // The workflow exists, but settings (runner path, CI commands, node
+        // version, auth keys) may have changed since it was generated, leaving a
+        // stale working-directory/command that fails in Actions. Compare it to
+        // what generation would write now and warn (not block) if it drifted.
+        const existing = await this.absoluteFs.readAbsolute(`${root}/${workflowRel}`);
+        if (existing.ok && existing.value !== buildGitHubActionsWorkflow(settings)) {
+          warnings.push(
+            "CI workflow is out of date with current settings; re-run Generate CI Workflow.",
+          );
+        }
       }
       // node_modules being committed defeats `npm ci`; warn rather than block.
       if (await this.absoluteFs.existsAbsolute(`${runnerAbs}/node_modules`)) {
