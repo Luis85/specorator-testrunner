@@ -151,6 +151,25 @@ export class DefaultSuiteService implements SuiteService {
     return built.ok ? built.value : null;
   }
 
+  /**
+   * Classifies whatever note currently occupies a target suite path so
+   * createFromSeed can skip / repair / refuse appropriately:
+   *  - `absent`  — no note there.
+   *  - `valid`   — a parseable Test Suite (leave it; idempotent seeding).
+   *  - `repair`  — a `test-suite`-typed note that fails to parse (e.g. missing
+   *                tag_expression); safe to overwrite with valid content.
+   *  - `foreign` — some other note (or unreadable); must NOT be clobbered.
+   */
+  private async classifyExistingNote(
+    path: VaultPath,
+  ): Promise<"absent" | "valid" | "repair" | "foreign"> {
+    if (!(await this.fs.exists(path))) return "absent";
+    const read = await this.fs.readFile(path);
+    if (!read.ok) return "foreign"; // unreadable — don't overwrite blindly
+    if (this.parse(read.value, path)) return "valid";
+    return parseFrontmatter(read.value).type === "test-suite" ? "repair" : "foreign";
+  }
+
   private async createFromSeed(
     seed: DefaultSuiteSeed,
     correlationId?: string,
@@ -172,12 +191,33 @@ export class DefaultSuiteService implements SuiteService {
     if (!builtSuite.ok) return err(builtSuite.error);
     const suite = builtSuite.value;
 
-    if (!(await this.fs.exists(path))) {
-      const created = await this.fs.createFile(path, buildSuiteNote(seed));
-      if (!created.ok) {
+    // Decide what to do with any note already at the target path. A malformed
+    // `test-suite` note (e.g. missing tag_expression) is now HIDDEN from
+    // findAll() by parse() (P3-2), so create()'s duplicate-id scan can't see it;
+    // a plain skip-if-exists would then emit suite.created over a note that
+    // resolveTagExpression() can't resolve (review P2). So: skip a VALID suite
+    // (idempotent seeding, preserve customisation), REPAIR a malformed
+    // test-suite note, and refuse to clobber a FOREIGN (non-suite) note.
+    const existing = await this.classifyExistingNote(path);
+    if (existing === "foreign") {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `A note that is not a Test Suite already exists at "${path}"; ` +
+            `rename it or choose a different suite name.`,
+        ),
+      );
+    }
+    if (existing !== "valid") {
+      // "absent" → create; "repair" → overwrite the malformed suite note.
+      const written =
+        existing === "absent"
+          ? await this.fs.createFile(path, buildSuiteNote(seed))
+          : await this.fs.writeFile(path, buildSuiteNote(seed));
+      if (!written.ok) {
         return err(
           appError("INIT_FAILED", `Could not write suite "${seed.name}".`, {
-            cause: created.error,
+            cause: written.error,
           }),
         );
       }
