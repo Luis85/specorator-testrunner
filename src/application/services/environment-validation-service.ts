@@ -225,6 +225,12 @@ export class DefaultEnvironmentValidationService
         workflowRel.split("/").includes("..")
       ) {
         missingItems.push(`CI workflow path is invalid (must be repo-relative, no ".."): ${workflowRel}.`);
+      } else if (!workflowRel.startsWith(".github/workflows/")) {
+        // GitHub Actions only discovers workflows here; a path elsewhere would
+        // never run even though the file exists (matches generation's rule).
+        missingItems.push(
+          `CI workflow must live under ".github/workflows/" to be discovered by Actions: ${workflowRel}.`,
+        );
       } else if (!(await this.absoluteFs.existsAbsolute(`${root}/${workflowRel}`))) {
         missingItems.push(`CI workflow not generated at ${workflowRel}.`);
       }
