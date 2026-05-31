@@ -15,13 +15,24 @@ export const resolveRunnerCwd = async (
 /**
  * Candidate Playwright browser cache directories for the current platform
  * (Runtime View RV-2). Pure so it is unit-testable across platforms.
+ *
+ * Honours `PLAYWRIGHT_BROWSERS_PATH`:
+ * - an explicit path → that directory;
+ * - `"0"` (hermetic mode) → runner-local `node_modules/playwright-core/.local-browsers`;
+ * - unset → the per-user OS cache.
  */
 export const playwrightBrowsersCandidates = (
   platform: string,
   env: Record<string, string | undefined>,
+  runnerAbsPath?: string,
 ): string[] => {
   const explicit = env.PLAYWRIGHT_BROWSERS_PATH;
-  if (explicit && explicit !== "0") return [explicit];
+  if (explicit === "0") {
+    return runnerAbsPath
+      ? [`${runnerAbsPath}/node_modules/playwright-core/.local-browsers`]
+      : [];
+  }
+  if (explicit) return [explicit];
   const home = env.HOME ?? env.USERPROFILE ?? "";
   if (!home) return [];
   if (platform === "darwin") return [`${home}/Library/Caches/ms-playwright`];

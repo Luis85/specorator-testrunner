@@ -34,12 +34,17 @@ describe("playwrightBrowsersCandidates", () => {
     ]);
   });
 
-  it("ignores PLAYWRIGHT_BROWSERS_PATH=0", () => {
-    const out = playwrightBrowsersCandidates("linux", {
-      PLAYWRIGHT_BROWSERS_PATH: "0",
-      HOME: "/home/u",
-    });
-    expect(out).toEqual(["/home/u/.cache/ms-playwright"]);
+  it("uses the runner-local hermetic path for PLAYWRIGHT_BROWSERS_PATH=0", () => {
+    const out = playwrightBrowsersCandidates(
+      "linux",
+      { PLAYWRIGHT_BROWSERS_PATH: "0", HOME: "/home/u" },
+      "/vault/.testrunner",
+    );
+    expect(out).toEqual(["/vault/.testrunner/node_modules/playwright-core/.local-browsers"]);
+  });
+
+  it("returns nothing for hermetic mode when the runner path is unknown", () => {
+    expect(playwrightBrowsersCandidates("linux", { PLAYWRIGHT_BROWSERS_PATH: "0" })).toEqual([]);
   });
 
   it("uses platform-specific cache locations", () => {

@@ -13,7 +13,7 @@ import {
 
 const ENV = { HOME: "/home/u" };
 
-const build = () => {
+const build = (env: Record<string, string | undefined> = ENV) => {
   const absoluteFs = new FakeAbsoluteFileSystem();
   const childProcess = new FakeChildProcessRunner();
   const { bus, types } = recordingEventBus();
@@ -28,7 +28,7 @@ const build = () => {
     absoluteFs,
     new DefaultCommandSafetyPolicy(),
     bus,
-    ENV,
+    env,
     "linux",
   );
   return { service, absoluteFs, childProcess, types };
@@ -94,6 +94,19 @@ describe("DefaultEnvironmentValidationService", () => {
     // no node_modules
     await service.validateEnvironment();
     expect(childProcess.calls.map((c) => c.command)).not.toContain("npx playwright --version");
+  });
+
+  it("detects browsers in Playwright hermetic mode (PLAYWRIGHT_BROWSERS_PATH=0)", async () => {
+    const { service, absoluteFs } = build({ HOME: "/home/u", PLAYWRIGHT_BROWSERS_PATH: "0" });
+    absoluteFs.existing.add("/vault/.testrunner");
+    absoluteFs.existing.add("/vault/.testrunner/package.json");
+    absoluteFs.existing.add("/vault/.testrunner/node_modules");
+    absoluteFs.existing.add("/vault/.testrunner/node_modules/playwright-core/.local-browsers");
+
+    const result = await service.validateEnvironment();
+
+    expect(result.browsersInstalled).toBe(true);
+    expect(result.valid).toBe(true);
   });
 
   it("validateCiReadiness reports the missing workflow", async () => {

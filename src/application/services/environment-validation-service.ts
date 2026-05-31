@@ -88,7 +88,7 @@ export class DefaultEnvironmentValidationService
     const playwrightAvailable =
       dependenciesInstalled &&
       (await this.commandSucceeds("npx playwright --version", cwd.value));
-    const browsersInstalled = await this.detectBrowsers();
+    const browsersInstalled = await this.detectBrowsers(runnerAbs);
 
     if (!nodeAvailable)
       issues.push({ code: "NODE_MISSING", message: "Node.js is not available.", severity: "error" });
@@ -168,8 +168,8 @@ export class DefaultEnvironmentValidationService
     return result.ok && result.value.exitCode === 0;
   }
 
-  private async detectBrowsers(): Promise<boolean> {
-    for (const candidate of playwrightBrowsersCandidates(this.platform, this.env)) {
+  private async detectBrowsers(runnerAbs: string): Promise<boolean> {
+    for (const candidate of playwrightBrowsersCandidates(this.platform, this.env, runnerAbs)) {
       if (await this.absoluteFs.existsAbsolute(candidate)) return true;
     }
     return false;
