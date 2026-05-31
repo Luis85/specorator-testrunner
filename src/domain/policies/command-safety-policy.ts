@@ -2,39 +2,43 @@ import { appError } from "../../shared/errors/errors";
 import { err, ok, type Result } from "../../shared/result/result";
 
 /**
- * Guards runner commands against shell metacharacters that imply destructive
- * or chained operations (TIS §14.2 rule 3). V1 runner commands come from
- * trusted settings defaults (OQ-004), so this is defense-in-depth before a
- * command string is handed to a shell.
+ * Validates a runner argv before it is spawned (TIS §14.2 rule 3). The runner
+ * now spawns with `shell: false` (the PR #7 decision to rework the runner to
+ * argv arrays), so there is no shell to defend against metacharacters — feature
+ * paths/tags with `$`, `&`, or spaces are literal arguments. Instead this guards
+ * that the program is an allowed binary and that no argument smuggles a NUL or
+ * newline. V1 argv come from trusted settings defaults (OQ-004), so this is
+ * defense-in-depth.
  *
  * Pure and I/O-free, so it is trivially unit-testable.
  */
 export interface CommandSafetyPolicy {
-  assertSafe(command: string): Result<void>;
+  assertSafe(args: string[]): Result<void>;
 }
 
-// Chaining/redirection/substitution that could turn a benign command
-// destructive: && || ; | & > < ` $( ) newline, and a bare `rm` token.
-const DANGEROUS = /(\|\||&&|[;|&<>`]|\$\(|\n|\r)/;
-const DESTRUCTIVE_TOKEN = /(^|\s)(rm|rmdir|del|format|mkfs|dd)(\s|$)/i;
+// Only the package-manager / Node binaries the runner ever invokes (R3).
+const ALLOWED_PROGRAMS = new Set(["npm", "npx", "node"]);
+// NUL / newline / carriage return in an argv entry would be a smuggling attempt.
+const CONTROL_CHARS = /[\0\n\r]/;
 
 export class DefaultCommandSafetyPolicy implements CommandSafetyPolicy {
-  assertSafe(command: string): Result<void> {
-    const trimmed = command.trim();
-    if (trimmed === "") {
+  assertSafe(args: string[]): Result<void> {
+    const program = args[0]?.trim();
+    if (!program) {
       return err(appError("COMMAND_DISALLOWED", "Command must not be empty."));
     }
-    if (DANGEROUS.test(command)) {
+    const display = args.join(" ");
+    if (!ALLOWED_PROGRAMS.has(program)) {
       return err(
-        appError("COMMAND_DISALLOWED", `Command contains shell metacharacters: "${command}".`, {
-          details: { command },
+        appError("COMMAND_DISALLOWED", `Command program is not allowed: "${program}".`, {
+          details: { command: display },
         }),
       );
     }
-    if (DESTRUCTIVE_TOKEN.test(command)) {
+    if (args.some((arg) => CONTROL_CHARS.test(arg))) {
       return err(
-        appError("COMMAND_DISALLOWED", `Command contains a destructive operation: "${command}".`, {
-          details: { command },
+        appError("COMMAND_DISALLOWED", `Command argument contains a control character: "${display}".`, {
+          details: { command: display },
         }),
       );
     }

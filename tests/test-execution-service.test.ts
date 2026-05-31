@@ -74,7 +74,7 @@ describe("DefaultTestExecutionService", () => {
     expect(result.value.command).toBe("npm run test:smoke");
     expect(result.value.status).toBe("passed");
     expect(result.value.id).toBe("RUN-2026-06-01-100000");
-    expect(childProcess.calls[0].command).toBe("npm run test:smoke");
+    expect(childProcess.calls[0].args).toEqual(["npm", "run", "test:smoke"]);
     expect(types()).toEqual([
       "testrun.requested",
       "testrun.started",
@@ -121,13 +121,23 @@ describe("DefaultTestExecutionService", () => {
   });
 
   it("resolves the suite command from the suite's tag expression and emits suite.executed", async () => {
-    const { service, fs, types } = build();
+    const { service, childProcess, fs, types } = build();
     seedSuite(fs, "smoke", "@smoke and not @wip");
 
     const result = await service.execute({ scope: "suite", target: "smoke" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    // Verbatim tag as a single literal argv entry (AD-4, no quoting/escaping).
+    expect(childProcess.calls[0].args).toEqual([
+      "npm",
+      "run",
+      "test",
+      "--",
+      "--tags",
+      "@smoke and not @wip",
+    ]);
+    // Display string quotes only the space-bearing arg, for readability.
     expect(result.value.command).toBe('npm run test -- --tags "@smoke and not @wip"');
     // suite.executed precedes the terminal event (UC-013).
     expect(types()).toEqual([
@@ -139,35 +149,71 @@ describe("DefaultTestExecutionService", () => {
   });
 
   it("resolves the feature command relative to the runner cwd", async () => {
-    const { service } = build();
+    const { service, childProcess } = build();
     const result = await service.execute({
       scope: "feature",
       target: "Specifications/features/checkout.feature",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(childProcess.calls[0].args).toEqual([
+      "npm",
+      "run",
+      "test",
+      "--",
+      "../Specifications/features/checkout.feature",
+    ]);
+    // No spaces → no display quoting.
     expect(result.value.command).toBe(
-      'npm run test -- "../Specifications/features/checkout.feature"',
+      "npm run test -- ../Specifications/features/checkout.feature",
     );
   });
 
-  it("shell-escapes $ and spaces in a feature path (no expansion under shell:true)", async () => {
-    const { service } = build();
+  it("passes a feature path with $, &, and spaces as a literal argv entry (no shell, no escaping)", async () => {
+    const { service, childProcess } = build();
+    // PR #7: under shell: false these are literal args — never interpolated or
+    // word-split, and no longer false-rejected by CommandSafetyPolicy.
     const result = await service.execute({
       scope: "feature",
-      target: "Specifications/features/Price $5.feature",
+      target: "Specifications/features/R&D Price $5.feature",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // $ is backslash-escaped inside the double quotes so the shell can't expand it.
-    expect(result.value.command).toBe('npm run test -- "../Specifications/features/Price \\$5.feature"');
+    // The path arrives verbatim as a single literal argv entry — no escaping.
+    expect(childProcess.calls[0].args).toEqual([
+      "npm",
+      "run",
+      "test",
+      "--",
+      "../Specifications/features/R&D Price $5.feature",
+    ]);
+    // Display quotes only because the arg contains spaces (readability only).
+    expect(result.value.command).toBe(
+      'npm run test -- "../Specifications/features/R&D Price $5.feature"',
+    );
+  });
+
+  it("resolves a feature path with shell metacharacters and runs (no COMMAND_DISALLOWED)", async () => {
+    const { service } = build();
+    // R&D.feature would be false-rejected/expanded under the old shell:true
+    // policy; with argv arrays it is a literal arg and runs cleanly (PR #7).
+    const result = await service.execute({
+      scope: "feature",
+      target: "Specifications/features/R&D.feature",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("passed");
+    expect(result.value.command).toBe(
+      "npm run test -- ../Specifications/features/R&D.feature",
+    );
   });
 
   it("resolves the use-case command as a feature glob when the UC is unknown", async () => {
     const { service } = build();
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     expect(result.ok && result.value.command).toBe(
-      'npm run test -- "../Specifications/features/UC-001-*.feature"',
+      "npm run test -- ../Specifications/features/UC-001-*.feature",
     );
   });
 
@@ -190,7 +236,7 @@ describe("DefaultTestExecutionService", () => {
     );
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     expect(result.ok && result.value.command).toBe(
-      'npm run test -- "../Specifications/features/UC-001-happy-path.feature" "../Specifications/features/UC-001-edge.feature"',
+      "npm run test -- ../Specifications/features/UC-001-happy-path.feature ../Specifications/features/UC-001-edge.feature",
     );
   });
 

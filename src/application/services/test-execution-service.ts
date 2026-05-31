@@ -36,13 +36,14 @@ interface ActiveRun {
 }
 
 /**
- * Wraps a value in double quotes and escapes the characters the shell still
- * interprets inside double quotes (`"`, `\`, `$`, backtick) — the runner spawns
- * with `shell: true`, so an interpolated feature path/tag with `$` or spaces
- * must not be word-split or variable-expanded (TIS §13.2). A `*` stays literal
- * here and is glob-expanded by cucumber-js, not the shell.
+ * Renders an argv as a human-readable display string for `TestRun.command` and
+ * the `testrun.started` event. The runner spawns these args with `shell: false`
+ * (the PR #7 decision to rework the runner to argv arrays), so this is for
+ * display only — args with spaces are quoted purely for readability, never to
+ * survive a shell (TIS §13.2).
  */
-const shellQuote = (value: string): string => `"${value.replace(/(["\\$`])/g, "\\$1")}"`;
+const displayCommand = (args: string[]): string =>
+  args.map((arg) => (arg.includes(" ") ? `"${arg}"` : arg)).join(" ");
 
 /** UTC `RUN-YYYY-MM-DD-HHMMSS` id (TIS §3.3). */
 const runId = (now: Date): RunId => {
@@ -123,16 +124,19 @@ export class DefaultTestExecutionService implements TestExecutionService {
 
       const command = await this.resolveCommand(request, settings);
       if (!command.ok) return err(command.error);
+      const argv = command.value;
 
-      // Defense in depth (TIS §14.2): V1 targets come from trusted vault data,
-      // but the tag expression / feature paths are interpolated, so screen the
-      // resolved string before it reaches a shell.
-      const safe = this.commandSafety.assertSafe(command.value);
+      // Defense in depth (TIS §14.2): V1 targets come from trusted vault data;
+      // validate the argv (allowed program, no control chars) before spawning.
+      // The args are literal under shell: false, so tags/paths with $, & or
+      // spaces no longer need quoting and are no longer false-rejected (PR #7).
+      const safe = this.commandSafety.assertSafe(argv);
       if (!safe.ok) return err(safe.error);
 
       const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
       if (!cwd.ok) return err(cwd.error);
-      run.command = command.value;
+      // Human-readable display string; the runner is given the raw argv below.
+      run.command = displayCommand(argv);
 
       // A cancel() during setup (settings/command/cwd resolution) already
       // published testrun.cancelled and freed the slot — bail before emitting
@@ -151,7 +155,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
       this.logger.info("Test run started", { runId: run.id, scope: run.scope });
 
       const result = await this.childProcess.runStreaming(
-        { command: command.value, cwd: cwd.value, env: this.runEnv(settings) },
+        { args: argv, cwd: cwd.value, env: this.runEnv(settings) },
         (output) => {
           void this.publish("testrun.output.received", run.id, {
             runId: run.id,
@@ -253,40 +257,53 @@ export class DefaultTestExecutionService implements TestExecutionService {
     return { BASE_URL: active.baseUrl, ...(active.auth?.env ?? {}) };
   }
 
-  /** Resolves the runner command for a scope (TIS §13.2). */
+  /**
+   * Resolves the runner argv for a scope (TIS §13.2). Returns a literal argv —
+   * tags and feature paths are appended verbatim (AD-4, no quoting/escaping):
+   * under shell: false they are passed through as-is, so a path with `$`, `&`,
+   * or spaces survives unchanged (the PR #7 decision to rework to argv arrays).
+   */
   private async resolveCommand(
     request: ExecuteTestRequest,
     settings: TestHubSettings,
-  ): Promise<Result<string>> {
+  ): Promise<Result<string[]>> {
     switch (request.scope) {
       case "demo":
-        return ok("npm run test:smoke");
+        return ok(["npm", "run", "test:smoke"]);
       case "all":
-        return ok("npm run test");
+        return ok(["npm", "run", "test"]);
       case "suite": {
         const tags = await this.suiteService.resolveTagExpression(request.target);
         if (!tags.ok) return err(tags.error);
-        return ok(`npm run test -- --tags ${shellQuote(tags.value)}`);
+        // Verbatim tag expression as a single literal arg (AD-4, no quoting).
+        return ok(["npm", "run", "test", "--", "--tags", tags.value]);
       }
       case "feature":
-        // Shell-quote the interpolated path so spaces and shell-expansion chars
-        // ($, `, etc.) in a configured folder/filename survive shell:true.
-        return ok(`npm run test -- ${shellQuote(this.featureArg(settings, request.target))}`);
+        // Literal feature path arg; no shell, so no escaping needed.
+        return ok(["npm", "run", "test", "--", this.featureArg(settings, request.target)]);
       case "use-case": {
-        // UC-011: target the Use Case's declared featureFiles in order. Falls
-        // back to the <UC-id>-*.feature glob when the UC or its links can't be
-        // resolved (e.g. a brand-new UC with the standard naming).
+        // UC-011: target the Use Case's declared featureFiles in order, each as
+        // a separate literal arg. Falls back to the <UC-id>-*.feature glob when
+        // the UC or its links can't be resolved (e.g. a brand-new UC with the
+        // standard naming); the glob is expanded by cucumber-js, not a shell.
         const found = await this.useCaseService.findById(request.target);
         const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
         if (featureFiles.length > 0) {
-          const args = featureFiles
-            .map((path) => shellQuote(this.featureArg(settings, path)))
-            .join(" ");
-          return ok(`npm run test -- ${args}`);
+          return ok([
+            "npm",
+            "run",
+            "test",
+            "--",
+            ...featureFiles.map((path) => this.featureArg(settings, path)),
+          ]);
         }
-        return ok(
-          `npm run test -- ${shellQuote(`${this.featurePrefix(settings)}/${request.target}-*.feature`)}`,
-        );
+        return ok([
+          "npm",
+          "run",
+          "test",
+          "--",
+          `${this.featurePrefix(settings)}/${request.target}-*.feature`,
+        ]);
       }
     }
   }

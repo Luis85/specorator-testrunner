@@ -205,14 +205,17 @@ export class FakeChildProcessRunner implements ChildProcessRunner {
   }
 
   private settle(request: RunCommandRequest): Result<RunnerCommandResult> {
+    // Match on the joined argv (the runner spawns with shell: false; the PR #7
+    // rework to argv arrays), so test fixtures still match by command substring.
+    const command = request.args.join(" ");
     for (const fragment of this.spawnFailures) {
-      if (request.command.includes(fragment)) {
+      if (command.includes(fragment)) {
         return { ok: false, error: { code: "INIT_FAILED", message: "spawn failed" } };
       }
     }
     let exitCode = 0;
     for (const [fragment, code] of this.exitCodes) {
-      if (request.command.includes(fragment)) exitCode = code;
+      if (command.includes(fragment)) exitCode = code;
     }
     return ok({ exitCode, stdout: "", stderr: exitCode === 0 ? "" : "boom", durationMs: 1 });
   }

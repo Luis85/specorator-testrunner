@@ -110,7 +110,7 @@ describe("DefaultEnvironmentValidationService", () => {
     absoluteFs.existing.add("/vault/.testrunner/package.json");
     // no node_modules
     await service.validateEnvironment();
-    expect(childProcess.calls.map((c) => c.command)).not.toContain("npx playwright --version");
+    expect(childProcess.calls.map((c) => c.args.join(" "))).not.toContain("npx playwright --version");
   });
 
   it("is invalid when a managed runner file is missing even if deps/browser are present", async () => {

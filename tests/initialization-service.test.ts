@@ -149,7 +149,7 @@ describe("DefaultInitializationService", () => {
       installBrowsers: true,
     });
     expect(result.ok).toBe(true);
-    const commands = childProcess.calls.map((c) => c.command);
+    const commands = childProcess.calls.map((c) => c.args.join(" "));
     expect(commands).toContain(DEFAULT_SETTINGS.runner.installCommand);
     expect(commands).toContain(DEFAULT_SETTINGS.runner.browserInstallCommand);
   });
