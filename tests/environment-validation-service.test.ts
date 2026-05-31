@@ -313,6 +313,24 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(result.missingItems.some((m) => m.includes("invalid"))).toBe(true);
   });
 
+  it("validateCiReadiness checks the script named by a configured ciRunCommand", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    // package.json provides only test:ci, but CI is configured to run e2e:ci.
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, ciRunCommand: "npm run e2e:ci" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("e2e:ci"))).toBe(true);
+  });
+
   it("validateCiReadiness is not ready when a managed runner file (cucumber.mjs) is missing", async () => {
     const { service, absoluteFs } = build();
     seedManagedRunnerFiles(absoluteFs);

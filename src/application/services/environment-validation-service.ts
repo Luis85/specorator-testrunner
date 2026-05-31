@@ -12,6 +12,12 @@ import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { ok, type Result } from "../../shared/result/result";
 
+/** Extracts `<script>` from a `npm run <script> …` command, else null. */
+const npmRunScript = (command: string): string | null => {
+  const parts = command.trim().split(/\s+/);
+  return parts[0] === "npm" && parts[1] === "run" && parts[2] ? parts[2] : null;
+};
+
 /** Environment + CI validation contract (TIS §8.3, UC-002 / UC-020). */
 export interface EnvironmentValidationService {
   validateEnvironment(): Promise<RunnerValidationResult>;
@@ -181,8 +187,12 @@ export class DefaultEnvironmentValidationService
           missingItems.push(`Runner file ${file} is missing (the CI test:ci script needs it).`);
         }
       }
-      // package.json + the `test:ci` script the workflow invokes (US-041/UC-020):
-      // a stale package.json without it makes the generated CI job fail at once.
+      // package.json + the npm script the generated CI job invokes (US-041/
+      // UC-020). The job runs the configured `runner.ciRunCommand` (default
+      // `npm run test:ci`); a stale package.json missing THAT script fails CI at
+      // once. Derive the script name from the command so this stays aligned with
+      // the workflow (a non-`npm run` command can't be script-checked here).
+      const ciScript = npmRunScript(settings.runner.ciRunCommand) ?? "test:ci";
       const pkgPath = `${runnerAbs}/package.json`;
       if (!(await this.absoluteFs.existsAbsolute(pkgPath))) {
         missingItems.push("Runner package.json is missing.");
@@ -191,9 +201,9 @@ export class DefaultEnvironmentValidationService
         if (pkg.ok) {
           try {
             const parsed = JSON.parse(pkg.value) as { scripts?: Record<string, unknown> };
-            if (typeof parsed.scripts?.["test:ci"] !== "string") {
+            if (typeof parsed.scripts?.[ciScript] !== "string") {
               missingItems.push(
-                'Runner package.json has no "test:ci" script (the CI job runs npm run test:ci).',
+                `Runner package.json has no "${ciScript}" script (the CI job runs ${settings.runner.ciRunCommand.trim() || "npm run test:ci"}).`,
               );
             }
           } catch {
@@ -201,8 +211,8 @@ export class DefaultEnvironmentValidationService
           }
         } else {
           // Couldn't read it (permissions / transient I/O) — can't confirm the
-          // test:ci script, so don't silently report ready.
-          missingItems.push("Runner package.json could not be read to verify the test:ci script.");
+          // CI script, so don't silently report ready.
+          missingItems.push("Runner package.json could not be read to verify the CI script.");
         }
       }
       // Lockfile: `npm ci` (the CI install command) fails without it (US-041).
