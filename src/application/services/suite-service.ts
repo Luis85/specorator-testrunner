@@ -1,8 +1,4 @@
-import {
-  buildSuiteNote,
-  DEFAULT_SUITES,
-  type DefaultSuiteSeed,
-} from "../content/default-suites";
+import { buildSuiteNote, DEFAULT_SUITES, type DefaultSuiteSeed } from "../content/default-suites";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import type { TestSuite } from "../../domain/entities/suite";
@@ -58,7 +54,10 @@ export class DefaultSuiteService implements SuiteService {
     const id = slugify(name);
     if (id === "") {
       return err(
-        appError("VALIDATION_FAILED", "A suite name with at least one letter or digit is required."),
+        appError(
+          "VALIDATION_FAILED",
+          "A suite name with at least one letter or digit is required.",
+        ),
       );
     }
     // Membership/scope IS the tag expression (AD-4); a blank one resolves to ""

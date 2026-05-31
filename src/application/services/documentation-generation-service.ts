@@ -29,9 +29,7 @@ export interface OpenedDocumentation {
   documentType: OpenableDocumentType;
 }
 
-export class DefaultDocumentationGenerationService
-  implements DocumentationGenerationService
-{
+export class DefaultDocumentationGenerationService implements DocumentationGenerationService {
   constructor(
     private readonly settingsService: SettingsService,
     private readonly fs: VaultFileSystem,
@@ -58,13 +56,9 @@ export class DefaultDocumentationGenerationService
   // and record the access. Defaults to the navigational `index` hub — the entry
   // point whose Contents links out to every other generated doc — so the generic
   // "Open Documentation" command lands users on the overview, not a single guide.
-  async open(
-    documentType: OpenableDocumentType = "index",
-  ): Promise<Result<OpenedDocumentation>> {
+  async open(documentType: OpenableDocumentType = "index"): Promise<Result<OpenedDocumentation>> {
     if (!this.workspace) {
-      return err(
-        appError("INIT_FAILED", "Documentation access requires a workspace."),
-      );
+      return err(appError("INIT_FAILED", "Documentation access requires a workspace."));
     }
     const settings = await this.settingsService.load();
     const path = joinVaultPath(
@@ -90,9 +84,7 @@ export class DefaultDocumentationGenerationService
       );
     }
     // TIS §12: `documentation.opened` carries the path + the document type.
-    await this.eventBus.publish(
-      createEvent("documentation.opened", { path, documentType }),
-    );
+    await this.eventBus.publish(createEvent("documentation.opened", { path, documentType }));
     return ok({ path, documentType });
   }
 

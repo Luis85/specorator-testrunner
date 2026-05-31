@@ -2,11 +2,7 @@ import { buildUseCaseNote, useCaseFileName } from "../content/use-case-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import type { ExecutionScope, TestRunStatus } from "../../domain/entities/test-run";
-import type {
-  AutomationStatus,
-  UseCase,
-  UseCaseStatus,
-} from "../../domain/entities/use-case";
+import type { AutomationStatus, UseCase, UseCaseStatus } from "../../domain/entities/use-case";
 import type { SuiteId, UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";

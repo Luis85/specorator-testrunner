@@ -8,12 +8,7 @@ import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-poli
 import type { TestRun } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
 import { parseFrontmatter } from "../src/shared/utils/frontmatter";
-import {
-  FakeDataStore,
-  FakeVaultFileSystem,
-  recordingEventBus,
-  silentLogger,
-} from "./fakes";
+import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
 const EVIDENCE_PATH = "Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md";
 const FIXED_NOW = new Date("2026-05-31T10:05:00.000Z");
@@ -205,7 +200,12 @@ describe("DefaultEvidenceGenerationService", () => {
       report: report({
         scenarioResults: [
           // Human name has no UC prefix; the uri carries it.
-          { feature: "Checkout", featureUri: "features/UC-001-checkout.feature", scenario: "Pays", status: "passed" },
+          {
+            feature: "Checkout",
+            featureUri: "features/UC-001-checkout.feature",
+            scenario: "Pays",
+            status: "passed",
+          },
         ],
       }),
     });

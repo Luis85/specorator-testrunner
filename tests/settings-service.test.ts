@@ -1,22 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
-import {
-  collectCredentialValues,
-  DEFAULT_SETTINGS,
-} from "../src/domain/settings/settings";
+import { collectCredentialValues, DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import { FakeDataStore, recordingEventBus, silentLogger } from "./fakes";
 
 const makeService = (initial?: unknown) => {
   const store = new FakeDataStore(initial);
   const { bus, types } = recordingEventBus();
   const logger = { ...silentLogger, error: vi.fn() };
-  const service = new DefaultSettingsService(
-    store,
-    new DefaultPathSafetyPolicy(),
-    bus,
-    logger,
-  );
+  const service = new DefaultSettingsService(store, new DefaultPathSafetyPolicy(), bus, logger);
   return { service, store, types, logger };
 };
 

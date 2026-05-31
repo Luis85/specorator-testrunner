@@ -51,9 +51,7 @@ export class SuiteDashboardView extends ItemView {
 
   async onOpen(): Promise<void> {
     for (const type of REFRESH_ON) {
-      this.subscriptions.push(
-        this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()),
-      );
+      this.subscriptions.push(this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()));
     }
     await this.scheduler.schedule();
   }

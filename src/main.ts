@@ -38,10 +38,7 @@ import {
   DefaultSpecificationService,
   type SpecificationService,
 } from "./application/services/specification-service";
-import {
-  DefaultSuiteService,
-  type SuiteService,
-} from "./application/services/suite-service";
+import { DefaultSuiteService, type SuiteService } from "./application/services/suite-service";
 import {
   DefaultTraceabilityService,
   type TraceabilityService,
@@ -74,23 +71,14 @@ import { CreateSuiteModal } from "./presentation/views/create-suite-modal";
 import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
 import { GenerateFeatureModal } from "./presentation/views/generate-feature-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
-import {
-  SUITE_VIEW_TYPE,
-  SuiteDashboardView,
-} from "./presentation/views/suite-dashboard-view";
+import { SUITE_VIEW_TYPE, SuiteDashboardView } from "./presentation/views/suite-dashboard-view";
 import { RunPickerModal } from "./presentation/views/run-picker-modal";
-import {
-  TEST_CONSOLE_VIEW_TYPE,
-  TestConsoleView,
-} from "./presentation/views/test-console-view";
+import { TEST_CONSOLE_VIEW_TYPE, TestConsoleView } from "./presentation/views/test-console-view";
 import {
   USE_CASE_VIEW_TYPE,
   UseCaseDashboardView,
 } from "./presentation/views/use-case-dashboard-view";
-import {
-  DASHBOARD_VIEW_TYPE,
-  DashboardView,
-} from "./presentation/views/dashboard-view";
+import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
 import { InMemoryEventBus } from "./shared/event-bus/event-bus";
 import { ConsoleLogger } from "./shared/logging/logger";
 import type { Result } from "./shared/result/result";
@@ -192,7 +180,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // EPIC-010 CI/CD (UC-019): generate the GitHub Actions workflow into the
     // user's repo root via the absolute filesystem (the workflow is not a
     // VaultPath; it must live where GitHub Actions discovers it, TIS §8.13).
-    this.pipelineService = new DefaultPipelineGenerationService(absoluteFs, eventBus, commandSafety);
+    this.pipelineService = new DefaultPipelineGenerationService(
+      absoluteFs,
+      eventBus,
+      commandSafety,
+    );
     // Guard repair() against an active run (P0-3). The execution service is
     // built further down, so delegate lazily through `this`.
     this.maintenanceService = new DefaultMaintenanceService(
@@ -293,10 +285,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           onCreate: () => this.openCreateSuite(),
         }),
     );
-    this.registerView(
-      TEST_CONSOLE_VIEW_TYPE,
-      (leaf) => new TestConsoleView(leaf, eventBus),
-    );
+    this.registerView(TEST_CONSOLE_VIEW_TYPE, (leaf) => new TestConsoleView(leaf, eventBus));
     this.registerView(
       DASHBOARD_VIEW_TYPE,
       (leaf) =>
@@ -350,8 +339,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Open Use Cases",
       callback: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
     });
-    this.addRibbonIcon("list-checks", "Open Use Cases", () =>
-      void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
+    this.addRibbonIcon(
+      "list-checks",
+      "Open Use Cases",
+      () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
     );
     this.addCommand({
       id: "create-test-suite",
@@ -363,8 +354,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Open Test Suites",
       callback: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
     });
-    this.addRibbonIcon("layers", "Open Test Suites", () =>
-      void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
+    this.addRibbonIcon(
+      "layers",
+      "Open Test Suites",
+      () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
     );
     this.addCommand({
       id: "generate-feature",
@@ -449,8 +442,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         }
       },
     });
-    this.addRibbonIcon("terminal", "Open Test Console", () =>
-      void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
+    this.addRibbonIcon(
+      "terminal",
+      "Open Test Console",
+      () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
     );
 
     // EPIC-009 Dashboard (UC-018).
@@ -459,8 +454,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Open Dashboard",
       callback: () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
     });
-    this.addRibbonIcon("gauge", "Open Test Hub Dashboard", () =>
-      void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
+    this.addRibbonIcon(
+      "gauge",
+      "Open Test Hub Dashboard",
+      () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
     );
 
     // EPIC-011 Documentation (FEAT-024 US-043/044/045, FEAT-025 US-046).
@@ -538,10 +535,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     await this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
     const result = await this.testExecutionService.execute(request);
     if (!result.ok) {
-      const active = result.error.details?.activeRunId;
+      // `details` is typed `Record<string, unknown>`, so `activeRunId` widens
+      // to `unknown`; at runtime it is always the active run's id string.
+      const active =
+        typeof result.error.details?.activeRunId === "string"
+          ? result.error.details.activeRunId
+          : "";
       new Notice(
         active
-          ? `A run is already in progress (${String(active)}). Cancel it first.`
+          ? `A run is already in progress (${active}). Cancel it first.`
           : `Could not start run: ${result.error.message}`,
         10000,
       );
@@ -816,10 +818,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       new Notice(`CI workflow written to ${result.value.path}.`);
     } else if (!overwriteExisting && result.error.details?.path) {
       // The file exists; make the documented overwrite flow reachable (UC-019).
-      new Notice(
-        `${result.error.message} Use "Overwrite CI Workflow" to replace it.`,
-        10000,
-      );
+      new Notice(`${result.error.message} Use "Overwrite CI Workflow" to replace it.`, 10000);
     } else {
       new Notice(`Could not generate CI workflow: ${result.error.message}`, 10000);
     }
@@ -831,15 +830,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     const result = await this.validationService.validateCiReadiness(this.hubSettings);
     // Spell out the warnings (e.g. which repository secrets to create), not just
     // a count — this Notice is the only UI surface for the readiness result.
-    const warnings =
-      result.warnings.length > 0 ? `\nWarnings: ${result.warnings.join("; ")}` : "";
+    const warnings = result.warnings.length > 0 ? `\nWarnings: ${result.warnings.join("; ")}` : "";
     if (result.ready) {
       new Notice(`CI is ready.${warnings}`, warnings ? 10000 : undefined);
     } else {
-      new Notice(
-        `CI not ready — missing: ${result.missingItems.join("; ")}${warnings}`,
-        10000,
-      );
+      new Notice(`CI not ready — missing: ${result.missingItems.join("; ")}${warnings}`, 10000);
     }
   }
 

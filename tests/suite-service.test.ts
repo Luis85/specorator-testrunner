@@ -9,7 +9,11 @@ import { FakeDataStore, FakeVaultFileSystem, recordingEventBus } from "./fakes";
 const build = () => {
   const fs = new FakeVaultFileSystem();
   const { bus, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(new FakeDataStore(), new DefaultPathSafetyPolicy(), bus);
+  const settings = new DefaultSettingsService(
+    new FakeDataStore(),
+    new DefaultPathSafetyPolicy(),
+    bus,
+  );
   const service = new DefaultSuiteService(settings, fs, bus);
   return { service, fs, types };
 };
@@ -69,7 +73,7 @@ describe("DefaultSuiteService", () => {
   });
 
   it("collapses a multi-line description into a single frontmatter line", async () => {
-    const { service, fs } = build();
+    const { service } = build();
     const result = await service.create({
       name: "Multi",
       description: "Line one.\nLine two.",

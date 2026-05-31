@@ -32,8 +32,10 @@ describe("US-050 CI scenario: workflow and runner scripts stay in lockstep", () 
     const invoked = [...new Set([...workflow.matchAll(/npm run ([a-z0-9:-]+)/g)].map((m) => m[1]))];
     expect(invoked.length).toBeGreaterThan(0);
     for (const script of invoked) {
-      expect(scripts[script], `workflow runs "npm run ${script}" but runner has no such script`)
-        .toBeTruthy();
+      expect(
+        scripts[script],
+        `workflow runs "npm run ${script}" but runner has no such script`,
+      ).toBeTruthy();
     }
     // And specifically the CI entry point both sides agree on.
     expect(invoked).toContain("test:ci");

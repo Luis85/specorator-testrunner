@@ -3,12 +3,7 @@ import { DefaultReportImportService } from "../src/application/services/report-i
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { TestRun } from "../src/domain/entities/test-run";
-import {
-  FakeAbsoluteFileSystem,
-  FakeDataStore,
-  recordingEventBus,
-  silentLogger,
-} from "./fakes";
+import { FakeAbsoluteFileSystem, FakeDataStore, recordingEventBus, silentLogger } from "./fakes";
 
 const REPORT_ABS = "/vault/.testrunner/reports/cucumber-report.json";
 const REPORT_VAULT = ".testrunner/reports/cucumber-report.json";
@@ -95,9 +90,7 @@ describe("DefaultReportImportService", () => {
     // passed + (failed: declined) + (skipped: all-skipped) + (failed: undefined) = 4.
     expect(report.result).toEqual({ passed: 1, failed: 2, skipped: 1, total: 4 });
 
-    const byName = Object.fromEntries(
-      report.scenarioResults.map((s) => [s.scenario, s.status]),
-    );
+    const byName = Object.fromEntries(report.scenarioResults.map((s) => [s.scenario, s.status]));
     expect(byName["Successful checkout"]).toBe("passed");
     expect(byName["Declined card"]).toBe("failed");
     expect(byName["All skipped"]).toBe("skipped");
@@ -192,7 +185,11 @@ describe("DefaultReportImportService", () => {
     absoluteFs.seed(
       REPORT_ABS,
       JSON.stringify([
-        { name: "F", uri: "features/UC-001-x.feature", elements: [{ name: "S", steps: [null, { result: { status: "passed" } }] }] },
+        {
+          name: "F",
+          uri: "features/UC-001-x.feature",
+          elements: [{ name: "S", steps: [null, { result: { status: "passed" } }] }],
+        },
       ]),
     );
 
@@ -237,7 +234,11 @@ describe("DefaultReportImportService", () => {
           name: "F",
           uri: "features/UC-001-x.feature",
           elements: [
-            { name: "BG", type: "background", steps: [{ result: { status: "failed", error_message: "setup boom" } }] },
+            {
+              name: "BG",
+              type: "background",
+              steps: [{ result: { status: "failed", error_message: "setup boom" } }],
+            },
             { name: "S", type: "scenario", steps: [{ result: { status: "skipped" } }] },
           ],
         },
@@ -260,7 +261,11 @@ describe("DefaultReportImportService", () => {
           name: "F",
           uri: "features/UC-001-x.feature",
           elements: [
-            { name: "BG1", type: "background", steps: [{ result: { status: "failed", error_message: "setup boom" } }] },
+            {
+              name: "BG1",
+              type: "background",
+              steps: [{ result: { status: "failed", error_message: "setup boom" } }],
+            },
             { name: "S1", type: "scenario", steps: [{ result: { status: "skipped" } }] },
             // A later (e.g. Rule-specific) background that passes must govern S2,
             // not inherit BG1's failure.

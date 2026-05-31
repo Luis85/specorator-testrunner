@@ -5,12 +5,7 @@ import { computeAutomationStatus } from "../../domain/policies/use-case-automati
 import type { FeatureSpecification } from "../../domain/entities/specification";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { TestRunSummary } from "../../domain/entities/test-run";
-import type {
-  RunId,
-  SuiteId,
-  UseCaseId,
-  VaultPath,
-} from "../../domain/value-objects/identifiers";
+import type { RunId, SuiteId, UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -62,12 +57,7 @@ export interface TraceabilityService {
 }
 
 /** UC business states that count as "specified" (ADR-0017 KPI definitions). */
-const SPECIFIED_STATUSES = new Set([
-  "specified",
-  "ready-for-automation",
-  "automated",
-  "verified",
-]);
+const SPECIFIED_STATUSES = new Set(["specified", "ready-for-automation", "automated", "verified"]);
 
 /** Automation states that count as "automated" (ADR-0017 KPI definitions). */
 const AUTOMATED_STATUSES = new Set(["implemented", "passing", "failing"]);
@@ -87,7 +77,13 @@ export const projectDashboardSnapshot = (useCases: UseCase[]): DashboardSnapshot
   // resolved UC, but with PER-UC status, so the run appears once per UC. Collapse
   // duplicates by runId, keeping the WORST status — otherwise a failed broad run
   // would show as passed on the recent-run row when a passing UC sorts first.
-  const SEVERITY: Record<string, number> = { failed: 4, errored: 3, cancelled: 2, skipped: 1, passed: 0 };
+  const SEVERITY: Record<string, number> = {
+    failed: 4,
+    errored: 3,
+    cancelled: 2,
+    skipped: 1,
+    passed: 0,
+  };
   const severity = (status: string): number => SEVERITY[status] ?? 0;
   const byRunId = new Map<string, TestRunSummary>();
   for (const run of active

@@ -1,9 +1,6 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
-import {
-  REQUIRED_RUNNER_DEPENDENCIES,
-  VALIDATED_RUNNER_FILES,
-} from "../content/runner-templates";
+import { REQUIRED_RUNNER_DEPENDENCIES, VALIDATED_RUNNER_FILES } from "../content/runner-templates";
 import { buildGitHubActionsWorkflow, isNpmCiCommand } from "../content/ci-workflow-content";
 import { isSafeCiCommand } from "./pipeline-generation-service";
 import { playwrightBrowsersCandidates, resolveRunnerCwd } from "./runner-paths";
@@ -12,7 +9,6 @@ import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-p
 import type { TestHubSettings } from "../../domain/settings/settings";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
-import { ok, type Result } from "../../shared/result/result";
 
 /** Extracts `<script>` from a `npm run <script> …` command, else null. */
 const npmRunScript = (command: string): string | null => {
@@ -50,9 +46,7 @@ export interface CiReadinessResult {
   warnings: string[];
 }
 
-export class DefaultEnvironmentValidationService
-  implements EnvironmentValidationService
-{
+export class DefaultEnvironmentValidationService implements EnvironmentValidationService {
   constructor(
     private readonly settingsService: SettingsService,
     private readonly process: ChildProcessRunner,
@@ -106,7 +100,8 @@ export class DefaultEnvironmentValidationService
     const missingDependencies: string[] = [];
     if (nodeModulesExists) {
       for (const dep of REQUIRED_RUNNER_DEPENDENCIES) {
-        if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/${dep}`))) missingDependencies.push(dep);
+        if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/${dep}`)))
+          missingDependencies.push(dep);
       }
     }
     const dependenciesInstalled = nodeModulesExists && missingDependencies.length === 0;
@@ -116,23 +111,51 @@ export class DefaultEnvironmentValidationService
     const browsersInstalled = await this.detectBrowsers(runnerAbs);
 
     if (!nodeAvailable)
-      issues.push({ code: "NODE_MISSING", message: "Node.js is not available.", severity: "error" });
+      issues.push({
+        code: "NODE_MISSING",
+        message: "Node.js is not available.",
+        severity: "error",
+      });
     if (!packageManagerAvailable)
       issues.push({ code: "NPM_MISSING", message: "npm is not available.", severity: "error" });
     if (!runnerFolderExists)
-      issues.push({ code: "RUNNER_MISSING_FILE", message: "The .testrunner folder is missing.", severity: "error" });
+      issues.push({
+        code: "RUNNER_MISSING_FILE",
+        message: "The .testrunner folder is missing.",
+        severity: "error",
+      });
     else
       for (const file of missingFiles)
-        issues.push({ code: "RUNNER_MISSING_FILE", message: `.testrunner/${file} is missing.`, severity: "error" });
+        issues.push({
+          code: "RUNNER_MISSING_FILE",
+          message: `.testrunner/${file} is missing.`,
+          severity: "error",
+        });
     if (!nodeModulesExists)
-      issues.push({ code: "DEPENDENCIES_MISSING", message: "Runner dependencies are not installed.", severity: "error" });
+      issues.push({
+        code: "DEPENDENCIES_MISSING",
+        message: "Runner dependencies are not installed.",
+        severity: "error",
+      });
     else if (missingDependencies.length > 0)
       for (const dep of missingDependencies)
-        issues.push({ code: "DEPENDENCIES_MISSING", message: `.testrunner/${dep} is missing.`, severity: "error" });
+        issues.push({
+          code: "DEPENDENCIES_MISSING",
+          message: `.testrunner/${dep} is missing.`,
+          severity: "error",
+        });
     else if (!playwrightAvailable)
-      issues.push({ code: "PLAYWRIGHT_MISSING", message: "Playwright is installed but not runnable.", severity: "error" });
+      issues.push({
+        code: "PLAYWRIGHT_MISSING",
+        message: "Playwright is installed but not runnable.",
+        severity: "error",
+      });
     if (!browsersInstalled)
-      issues.push({ code: "BROWSER_NOT_INSTALLED", message: "Chromium is not installed.", severity: "error" });
+      issues.push({
+        code: "BROWSER_NOT_INSTALLED",
+        message: "Chromium is not installed.",
+        severity: "error",
+      });
 
     const valid =
       nodeAvailable &&
@@ -270,7 +293,9 @@ export class DefaultEnvironmentValidationService
         /^[A-Za-z]:/.test(workflowRel) ||
         workflowRel.split("/").includes("..")
       ) {
-        missingItems.push(`CI workflow path is invalid (must be repo-relative, no ".."): ${workflowRel}.`);
+        missingItems.push(
+          `CI workflow path is invalid (must be repo-relative, no ".."): ${workflowRel}.`,
+        );
       } else if (!/^\.github\/workflows\/[^/]+\.ya?ml$/.test(workflowRel)) {
         // GitHub Actions only discovers `.yml`/`.yaml` files directly under
         // `.github/workflows/`; anything else never runs even if it exists

@@ -30,12 +30,16 @@ export class CreateSuiteModal extends Modal {
     const { contentEl } = this;
     contentEl.createEl("h2", { text: "Create Test Suite" });
 
-    new Setting(contentEl).setName("Name").addText((text) =>
-      text.setPlaceholder("e.g. Checkout Smoke").onChange((value) => (this.suiteName = value)),
-    );
-    new Setting(contentEl).setName("Description").addTextArea((area) =>
-      area.setPlaceholder("Optional summary").onChange((value) => (this.description = value)),
-    );
+    new Setting(contentEl)
+      .setName("Name")
+      .addText((text) =>
+        text.setPlaceholder("e.g. Checkout Smoke").onChange((value) => (this.suiteName = value)),
+      );
+    new Setting(contentEl)
+      .setName("Description")
+      .addTextArea((area) =>
+        area.setPlaceholder("Optional summary").onChange((value) => (this.description = value)),
+      );
     new Setting(contentEl)
       .setName("Tag expression")
       .setDesc("Cucumber tag expression deciding membership (AD-4).")

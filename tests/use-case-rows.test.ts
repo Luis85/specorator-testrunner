@@ -17,7 +17,12 @@ const useCase = (over: Partial<UseCase>): UseCase => ({
 describe("projectUseCaseRows", () => {
   it("projects the columns US-017 displays", () => {
     const rows = projectUseCaseRows([
-      useCase({ id: "UC-001", title: "Open Example", status: "specified", automationStatus: "implemented" }),
+      useCase({
+        id: "UC-001",
+        title: "Open Example",
+        status: "specified",
+        automationStatus: "implemented",
+      }),
     ]);
     expect(rows).toEqual([
       {

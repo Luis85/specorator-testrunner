@@ -1,9 +1,13 @@
-import { Notice, type Plugin, PluginSettingTab, Setting, type TextComponent, debounce } from "obsidian";
+import {
+  Notice,
+  type Plugin,
+  PluginSettingTab,
+  Setting,
+  type TextComponent,
+  debounce,
+} from "obsidian";
 import type { Result } from "../../shared/result/result";
-import type {
-  TestHubPathSettings,
-  TestHubSettings,
-} from "../../domain/settings/settings";
+import type { TestHubPathSettings, TestHubSettings } from "../../domain/settings/settings";
 
 /** What the settings tab needs from the plugin to read/persist settings. */
 export interface SettingsHost {
@@ -33,7 +37,10 @@ const PERSIST_DEBOUNCE_MS = 600;
 
 /** Edit paths, validate, reset (US-003, BBV §4 `SettingsTab`). */
 export class TestHubSettingTab extends PluginSettingTab {
-  constructor(plugin: Plugin, private readonly host: SettingsHost) {
+  constructor(
+    plugin: Plugin,
+    private readonly host: SettingsHost,
+  ) {
     super(plugin.app, plugin);
   }
 

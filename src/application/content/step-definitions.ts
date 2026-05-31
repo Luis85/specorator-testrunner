@@ -108,13 +108,11 @@ const anchoredRegex = (source: string, flags?: string): RegExp => {
 };
 
 /** Replaces Scenario Outline `<placeholders>` with the wildcard sentinel. */
-const substituteOutline = (text: string): string => text.replace(OUTLINE_PLACEHOLDER, OUTLINE_TOKEN);
+const substituteOutline = (text: string): string =>
+  text.replace(OUTLINE_PLACEHOLDER, OUTLINE_TOKEN);
 
 /** True when `stepText` is satisfied by any of the supplied definitions. */
-export const isStepDefined = (
-  stepText: string,
-  definitions: StepDefinitionPattern[],
-): boolean => {
+export const isStepDefined = (stepText: string, definitions: StepDefinitionPattern[]): boolean => {
   const raw = stepText.trim();
   const squashed = substituteOutline(squash(stepText));
   return definitions.some((definition) => {

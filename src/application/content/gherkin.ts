@@ -70,10 +70,7 @@ const BACKGROUND_RE = /^Background:/;
  * `useCaseId` (ADR-0012); when the filename carries no `UC-NNN` prefix the
  * `useCaseId` is left empty so the validator can flag it as an orphan.
  */
-export const parseFeature = (
-  content: string,
-  path: VaultPath,
-): FeatureSpecification | null => {
+export const parseFeature = (content: string, path: VaultPath): FeatureSpecification | null => {
   const lines = content.split(/\r?\n/);
 
   let featureName: string | null = null;

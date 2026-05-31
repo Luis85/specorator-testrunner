@@ -150,7 +150,10 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
           });
         }
       } catch (cause) {
-        finish({ ok: false, error: appError("INIT_FAILED", `Could not spawn: ${display}`, { cause }) });
+        finish({
+          ok: false,
+          error: appError("INIT_FAILED", `Could not spawn: ${display}`, { cause }),
+        });
         return;
       }
       this.active.set(id, child);
@@ -183,7 +186,10 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       child.stdout?.on("data", (chunk: Buffer) => emit("stdout", chunk));
       child.stderr?.on("data", (chunk: Buffer) => emit("stderr", chunk));
       child.on("error", (cause) =>
-        finish({ ok: false, error: appError("INIT_FAILED", `Process error: ${display}`, { cause }) }),
+        finish({
+          ok: false,
+          error: appError("INIT_FAILED", `Process error: ${display}`, { cause }),
+        }),
       );
       child.on("close", (code) => {
         flushTail("stdout");

@@ -29,6 +29,6 @@ export const relativeVaultPath = (from: VaultPath, to: VaultPath): string => {
   }
   const ups = fromParts.length - common;
   const down = toParts.slice(common);
-  const segments = [...Array(ups).fill(".."), ...down];
+  const segments = [...Array<string>(ups).fill(".."), ...down];
   return segments.length === 0 ? "." : segments.join("/");
 };

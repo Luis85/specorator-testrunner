@@ -5,7 +5,12 @@ const policy = new DefaultPathSafetyPolicy();
 
 describe("DefaultPathSafetyPolicy", () => {
   it("accepts relative vault paths, including hidden folders", () => {
-    for (const path of ["Test Hub", "Specifications/features", ".testrunner", ".github/workflows"]) {
+    for (const path of [
+      "Test Hub",
+      "Specifications/features",
+      ".testrunner",
+      ".github/workflows",
+    ]) {
       expect(policy.validate(path).ok, path).toBe(true);
     }
   });
@@ -45,17 +50,7 @@ describe("DefaultPathSafetyPolicy", () => {
   });
 
   it("rejects JS/shell metacharacters and control characters in paths (P0-1)", () => {
-    for (const path of [
-      'a"b',
-      "a'b",
-      "a`b",
-      "a$b",
-      "a{b}",
-      "a\\b",
-      "a\nb",
-      "a\tb",
-      "a\u0000b",
-    ]) {
+    for (const path of ['a"b', "a'b", "a`b", "a$b", "a{b}", "a\\b", "a\nb", "a\tb", "a\u0000b"]) {
       expect(policy.validate(path).ok, JSON.stringify(path)).toBe(false);
     }
   });

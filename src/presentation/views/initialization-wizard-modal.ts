@@ -26,7 +26,10 @@ export class InitializationWizardModal extends Modal {
   private installDependencies = true;
   private installBrowsers = true;
 
-  constructor(app: App, private readonly deps: InitializationWizardDeps) {
+  constructor(
+    app: App,
+    private readonly deps: InitializationWizardDeps,
+  ) {
     super(app);
   }
 
@@ -138,10 +141,7 @@ export class InitializationWizardModal extends Modal {
 
     const actions = new Setting(contentEl);
     if (result.documentationGenerated) {
-      const gettingStarted = joinVaultPath(
-        settings.paths.documentationPath,
-        "Getting Started.md",
-      );
+      const gettingStarted = joinVaultPath(settings.paths.documentationPath, "Getting Started.md");
       actions.addButton((button) =>
         button
           .setButtonText("Open Getting Started")

@@ -1,0 +1,12 @@
+main.js
+node_modules/
+dist/
+build/
+coverage/
+.claude/
+package-lock.json
+
+# Long-form documentation is authored by hand and not Prettier-managed;
+# reformatting it produces large, noisy diffs with no code benefit.
+docs/
+CONTEXT.md

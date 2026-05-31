@@ -28,9 +28,7 @@ export const playwrightBrowsersCandidates = (
 ): string[] => {
   const explicit = env.PLAYWRIGHT_BROWSERS_PATH;
   if (explicit === "0") {
-    return runnerAbsPath
-      ? [`${runnerAbsPath}/node_modules/playwright-core/.local-browsers`]
-      : [];
+    return runnerAbsPath ? [`${runnerAbsPath}/node_modules/playwright-core/.local-browsers`] : [];
   }
   if (explicit) return [explicit];
   const home = env.HOME ?? env.USERPROFILE ?? "";

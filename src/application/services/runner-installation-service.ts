@@ -1,9 +1,6 @@
 import { buildRunnerTemplates } from "../content/runner-templates";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
-import type {
-  ChildProcessRunner,
-  RunnerCommandResult,
-} from "../ports/child-process-runner";
+import type { ChildProcessRunner, RunnerCommandResult } from "../ports/child-process-runner";
 import type { TemplateWriter } from "../ports/template-writer";
 import { resolveRunnerCwd } from "./runner-paths";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";

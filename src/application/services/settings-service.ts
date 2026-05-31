@@ -92,7 +92,11 @@ export class DefaultSettingsService implements SettingsService {
         loggingPath.error,
         { value: settings.logging.path, fallback: DEFAULT_SETTINGS.logging.path },
       );
-      return { ...settings, paths, logging: { ...settings.logging, path: DEFAULT_SETTINGS.logging.path } };
+      return {
+        ...settings,
+        paths,
+        logging: { ...settings.logging, path: DEFAULT_SETTINGS.logging.path },
+      };
     }
     return { ...settings, paths };
   }

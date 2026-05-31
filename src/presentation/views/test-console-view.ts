@@ -73,9 +73,7 @@ export class TestConsoleView extends ItemView {
     this.output = container.createEl("pre", { cls: "e2e-test-hub-console-output" });
 
     this.subscriptions.push(
-      this.eventBus.subscribe<StartedPayload>("testrun.started", (event) =>
-        this.onStarted(event),
-      ),
+      this.eventBus.subscribe<StartedPayload>("testrun.started", (event) => this.onStarted(event)),
       this.eventBus.subscribe<OutputPayload>("testrun.output.received", (event) =>
         this.onOutputReceived(event),
       ),

@@ -206,7 +206,13 @@ export class DefaultTestExecutionService implements TestExecutionService {
     const completion = new Promise<void>((resolve) => {
       settle = resolve;
     });
-    const activeRun: ActiveRun = { run, terminated: false, processClosed: false, completion, settle };
+    const activeRun: ActiveRun = {
+      run,
+      terminated: false,
+      processClosed: false,
+      completion,
+      settle,
+    };
     this.active = activeRun;
 
     try {
@@ -393,7 +399,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
   private async snapshotReport(run: TestRun, cwd: string): Promise<void> {
     const liveReport = await this.absoluteFs.readAbsolute(`${cwd}/reports/cucumber-report.json`);
     if (!liveReport.ok) return;
-    const snapshot = await this.absoluteFs.writeAbsolute(`${cwd}/reports/${run.id}.json`, liveReport.value);
+    const snapshot = await this.absoluteFs.writeAbsolute(
+      `${cwd}/reports/${run.id}.json`,
+      liveReport.value,
+    );
     if (snapshot.ok) {
       run.reportPaths.json = joinVaultPath(run.workingDirectory, "reports", `${run.id}.json`);
     }
@@ -456,13 +465,20 @@ export class DefaultTestExecutionService implements TestExecutionService {
             .flatMap((uc) => uc.featureFiles);
           if (activeFiles.length > 0) {
             return ok(
-              appendScopedArgs(base, activeFiles.map((path) => this.featureArg(settings, path))),
+              appendScopedArgs(
+                base,
+                activeFiles.map((path) => this.featureArg(settings, path)),
+              ),
             );
           }
           // Every non-deprecated UC is unautomated (or all UCs are deprecated):
           // there is no active coverage to run, so target a path that matches no
           // feature instead of falling back to the all-features glob.
-          return ok(appendScopedArgs(base, [`${this.featurePrefix(settings)}/__no_active_features__.feature`]));
+          return ok(
+            appendScopedArgs(base, [
+              `${this.featurePrefix(settings)}/__no_active_features__.feature`,
+            ]),
+          );
         }
         return ok([...base]);
       }
@@ -483,9 +499,16 @@ export class DefaultTestExecutionService implements TestExecutionService {
         const found = await this.useCaseService.findById(request.target);
         const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
         if (featureFiles.length > 0) {
-          return ok(appendScopedArgs(base, featureFiles.map((path) => this.featureArg(settings, path))));
+          return ok(
+            appendScopedArgs(
+              base,
+              featureFiles.map((path) => this.featureArg(settings, path)),
+            ),
+          );
         }
-        return ok(appendScopedArgs(base, [`${this.featurePrefix(settings)}/${request.target}-*.feature`]));
+        return ok(
+          appendScopedArgs(base, [`${this.featurePrefix(settings)}/${request.target}-*.feature`]),
+        );
       }
     }
   }
@@ -497,7 +520,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
     // the configured features folder, then re-anchor to the runner cwd.
     const basename = target.startsWith(`${prefix}/`)
       ? target.slice(prefix.length + 1)
-      : target.split("/").pop() ?? target;
+      : (target.split("/").pop() ?? target);
     return `${this.featurePrefix(settings)}/${basename}`;
   }
 

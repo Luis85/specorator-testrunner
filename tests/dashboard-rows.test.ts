@@ -28,7 +28,12 @@ describe("projectDashboard", () => {
     const view = projectDashboard(
       snapshot({
         recentRuns: [
-          { runId: "RUN-B", status: "passed", date: "2026-06-02T00:00:00Z", evidencePath: "ev/B.md" },
+          {
+            runId: "RUN-B",
+            status: "passed",
+            date: "2026-06-02T00:00:00Z",
+            evidencePath: "ev/B.md",
+          },
           { runId: "RUN-A", status: "failed", date: "2026-06-01T00:00:00Z" },
         ],
       }),

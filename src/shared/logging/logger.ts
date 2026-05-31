@@ -82,11 +82,7 @@ export class ConsoleLogger implements Logger {
     this.emit("warn", msg, fields);
   }
 
-  error(
-    msg: string,
-    error?: Error | AppError,
-    fields?: Record<string, unknown>,
-  ): void {
+  error(msg: string, error?: Error | AppError, fields?: Record<string, unknown>): void {
     this.emit("error", msg, { ...fields, error: this.describeError(error) });
   }
 

@@ -1,8 +1,4 @@
-import type {
-  DomainEvent,
-  DomainEventType,
-  EventSource,
-} from "../../domain/events/domain-event";
+import type { DomainEvent, DomainEventType, EventSource } from "../../domain/events/domain-event";
 
 const newId = (): string => {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;

@@ -34,9 +34,7 @@ describe("parseStepDefinitions", () => {
       /* When("a block-commented step", () => {}); */
       Then("a real step", () => {});
     `;
-    expect(parseStepDefinitions(source)).toEqual([
-      { kind: "expression", source: "a real step" },
-    ]);
+    expect(parseStepDefinitions(source)).toEqual([{ kind: "expression", source: "a real step" }]);
   });
 
   it("preserves patterns containing URL literals (// inside a string)", () => {

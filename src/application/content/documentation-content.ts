@@ -5,11 +5,7 @@ import type { TestHubSettings } from "../../domain/settings/settings";
  * `documentation.opened` payload's `documentType` (TIS §12); `index` is the
  * navigational hub the "Open Documentation" command opens (UC-021/022/023).
  */
-export type DocumentationType =
-  | "getting-started"
-  | "manual"
-  | "troubleshooting"
-  | "index";
+export type DocumentationType = "getting-started" | "manual" | "troubleshooting" | "index";
 
 /**
  * A doc's `documentType` as carried by `documentation.opened`. The Event Catalog

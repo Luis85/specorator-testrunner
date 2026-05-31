@@ -1,10 +1,7 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import { buildGitHubActionsWorkflow } from "../content/ci-workflow-content";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
-import type {
-  CiProvider,
-  TestHubSettings,
-} from "../../domain/settings/settings";
+import type { CiProvider, TestHubSettings } from "../../domain/settings/settings";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -66,18 +63,14 @@ export interface GeneratedPipeline {
   path: string; // repo-root relative path; not a VaultPath (TIS §8.13)
 }
 
-export class DefaultPipelineGenerationService
-  implements PipelineGenerationService
-{
+export class DefaultPipelineGenerationService implements PipelineGenerationService {
   constructor(
     private readonly absoluteFs: AbsoluteFileSystem,
     private readonly eventBus: EventBus,
     private readonly commandSafety: CommandSafetyPolicy,
   ) {}
 
-  async generate(
-    request: GeneratePipelineRequest,
-  ): Promise<Result<GeneratedPipeline>> {
+  async generate(request: GeneratePipelineRequest): Promise<Result<GeneratedPipeline>> {
     // V1 only emits GitHub Actions output; "azure-devops" is reserved for V2 and
     // "none" is an explicit opt-out (TIS §5.7).
     if (request.provider !== "github-actions") {

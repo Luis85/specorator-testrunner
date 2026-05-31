@@ -37,22 +37,13 @@ export class DefaultDemoContentService implements DemoContentService {
 
   async generate(): Promise<Result<DemoContentResult>> {
     const settings = await this.settingsService.load();
-    const featurePath = joinVaultPath(
-      settings.paths.featureFilesPath,
-      DEMO_FEATURE_FILE_NAME,
-    );
-    const useCasePath = joinVaultPath(
-      settings.paths.useCasesPath,
-      DEMO_USE_CASE_FILE_NAME,
-    );
+    const featurePath = joinVaultPath(settings.paths.featureFilesPath, DEMO_FEATURE_FILE_NAME);
+    const useCasePath = joinVaultPath(settings.paths.useCasesPath, DEMO_USE_CASE_FILE_NAME);
 
     const feature = await this.writeIfAbsent(featurePath, DEMO_FEATURE_CONTENT);
     if (!feature.ok) return err(feature.error);
 
-    const useCase = await this.writeIfAbsent(
-      useCasePath,
-      buildDemoUseCaseNote(featurePath),
-    );
+    const useCase = await this.writeIfAbsent(useCasePath, buildDemoUseCaseNote(featurePath));
     if (!useCase.ok) return err(useCase.error);
 
     await this.eventBus.publish(
