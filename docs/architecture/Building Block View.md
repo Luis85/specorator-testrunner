@@ -191,7 +191,7 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 
 ## 6. Domain Layer
 
-Path: `src/domain/{entities,value-objects,events,repositories,policies}`.
+Path: `src/domain/{entities,value-objects,events,policies,settings}`. (There is **no** `repositories/` subfolder — see §6.5.)
 
 ### 6.1 Entities
 
@@ -219,25 +219,31 @@ Defined in the [Event Catalog](./Event%20Catalog.md). The Domain Layer exports t
 
 > **Not built.** The per-aggregate repository interfaces (`UseCaseRepository`, `FeatureRepository`, `SuiteRepository`, `TestRunRepository`, `EvidenceRepository`) this section once described do **not** exist. There is no `src/domain/repositories/` directory.
 >
-> **Actual choice:** all persistence is read and written through file-system **ports** declared in the application layer (`src/application/ports/vault-file-system.ts`, plus `file-system.ts` / `absolute-file-system.ts`) and implemented by Obsidian/Node adapters in infrastructure (`src/infrastructure/obsidian/obsidian-vault-file-system.ts`, `src/infrastructure/filesystem/{vault-fs,absolute-fs}.ts`). Aggregates are stored as Markdown/`.feature` notes in the vault rather than reconstituted through dedicated repositories. A move to per-aggregate repository ports is a possible future refinement, not a V1 building block.
+> **Actual choice:** all persistence is read and written through file-system **ports** declared in the application layer (`src/application/ports/vault-file-system.ts` and `absolute-file-system.ts`) and implemented by adapters in infrastructure (`src/infrastructure/obsidian/obsidian-vault-adapter.ts` for vault notes/frontmatter; `src/infrastructure/filesystem/node-absolute-file-system.ts` for paths outside the vault index). Aggregates are stored as Markdown/`.feature` notes in the vault rather than reconstituted through dedicated repositories. A move to per-aggregate repository ports is a possible future refinement, not a V1 building block.
 
 ---
 
 ## 7. Infrastructure Layer
 
-Path: `src/infrastructure/{obsidian,filesystem,runner,reports,templates,ci}`.
+Path (reconciled with code): `src/infrastructure/{obsidian,filesystem,runner}`. There is **no** separate `reports/`, `templates/`, or `ci/` infrastructure folder — report parsing lives in the application layer (`report-import-service.ts`), CI generation in `pipeline-generation-service.ts`, and template writing in `src/infrastructure/runner/runner-template-writer.ts`.
 
-| Adapter | Wraps |
+| Adapter (real class / file) | Wraps |
 | --- | --- |
-| `ObsidianVaultAdapter` | Obsidian `Vault` — folders, notes, frontmatter, file IO. |
-| `ObsidianWorkspaceAdapter` | Obsidian `Workspace` — open views, leaves, commands, modals. |
-| `FileSystemAdapter` | Node `fs/promises` for paths outside the vault index (`.testrunner` internals, `.github/workflows/`). |
-| `ProcessAdapter` | Node `child_process.spawn` for `npm install`, browser install, runner execution; supports cancellation. |
-| `RunnerTemplateWriter` | Writes the `.testrunner` template: `package.json`, `tsconfig.json`, `playwright.config.ts`, `cucumber.mjs`, demo steps, demo page objects, fixtures (AD-8), `README.md`. |
-| `ReportParserAdapter` | Parses Cucumber JSON + Playwright artifacts (reports, screenshots, traces). |
-| `CiTemplateWriter` | Writes `.github/workflows/e2e.yml` (AD-3). Azure DevOps template stub deferred to V2. |
+| `ObsidianVaultAdapter` (`obsidian/obsidian-vault-adapter.ts`) | Obsidian `Vault` — folders, notes, frontmatter, file IO (implements the `VaultFileSystem` port). |
+| `ObsidianWorkspaceAdapter` (`obsidian/obsidian-workspace-adapter.ts`) | Obsidian `Workspace` — open views, leaves, commands, modals. |
+| `ObsidianDataStore` (`obsidian/obsidian-data-store.ts`) | Obsidian plugin `loadData`/`saveData` (the `DataStore` port for settings). |
+| `NodeAbsoluteFileSystem` (`filesystem/node-absolute-file-system.ts`) | Node `fs/promises` for paths outside the vault index (`.testrunner` internals, `.github/workflows/`); implements the `AbsoluteFileSystem` port. |
+| `NodeChildProcessRunner` (`runner/node-child-process-runner.ts`) | Node `child_process.spawn` (`shell:false`) for `npm install`, browser install, runner execution; supports id-keyed cancellation. Implements the `ChildProcessRunner` port. |
+| `RunnerTemplateWriter` (`runner/runner-template-writer.ts`) | Writes the `.testrunner` template files (implements the `TemplateWriter` port). **NB:** the template *content* it writes still lives in the application layer at `src/application/content/runner-templates.ts` — see §7.1. |
+| ~~`ReportParserAdapter` / `CiTemplateWriter`~~ | **Not separate infrastructure adapters.** Cucumber/Playwright report parsing is done in `ReportImportService` (application) and CI workflow generation in `PipelineGenerationService` (application), writing through the absolute-file-system port. |
 | ~~`ReportFileWatcher`~~ | **Not built / removed.** The post-run import is driven in-process by the `PostRunCoordinator` (application layer) from the EN-2 terminal run event, not by a filesystem watcher. See §5.11a and Event Catalog §8. |
 | `FeatureFileWatcher` | _(Deferred, per SDD AD-10.)_ Would subscribe to `vault.on('modify' \| 'create' \| 'rename' \| 'delete')` for `*.feature` to feed incremental traceability updates. Not in V1. |
+
+### 7.1 Runner-template content location (DEFERRED relocation)
+
+The `RunnerTemplateWriter` (infrastructure) writes the `.testrunner` files, but the template *content* — `package.json`, `cucumber.mjs`, demo steps/pages/fixtures, etc. — is assembled in the **application** layer at `src/application/content/runner-templates.ts`, not under `infrastructure/`.
+
+> **DEFERRED — do not assume this has moved.** Relocating the template content under `infrastructure/` is a documented deferred item (V1 Review P3-7). It is not a straight file move: the content is generated/assembled on the application side, and pushing it under infrastructure cleanly requires the generation to be pushed behind the `TemplateWriter` port first — otherwise infrastructure would have to call back into application content and invert the layer dependency rule. Until that refactor lands, the content stays at `src/application/content/runner-templates.ts`.
 
 ---
 
@@ -326,7 +332,7 @@ Domain → no outer layer
 
 **Allowed:**
 
-- Application → repository / adapter *interfaces*
+- Application → adapter *port interfaces* (file-system / absolute-file-system / child-process-runner / template-writer / data-store / workspace ports — there are no repository ports, see §6.5)
 - Infrastructure → concrete implementations
 - Presentation → application services
 
@@ -335,6 +341,8 @@ Domain → no outer layer
 ---
 
 ## 11. Recommended source structure
+
+> **As-built note.** The tree below is the originally *recommended* layout. The implemented layout differs in a few places (verified against `src/`): there is no `domain/repositories/` (see §6.5), no `presentation/commands/` or `presentation/components/` (commands live in `main.ts`, view-row helpers live under `presentation/views/`), and `infrastructure/` contains only `obsidian/`, `filesystem/`, and `runner/` (no `reports/`, `templates/`, or `ci/` — see §7). The application layer also has a `content/` folder (generated runner/doc content).
 
 ```
 src/
