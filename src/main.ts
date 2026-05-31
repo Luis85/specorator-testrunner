@@ -698,13 +698,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private async checkCiReadiness(): Promise<void> {
     new Notice("Checking CI readiness…");
     const result = await this.validationService.validateCiReadiness(this.hubSettings);
+    // Spell out the warnings (e.g. which repository secrets to create), not just
+    // a count — this Notice is the only UI surface for the readiness result.
+    const warnings =
+      result.warnings.length > 0 ? `\nWarnings: ${result.warnings.join("; ")}` : "";
     if (result.ready) {
-      const suffix =
-        result.warnings.length > 0 ? ` (${result.warnings.length} warning(s))` : "";
-      new Notice(`CI is ready${suffix}.`);
+      new Notice(`CI is ready.${warnings}`, warnings ? 10000 : undefined);
     } else {
       new Notice(
-        `CI not ready — missing: ${result.missingItems.join("; ")}`,
+        `CI not ready — missing: ${result.missingItems.join("; ")}${warnings}`,
         10000,
       );
     }
