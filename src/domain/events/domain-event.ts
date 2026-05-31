@@ -55,7 +55,6 @@ export type DomainEventType =
   | "testrun.failed"
   | "testrun.cancelled"
   // report
-  | "report.detected"
   | "report.imported"
   | "report.import.failed"
   // evidence
@@ -142,7 +141,6 @@ export interface EventPayloads {
   "testrun.cancelled": { runId: string };
 
   // report (§8)
-  "report.detected": { runId: string; reportPath: string; format: "json" | "html" };
   "report.imported": { runId: string; reportPath: string; scenarioResults: number };
   "report.import.failed": { runId: string; reportPath: string; reason: string };
 

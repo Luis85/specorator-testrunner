@@ -109,8 +109,11 @@ const scenarioStatus = (
  * lives outside the vault index (TIS §9.4); parses defensively into typed
  * results and artifact REFERENCES (US-033/034 — links, never copies, ADR-0016).
  *
- * Emits `report.detected` then `report.imported`, or `report.import.failed`
- * (returning `REPORT_NOT_FOUND` / `REPORT_PARSE_FAILED`) on a read/parse fault.
+ * Emits `report.imported`, or `report.import.failed` (returning
+ * `REPORT_NOT_FOUND` / `REPORT_PARSE_FAILED`) on a read/parse fault. (The old
+ * `report.detected` emission — meant to trigger a never-built filesystem
+ * watcher — was removed; the in-process PostRunCoordinator now drives the
+ * import from the terminal run event.)
  */
 export class DefaultReportImportService implements ReportImportService {
   constructor(
@@ -137,8 +140,6 @@ export class DefaultReportImportService implements ReportImportService {
     const cwd = await resolveRunnerCwd(this.absoluteFs, runnerPath);
     if (!cwd.ok) return err(cwd.error);
     const reportAbsPath = `${cwd.value.replace(/[/\\]$/, "")}/${reportFile}`;
-
-    await this.publishDetected(run.id, reportVaultPath);
 
     const read = await this.absoluteFs.readAbsolute(reportAbsPath);
     if (!read.ok) {
@@ -352,16 +353,6 @@ export class DefaultReportImportService implements ReportImportService {
     if (mime.startsWith("image/")) return "screenshot";
     if (mime.includes("zip") || mime.includes("trace")) return "trace";
     return null;
-  }
-
-  private publishDetected(runId: RunId, reportPath: VaultPath): Promise<void> {
-    return this.eventBus.publish(
-      createEvent(
-        "report.detected",
-        { runId, reportPath, format: "json" },
-        { correlationId: runId },
-      ),
-    );
   }
 
   /** Publishes `report.import.failed` and returns the matching error result. */
