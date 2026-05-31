@@ -110,6 +110,12 @@ export class DefaultCommandSafetyPolicy implements CommandSafetyPolicy {
         if (rest[0] !== "playwright") {
           return disallow(`npx may only run "playwright": "${display}".`);
         }
+        // And only the install/probe subcommands the runner uses. Other
+        // subcommands (e.g. `uninstall --all`) could delete the browsers the
+        // runner needs, so reject them (ADR-0010).
+        if (rest[1] !== "--version" && rest[1] !== "install") {
+          return disallow(`npx playwright subcommand is not allowed: "${display}".`);
+        }
         return ok(undefined);
       default:
         return disallow(`Command program is not allowed: "${program}".`);
