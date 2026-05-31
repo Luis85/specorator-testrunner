@@ -77,10 +77,12 @@ export class TestHubSettingTab extends PluginSettingTab {
     value: string,
   ): Promise<void> {
     const current = this.host.getSettings();
-    const next: TestHubSettings = {
-      ...current,
-      paths: { ...current.paths, [key]: value },
-    };
+    const paths = { ...current.paths, [key]: value };
+    // Documentation lives inside the Test Hub folder (see the vault layout), so
+    // keep documentationPath in sync rather than orphaning the generated docs
+    // in the previous location.
+    if (key === "testHubPath") paths.documentationPath = value;
+    const next: TestHubSettings = { ...current, paths };
     const result = await this.host.updateSettings(next);
     if (!result.ok) {
       new Notice(`Invalid setting: ${result.error.message}`);
