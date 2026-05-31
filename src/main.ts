@@ -162,7 +162,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // EPIC-010 CI/CD (UC-019): generate the GitHub Actions workflow into the
     // user's repo root via the absolute filesystem (the workflow is not a
     // VaultPath; it must live where GitHub Actions discovers it, TIS §8.13).
-    this.pipelineService = new DefaultPipelineGenerationService(absoluteFs, eventBus);
+    this.pipelineService = new DefaultPipelineGenerationService(absoluteFs, eventBus, commandSafety);
     this.maintenanceService = new DefaultMaintenanceService(
       this.hubSettingsService,
       this.validationService,

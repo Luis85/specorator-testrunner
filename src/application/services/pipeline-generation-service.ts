@@ -1,5 +1,6 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import { buildGitHubActionsWorkflow } from "../content/ci-workflow-content";
+import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
 import type {
   CiProvider,
   TestHubSettings,
@@ -31,6 +32,7 @@ export class DefaultPipelineGenerationService
   constructor(
     private readonly absoluteFs: AbsoluteFileSystem,
     private readonly eventBus: EventBus,
+    private readonly commandSafety: CommandSafetyPolicy,
   ) {}
 
   async generate(
@@ -46,6 +48,26 @@ export class DefaultPipelineGenerationService
           { details: { provider: request.provider } },
         ),
       );
+    }
+
+    // The configured CI install/run commands are interpolated verbatim into the
+    // workflow `run:` steps, which Actions executes through a shell on push. A
+    // synced/tampered settings blob could otherwise smuggle arbitrary commands
+    // (e.g. a curl pipe) into the committed workflow, so screen them against the
+    // same allowlist used for local spawns (ADR-0010) before writing.
+    const effectiveInstall = request.settings.runner.ciInstallCommand.trim() || "npm ci";
+    const effectiveRun = request.settings.runner.ciRunCommand.trim() || "npm run test:ci";
+    for (const command of [effectiveInstall, effectiveRun]) {
+      const safe = this.commandSafety.assertSafe(command.split(/\s+/).filter(Boolean));
+      if (!safe.ok) {
+        return err(
+          appError(
+            "VALIDATION_FAILED",
+            `Configured CI command is not allowed in the generated workflow: "${command}".`,
+            { details: { command } },
+          ),
+        );
+      }
     }
 
     const base = await this.absoluteFs.getVaultBasePath();
