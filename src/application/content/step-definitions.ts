@@ -13,10 +13,12 @@
  *   `{word}` → `\S+`, anonymous `{}` → `.*`). So `When("I have {int} cukes")`
  *   matches the unquoted feature step `When I have 5 cukes`, and
  *   `When("I click the {string} button")` matches `... the "Continue" button`.
- * - Regex patterns are anchored and tested against the raw step text.
- * - Scenario Outline steps containing `<placeholders>` are NOT matched (they
- *   have no concrete value until the Examples table is expanded); the matcher
- *   skips them so they are neither reported missing nor stubbed.
+ * - Regex patterns are anchored and tested against the raw step text, keeping
+ *   their original flags (e.g. `/.../i` stays case-insensitive).
+ * - Scenario Outline `<placeholders>` are treated as wildcards: each becomes a
+ *   sentinel that any parameter class accepts, so an outline step matches a def
+ *   when the surrounding literal text lines up — and a genuinely unimplemented
+ *   outline step is still reported missing (and stubbed).
  * - NOT handled: custom parameter types, optional/alternative Cucumber syntax
  *   (`colou?r`, `cat/dog`), step tables/doc-strings, and definitions built at
  *   runtime from variables. These may yield false "missing" reports; the user
@@ -27,30 +29,31 @@
 export interface StepDefinitionPattern {
   kind: "expression" | "regex";
   source: string;
+  flags?: string; // regex flags (e.g. "i") for `kind: "regex"`
 }
 
-// Given("...") / When('...') / Then(`...`) / And(/.../) / But("...")
+// Given("...") / When('...') / Then(`...`) / And(/.../i) / But("...")
 const STEP_DEF_CALL =
-  /\b(?:Given|When|Then|And|But)\s*\(\s*(?:(["'`])((?:\\.|(?!\1).)*)\1|\/((?:\\.|[^/])+)\/[a-z]*)/g;
+  /\b(?:Given|When|Then|And|But)\s*\(\s*(?:(["'`])((?:\\.|(?!\1).)*)\1|\/((?:\\.|[^/])+)\/([a-z]*))/g;
 
 /**
- * Strips block and line comments so a commented-out step definition isn't
- * scraped as implemented (which would hide a genuinely missing step). String
- * literals containing `//` are rare in step patterns, and an over-strip there
- * only risks a false "missing" report — the safe direction (UC-010).
+ * Strips block comments and *full-line* `//` comments so a commented-out step
+ * definition isn't scraped as implemented (which would hide a genuinely missing
+ * step). Only line-leading `//` is removed, so a `//` inside a pattern literal
+ * (e.g. a URL like `http://example.com`) is preserved (UC-010).
  */
 const stripComments = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 
 /** Scrapes step-definition patterns from one steps file's source. */
 export const parseStepDefinitions = (source: string): StepDefinitionPattern[] => {
   const patterns: StepDefinitionPattern[] = [];
   for (const match of stripComments(source).matchAll(STEP_DEF_CALL)) {
-    const [, , quoted, regex] = match;
+    const [, , quoted, regex, flags] = match;
     if (typeof quoted === "string") {
       patterns.push({ kind: "expression", source: quoted });
     } else if (typeof regex === "string") {
-      patterns.push({ kind: "regex", source: regex });
+      patterns.push({ kind: "regex", source: regex, flags: flags || undefined });
     }
   }
   return patterns;
@@ -71,7 +74,11 @@ const PARAM_CLASS: Record<string, string> = {
 };
 
 const CUCUMBER_PARAM = /\{(string|int|float|double|word|biginteger|long|short|byte|)\}/g;
-const OUTLINE_PLACEHOLDER = /<[^>]+>/;
+const OUTLINE_PLACEHOLDER = /<[^>]+>/g;
+// Sentinel a Scenario Outline `<placeholder>` is replaced with before matching;
+// each parameter class also accepts it, so an outline step matches any def whose
+// literal text lines up (treating placeholders as wildcards, US-021).
+const OUTLINE_TOKEN = "￿";
 
 /** Collapses runs of whitespace and trims for stable comparison. */
 const squash = (value: string): string => value.replace(/\s+/g, " ").trim();
@@ -85,18 +92,23 @@ const compileExpression = (source: string): RegExp => {
   let lastIndex = 0;
   for (const match of expression.matchAll(CUCUMBER_PARAM)) {
     pattern += escapeRegex(expression.slice(lastIndex, match.index));
-    pattern += PARAM_CLASS[match[1]] ?? String.raw`\S+`;
+    const paramClass = PARAM_CLASS[match[1]] ?? String.raw`\S+`;
+    // Also accept the outline sentinel so `<placeholder>` matches this param.
+    pattern += `(?:${paramClass}|${OUTLINE_TOKEN})`;
     lastIndex = (match.index ?? 0) + match[0].length;
   }
   pattern += escapeRegex(expression.slice(lastIndex));
   return new RegExp(`^${pattern}$`);
 };
 
-/** Anchors an author-supplied regex so it must match the whole step. */
-const anchoredRegex = (source: string): RegExp => {
+/** Anchors an author-supplied regex so it must match the whole step, keeping flags. */
+const anchoredRegex = (source: string, flags?: string): RegExp => {
   const body = source.replace(/^\^/, "").replace(/\$$/, "");
-  return new RegExp(`^(?:${body})$`);
+  return new RegExp(`^(?:${body})$`, flags);
 };
+
+/** Replaces Scenario Outline `<placeholders>` with the wildcard sentinel. */
+const substituteOutline = (text: string): string => text.replace(OUTLINE_PLACEHOLDER, OUTLINE_TOKEN);
 
 /** True when `stepText` is satisfied by any of the supplied definitions. */
 export const isStepDefined = (
@@ -104,10 +116,12 @@ export const isStepDefined = (
   definitions: StepDefinitionPattern[],
 ): boolean => {
   const raw = stepText.trim();
-  const squashed = squash(stepText);
+  const squashed = substituteOutline(squash(stepText));
   return definitions.some((definition) => {
     try {
-      if (definition.kind === "regex") return anchoredRegex(definition.source).test(raw);
+      if (definition.kind === "regex") {
+        return anchoredRegex(definition.source, definition.flags).test(raw);
+      }
       return compileExpression(definition.source).test(squashed);
     } catch {
       return false; // an un-compilable pattern never matches
@@ -117,8 +131,9 @@ export const isStepDefined = (
 
 /**
  * Returns the distinct step texts from `stepTexts` not matched by any
- * definition, preserving first-seen order (US-021). Scenario Outline steps
- * (with `<placeholders>`) are skipped — they have no concrete value to match.
+ * definition, preserving first-seen order (US-021). Scenario Outline steps are
+ * matched with their `<placeholders>` treated as wildcards (so a genuinely
+ * unimplemented outline step is still reported and stubbed).
  */
 export const findMissingSteps = (
   stepTexts: string[],
@@ -129,7 +144,6 @@ export const findMissingSteps = (
   for (const text of stepTexts) {
     if (seen.has(text)) continue;
     seen.add(text);
-    if (OUTLINE_PLACEHOLDER.test(text)) continue;
     if (!isStepDefined(text, definitions)) missing.push(text);
   }
   return missing;

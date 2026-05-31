@@ -38,6 +38,13 @@ describe("parseStepDefinitions", () => {
       { kind: "expression", source: "a real step" },
     ]);
   });
+
+  it("preserves patterns containing URL literals (// inside a string)", () => {
+    const source = `Given("I open http://example.com/path", () => {});`;
+    expect(parseStepDefinitions(source)).toEqual([
+      { kind: "expression", source: "I open http://example.com/path" },
+    ]);
+  });
 });
 
 describe("isStepDefined", () => {
@@ -81,6 +88,20 @@ describe("isStepDefined", () => {
     expect(isStepDefined("I wait", defs)).toBe(true);
     expect(isStepDefined("I wait for the page", defs)).toBe(false); // anchored
   });
+
+  it("preserves regex flags (case-insensitive defs match)", () => {
+    const defs = parseStepDefinitions(`Then(/error message/i, () => {});`);
+    expect(defs).toEqual([{ kind: "regex", source: "error message", flags: "i" }]);
+    expect(isStepDefined("Error Message", defs)).toBe(true);
+    expect(isStepDefined("error message", defs)).toBe(true);
+  });
+
+  it("matches a Scenario Outline <placeholder> as a wildcard for a param", () => {
+    const defs = parseStepDefinitions(`When("I select {string} from the menu", () => {});`);
+    expect(isStepDefined("I select <option> from the menu", defs)).toBe(true);
+    // ...but a different literal around the placeholder is still unmatched.
+    expect(isStepDefined("I select <option> from the list", defs)).toBe(false);
+  });
 });
 
 describe("findMissingSteps", () => {
@@ -99,8 +120,13 @@ describe("findMissingSteps", () => {
     expect(missing).toEqual(["I do something undefined", "yet another missing"]);
   });
 
-  it("skips Scenario Outline steps that still contain <placeholders>", () => {
-    const missing = findMissingSteps(["I select <option> from the menu"], []);
-    expect(missing).toEqual([]); // not matchable until Examples are expanded
+  it("reports an unimplemented Scenario Outline step (placeholders are wildcards, not hidden)", () => {
+    // No definitions → the outline step is genuinely missing and must surface.
+    expect(findMissingSteps(["I select <option> from the menu"], [])).toEqual([
+      "I select <option> from the menu",
+    ]);
+    // With a matching def (placeholder ↔ param), it is satisfied.
+    const defs = parseStepDefinitions(`When("I select {string} from the menu", () => {});`);
+    expect(findMissingSteps(["I select <option> from the menu"], defs)).toEqual([]);
   });
 });

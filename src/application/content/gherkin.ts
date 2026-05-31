@@ -62,6 +62,7 @@ const parseStep = (line: string): GherkinStep | null => {
 
 const FEATURE_RE = /^Feature:\s*(.*)$/;
 const SCENARIO_RE = /^Scenario(?:\s+Outline)?:\s*(.*)$/;
+const BACKGROUND_RE = /^Background:/;
 
 /**
  * Parses Gherkin `content` into a {@link FeatureSpecification}. Returns `null`
@@ -108,6 +109,15 @@ export const parseFeature = (
         tags: pendingTags,
         steps: [],
       };
+      scenarios.push(current);
+      pendingTags = [];
+      continue;
+    }
+
+    // Background steps run before every scenario, so they must be collected too
+    // (otherwise detectMissingSteps would miss them). Modelled as a scenario.
+    if (BACKGROUND_RE.test(line)) {
+      current = { name: "Background", tags: pendingTags, steps: [] };
       scenarios.push(current);
       pendingTags = [];
       continue;
