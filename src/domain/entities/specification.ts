@@ -18,5 +18,6 @@ export interface FeatureSpecification {
   useCaseId: UseCaseId; // required per ADR-0012; orphan features are a validation error
   featureName: string;
   tags: string[];
+  background?: GherkinStep[]; // Background steps; run before every scenario
   scenarios: ScenarioSpecification[];
 }

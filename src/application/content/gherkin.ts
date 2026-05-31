@@ -79,13 +79,28 @@ export const parseFeature = (
   let featureName: string | null = null;
   const featureTags: string[] = [];
   const scenarios: ScenarioSpecification[] = [];
+  const background: GherkinStep[] = [];
 
   // Tags accumulate on the line(s) directly above a Feature/Scenario keyword.
   let pendingTags: string[] = [];
+  // Steps flow into the current scenario, or the Background collector.
   let current: ScenarioSpecification | null = null;
+  let inBackground = false;
+  // Inside a `"""` / ``` ``` ``` doc string, lines are a step argument, not steps.
+  let docStringFence: string | null = null;
 
   for (const raw of lines) {
     const line = raw.trim();
+
+    if (docStringFence !== null) {
+      if (line === docStringFence) docStringFence = null; // closing fence
+      continue; // doc-string body is an argument, never a step
+    }
+    if (line === '"""' || line === "```") {
+      docStringFence = line;
+      continue;
+    }
+
     if (line === "" || line.startsWith("#")) continue;
 
     if (line.startsWith("@")) {
@@ -99,6 +114,16 @@ export const parseFeature = (
       featureTags.push(...pendingTags);
       pendingTags = [];
       current = null;
+      inBackground = false;
+      continue;
+    }
+
+    // Background steps run before every scenario; collected separately so they
+    // are checked by detectMissingSteps and round-trip as a `Background:` block.
+    if (BACKGROUND_RE.test(line)) {
+      current = null;
+      inBackground = true;
+      pendingTags = [];
       continue;
     }
 
@@ -111,28 +136,24 @@ export const parseFeature = (
       };
       scenarios.push(current);
       pendingTags = [];
+      inBackground = false;
       continue;
     }
 
-    // Background steps run before every scenario, so they must be collected too
-    // (otherwise detectMissingSteps would miss them). Modelled as a scenario.
-    if (BACKGROUND_RE.test(line)) {
-      current = { name: "Background", tags: pendingTags, steps: [] };
-      scenarios.push(current);
-      pendingTags = [];
-      continue;
-    }
-
-    if (current) {
-      const step = parseStep(line);
-      if (step) {
+    const step = parseStep(line);
+    if (step) {
+      if (inBackground) {
+        background.push(step);
+        continue;
+      }
+      if (current) {
         current.steps.push(step);
         continue;
       }
     }
 
-    // Anything else (descriptions, Background, Examples, tables) is ignored,
-    // but a stray tag block that did not attach to a keyword is discarded.
+    // Anything else (descriptions, Examples, tables) is ignored, but a stray tag
+    // block that did not attach to a keyword is discarded.
     pendingTags = [];
   }
 
@@ -143,10 +164,13 @@ export const parseFeature = (
     useCaseId: useCaseIdFromPath(path) ?? "",
     featureName,
     tags: featureTags,
+    ...(background.length > 0 ? { background } : {}),
     scenarios,
   };
 };
 
-/** Flattens every step text across a feature's scenarios. */
-export const collectStepTexts = (feature: FeatureSpecification): string[] =>
-  feature.scenarios.flatMap((scenario) => scenario.steps.map((step) => step.text));
+/** Flattens every step text across a feature's Background + scenarios. */
+export const collectStepTexts = (feature: FeatureSpecification): string[] => [
+  ...(feature.background ?? []).map((step) => step.text),
+  ...feature.scenarios.flatMap((scenario) => scenario.steps.map((step) => step.text)),
+];
