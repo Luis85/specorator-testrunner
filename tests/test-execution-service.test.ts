@@ -147,6 +147,18 @@ describe("DefaultTestExecutionService", () => {
     );
   });
 
+  it("shell-escapes $ and spaces in a feature path (no expansion under shell:true)", async () => {
+    const { service } = build();
+    const result = await service.execute({
+      scope: "feature",
+      target: "Specifications/features/Price $5.feature",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // $ is backslash-escaped inside the double quotes so the shell can't expand it.
+    expect(result.value.command).toBe('npm run test -- "../Specifications/features/Price \\$5.feature"');
+  });
+
   it("resolves the use-case command as a feature glob", async () => {
     const { service } = build();
     const result = await service.execute({ scope: "use-case", target: "UC-001" });

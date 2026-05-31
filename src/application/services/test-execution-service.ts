@@ -34,6 +34,15 @@ interface ActiveRun {
   terminated: boolean;
 }
 
+/**
+ * Wraps a value in double quotes and escapes the characters the shell still
+ * interprets inside double quotes (`"`, `\`, `$`, backtick) — the runner spawns
+ * with `shell: true`, so an interpolated feature path/tag with `$` or spaces
+ * must not be word-split or variable-expanded (TIS §13.2). A `*` stays literal
+ * here and is glob-expanded by cucumber-js, not the shell.
+ */
+const shellQuote = (value: string): string => `"${value.replace(/(["\\$`])/g, "\\$1")}"`;
+
 /** UTC `RUN-YYYY-MM-DD-HHMMSS` id (TIS §3.3). */
 const runId = (now: Date): RunId => {
   const iso = now.toISOString(); // 2026-06-01T10:00:00.000Z
@@ -253,15 +262,15 @@ export class DefaultTestExecutionService implements TestExecutionService {
       case "suite": {
         const tags = await this.suiteService.resolveTagExpression(request.target);
         if (!tags.ok) return err(tags.error);
-        return ok(`npm run test -- --tags "${tags.value}"`);
+        return ok(`npm run test -- --tags ${shellQuote(tags.value)}`);
       }
       case "feature":
-        // Quote the path so a configured folder/filename with spaces survives
-        // the shell (the runner spawns with shell:true), matching `suite`.
-        return ok(`npm run test -- "${this.featureArg(settings, request.target)}"`);
+        // Shell-quote the interpolated path so spaces and shell-expansion chars
+        // ($, `, etc.) in a configured folder/filename survive shell:true.
+        return ok(`npm run test -- ${shellQuote(this.featureArg(settings, request.target))}`);
       case "use-case":
         return ok(
-          `npm run test -- "${this.featurePrefix(settings)}/${request.target}-*.feature"`,
+          `npm run test -- ${shellQuote(`${this.featurePrefix(settings)}/${request.target}-*.feature`)}`,
         );
     }
   }
