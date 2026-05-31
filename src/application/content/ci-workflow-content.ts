@@ -101,7 +101,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: ${nodeVersion}${cacheLines}
+          node-version: "${nodeVersion}"${cacheLines}
       - name: Install dependencies
         run: ${ciInstallCommand}
       - name: Install Playwright browsers
