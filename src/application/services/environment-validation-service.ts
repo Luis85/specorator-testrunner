@@ -160,11 +160,16 @@ export class DefaultEnvironmentValidationService
       missingItems.push("Vault base path could not be resolved.");
     } else {
       const root = base.value.replace(/[/\\]$/, "");
-      const runnerAbs = `${root}/${settings.paths.testRunnerPath}`;
+      // The generated workflow + a CI checkout use POSIX separators, so a
+      // Windows-configured `e2e\runner` is checked out at `e2e/runner`.
+      // Normalize before probing or the readiness check would report the
+      // runner files missing even though the workflow points at the real folder.
+      const runnerRel = settings.paths.testRunnerPath.replace(/\\/g, "/");
+      const runnerAbs = `${root}/${runnerRel}`;
 
       // The runner project must exist and be committable (US-042 standalone).
       if (!(await this.absoluteFs.existsAbsolute(runnerAbs))) {
-        missingItems.push(`Runner folder is missing at ${settings.paths.testRunnerPath}.`);
+        missingItems.push(`Runner folder is missing at ${runnerRel}.`);
       }
       // package.json + the `test:ci` script the workflow invokes (US-041/UC-020):
       // a stale package.json without it makes the generated CI job fail at once.
@@ -215,6 +220,20 @@ export class DefaultEnvironmentValidationService
     if (!active || !active.baseUrl.trim()) {
       warnings.push(
         "Active environment has no BASE_URL; set repository variable E2E_BASE_URL in CI (ADR-0011).",
+      );
+    }
+    // The workflow injects every auth.env key configured across environments as
+    // `${{ secrets.<KEY> }}` (ADR-0014). We can't read CI secrets, so warn that
+    // each must exist as a repository secret or authenticated suites run with
+    // empty credentials despite a ready report.
+    const authKeys = [
+      ...new Set(
+        Object.values(settings.sut.environments).flatMap((e) => Object.keys(e.auth?.env ?? {})),
+      ),
+    ].sort();
+    if (authKeys.length > 0) {
+      warnings.push(
+        `Set repository secrets for configured auth credentials: ${authKeys.join(", ")} (ADR-0014).`,
       );
     }
     if (!settings.ci.nodeVersion.trim()) warnings.push("CI Node version is empty.");
