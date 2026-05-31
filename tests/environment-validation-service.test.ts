@@ -236,6 +236,54 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(result.ready).toBe(true);
   });
 
+  it("validateCiReadiness normalizes a Windows-separator testRunnerPath", async () => {
+    const { service, absoluteFs } = build();
+    // Files exist at the POSIX path a CI checkout uses.
+    absoluteFs.existing.add("/vault/e2e/runner");
+    absoluteFs.seed(
+      "/vault/e2e/runner/package.json",
+      JSON.stringify({ scripts: { "test:ci": "x" } }),
+    );
+    absoluteFs.existing.add("/vault/e2e/runner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: "e2e\\runner" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.missingItems).toHaveLength(0);
+    expect(result.ready).toBe(true);
+  });
+
+  it("validateCiReadiness warns to set repository secrets for configured auth keys (ADR-0014)", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.existing.add("/vault/.testrunner");
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: {
+        active: "prod",
+        environments: {
+          demo: { baseUrl: "https://demo", auth: { env: { API_TOKEN: "x" } } },
+          prod: { baseUrl: "https://prod", auth: { env: { BASIC_AUTH_USER: "u", API_TOKEN: "y" } } },
+        },
+      },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(true);
+    const secretWarning = result.warnings.find((w) => w.includes("repository secrets"));
+    expect(secretWarning).toBeDefined();
+    // Union across environments, deduped + sorted.
+    expect(secretWarning).toContain("API_TOKEN");
+    expect(secretWarning).toContain("BASIC_AUTH_USER");
+  });
+
   it("validateCiReadiness warns about committed node_modules and an empty BASE_URL", async () => {
     const { service, absoluteFs } = build();
     absoluteFs.existing.add("/vault/.testrunner");
