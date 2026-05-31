@@ -131,6 +131,37 @@ describe("DefaultUseCaseService", () => {
     expect(missing.ok && missing.value).toBe(null);
   });
 
+  it("update drops the legacy singular feature_file so features aren't duplicated", async () => {
+    const { service, fs } = build();
+    // A note using the legacy `feature_file` key (e.g. the seeded demo).
+    const path = "Use Cases/UC-001 Legacy.md";
+    fs.files.set(
+      path,
+      buildNote(
+        { type: "use-case", id: "UC-001", title: "Legacy", feature_file: "Specifications/features/UC-001-happy-path.feature" },
+        "# UC-001",
+      ),
+    );
+    const loaded = await service.findById("UC-001");
+    if (!loaded.ok || !loaded.value) throw new Error("expected UC-001");
+    expect(loaded.value.featureFiles).toEqual(["Specifications/features/UC-001-happy-path.feature"]);
+
+    // Add a second feature and persist.
+    await service.update({
+      ...loaded.value,
+      featureFiles: [...loaded.value.featureFiles, "Specifications/features/UC-001-feature-2.feature"],
+    });
+
+    // Re-read: no duplication from the old feature_file lingering.
+    const reread = await service.findById("UC-001");
+    if (!reread.ok || !reread.value) throw new Error("expected UC-001");
+    expect(reread.value.featureFiles).toEqual([
+      "Specifications/features/UC-001-happy-path.feature",
+      "Specifications/features/UC-001-feature-2.feature",
+    ]);
+    expect(fs.files.get(path)).not.toContain("feature_file:");
+  });
+
   it("update preserves the note body + unknown fields and emits usecase.updated", async () => {
     const { service, fs, types } = build();
     // A note with a hand-written body and a frontmatter field the builder
