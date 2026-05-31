@@ -133,12 +133,14 @@ export class DashboardView extends ItemView {
     }
   }
 
-  /** AC-016 documentation buttons (Getting Started + User Manual). */
+  /** AC-016 documentation buttons (US-046: Getting Started / Manual / Troubleshooting). */
   private renderDocumentationActions(container: HTMLElement): void {
     const actions = container.createDiv({ cls: "e2e-test-hub-doc-actions" });
+    // All three guides US-046 maps to UC-021/022/023 must be reachable here.
     const buttons: ReadonlyArray<[string, DashboardDocumentType]> = [
       ["Getting Started", "getting-started"],
       ["User Manual", "manual"],
+      ["Troubleshooting", "troubleshooting"],
     ];
     for (const [label, documentType] of buttons) {
       const button = actions.createEl("button", {
