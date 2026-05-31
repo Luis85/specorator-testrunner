@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { computeAutomationStatus } from "../src/domain/policies/use-case-automation-policy";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
-import type { TestRunStatus } from "../src/domain/entities/test-run";
+import type { ExecutionScope, TestRunStatus } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
 
 const useCase = (over: Partial<UseCase> = {}): UseCase => ({
@@ -16,10 +16,11 @@ const useCase = (over: Partial<UseCase> = {}): UseCase => ({
   ...over,
 });
 
-const lastRun = (status: TestRunStatus): UseCase["lastTestRun"] => ({
+const lastRun = (status: TestRunStatus, scope?: ExecutionScope): UseCase["lastTestRun"] => ({
   runId: "RUN-1",
   status,
   date: "2026-06-01T10:00:00Z",
+  scope,
 });
 
 const feature = (over: Partial<FeatureSpecification> = {}): FeatureSpecification => ({
@@ -55,6 +56,23 @@ describe("computeAutomationStatus (ADR-0017 roll-up)", () => {
     expect(computeAutomationStatus(useCase({ lastTestRun: lastRun("passed") }), [feature()])).toBe(
       "passing",
     );
+  });
+
+  it("stays implemented when only one of several Features was run (ADR-0017, no latest-wins)", () => {
+    const f1 = feature({ path: "Specifications/features/UC-001-a.feature" });
+    const f2 = feature({ path: "Specifications/features/UC-001-b.feature" });
+    // A single feature-scope passing run does not make the whole multi-Feature UC passing.
+    expect(
+      computeAutomationStatus(useCase({ lastTestRun: lastRun("passed", "feature") }), [f1, f2]),
+    ).toBe("implemented");
+  });
+
+  it("passing for a multi-Feature UC when a UC-wide run passed", () => {
+    const f1 = feature({ path: "Specifications/features/UC-001-a.feature" });
+    const f2 = feature({ path: "Specifications/features/UC-001-b.feature" });
+    expect(
+      computeAutomationStatus(useCase({ lastTestRun: lastRun("passed", "use-case") }), [f1, f2]),
+    ).toBe("passing");
   });
 
   it("failing when the last run failed", () => {

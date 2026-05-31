@@ -63,6 +63,17 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       if (killed.error) child.kill();
       return;
     }
+    // POSIX: the child was spawned `detached`, so it leads its own process
+    // group. Signal the whole group (negative pid) to terminate npm AND the
+    // Cucumber/node process it launched, not just the wrapper.
+    if (child.pid !== undefined) {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+        return;
+      } catch {
+        // Group gone / unsupported — fall through to a direct kill.
+      }
+    }
     child.kill();
   }
 
@@ -124,7 +135,13 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
           });
         } else {
           // POSIX: no shell — args are literal, never re-parsed (TIS §13.2).
-          child = spawn(program, args, { ...spawnOptions, shell: false });
+          // `detached` puts the child in its own process group so cancel() can
+          // signal the WHOLE tree (npm → node → Cucumber), not just the wrapper.
+          child = spawn(program, args, {
+            ...spawnOptions,
+            shell: false,
+            detached: true,
+          });
         }
       } catch (cause) {
         finish({ ok: false, error: appError("INIT_FAILED", `Could not spawn: ${display}`, { cause }) });

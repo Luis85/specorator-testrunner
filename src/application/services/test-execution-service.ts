@@ -13,7 +13,7 @@ import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
-import { relativeVaultPath } from "../../shared/utils/vault-path";
+import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
 
 /** Test execution contract (TIS §8.10). */
 export interface TestExecutionService {
@@ -281,6 +281,20 @@ export class DefaultTestExecutionService implements TestExecutionService {
       const { exitCode } = result.value;
       run.status = exitCode === 0 ? "passed" : "failed";
       this.finish(run, startedAt, result.value.durationMs);
+
+      // Snapshot the fixed report to a run-specific path BEFORE the slot frees,
+      // so a later run's pre-run cleanup of reports/cucumber-report.json can't
+      // delete it while evidence import (which now reads the snapshot) runs.
+      const liveReport = await this.absoluteFs.readAbsolute(`${cwd.value}/reports/cucumber-report.json`);
+      if (liveReport.ok) {
+        const snapshot = await this.absoluteFs.writeAbsolute(
+          `${cwd.value}/reports/${run.id}.json`,
+          liveReport.value,
+        );
+        if (snapshot.ok) {
+          run.reportPaths.json = joinVaultPath(run.workingDirectory, "reports", `${run.id}.json`);
+        }
+      }
 
       if (run.scope === "suite") {
         // UC-013 supporting event, before the terminal event.

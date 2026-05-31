@@ -64,8 +64,21 @@ export const computeAutomationStatus = (
   // A recorded failure (or errored run) keeps the UC red until it passes again.
   if (lastRun.status === "failed" || lastRun.status === "errored") return "failing";
 
-  // The UC has run and the last result was a pass.
-  if (lastRun.status === "passed") return "passing";
+  // The UC has run and the last result was a pass. ADR-0017 rejects a latest-
+  // wins roll-up: a single passing run only makes the WHOLE UC "passing" when it
+  // actually exercised every (non-@wip) Feature — i.e. a UC-wide run
+  // (`use-case`/`all`), or a UC with a single Feature (any scope covers it). A
+  // single-Feature-scope run on a multi-Feature UC leaves siblings unrun, so the
+  // UC stays partially "implemented". A legacy summary without a scope keeps the
+  // prior behaviour (treated as covering) for backward compatibility.
+  if (lastRun.status === "passed") {
+    const coversWholeUseCase =
+      lastRun.scope === undefined ||
+      lastRun.scope === "all" ||
+      lastRun.scope === "use-case" ||
+      active.length === 1;
+    return coversWholeUseCase ? "passing" : "implemented";
+  }
 
   // Queued / running / cancelled: exercised at least once but no clean pass yet.
   return "implemented";
