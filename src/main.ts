@@ -396,12 +396,18 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           new Notice("A test run is in progress; import its report once it finishes.");
           return;
         }
-        // Only report-producing runs have a report to import. A cancelled/
-        // errored last run would otherwise attach a STALE report (the fixed
-        // reports path carries no run id) to the wrong run id.
+        // Import for runs that can produce a report: passed/failed, and
+        // cancelled (which may have flushed a valid partial report — the
+        // pre-run cleanup means any report on disk is this run's). The importer
+        // returns a safe logged failure when no report exists. An errored spawn
+        // fault never produced one.
         if (!this.lastRun) {
           new Notice("No test run to import a report for yet.");
-        } else if (this.lastRun.status === "passed" || this.lastRun.status === "failed") {
+        } else if (
+          this.lastRun.status === "passed" ||
+          this.lastRun.status === "failed" ||
+          this.lastRun.status === "cancelled"
+        ) {
           void this.importAndGenerateEvidence(this.lastRun, true);
         } else {
           new Notice(`The last run (${this.lastRun.status}) produced no report to import.`);

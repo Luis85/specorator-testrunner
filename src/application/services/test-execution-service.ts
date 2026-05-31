@@ -51,7 +51,8 @@ const displayCommand = (args: string[]): string =>
  * keeps the quoted path as ONE argument (the runner spawns with `shell: false`,
  * so a naive whitespace split would hand Cucumber broken `"json:reports/cucumber`
  * + `report.json"` tokens). Single quotes are literal; double quotes allow `\"`
- * and `\\`; an unquoted backslash escapes the next char.
+ * and `\\`. An UNquoted backslash is kept literal so Windows path arguments
+ * (e.g. `json:C:\tmp\cucumber.json`) survive — it never escapes outside quotes.
  */
 export const tokenizeCommand = (command: string): string[] => {
   const tokens: string[] = [];
@@ -73,8 +74,6 @@ export const tokenizeCommand = (command: string): string[] => {
     if (ch === '"' || ch === "'") {
       quote = ch;
       current = current ?? "";
-    } else if (ch === "\\" && i + 1 < command.length) {
-      current = (current ?? "") + command[++i];
     } else if (/\s/.test(ch)) {
       if (current !== null) tokens.push(current);
       current = null;
