@@ -1,0 +1,207 @@
+import { describe, expect, it } from "vitest";
+import { DefaultSettingsService } from "../src/application/services/settings-service";
+import { DefaultSpecificationService } from "../src/application/services/specification-service";
+import { DefaultUseCaseService } from "../src/application/services/use-case-service";
+import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
+import type { FeatureSpecification } from "../src/domain/entities/specification";
+import { buildNote } from "../src/shared/utils/frontmatter";
+import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+
+const build = () => {
+  const fs = new FakeVaultFileSystem();
+  const { bus, events, types } = recordingEventBus();
+  const settings = new DefaultSettingsService(new FakeDataStore(), new DefaultPathSafetyPolicy(), bus);
+  const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger);
+  const service = new DefaultSpecificationService(settings, useCases, fs, bus, silentLogger);
+  return { service, useCases, fs, events, types };
+};
+
+const seedUseCase = (fs: FakeVaultFileSystem, id = "UC-001", title = "Open Example Page") => {
+  fs.files.set(
+    `Use Cases/${id} ${title}.md`,
+    buildNote(
+      { type: "use-case", id, title, status: "specified", automation_status: "planned" },
+      `# ${id}`,
+    ),
+  );
+};
+
+describe("DefaultSpecificationService.createFromUseCase", () => {
+  it("creates a happy-path feature, links it to the UC, and emits events in order", async () => {
+    const { service, fs, types } = build();
+    seedUseCase(fs);
+
+    const result = await service.createFromUseCase("UC-001");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const path = "Specifications/features/UC-001-happy-path.feature";
+    expect(result.value.path).toBe(path);
+    expect(result.value.useCaseId).toBe("UC-001");
+    expect(fs.files.has(path)).toBe(true);
+
+    // UC note rewritten with the new feature appended.
+    const note = fs.files.get("Use Cases/UC-001 Open Example Page.md") ?? "";
+    expect(note).toContain(path);
+
+    expect(types()).toEqual([
+      "usecase.updated",
+      "specification.created",
+      "specification.linkedToUseCase",
+    ]);
+  });
+
+  it("uses feature-<n> for a second feature and never overwrites", async () => {
+    const { service, fs } = build();
+    seedUseCase(fs);
+
+    const first = await service.createFromUseCase("UC-001");
+    expect(first.ok).toBe(true);
+
+    const second = await service.createFromUseCase("UC-001");
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.value.path).toBe("Specifications/features/UC-001-feature-2.feature");
+
+    // Re-running with an explicit slug that already exists must not overwrite.
+    const dup = await service.createFromUseCase("UC-001", "happy-path");
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("fails when the Use Case does not exist", async () => {
+    const { service } = build();
+    const result = await service.createFromUseCase("UC-404");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+});
+
+describe("DefaultSpecificationService.update", () => {
+  it("serialises the feature back to Gherkin and emits specification.updated", async () => {
+    const { service, fs, types } = build();
+    const spec: FeatureSpecification = {
+      path: "Specifications/features/UC-002-edit.feature",
+      useCaseId: "UC-002",
+      featureName: "Edited",
+      tags: ["@regression"],
+      scenarios: [
+        {
+          name: "A scenario",
+          tags: ["@wip"],
+          steps: [
+            { keyword: "Given", text: "a precondition" },
+            { keyword: "Then", text: "an outcome" },
+          ],
+        },
+      ],
+    };
+
+    const result = await service.update(spec);
+    expect(result.ok).toBe(true);
+
+    const written = fs.files.get(spec.path) ?? "";
+    expect(written).toContain("@regression");
+    expect(written).toContain("Feature: Edited");
+    expect(written).toContain("  @wip");
+    expect(written).toContain("  Scenario: A scenario");
+    expect(written).toContain("    Given a precondition");
+    expect(types()).toContain("specification.updated");
+  });
+});
+
+describe("DefaultSpecificationService.validate", () => {
+  it("passes a well-formed feature with a UC prefix", async () => {
+    const { service, fs } = build();
+    const path = "Specifications/features/UC-001-ok.feature";
+    fs.files.set(path, "Feature: Ok\n  Scenario: S\n    Given a step\n");
+
+    const result = await service.validate(path);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.valid).toBe(true);
+    expect(result.value.errors).toEqual([]);
+  });
+
+  it("flags orphan filename, missing scenarios, and stepless scenarios", async () => {
+    const { service, fs, events } = build();
+    const path = "Specifications/features/orphan.feature";
+    fs.files.set(path, "Feature: Lonely\n  Scenario: Empty\n");
+
+    const result = await service.validate(path);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.valid).toBe(false);
+    const messages = result.value.errors.map((e) => e.message).join("\n");
+    expect(messages).toContain("orphan");
+    expect(messages).toContain('Scenario "Empty" has no steps');
+
+    const event = events.find((e) => e.type === "specification.validation.completed");
+    expect(event).toBeDefined();
+  });
+
+  it("flags a file with no Feature declaration", async () => {
+    const { service, fs } = build();
+    const path = "Specifications/features/UC-001-bad.feature";
+    fs.files.set(path, "not gherkin at all\n");
+
+    const result = await service.validate(path);
+    expect(result.ok && result.value.valid).toBe(false);
+    if (result.ok) {
+      expect(result.value.errors.some((e) => e.message.includes("Feature:"))).toBe(true);
+    }
+  });
+
+  it("returns an error when the feature file is missing", async () => {
+    const { service } = build();
+    const result = await service.validate("Specifications/features/UC-001-nope.feature");
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("DefaultSpecificationService.detectMissingSteps", () => {
+  it("reports steps not matched by any step definition", async () => {
+    const { service, fs, types } = build();
+    const path = "Specifications/features/UC-001-demo.feature";
+    fs.files.set(
+      path,
+      `Feature: Demo
+  Scenario: S
+    Given I open the local example page
+    When I click the "Continue" button
+    Then I have not implemented this
+`,
+    );
+    fs.files.set(
+      ".testrunner/src/steps/example.steps.ts",
+      `Given("I open the local example page", async () => {});
+When("I click the {string} button", async () => {});`,
+    );
+
+    const result = await service.detectMissingSteps(path);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.featurePath).toBe(path);
+    expect(result.value.missingSteps).toEqual(["I have not implemented this"]);
+    expect(types()).toContain("specification.missingSteps.detected");
+  });
+
+  it("treats every step as missing when no steps folder exists", async () => {
+    const { service, fs } = build();
+    const path = "Specifications/features/UC-001-demo.feature";
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+
+    const result = await service.detectMissingSteps(path);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.missingSteps).toEqual(["a step"]);
+  });
+
+  it("fails when the feature does not parse", async () => {
+    const { service, fs } = build();
+    const path = "Specifications/features/UC-001-bad.feature";
+    fs.files.set(path, "no feature here\n");
+    const result = await service.detectMissingSteps(path);
+    expect(result.ok).toBe(false);
+  });
+});

@@ -87,4 +87,36 @@ describe("DefaultUseCaseService", () => {
     expect(result.value[0].automationStatus).toBe("passing");
     expect(result.value[0].featureFiles).toEqual(["f.feature"]);
   });
+
+  it("findById returns the matching use case or null", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Use Cases/UC-002 Later.md",
+      buildNote({ type: "use-case", id: "UC-002", title: "Later", status: "specified" }, "# UC-002"),
+    );
+
+    const found = await service.findById("UC-002");
+    expect(found.ok && found.value?.id).toBe("UC-002");
+
+    const missing = await service.findById("UC-999");
+    expect(missing.ok && missing.value).toBe(null);
+  });
+
+  it("update rewrites the note with featureFiles and emits usecase.updated", async () => {
+    const { service, fs, types } = build();
+    const created = await service.create({ title: "Has features" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const next: UseCase = {
+      ...created.value,
+      featureFiles: ["Specifications/features/UC-001-happy-path.feature"],
+    };
+    const updated = await service.update(next);
+    expect(updated.ok).toBe(true);
+
+    const note = fs.files.get(next.path) ?? "";
+    expect(note).toContain("Specifications/features/UC-001-happy-path.feature");
+    expect(types()).toContain("usecase.updated");
+  });
 });
