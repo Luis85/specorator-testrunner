@@ -36,6 +36,13 @@ export interface PostRunCoordinatorDeps {
   lastRun: () => TestRun | null;
   /** Id of the single active run, or null when idle (ADR-0018). */
   activeRunId: () => string | null;
+  /**
+   * Resolves when the active run's process has closed AND its report snapshot is
+   * recorded. A cancelled run publishes `testrun.cancelled` BEFORE `execute()`
+   * writes `reports/<runId>.json`, so the import must wait on this first to avoid
+   * reading a missing/partial report (review P1).
+   */
+  whenActiveSettles: () => Promise<void>;
   /** Whether evidence Markdown notes are written (settings.automation flag). */
   isEvidenceMarkdownEnabled: () => boolean;
 }
@@ -50,18 +57,23 @@ export interface PostRunCoordinatorDeps {
  * Obsidian or infrastructure imports. The run-status eligibility rule and the
  * `lastRun`/`evidenceChain` state that used to live in `main.ts` move here.
  *
- * Serialization: post-run import then writes Use Case frontmatter, and the
- * active-run slot is already free by the time a handler runs, so back-to-back
- * runs could interleave and clobber each other's evidence/last_run fields. Every
- * task is queued through a single {@link evidenceChain} promise so they run one
- * at a time; {@link whenSettled} lets the caller await the tail on unload.
+ * Non-blocking: the terminal-event handler ENQUEUES the import work and returns
+ * immediately rather than awaiting it. `execute()` awaits the terminal publish
+ * before its `finally` frees the single-run slot, so awaiting the import chain
+ * inside the handler would keep `activeRunId()` non-null through evidence
+ * generation and wrongly reject the next run as `RUN_IN_PROGRESS` (review P2).
+ *
+ * Serialization: post-run import then writes Use Case frontmatter, so back-to-
+ * back runs could interleave and clobber each other's evidence/last_run fields.
+ * Every task is queued through a single {@link evidenceChain} promise so they
+ * run one at a time; {@link whenSettled} lets the caller await the tail on
+ * unload. Each task first waits for its run to settle (snapshot recorded).
  */
 export class PostRunCoordinator {
   private subscriptions: Unsubscribe[] = [];
-  // Post-run import+evidence reads then writes Use Case frontmatter. The active
-  // run slot is already free by the time this runs, so back-to-back runs could
-  // interleave and clobber each other's evidence/last_run fields — serialize
-  // them through a single chain.
+  // Post-run import+evidence reads then writes Use Case frontmatter, so back-to-
+  // back runs could interleave and clobber each other's evidence/last_run fields
+  // — serialize them through a single chain.
   private evidenceChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: PostRunCoordinatorDeps) {}
@@ -127,10 +139,12 @@ export class PostRunCoordinator {
 
   /**
    * Terminal-event handler. Obtains the just-finished run from the execution
-   * service (not the event payload) and runs import→evidence for it, serialized
-   * through the evidence chain. Best-effort: never throws into the bus (EN-1).
+   * service (not the event payload) and ENQUEUES import→evidence for it WITHOUT
+   * awaiting — `execute()` frees the run slot only after this publish returns, so
+   * blocking here would hold the slot through evidence generation (review P2).
+   * The queued task itself waits for the run to settle. Never throws (EN-1).
    */
-  private async onTerminal(event: DomainEvent): Promise<void> {
+  private onTerminal(event: DomainEvent): void {
     const run = this.deps.lastRun();
     if (!run) {
       // The terminal event arrived but no finished run is recorded — nothing to
@@ -141,7 +155,9 @@ export class PostRunCoordinator {
     // A spawn-error `errored` run produced no report; the import would only log a
     // safe miss, so skip it. passed/failed/cancelled may all have a report.
     if (!IMPORTABLE_STATUSES.has(run.status)) return;
-    await this.enqueue(() => this.runImportAndGenerate(run));
+    // Fire-and-forget: the chain tracks completion (whenSettled) and the task is
+    // fault-isolated (runImportAndGenerate never rejects), so nothing escapes.
+    void this.enqueue(() => this.runImportAndGenerate(run));
   }
 
   /**
@@ -167,6 +183,15 @@ export class PostRunCoordinator {
    */
   private async runImportAndGenerate(run: TestRun): Promise<Result<ImportLastRunOutcome>> {
     try {
+      // If this run is STILL the active one, its finalization may not be done —
+      // notably a cancelled run writes its reports/<runId>.json snapshot AFTER
+      // publishing `testrun.cancelled` (review P1). Wait for it to settle before
+      // importing so we never read a missing/partial report. Identity-checked so
+      // we never block on an unrelated later run (and so the manual
+      // importLastRun path, which only runs when idle, doesn't wait).
+      if (this.deps.activeRunId() === run.id) {
+        await this.deps.whenActiveSettles();
+      }
       const imported = await this.deps.reportImportService.import(run);
       if (!imported.ok) {
         this.logger.warn("Report import failed", {

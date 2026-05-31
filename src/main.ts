@@ -297,6 +297,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       logger: this.logger,
       lastRun: () => this.testExecutionService.lastRun(),
       activeRunId: () => this.testExecutionService.activeRunId(),
+      whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
       isEvidenceMarkdownEnabled: () => this.hubSettings.automation.generateEvidenceMarkdown,
     });
     this.postRunCoordinator.start();

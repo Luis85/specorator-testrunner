@@ -113,6 +113,7 @@ const build = (overrides: Partial<PostRunCoordinatorDeps> = {}) => {
     logger: silentLogger,
     lastRun: () => lastRun,
     activeRunId: () => active,
+    whenActiveSettles: () => Promise.resolve(),
     isEvidenceMarkdownEnabled: () => markdownEnabled,
     ...overrides,
   };
@@ -239,8 +240,8 @@ describe("PostRunCoordinator", () => {
       const gate = new Promise<void>((resolve) => (release = resolve));
       env.reportImport.gate = gate;
 
-      // The bus awaits handlers, so a gated import blocks publish(); fire the
-      // terminal events WITHOUT awaiting and spin microtasks instead.
+      // The handler enqueues without awaiting, so publish() returns promptly even
+      // while an import is gated; spin microtasks to let the queued tasks advance.
       env.setLastRun(run({ id: "RUN-A", status: "passed" }));
       const firstPublish = publishTerminal(env.bus, "testrun.completed", "RUN-A");
       // Second run finishes and publishes while the first import is gated.
@@ -259,6 +260,48 @@ describe("PostRunCoordinator", () => {
       await env.coordinator.whenSettled();
 
       expect(env.reportImport.calls.map((c) => c.id)).toEqual(["RUN-A", "RUN-B"]);
+    });
+
+    it("does not block the terminal publish on the import chain (review P2)", async () => {
+      // execute() frees the run slot only after the terminal publish returns, so
+      // the handler must NOT await the import — otherwise activeRunId() stays set
+      // through evidence generation and the next run is wrongly rejected.
+      const env = build();
+      env.coordinator.start();
+      let release = (): void => {};
+      env.reportImport.gate = new Promise<void>((resolve) => (release = resolve));
+      env.setLastRun(run({ status: "passed" }));
+
+      // With the fix this resolves even though the import is still gated.
+      await publishTerminal(env.bus, "testrun.completed");
+
+      expect(env.reportImport.calls).toHaveLength(1); // import started…
+      expect(env.evidenceGen.calls).toHaveLength(0); // …but the chain is still gated
+
+      release();
+      await env.coordinator.whenSettled();
+      expect(env.evidenceGen.calls).toHaveLength(1);
+    });
+
+    it("waits for a cancelled run to settle (snapshot) before importing (review P1)", async () => {
+      // A cancelled run publishes testrun.cancelled BEFORE execute() writes the
+      // reports/<runId>.json snapshot; importing immediately would read a
+      // missing/partial report. The coordinator must wait on whenActiveSettles.
+      let releaseSettle = (): void => {};
+      const settleGate = new Promise<void>((resolve) => (releaseSettle = resolve));
+      const env = build({ whenActiveSettles: () => settleGate });
+      env.coordinator.start();
+      // The run is still the active one (cancel hasn't freed the slot yet).
+      env.setActive("RUN-2026-05-31-100000");
+      env.setLastRun(run({ status: "cancelled" }));
+
+      await publishTerminal(env.bus, "testrun.cancelled");
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      expect(env.reportImport.calls).toHaveLength(0); // blocked until settled
+
+      releaseSettle();
+      await env.coordinator.whenSettled();
+      expect(env.reportImport.calls).toHaveLength(1);
     });
   });
 
