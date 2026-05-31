@@ -62,10 +62,13 @@ export class DefaultUseCaseService implements UseCaseService {
 
     const id = nextUseCaseId(existing.value);
     const path = joinVaultPath(settings.paths.useCasesPath, useCaseFileName(id, title));
+    // Frontmatter `description` is a single-line scalar; collapse any newlines
+    // from the textarea so they can't break the YAML or be truncated on read.
+    const description = request.description?.replace(/\s+/g, " ").trim() || undefined;
     const useCase: UseCase = {
       id,
       title,
-      description: request.description?.trim() || undefined,
+      description,
       status: "draft",
       automationStatus: "not-planned",
       featureFiles: [],
