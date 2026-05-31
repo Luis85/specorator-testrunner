@@ -92,7 +92,11 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
             return;
           }
           const comspec = process.env.ComSpec ?? "cmd.exe";
-          const line = request.args.map(quoteForCmd).join(" ");
+          // `cmd /s /c` strips the first and last quote of the whole command
+          // string, so the per-token quotes would be mangled. Wrap the joined
+          // line in one extra outer quote pair — after /s strips it, the inner
+          // `"npm" "run" …` boundaries survive (the documented `cmd /s /c ""x" "y""` form).
+          const line = `"${request.args.map(quoteForCmd).join(" ")}"`;
           child = spawn(comspec, ["/d", "/s", "/c", line], {
             ...spawnOptions,
             windowsVerbatimArguments: true,
