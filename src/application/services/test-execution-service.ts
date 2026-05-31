@@ -90,6 +90,16 @@ const toArgv = (command: string, fallback: string[]): string[] => {
   return parts.length > 0 ? parts : fallback;
 };
 
+/**
+ * Appends scoped runner args (tags / feature paths) to a base command. npm uses
+ * a single `npm run <script> [-- <args>]` separator, so if the configured base
+ * already forwards args with `--`, append after it rather than inserting a
+ * second `--` (npm forwards the first; a second would reach Cucumber as a
+ * literal end-of-options token and swallow the following `--tags`/paths).
+ */
+export const appendScopedArgs = (base: string[], scoped: string[]): string[] =>
+  base.includes("--") ? [...base, ...scoped] : [...base, "--", ...scoped];
+
 /** UTC `RUN-YYYY-MM-DD-HHMMSS` id (TIS §3.3). */
 const runId = (now: Date): RunId => {
   const iso = now.toISOString(); // 2026-06-01T10:00:00.000Z
@@ -334,11 +344,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
         const tags = await this.suiteService.resolveTagExpression(request.target);
         if (!tags.ok) return err(tags.error);
         // Verbatim tag expression as a single literal arg (AD-4, no quoting).
-        return ok([...base, "--", "--tags", tags.value]);
+        return ok(appendScopedArgs(base, ["--tags", tags.value]));
       }
       case "feature":
         // Literal feature path arg; no shell, so no escaping needed.
-        return ok([...base, "--", this.featureArg(settings, request.target)]);
+        return ok(appendScopedArgs(base, [this.featureArg(settings, request.target)]));
       case "use-case": {
         // UC-011: target the Use Case's declared featureFiles in order, each as
         // a separate literal arg. Falls back to the <UC-id>-*.feature glob when
@@ -347,9 +357,9 @@ export class DefaultTestExecutionService implements TestExecutionService {
         const found = await this.useCaseService.findById(request.target);
         const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
         if (featureFiles.length > 0) {
-          return ok([...base, "--", ...featureFiles.map((path) => this.featureArg(settings, path))]);
+          return ok(appendScopedArgs(base, featureFiles.map((path) => this.featureArg(settings, path))));
         }
-        return ok([...base, "--", `${this.featurePrefix(settings)}/${request.target}-*.feature`]);
+        return ok(appendScopedArgs(base, [`${this.featurePrefix(settings)}/${request.target}-*.feature`]));
       }
     }
   }
