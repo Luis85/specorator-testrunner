@@ -171,6 +171,16 @@ export class DefaultEnvironmentValidationService
       if (!(await this.absoluteFs.existsAbsolute(runnerAbs))) {
         missingItems.push(`Runner folder is missing at ${runnerRel}.`);
       }
+      // The CI `test:ci` script runs `cucumber-js --config cucumber.mjs` against
+      // the support files, so a runner missing any managed file (cucumber.mjs,
+      // world/hooks/paths, tsconfig) fails CI immediately. Verify the same files
+      // the local validator checks (package.json is asserted in detail below).
+      for (const file of VALIDATED_RUNNER_FILES) {
+        if (file === "package.json") continue;
+        if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/${file}`))) {
+          missingItems.push(`Runner file ${file} is missing (the CI test:ci script needs it).`);
+        }
+      }
       // package.json + the `test:ci` script the workflow invokes (US-041/UC-020):
       // a stale package.json without it makes the generated CI job fail at once.
       const pkgPath = `${runnerAbs}/package.json`;
@@ -213,14 +223,16 @@ export class DefaultEnvironmentValidationService
       }
     }
 
-    // BASE_URL is read from a GitHub Actions variable at job time (ADR-0011), so
-    // we cannot confirm it is set in CI; warn if the active environment lacks a
-    // usable base URL so the developer remembers to define `vars.E2E_BASE_URL`.
+    // The generated workflow ALWAYS sets BASE_URL from `${{ vars.E2E_BASE_URL }}`
+    // (ADR-0011), never from local settings — so CI runs with an empty BASE_URL
+    // unless that repository variable exists, regardless of the local active URL.
+    // We can't read CI variables, so always warn to set it.
+    warnings.push(
+      "Ensure repository variable E2E_BASE_URL is set; CI reads BASE_URL from it, not from local settings (ADR-0011).",
+    );
     const active = settings.sut.environments[settings.sut.active];
     if (!active || !active.baseUrl.trim()) {
-      warnings.push(
-        "Active environment has no BASE_URL; set repository variable E2E_BASE_URL in CI (ADR-0011).",
-      );
+      warnings.push("Active environment has no local BASE_URL configured.");
     }
     // The workflow injects every auth.env key configured across environments as
     // `${{ secrets.<KEY> }}` (ADR-0014). We can't read CI secrets, so warn that
