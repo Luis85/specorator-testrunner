@@ -139,10 +139,58 @@ export class FakeChildProcessRunner implements ChildProcessRunner {
   readonly exitCodes = new Map<string, number>();
   /** command substrings whose spawn should fail outright. */
   readonly spawnFailures = new Set<string>();
-  cancelled = false;
+  /** Lines streamed via `onOutput` before a streaming run resolves. */
+  readonly streamLines: RunnerOutput[] = [];
+  /** process ids passed to `cancel`. */
+  readonly cancelled: string[] = [];
+  /**
+   * When true, `runStreaming` does not resolve until {@link release} is called.
+   * Lets tests overlap a second `execute()` or `cancel()` against an in-flight
+   * run deterministically (no real timers).
+   */
+  pending = false;
+  /**
+   * Pre-armed gate so {@link release} works even if it is called before
+   * `runStreaming` reaches the await — mirrors a child that is killed the
+   * instant it spawns.
+   */
+  private gate = this.makeGate();
+  private released = false;
 
   async run(request: RunCommandRequest): Promise<Result<RunnerCommandResult>> {
     this.calls.push(request);
+    return this.settle(request);
+  }
+
+  async runStreaming(
+    request: RunCommandRequest,
+    onOutput: (output: RunnerOutput) => void,
+  ): Promise<Result<RunnerCommandResult>> {
+    this.calls.push(request);
+    for (const line of this.streamLines) onOutput(line);
+    if (this.pending && !this.released) await this.gate.promise;
+    return this.settle(request);
+  }
+
+  /** Unblocks a `pending` streaming run so its promise resolves. */
+  release(): void {
+    this.released = true;
+    this.gate.resolve();
+  }
+
+  private makeGate(): { promise: Promise<void>; resolve: () => void } {
+    let resolve = (): void => {};
+    const promise = new Promise<void>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  async cancel(processId: string): Promise<Result<void>> {
+    this.cancelled.push(processId);
+    this.release();
+    return ok(undefined);
+  }
+
+  private settle(request: RunCommandRequest): Result<RunnerCommandResult> {
     for (const fragment of this.spawnFailures) {
       if (request.command.includes(fragment)) {
         return { ok: false, error: { code: "INIT_FAILED", message: "spawn failed" } };
@@ -153,18 +201,6 @@ export class FakeChildProcessRunner implements ChildProcessRunner {
       if (request.command.includes(fragment)) exitCode = code;
     }
     return ok({ exitCode, stdout: "", stderr: exitCode === 0 ? "" : "boom", durationMs: 1 });
-  }
-
-  async runStreaming(
-    request: RunCommandRequest,
-    _onOutput: (output: RunnerOutput) => void,
-  ): Promise<Result<RunnerCommandResult>> {
-    return this.run(request);
-  }
-
-  async cancel(): Promise<Result<void>> {
-    this.cancelled = true;
-    return ok(undefined);
   }
 }
 
