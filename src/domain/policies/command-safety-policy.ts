@@ -88,6 +88,12 @@ export class DefaultCommandSafetyPolicy implements CommandSafetyPolicy {
           if (script === undefined || !ALLOWED_NPM_SCRIPTS.has(script)) {
             return disallow(`npm run script is not allowed: "${display}".`);
           }
+          // Tokens after the script must be introduced by the `--` forwarding
+          // separator. A bare npm option (e.g. `--script-shell ./evil.sh`) would
+          // make npm run an arbitrary shell, bypassing the allowlist (ADR-0010).
+          if (rest.length > 2 && rest[2] !== "--") {
+            return disallow(`npm run options before "--" are not allowed: "${display}".`);
+          }
         } else if (sub === "install" || sub === "ci") {
           // Only the bare runner install form. A package spec or flag (e.g.
           // `npm install <pkg>`, `npm install -g <pkg>`) would install arbitrary
