@@ -84,19 +84,22 @@ export const projectDashboardSnapshot = (useCases: UseCase[]): DashboardSnapshot
   const active = useCases.filter((useCase) => useCase.status !== "deprecated");
 
   // A broad run (all/suite/demo) writes the SAME lastTestRun.runId onto every
-  // resolved UC, so the same run would otherwise appear once per UC and crowd
-  // out older runs. De-dupe by runId, keeping the newest occurrence.
-  const seenRunIds = new Set<string>();
-  const recentRuns = active
+  // resolved UC, but with PER-UC status, so the run appears once per UC. Collapse
+  // duplicates by runId, keeping the WORST status — otherwise a failed broad run
+  // would show as passed on the recent-run row when a passing UC sorts first.
+  const SEVERITY: Record<string, number> = { failed: 4, errored: 3, cancelled: 2, skipped: 1, passed: 0 };
+  const severity = (status: string): number => SEVERITY[status] ?? 0;
+  const byRunId = new Map<string, TestRunSummary>();
+  for (const run of active
     .map((useCase) => useCase.lastTestRun)
-    .filter((run): run is TestRunSummary => run !== undefined)
-    // Newest first; ISO-8601 dates sort lexicographically.
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .filter((run) => {
-      if (seenRunIds.has(run.runId)) return false;
-      seenRunIds.add(run.runId);
-      return true;
-    });
+    .filter((run): run is TestRunSummary => run !== undefined)) {
+    const existing = byRunId.get(run.runId);
+    if (!existing || severity(run.status) > severity(existing.status)) {
+      byRunId.set(run.runId, run);
+    }
+  }
+  // Newest first; ISO-8601 dates sort lexicographically.
+  const recentRuns = [...byRunId.values()].sort((a, b) => b.date.localeCompare(a.date));
 
   return {
     totalUseCases: active.length,

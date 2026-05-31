@@ -95,6 +95,18 @@ describe("projectDashboardSnapshot (ADR-0017 KPI definitions)", () => {
     expect(snapshot.recentRuns.map((r) => r.runId)).toEqual(["RUN-ALL", "RUN-OLD"]);
   });
 
+  it("collapses a broad run to its WORST status (a failure isn't hidden by a passing UC)", () => {
+    // Same runId, per-UC status: one UC failed, one passed. The recent-run row
+    // must show failed, not passed-because-it-sorted-first.
+    const snapshot = projectDashboardSnapshot([
+      useCase({ id: "UC-001", lastTestRun: { runId: "RUN-ALL", status: "passed", date: "2026-06-03T09:00:00Z" } }),
+      useCase({ id: "UC-002", lastTestRun: { runId: "RUN-ALL", status: "failed", date: "2026-06-03T09:00:00Z" } }),
+    ]);
+
+    expect(snapshot.recentRuns).toHaveLength(1);
+    expect(snapshot.recentRuns[0].status).toBe("failed");
+  });
+
   it("excludes a deprecated UC's run from recentRuns", () => {
     const snapshot = projectDashboardSnapshot([
       useCase({ id: "UC-001", status: "deprecated", lastTestRun: run("RUN-OLD", "2026-06-09T09:00:00Z") }),
