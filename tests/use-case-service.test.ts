@@ -131,21 +131,32 @@ describe("DefaultUseCaseService", () => {
     expect(missing.ok && missing.value).toBe(null);
   });
 
-  it("update rewrites the note with featureFiles and emits usecase.updated", async () => {
+  it("update preserves the note body + unknown fields and emits usecase.updated", async () => {
     const { service, fs, types } = build();
-    const created = await service.create({ title: "Has features" });
-    expect(created.ok).toBe(true);
-    if (!created.ok) return;
+    // A note with a hand-written body and a frontmatter field the builder
+    // doesn't emit (owner) — both must survive a featureFiles link update.
+    const path = "Use Cases/UC-001 Hand Edited.md";
+    fs.files.set(
+      path,
+      buildNote(
+        { type: "use-case", id: "UC-001", title: "Hand Edited", status: "specified", owner: "qa-team" },
+        "# UC-001\n\n## Notes\n\nHand-written analysis that must not be deleted.",
+      ),
+    );
+    const loaded = await service.findById("UC-001");
+    expect(loaded.ok && loaded.value).not.toBeNull();
+    if (!loaded.ok || !loaded.value) return;
 
-    const next: UseCase = {
-      ...created.value,
+    const updated = await service.update({
+      ...loaded.value,
       featureFiles: ["Specifications/features/UC-001-happy-path.feature"],
-    };
-    const updated = await service.update(next);
+    });
     expect(updated.ok).toBe(true);
 
-    const note = fs.files.get(next.path) ?? "";
+    const note = fs.files.get(path) ?? "";
     expect(note).toContain("Specifications/features/UC-001-happy-path.feature");
+    expect(note).toContain("Hand-written analysis that must not be deleted.");
+    expect(note).toContain("owner: qa-team"); // unknown field preserved
     expect(types()).toContain("usecase.updated");
   });
 });

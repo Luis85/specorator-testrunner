@@ -77,7 +77,10 @@ const unquote = (raw: string): string => {
  * of {@link buildFrontmatter} for the plugin's own well-typed notes, not a
  * general YAML parser.
  */
-export const parseNote = (content: string): ParsedNote => {
+export const parseNote = (rawContent: string): ParsedNote => {
+  // Normalise CRLF (Windows checkouts/editors) to LF so the `---` fence and the
+  // line parsing below match regardless of line endings.
+  const content = rawContent.replace(/\r\n/g, "\n");
   // Consume the closing fence plus the blank line buildNote inserts, so the
   // body round-trips exactly.
   const match = /^---\n([\s\S]*?)\n---\n?\n?/.exec(content);
@@ -120,3 +123,18 @@ export const parseNote = (content: string): ParsedNote => {
 export const parseFrontmatter = (
   content: string,
 ): Record<string, string | string[]> => parseNote(content).frontmatter;
+
+/**
+ * Rewrites a note's frontmatter, merging `changes` over the existing fields and
+ * preserving the Markdown body and any unknown frontmatter fields. Used to
+ * update managed fields (e.g. `feature_files`) without clobbering hand-written
+ * content. A `null`/`undefined` change drops that key.
+ */
+export const updateNoteFrontmatter = (
+  content: string,
+  changes: Record<string, FrontmatterValue>,
+): string => {
+  const { frontmatter, body } = parseNote(content);
+  const merged: Record<string, FrontmatterValue> = { ...frontmatter, ...changes };
+  return `${buildFrontmatter(merged)}\n\n${body}`;
+};
