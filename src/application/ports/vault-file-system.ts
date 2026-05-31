@@ -16,6 +16,12 @@ export interface VaultFileSystem {
   /** All file descendants of a folder, at any depth. */
   listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>>;
   /**
+   * Every folder path in the vault (vault-relative, `/`-separated, any depth;
+   * excludes the vault root). Used by the ADR-0015 one-project-per-vault check
+   * to detect sibling/duplicate `Test Hub` folders. Order is not significant.
+   */
+  listFolders(): Promise<Result<VaultPath[]>>;
+  /**
    * Recursively deletes a folder and everything under it. Used by
    * {@link MaintenanceService.reset} (UC-024) to remove the regenerable
    * `.testrunner` runtime before re-initialization. A missing folder is NOT an

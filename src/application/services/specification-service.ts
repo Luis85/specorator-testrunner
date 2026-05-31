@@ -4,7 +4,10 @@ import { findMissingSteps, parseStepDefinitions } from "../content/step-definiti
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import type { UseCaseService } from "./use-case-service";
-import type { FeatureSpecification } from "../../domain/entities/specification";
+import {
+  createFeatureSpecification,
+  type FeatureSpecification,
+} from "../../domain/entities/specification";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
@@ -114,12 +117,19 @@ export class DefaultSpecificationService implements SpecificationService {
     const created = await this.fs.createFile(featurePath, content);
     if (!created.ok) return err(created.error);
 
-    const specification = parseFeature(content, featurePath);
-    if (specification === null) {
+    const parsed = parseFeature(content, featurePath);
+    if (parsed === null) {
       // Unreachable for our own starter content; guards against a future edit
       // to buildStarterFeature that drops the Feature line.
       return err(appError("VALIDATION_FAILED", "Generated Feature content did not parse."));
     }
+    // Route through the invariant-enforcing factory: a Feature created from a UC
+    // must carry that UC's id (ADR-0012, no orphans). The factory rejects an
+    // empty useCaseId, so a future change to the filename convention that breaks
+    // the back-reference fails loudly here instead of writing an orphan.
+    const built = createFeatureSpecification({ ...parsed, useCaseId: useCase.id });
+    if (!built.ok) return err(built.error);
+    const specification = built.value;
 
     // The file now exists, so announce creation before the link step — a later
     // failure must not leave a created Feature with no `specification.created`.

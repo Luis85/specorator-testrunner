@@ -41,12 +41,20 @@ export interface TestRun {
   reportPaths: ReportPaths;
 }
 
+/**
+ * Outcome of a Use Case's most recent run as seen by the ADR-0017 KPI roll-up.
+ *
+ * It is a {@link TestRunStatus} plus the extra `"skipped"` state: a per-UC
+ * roll-up is `"skipped"` when all of this UC's scenarios in a broad run were
+ * skipped. The roll-up policy treats `"skipped"` as exercised-but-not-passing —
+ * distinct from a real `"passed"` — so a skipped UC does not count toward the
+ * Passing KPI (ADR-0017).
+ */
+export type UseCaseRunOutcome = TestRunStatus | "skipped";
+
 export interface TestRunSummary {
   runId: RunId;
-  // A per-UC roll-up can be `skipped` when all of this UC's scenarios in a broad
-  // run were skipped — distinct from a real pass (the policy treats it as
-  // exercised-but-not-passing, not as the Passing KPI).
-  status: TestRunStatus | "skipped";
+  status: UseCaseRunOutcome;
   date: string;
   evidencePath?: VaultPath;
   /** Scope of the run, so the roll-up knows whether it covered the whole UC. */

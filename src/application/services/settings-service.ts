@@ -1,4 +1,5 @@
 import type { DataStore } from "../ports/data-store";
+import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { PathSafetyPolicy } from "../../domain/policies/path-safety-policy";
 import {
   DEFAULT_SETTINGS,
@@ -64,6 +65,12 @@ export class DefaultSettingsService implements SettingsService {
     private readonly pathSafety: PathSafetyPolicy,
     private readonly eventBus: EventBus,
     private readonly logger: Logger = NOOP_LOGGER,
+    /**
+     * Optional vault access for the ADR-0015 one-project-per-vault check. When
+     * omitted (e.g. in unit tests that don't exercise it) the check is skipped,
+     * so existing call sites and behaviour are unaffected.
+     */
+    private readonly vaultFs?: VaultFileSystem,
   ) {}
 
   async load(): Promise<TestHubSettings> {
@@ -172,6 +179,11 @@ export class DefaultSettingsService implements SettingsService {
       });
     }
 
+    // ADR-0015 one-project-per-vault: surface (as a WARNING, never an error so
+    // the plugin still loads) any sibling/duplicate Test Hub folder.
+    const siblingWarning = await this.detectSiblingTestHub(settings);
+    if (siblingWarning) warnings.push(siblingWarning);
+
     const result: SettingsValidationResult = {
       valid: errors.length === 0,
       errors,
@@ -187,7 +199,105 @@ export class DefaultSettingsService implements SettingsService {
     );
     return result;
   }
+
+  /**
+   * ADR-0015 (one project per vault): detect a sibling/duplicate `Test Hub`
+   * folder colliding with the configured `testHubPath` and return it as a
+   * single validation WARNING. Returns `undefined` (no-op) for the normal
+   * single-folder vault, when no vault access is wired, or on any listing
+   * failure (the check is advisory and must never break validation).
+   *
+   * Conservative interpretation — chosen because ADR-0015 only wants to flag
+   * the "user copied another project's content into the vault" accident, and
+   * because a warning (not a hard load failure) is the right severity for an
+   * advisory data-hygiene problem:
+   *
+   *  - Only folders that are SIBLINGS of the configured Test Hub — i.e. share
+   *    its parent directory — are considered. The settings model permits
+   *    relocating `testHubPath` to a nested path (e.g. `QA/Test Hub`), and a
+   *    sync/copy conflict ("Test Hub copy", "Test Hub 2") lands beside it in the
+   *    SAME parent ("QA/Test Hub copy"); comparing by parent catches both the
+   *    top-level and relocated cases. A folder under a different parent that
+   *    merely happens to be named "Test Hub" is ignored (review P2).
+   *  - A sibling collides when its base name equals the configured folder's base
+   *    name, OR starts with it followed by a sync/copy-style suffix (a space/dash
+   *    + "copy"/digits/"(n)"). A distinct folder that only shares a prefix word
+   *    ("Test Hub Notes") is NOT flagged — avoiding false positives.
+   *  - The configured folder itself is excluded; only an ADDITIONAL match
+   *    triggers the warning.
+   */
+  private async detectSiblingTestHub(
+    settings: TestHubSettings,
+  ): Promise<SettingsValidationMessage | undefined> {
+    if (!this.vaultFs) return undefined;
+
+    const configured = settings.paths.testHubPath.trim();
+    if (configured === "") return undefined;
+    const configuredBase = baseName(configured);
+    if (configuredBase === "") return undefined;
+    const configuredKey = configuredBase.toLowerCase();
+    // The parent the canonical Test Hub lives in ("" for a top-level folder,
+    // "QA" for a relocated "QA/Test Hub"). Only folders in this same parent are
+    // siblings; this is what makes the check work for a relocated testHubPath.
+    const configuredParent = parentDir(configured);
+
+    const listed = await this.vaultFs.listFolders();
+    if (!listed.ok) return undefined; // advisory: never fail validation on a listing error
+
+    const conflicts: string[] = [];
+    const seen = new Set<string>();
+    for (const folderPath of listed.value) {
+      const trimmed = folderPath.trim();
+      if (trimmed === "") continue;
+      if (parentDir(trimmed) !== configuredParent) continue; // siblings only (same parent)
+      if (trimmed === configured) continue; // the canonical Test Hub itself
+      if (!isTestHubSibling(baseName(trimmed), configuredKey)) continue;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      conflicts.push(trimmed);
+    }
+
+    if (conflicts.length === 0) return undefined;
+
+    return {
+      field: "paths.testHubPath",
+      message:
+        `More than one Test Hub folder was found in this vault ` +
+        `(duplicates: ${conflicts.join(", ")}). A vault must contain exactly one ` +
+        `Test Hub (ADR-0015). Remove or rename the duplicate(s) to avoid ambiguous ` +
+        `roll-ups and ID generation.`,
+      severity: "warning",
+    };
+  }
 }
+
+/** Last `/`-separated, non-empty segment of a vault path. */
+const baseName = (path: string): string => {
+  const parts = path.split("/").filter((part) => part.length > 0);
+  return parts.length === 0 ? "" : parts[parts.length - 1];
+};
+
+/** Parent directory of a vault path ("" for a top-level folder), normalized. */
+const parentDir = (path: string): string => {
+  const parts = path.split("/").filter((part) => part.length > 0);
+  return parts.slice(0, -1).join("/");
+};
+
+/**
+ * True when `folderBaseName` (a folder's final segment) is a sync/copy-style
+ * duplicate of the configured Test Hub's base name. Matches an exact name or the
+ * base name followed by a conflict suffix (" 1", "-2", " copy", "copy", " (1)");
+ * a folder whose suffix is a real alphabetic word (e.g. "test hub notes") is NOT
+ * a duplicate.
+ */
+const isTestHubSibling = (folderBaseName: string, configuredKey: string): boolean => {
+  const key = folderBaseName.toLowerCase();
+  if (key === configuredKey) return true;
+  if (!key.startsWith(configuredKey)) return false;
+  const suffix = key.slice(configuredKey.length).trim();
+  return /^[-_]?\s*(copy|\(?\d+\)?)?$/.test(suffix);
+};
 
 /**
  * Dotted field paths whose values differ between two settings objects, compared

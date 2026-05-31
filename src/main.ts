@@ -131,18 +131,21 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // (P0-2). Reconstructed once the persisted log level is known.
     const consoleLogger = new ConsoleLogger("info");
     this.logger = consoleLogger;
+    const vault = new ObsidianVaultAdapter(this.app);
+    this.vaultAdapter = vault;
+    // The vault is passed so validate() can run the ADR-0015 one-project-per-vault
+    // sibling Test Hub check.
     this.hubSettingsService = new DefaultSettingsService(
       dataStore,
       pathSafety,
       eventBus,
       this.logger,
+      vault,
     );
     this.hubSettings = await this.hubSettingsService.load();
     this.logger = new ConsoleLogger(this.hubSettings.logging.level);
     this.refreshLoggerSecrets();
 
-    const vault = new ObsidianVaultAdapter(this.app);
-    this.vaultAdapter = vault;
     this.workspaceAdapter = new ObsidianWorkspaceAdapter(this.app);
 
     // EPIC-011 Documentation (FEAT-024/025). The workspace adapter is passed so

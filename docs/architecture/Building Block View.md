@@ -70,14 +70,16 @@ Path: `src/presentation/{views,components,commands,settings}`.
 
 Each view subscribes to the `EventBus` for state it cares about and dispatches commands to application services for state changes. Views do not publish domain events directly; services do.
 
+> **Naming note (reconciled with code).** The implemented Obsidian `ItemView` classes are `DashboardView` (the main dashboard — drafted here as `TestHubView`), `UseCaseDashboardView` (drafted as `UseCaseExplorerView`), `SuiteDashboardView` (drafted as `SuiteExplorerView`), and `TestConsoleView` (the sidebar live-run panel — drafted as `TestRunPanel`), all under `src/presentation/views/`. There are no separate `SpecificationExplorerView`, `EvidenceExplorerView`, or `DocumentationView` leaf classes in V1; that functionality is folded into the dashboards/notes. The first-run flow is `InitializationWizardModal`. Treat the names below as the originally-planned surfaces; the parenthetical/real class names are authoritative.
+
 | View | Surface | Purpose | Consumes |
 | --- | --- | --- | --- |
-| `TestHubView` | Workspace leaf | Main dashboard: KPIs, runner health, recent runs, Use Cases, suites, quick actions. | `dashboard.refreshed`, `dashboard.kpi.updated`, `testrun.completed`, `testrunner.validated` |
+| `TestHubView` → `DashboardView` | Workspace leaf | Main dashboard: KPIs, runner health, recent runs, Use Cases, suites, quick actions. | `dashboard.refreshed`, `dashboard.kpi.updated`, `testrun.completed`, `testrunner.validated` |
 | `InitializationWizardView` | Modal | Guided first-run setup; shows progress and failure with retry. | `testhub.initialization.completed`, `testhub.initialization.failed`, `testrunner.installed`, `documentation.generated` |
 | `UseCaseExplorerView` | Workspace leaf | Browse, create, run Use Cases; show automation status. | `usecase.created`, `usecase.updated`, `usecase.status.changed`, `evidence.linkedToUseCase` |
 | `SpecificationExplorerView` | Workspace leaf | Manage feature files; validate; detect missing steps. | `specification.created`, `specification.updated`, `specification.validation.completed`, `specification.missingSteps.detected` |
 | `SuiteExplorerView` | Workspace leaf | List/create/run suites; manage tag expressions. | `suite.created`, `suite.updated`, `suite.executed` |
-| `TestRunPanel` | Sidebar leaf | Live execution: streaming output, status, results, evidence link. | `testrun.started`, `testrun.output.received`, `testrun.completed`, `testrun.failed`, `testrun.cancelled` |
+| `TestConsoleView` | Sidebar leaf | Live execution: streaming output, status, results, evidence link. (Was drafted as `TestRunPanel`; the implemented class is `TestConsoleView`, view type `e2e-test-hub-console`.) | `testrun.started`, `testrun.output.received`, `testrun.completed`, `testrun.failed`, `testrun.cancelled` |
 | `EvidenceExplorerView` | Workspace leaf | List/open evidence; jump to reports, screenshots, traces. | `evidence.generated`, `evidence.linkedToUseCase`, `report.imported` |
 | `DocumentationView` | Workspace leaf | Render generated `Test Hub` notes (Getting Started, User Manual, Troubleshooting). | `documentation.generated`, `documentation.opened` |
 | `SettingsTab` | Obsidian Settings | Edit paths, validate, reset. | `settings.updated`, `settings.validated`, `settings.reset` |
@@ -189,7 +191,7 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 
 ## 6. Domain Layer
 
-Path: `src/domain/{entities,value-objects,events,repositories,policies}`.
+Path: `src/domain/{entities,value-objects,events,policies,settings}`. (There is **no** `repositories/` subfolder — see §6.5.)
 
 ### 6.1 Entities
 
@@ -207,34 +209,41 @@ Defined in the [Event Catalog](./Event%20Catalog.md). The Domain Layer exports t
 
 | Policy | Purpose |
 | --- | --- |
-| `UseCaseIdPolicy` | Generate and validate stable `UC-NNN` identifiers. |
 | `PathSafetyPolicy` | Reject vault-escaping paths in settings and generated artifacts. |
-| `RunnerExecutionPolicy` | Decide what `--tags` expression to pass per execution scope. |
-| `EvidenceLinkingPolicy` | Determine which Use Case(s) a run's evidence attaches to. |
-| `CiReadinessPolicy` | Encode the rules for `EnvironmentValidationService` CI check. |
-| `UseCaseAutomationPolicy` | Derive `UseCase.automationStatus` from Feature states with `@wip` exclusion (per ADR-0017). |
+| `CommandSafetyPolicy` | Validate runner argv shapes before spawn (ADR-0010); backs `COMMAND_DISALLOWED`. **Was drafted as `RunnerExecutionPolicy`.** |
+| `UseCaseAutomationPolicy` | Derive `UseCase.automationStatus` from Feature states with `@wip` exclusion (per ADR-0017); scope-aware + prior-status floor. |
 
-### 6.5 Repositories (ports)
+> **Reconciled with code.** The implemented policies under `src/domain/policies/` are exactly these three: `path-safety-policy.ts`, `command-safety-policy.ts`, `use-case-automation-policy.ts`. Earlier drafts listed `UseCaseIdPolicy`, `RunnerExecutionPolicy`, `EvidenceLinkingPolicy`, and `CiReadinessPolicy` as domain policies. They are **not** domain-policy classes: identifier generation lives with the value objects/services, CI-readiness logic lives in the application service `environment-validation-service.ts` (`validateCiReadiness`), evidence-to-UC linking lives in `EvidenceGenerationService`, and the tag-expression-per-scope logic lives in the application services (`test-execution-service.ts`, `suite-service.ts`), not in a `TagExpressionPolicy`.
 
-`UseCaseRepository`, `FeatureRepository`, `SuiteRepository`, `TestRunRepository`, `EvidenceRepository` — declared as interfaces in the Domain; implemented in Infrastructure.
+### 6.5 Persistence (no repository ports — `VaultFileSystem`)
+
+> **Not built.** The per-aggregate repository interfaces (`UseCaseRepository`, `FeatureRepository`, `SuiteRepository`, `TestRunRepository`, `EvidenceRepository`) this section once described do **not** exist. There is no `src/domain/repositories/` directory.
+>
+> **Actual choice:** all persistence is read and written through file-system **ports** declared in the application layer (`src/application/ports/vault-file-system.ts` and `absolute-file-system.ts`) and implemented by adapters in infrastructure (`src/infrastructure/obsidian/obsidian-vault-adapter.ts` for vault notes/frontmatter; `src/infrastructure/filesystem/node-absolute-file-system.ts` for paths outside the vault index). Aggregates are stored as Markdown/`.feature` notes in the vault rather than reconstituted through dedicated repositories. A move to per-aggregate repository ports is a possible future refinement, not a V1 building block.
 
 ---
 
 ## 7. Infrastructure Layer
 
-Path: `src/infrastructure/{obsidian,filesystem,runner,reports,templates,ci}`.
+Path (reconciled with code): `src/infrastructure/{obsidian,filesystem,runner}`. There is **no** separate `reports/`, `templates/`, or `ci/` infrastructure folder — report parsing lives in the application layer (`report-import-service.ts`), CI generation in `pipeline-generation-service.ts`, and template writing in `src/infrastructure/runner/runner-template-writer.ts`.
 
-| Adapter | Wraps |
+| Adapter (real class / file) | Wraps |
 | --- | --- |
-| `ObsidianVaultAdapter` | Obsidian `Vault` — folders, notes, frontmatter, file IO. |
-| `ObsidianWorkspaceAdapter` | Obsidian `Workspace` — open views, leaves, commands, modals. |
-| `FileSystemAdapter` | Node `fs/promises` for paths outside the vault index (`.testrunner` internals, `.github/workflows/`). |
-| `ProcessAdapter` | Node `child_process.spawn` for `npm install`, browser install, runner execution; supports cancellation. |
-| `RunnerTemplateWriter` | Writes the `.testrunner` template: `package.json`, `tsconfig.json`, `playwright.config.ts`, `cucumber.mjs`, demo steps, demo page objects, fixtures (AD-8), `README.md`. |
-| `ReportParserAdapter` | Parses Cucumber JSON + Playwright artifacts (reports, screenshots, traces). |
-| `CiTemplateWriter` | Writes `.github/workflows/e2e.yml` (AD-3). Azure DevOps template stub deferred to V2. |
+| `ObsidianVaultAdapter` (`obsidian/obsidian-vault-adapter.ts`) | Obsidian `Vault` — folders, notes, frontmatter, file IO (implements the `VaultFileSystem` port). |
+| `ObsidianWorkspaceAdapter` (`obsidian/obsidian-workspace-adapter.ts`) | Obsidian `Workspace` — open views, leaves, commands, modals. |
+| `ObsidianDataStore` (`obsidian/obsidian-data-store.ts`) | Obsidian plugin `loadData`/`saveData` (the `DataStore` port for settings). |
+| `NodeAbsoluteFileSystem` (`filesystem/node-absolute-file-system.ts`) | Node `fs/promises` for paths outside the vault index (`.testrunner` internals, `.github/workflows/`); implements the `AbsoluteFileSystem` port. |
+| `NodeChildProcessRunner` (`runner/node-child-process-runner.ts`) | Node `child_process.spawn` (`shell:false`) for `npm install`, browser install, runner execution; supports id-keyed cancellation. Implements the `ChildProcessRunner` port. |
+| `RunnerTemplateWriter` (`runner/runner-template-writer.ts`) | Writes the `.testrunner` template files (implements the `TemplateWriter` port). **NB:** the template *content* it writes still lives in the application layer at `src/application/content/runner-templates.ts` — see §7.1. |
+| ~~`ReportParserAdapter` / `CiTemplateWriter`~~ | **Not separate infrastructure adapters.** Cucumber/Playwright report parsing is done in `ReportImportService` (application) and CI workflow generation in `PipelineGenerationService` (application), writing through the absolute-file-system port. |
 | ~~`ReportFileWatcher`~~ | **Not built / removed.** The post-run import is driven in-process by the `PostRunCoordinator` (application layer) from the EN-2 terminal run event, not by a filesystem watcher. See §5.11a and Event Catalog §8. |
 | `FeatureFileWatcher` | _(Deferred, per SDD AD-10.)_ Would subscribe to `vault.on('modify' \| 'create' \| 'rename' \| 'delete')` for `*.feature` to feed incremental traceability updates. Not in V1. |
+
+### 7.1 Runner-template content location (DEFERRED relocation)
+
+The `RunnerTemplateWriter` (infrastructure) writes the `.testrunner` files, but the template *content* — `package.json`, `cucumber.mjs`, demo steps/pages/fixtures, etc. — is assembled in the **application** layer at `src/application/content/runner-templates.ts`, not under `infrastructure/`.
+
+> **DEFERRED — do not assume this has moved.** Relocating the template content under `infrastructure/` is a documented deferred item (V1 Review P3-7). It is not a straight file move: the content is generated/assembled on the application side, and pushing it under infrastructure cleanly requires the generation to be pushed behind the `TemplateWriter` port first — otherwise infrastructure would have to call back into application content and invert the layer dependency rule. Until that refactor lands, the content stays at `src/application/content/runner-templates.ts`.
 
 ---
 
@@ -323,15 +332,17 @@ Domain → no outer layer
 
 **Allowed:**
 
-- Application → repository / adapter *interfaces*
+- Application → adapter *port interfaces* (file-system / absolute-file-system / child-process-runner / template-writer / data-store / workspace ports — there are no repository ports, see §6.5)
 - Infrastructure → concrete implementations
 - Presentation → application services
 
-Enforced via ESLint `no-restricted-imports` and a layer-import test fixture in CI.
+**Enforcement (reconciled with code).** Layering is enforced *partially*, not by the mechanism previously claimed. There **is** an ESLint setup (`eslint.config.mjs`, typescript-eslint type-checked config) wired into CI as a `npm run lint` step (`.github/workflows/ci.yml`), and it enforces `@typescript-eslint/no-floating-promises` (among others). However, there is **no** `no-restricted-imports` rule encoding the layer boundaries and **no** layer-import test fixture. So the import directions above are enforced today only by `tsconfig` structure + code review, not by a dedicated layering lint rule. Adding a `no-restricted-imports` layer rule (and/or a layer-import fixture) is a tracked backlog item (V1 Review P4-2).
 
 ---
 
 ## 11. Recommended source structure
+
+> **As-built note.** The tree below is the originally *recommended* layout. The implemented layout differs in a few places (verified against `src/`): there is no `domain/repositories/` (see §6.5), no `presentation/commands/` or `presentation/components/` (commands live in `main.ts`, view-row helpers live under `presentation/views/`), and `infrastructure/` contains only `obsidian/`, `filesystem/`, and `runner/` (no `reports/`, `templates/`, or `ci/` — see §7). The application layer also has a `content/` folder (generated runner/doc content).
 
 ```
 src/

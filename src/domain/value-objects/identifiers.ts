@@ -7,7 +7,6 @@ export type UseCaseId = string; // e.g. "UC-001"
 export type SuiteId = string; // e.g. "smoke"
 export type RunId = string; // e.g. "RUN-2026-06-01-100000"
 export type EvidenceId = string; // e.g. "EV-2026-06-01-100000"
-export type ScenarioReference = string; // "<featurePath>::<scenarioName>[::row-<index>]"
 
 /**
  * A path relative to the vault root.

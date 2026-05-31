@@ -240,17 +240,19 @@ Plugin
 
 The plugin opens dedicated workspace leaves per concern, plus an Obsidian Settings tab and a first-run modal. Detailed event subscriptions per view live in the [Building Block View §4](./Building%20Block%20View.md#4-presentation-layer).
 
-| View | Surface | Purpose |
+> **Naming note (reconciled with code).** The implemented `ItemView` leaf classes are `DashboardView` (main dashboard — drafted as `TestHubView`), `UseCaseDashboardView` (drafted as `UseCaseExplorerView`), `SuiteDashboardView` (drafted as `SuiteExplorerView`), and `TestConsoleView` (sidebar live-run panel — drafted as `TestRunPanel`), all in `src/presentation/views/`. There are no separate `SpecificationExplorerView`, `EvidenceExplorerView`, or `DocumentationView` leaf classes in V1; the first-run flow is `InitializationWizardModal`. The drafted names below map to those real classes.
+
+| View (drafted → real) | Surface | Purpose |
 | --- | --- | --- |
-| `TestHubView` | Workspace leaf | Main dashboard: KPIs, runner health, recent runs, quick actions. |
-| `UseCaseExplorerView` | Workspace leaf | Browse, create, run Use Cases; automation status. |
-| `SpecificationExplorerView` | Workspace leaf | Feature files: create, validate, detect missing steps. |
-| `SuiteExplorerView` | Workspace leaf | Suites: create, run, manage tag expressions. |
-| `TestRunPanel` | Sidebar leaf | Live execution monitor + history. |
-| `EvidenceExplorerView` | Workspace leaf | Report and screenshot browser. |
-| `DocumentationView` | Workspace leaf | Renders the generated Test Hub notes. |
+| `TestHubView` → `DashboardView` | Workspace leaf | Main dashboard: KPIs, runner health, recent runs, quick actions. |
+| `UseCaseExplorerView` → `UseCaseDashboardView` | Workspace leaf | Browse, create, run Use Cases; automation status. |
+| `SpecificationExplorerView` → _(folded into dashboards)_ | Workspace leaf | Feature files: create, validate, detect missing steps. |
+| `SuiteExplorerView` → `SuiteDashboardView` | Workspace leaf | Suites: create, run, manage tag expressions. |
+| `TestRunPanel` → `TestConsoleView` | Sidebar leaf | Live execution monitor + history. |
+| `EvidenceExplorerView` → _(folded into notes/dashboards)_ | Workspace leaf | Report and screenshot browser. |
+| `DocumentationView` → _(generated Test Hub notes)_ | Workspace leaf | Renders the generated Test Hub notes. |
 | `SettingsTab` | Obsidian Settings | Plugin configuration (per FR-014). |
-| `InitializationWizardView` | Modal | First-run wizard (per FR-002). |
+| `InitializationWizardView` → `InitializationWizardModal` | Modal | First-run wizard (per FR-002). |
 
 ---
 
@@ -264,7 +266,8 @@ Services orchestrate use cases. Each service is independently testable and depen
 | `RunnerInstallationService` | Materialises `.testrunner`: writes `package.json`, `playwright.config.ts`, `cucumber.mjs`, runs `npm install`, installs Chromium browser. | Owns everything under `.testrunner`. npm is fixed in V1. |
 | `EnvironmentValidationService` | Checks Node.js, npm, Playwright, browser install, and CI readiness (`package.json`, scripts, reports folder). | Read-only diagnostics. Covers UC-002 and UC-020. |
 | `MaintenanceService` | Repairs damaged installations (recreates missing files/packages) and resets the Test Hub (removes generated assets, restores defaults). | Owns repair and reset flows. Covers UC-003 and UC-024. |
-| `StepDefinitionService` | Generates TypeScript step-definition stubs for undefined Gherkin steps. | Writes only to `.testrunner/src/steps`. Covers UC-010. |
+| `StepDefinitionService` | Generates TypeScript step-definition stubs for undefined Gherkin steps. **Implemented (P2-5).** | Writes only to `.testrunner/src/steps`. Covers UC-010. |
+| `PostRunCoordinator` | In-process post-run flow (import → evidence → dashboard refresh) reacting to the EN-2 terminal run event — replaces the never-built `ReportFileWatcher`/`report.detected` choreography (P2-1). | Application-layer only; serializes evidence writes. |
 | `TestExecutionService` | Spawns Cucumber/Playwright runs (Use Case, Feature, Suite, All) serially in V1, streams stdout/stderr, emits run events. | Read-only against vault; writes only to `.testrunner/reports`. |
 | `ReportImportService` | Parses Playwright/Cucumber reports from `.testrunner/reports` into domain `TestRun` + `Evidence` records. | One-way: report → domain. |
 | `EvidenceGenerationService` | Renders Markdown evidence notes under `Test Evidence`. | Writes vault notes only. |
@@ -293,12 +296,14 @@ Adapters implement infrastructure ports declared in the domain/application layer
 
 | Adapter | Wraps |
 | --- | --- |
-| `VaultAdapter` | Obsidian `Vault` (read/write notes, create folders). |
-| `WorkspaceAdapter` | Obsidian `Workspace` (open views, leaves, modals). |
-| `SettingsAdapter` | Obsidian plugin `loadData`/`saveData`. |
-| `FileSystemAdapter` | Node `fs/promises` for paths outside the vault index (`.testrunner` internals, CI workflows). |
-| `ProcessAdapter` | Node `child_process.spawn` for runner installation and test execution. |
-| `ReportParserAdapter` | Playwright JSON + Cucumber JSON report parsing. |
+| `ObsidianVaultAdapter` (drafted `VaultAdapter`) | Obsidian `Vault` (read/write notes, create folders); implements the `VaultFileSystem` port. |
+| `ObsidianWorkspaceAdapter` (drafted `WorkspaceAdapter`) | Obsidian `Workspace` (open views, leaves, modals). |
+| `ObsidianDataStore` (drafted `SettingsAdapter`) | Obsidian plugin `loadData`/`saveData` (the `DataStore` port). |
+| `NodeAbsoluteFileSystem` (drafted `FileSystemAdapter`) | Node `fs/promises` for paths outside the vault index (`.testrunner` internals, CI workflows); implements `AbsoluteFileSystem`. |
+| `NodeChildProcessRunner` (drafted `ProcessAdapter`) | Node `child_process.spawn` (`shell:false`) for runner installation and test execution; id-keyed cancellation. |
+| `RunnerTemplateWriter` | Writes `.testrunner` files (the `TemplateWriter` port). Template **content** stays in `src/application/content/runner-templates.ts` — relocation DEFERRED (P3-7), see BBV §7.1. |
+
+> **Not separate adapters.** There is no `ReportParserAdapter` or CI-writer infrastructure class: Cucumber/Playwright report parsing is done in `ReportImportService` and CI workflow generation in `PipelineGenerationService` (both application-layer), writing through the absolute-file-system port. **No repository ports exist** — persistence is the `VaultFileSystem`/`AbsoluteFileSystem` ports above; there is no `src/domain/repositories/`.
 
 ---
 
@@ -326,7 +331,7 @@ Obsidian Workspace
 ├── UseCaseExplorerView  (leaf, on demand)
 ├── SpecificationExplorerView (leaf, on demand)
 ├── SuiteExplorerView    (leaf, on demand)
-├── TestRunPanel         (sidebar leaf, opens on testrun.started)
+├── TestConsoleView      (sidebar leaf, opens on testrun.started; drafted as TestRunPanel)
 ├── EvidenceExplorerView (leaf, on demand)
 ├── DocumentationView    (leaf, on demand)
 ├── InitializationWizardView (modal, first run only)

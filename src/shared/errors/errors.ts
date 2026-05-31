@@ -11,7 +11,7 @@ export type ErrorCode =
   | "RUN_CANCELLED"
   // path / command safety
   | "PATH_UNSAFE" // PathSafetyPolicy
-  | "COMMAND_DISALLOWED" // RunnerExecutionPolicy
+  | "COMMAND_DISALLOWED" // CommandSafetyPolicy
   // install / runner
   | "INIT_FAILED"
   | "RUNNER_MISSING_FILE"
