@@ -43,6 +43,17 @@ describe("DefaultPipelineGenerationService", () => {
     });
   });
 
+  it("rejects a workflowPath with traversal / absolute segments and writes nothing", async () => {
+    const { service, absoluteFs } = build();
+    for (const workflowPath of ["../escape.yml", "/etc/cron.d/x", "a/../../b.yml"]) {
+      const settings = { ...DEFAULT_SETTINGS, ci: { ...DEFAULT_SETTINGS.ci, workflowPath } };
+      const result = await service.generate({ provider: "github-actions", settings });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    }
+    expect(absoluteFs.written.size).toBe(0);
+  });
+
   it("refuses to clobber an existing workflow unless overwrite is enabled (OQ-005)", async () => {
     const { service, absoluteFs, types } = build();
     absoluteFs.existing.add(workflowAbs);

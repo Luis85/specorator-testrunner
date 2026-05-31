@@ -294,6 +294,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       callback: () => void this.generateCiWorkflow(),
     });
     this.addCommand({
+      id: "overwrite-ci-workflow",
+      name: "Overwrite CI Workflow",
+      callback: () => void this.generateCiWorkflow(true),
+    });
+    this.addCommand({
       id: "check-ci-readiness",
       name: "Check CI Readiness",
       callback: () => void this.checkCiReadiness(),
@@ -669,14 +674,21 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
 
   // EPIC-010 CI/CD (US-040, UC-019): write the GitHub Actions workflow into the
   // user's repo. UI is thin — the generate/overwrite policy lives in the service.
-  private async generateCiWorkflow(): Promise<void> {
-    new Notice("Generating CI workflow…");
+  private async generateCiWorkflow(overwriteExisting = false): Promise<void> {
+    new Notice(overwriteExisting ? "Overwriting CI workflow…" : "Generating CI workflow…");
     const result = await this.pipelineService.generate({
       provider: this.hubSettings.ci.provider,
       settings: this.hubSettings,
+      overwriteExisting,
     });
     if (result.ok) {
       new Notice(`CI workflow written to ${result.value.path}.`);
+    } else if (!overwriteExisting && result.error.details?.path) {
+      // The file exists; make the documented overwrite flow reachable (UC-019).
+      new Notice(
+        `${result.error.message} Use "Overwrite CI Workflow" to replace it.`,
+        10000,
+      );
     } else {
       new Notice(`Could not generate CI workflow: ${result.error.message}`, 10000);
     }

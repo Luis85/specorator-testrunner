@@ -54,7 +54,23 @@ export class DefaultPipelineGenerationService
 
     // The workflow is repo-root relative (e.g. .github/workflows/e2e.yml), not a
     // VaultPath: it must live where GitHub Actions discovers it (TIS §8.13).
+    // `ci.workflowPath` isn't validated by SettingsService, so reject traversal
+    // / absolute paths here before writing (or overwrite-checking) outside root.
     const relativePath = request.settings.ci.workflowPath;
+    if (
+      relativePath.trim() === "" ||
+      relativePath.startsWith("/") ||
+      /^[A-Za-z]:/.test(relativePath) ||
+      relativePath.split(/[/\\]/).includes("..")
+    ) {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `CI workflow path must be a repo-relative path without "..": "${relativePath}".`,
+          { details: { path: relativePath } },
+        ),
+      );
+    }
     const absolutePath = `${root}/${relativePath}`;
 
     // OQ-005 default: never clobber an existing workflow without explicit opt-in.
