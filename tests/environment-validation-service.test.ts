@@ -331,6 +331,23 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(result.missingItems.some((m) => m.includes("e2e:ci"))).toBe(true);
   });
 
+  it("validateCiReadiness does not require a lockfile when the install command omits one", async () => {
+    const { service, absoluteFs } = build();
+    seedManagedRunnerFiles(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ scripts: { "test:ci": "x" } }));
+    // No package-lock.json present.
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, ciInstallCommand: "npm install --no-package-lock" },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(true);
+    expect(result.missingItems.some((m) => m.includes("package-lock"))).toBe(false);
+  });
+
   it("validateCiReadiness is not ready for a non-github-actions provider", async () => {
     const { service, absoluteFs } = build();
     seedManagedRunnerFiles(absoluteFs);
