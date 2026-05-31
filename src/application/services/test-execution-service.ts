@@ -21,6 +21,12 @@ export interface TestExecutionService {
   cancel(runId: RunId): Promise<Result<void>>;
   /** Id of the single active run per ADR-0018, or `null` when idle. */
   activeRunId(): RunId | null;
+  /**
+   * Resolves when the active run's process has actually closed (or immediately
+   * when idle). Lets the UI cancel-and-wait on unload without tracking the run
+   * promise itself.
+   */
+  whenActiveSettles(): Promise<void>;
 }
 
 export interface ExecuteTestRequest {
@@ -33,6 +39,9 @@ interface ActiveRun {
   run: TestRun;
   /** True once a terminal event (completed/failed/cancelled) has been published. */
   terminated: boolean;
+  /** Resolves when `execute()` settles (runner process closed) — for unload. */
+  completion: Promise<void>;
+  settle: () => void;
 }
 
 /**
@@ -158,6 +167,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
     return this.active?.run.id ?? null;
   }
 
+  whenActiveSettles(): Promise<void> {
+    return this.active?.completion ?? Promise.resolve();
+  }
+
   async execute(request: ExecuteTestRequest): Promise<Result<TestRun>> {
     // ADR-0018: reject overlapping runs; caller must cancel(activeRunId) first.
     if (this.active) {
@@ -182,7 +195,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
       workingDirectory: "",
       reportPaths: {},
     };
-    const activeRun: ActiveRun = { run, terminated: false };
+    let settle!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    const activeRun: ActiveRun = { run, terminated: false, completion, settle };
     this.active = activeRun;
 
     try {
@@ -286,6 +303,8 @@ export class DefaultTestExecutionService implements TestExecutionService {
       // Single-active model: clear the slot once this run settles, but never
       // stomp a newer run (cancel resolves the slot before runStreaming returns).
       if (this.active === activeRun) this.active = null;
+      // Let any unload waiter (whenActiveSettles) know the process has closed.
+      activeRun.settle();
     }
   }
 
