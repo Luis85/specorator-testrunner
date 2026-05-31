@@ -5,7 +5,9 @@ export const DEMO_USE_CASE_ID: UseCaseId = "UC-001";
 export const DEMO_USE_CASE_TITLE = "Open Example Page";
 export const DEMO_USE_CASE_FILE_NAME = "UC-001 Open Example Page.md";
 export const DEMO_FEATURE_FILE_NAME = "UC-001-open-example-page.feature";
-export const DEMO_SUITE_IDS = ["smoke", "regression"] as const;
+// The demo feature is tagged @demo @smoke, so it belongs to the Smoke suite
+// only. Regression matches @regression, which the demo intentionally lacks.
+export const DEMO_SUITE_IDS = ["smoke"] as const;
 
 /**
  * Demo Feature Specification (TIS §11.10). Plain Gherkin — no YAML frontmatter,
