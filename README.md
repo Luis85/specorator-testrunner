@@ -12,8 +12,11 @@ single Markdown-native, local-first workflow.
 > the vault, generates documentation and demo content, and creates the default
 > Smoke/Regression suites; and **EPIC-003 (Test Runner)** — generating the
 > self-contained `.testrunner` project, installing npm dependencies and the
-> Chromium browser, validating the environment, and repairing the installation.
-> Test execution and reporting (EPIC-007+) are next.
+> Chromium browser, validating the environment, and repairing the installation;
+> and **EPIC-004 (Use Case Management)** — creating Use Cases with generated
+> frontmatter, indexing them from the vault, and a live "Use Cases" panel
+> listing ID/Title/Status/Automation Status. Specification management
+> (EPIC-005) is next.
 
 ## Vision
 

@@ -22,6 +22,7 @@ export type ErrorCode =
   | "EVIDENCE_WRITE_FAILED"
   // settings / validation
   | "SETTINGS_INVALID"
+  | "VALIDATION_FAILED"
   | "SUT_ENV_NOT_FOUND";
 
 export interface AppError {
