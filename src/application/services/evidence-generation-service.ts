@@ -75,37 +75,44 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
       artifacts: report.artifacts,
     };
 
-    const folder = evidencePath.slice(0, evidencePath.lastIndexOf("/"));
-    await this.fs.createFolder(folder);
-    // writeFile (overwrite) so re-importing the same run refreshes the note;
-    // the evidence path is deterministic per runId and createFile would throw.
-    // Resolve each linked UC's note basename so the wikilink resolves in
-    // Obsidian (the note is `UC-001 Title.md`, so bare `[[UC-001]]` would not).
-    const ucNoteNames = await this.resolveUseCaseNoteNames(linkedUseCases);
-    // Prefer a terminal cancelled/errored run status so an interrupted run with
-    // a partial report isn't recorded as PASSED in the audit note.
-    const noteStatus = this.displayStatus(run, report.result);
-    const written = await this.fs.writeFile(
-      evidencePath,
-      this.renderNote(evidence, report, ucNoteNames, noteStatus),
-    );
-    if (!written.ok) {
-      return err(
-        appError("EVIDENCE_WRITE_FAILED", `Could not write evidence note "${evidencePath}".`, {
-          details: { runId: run.id, path: evidencePath },
-          cause: written.error,
-        }),
+    // The two opt-outs are independent: `generateEvidenceMarkdown` controls the
+    // audit NOTE, `updateUseCaseFrontmatterAfterRun` controls the Use Case
+    // `lastTestRun` (which the dashboard's Recent Runs is projected from). So the
+    // frontmatter update must still run with the note disabled, otherwise a
+    // completed run silently never appears in Recent Runs (US-038).
+    if (settings.automation.generateEvidenceMarkdown) {
+      const folder = evidencePath.slice(0, evidencePath.lastIndexOf("/"));
+      await this.fs.createFolder(folder);
+      // writeFile (overwrite) so re-importing the same run refreshes the note;
+      // the evidence path is deterministic per runId and createFile would throw.
+      // Resolve each linked UC's note basename so the wikilink resolves in
+      // Obsidian (the note is `UC-001 Title.md`, so bare `[[UC-001]]` would not).
+      const ucNoteNames = await this.resolveUseCaseNoteNames(linkedUseCases);
+      // Prefer a terminal cancelled/errored run status so an interrupted run with
+      // a partial report isn't recorded as PASSED in the audit note.
+      const noteStatus = this.displayStatus(run, report.result);
+      const written = await this.fs.writeFile(
+        evidencePath,
+        this.renderNote(evidence, report, ucNoteNames, noteStatus),
       );
-    }
+      if (!written.ok) {
+        return err(
+          appError("EVIDENCE_WRITE_FAILED", `Could not write evidence note "${evidencePath}".`, {
+            details: { runId: run.id, path: evidencePath },
+            cause: written.error,
+          }),
+        );
+      }
 
-    await this.eventBus.publish(
-      createEvent(
-        "evidence.generated",
-        { runId: run.id, evidencePath, linkedUseCases },
-        { correlationId: run.id },
-      ),
-    );
-    this.logger.info("Evidence generated", { runId: run.id, path: evidencePath });
+      await this.eventBus.publish(
+        createEvent(
+          "evidence.generated",
+          { runId: run.id, evidencePath, linkedUseCases },
+          { correlationId: run.id },
+        ),
+      );
+      this.logger.info("Evidence generated", { runId: run.id, path: evidencePath });
+    }
 
     // Honor the opt-out: only write the evidence link into Use Case frontmatter
     // when the user hasn't disabled it (TIS §settings.automation).

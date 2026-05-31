@@ -147,8 +147,11 @@ export class DefaultPipelineGenerationService
     }
     // GitHub secret/env names (and our auth keys) are identifier-shaped; a key
     // with any other character can't be safely rendered as `secrets.<KEY>`.
+    // GitHub also forbids the `GITHUB_` prefix for repository secrets, so a key
+    // like `GITHUB_PAT` could never be created — reject it instead of emitting a
+    // `secrets.GITHUB_PAT` reference that always resolves empty.
     for (const key of authKeys) {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || key.startsWith("GITHUB_")) {
         return err(
           appError(
             "VALIDATION_FAILED",
