@@ -103,7 +103,7 @@ describe("buildGitHubActionsWorkflow", () => {
       ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "20" },
     });
     expect(yaml).toContain("actions/checkout@v4");
-    expect(yaml).toContain("node-version: 20");
+    expect(yaml).toContain("node-version: \"20\"");
   });
 
   it("falls back to a default Node version when blank", () => {
@@ -111,6 +111,6 @@ describe("buildGitHubActionsWorkflow", () => {
       ...DEFAULT_SETTINGS,
       ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "  " },
     });
-    expect(yaml).toContain("node-version: 22");
+    expect(yaml).toContain("node-version: \"22\"");
   });
 });
