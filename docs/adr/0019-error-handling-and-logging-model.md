@@ -74,7 +74,7 @@ export type ErrorCode =
   | "RUN_CANCELLED"
   // path / command safety
   | "PATH_UNSAFE"                          // PathSafetyPolicy
-  | "COMMAND_DISALLOWED"                   // RunnerExecutionPolicy
+  | "COMMAND_DISALLOWED"                   // CommandSafetyPolicy
   // install / runner
   | "INIT_FAILED"
   | "RUNNER_MISSING_FILE"
@@ -85,9 +85,19 @@ export type ErrorCode =
   | "REPORT_PARSE_FAILED"
   | "EVIDENCE_WRITE_FAILED"
   // settings / validation
-  | "SETTINGS_INVALID"
+  | "SETTINGS_INVALID"                     // settings document fails schema/shape validation
+  | "VALIDATION_FAILED"                    // generic per-input/value validation failure
   | "SUT_ENV_NOT_FOUND";
 ```
+
+> Note: the implemented union (`src/shared/errors/errors.ts`) also carries `MAINTENANCE_IN_PROGRESS` (reset/repair vs run mutual exclusion, security L1). The naming chokepoint is `CommandSafetyPolicy` (`DefaultCommandSafetyPolicy`) — an earlier draft of this ADR referred to a `RunnerExecutionPolicy`, which is not the implemented class name.
+
+**`SETTINGS_INVALID` vs `VALIDATION_FAILED`.** Both are validation codes but are deliberately distinct, not redundant:
+
+- `SETTINGS_INVALID` is reserved for the **settings document as a whole** failing to load/save cleanly — a malformed or out-of-range `TestHubSettings` blob (e.g. via hand-edit or Obsidian Sync). It backs the SettingsTab "Invalid setting" surface and the load/save guard.
+- `VALIDATION_FAILED` is the **general-purpose input-validation** code used wherever a service rejects a specific value or argument that is *not* the settings document (a supplied slug, name, path, etc. failing a per-field check). It is widely used across the application services.
+
+Keeping them separate lets callers distinguish "your saved configuration is broken" from "this particular input you just gave me is invalid" — they surface and recover differently.
 
 Codes are stable across plugin versions (they're API for support and i18n). Adding is safe; renaming is a breaking change.
 
