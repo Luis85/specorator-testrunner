@@ -364,6 +364,19 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   }
 
   async onunload(): Promise<void> {
+    // A disable/reload while a run is active would otherwise leave the runner's
+    // npm/Cucumber child alive inside Obsidian with no console subscribers and
+    // no command path to stop it — cancel it before tearing down the UI.
+    const active = this.testExecutionService?.activeRunId() ?? null;
+    if (active !== null) {
+      const cancelled = await this.testExecutionService.cancel(active);
+      if (!cancelled.ok) {
+        this.logger?.warn("Could not cancel active run on unload", {
+          runId: active,
+          reason: cancelled.error.message,
+        });
+      }
+    }
     this.app.workspace.detachLeavesOfType(USE_CASE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(SUITE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(TEST_CONSOLE_VIEW_TYPE);
