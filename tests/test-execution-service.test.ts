@@ -5,7 +5,9 @@ import {
   DefaultTestExecutionService,
   type TestExecutionService,
 } from "../src/application/services/test-execution-service";
+import { DefaultUseCaseService } from "../src/application/services/use-case-service";
 import { buildSuiteNote } from "../src/application/content/default-suites";
+import { buildNote } from "../src/shared/utils/frontmatter";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { DomainEventType } from "../src/domain/events/domain-event";
@@ -36,11 +38,13 @@ const build = () => {
     bus,
   );
   const suiteService = new DefaultSuiteService(settings, fs, bus);
+  const useCaseService = new DefaultUseCaseService(settings, fs, bus, silentLogger);
   const childProcess = new FakeChildProcessRunner();
   const absoluteFs = new FakeAbsoluteFileSystem();
   const service = new DefaultTestExecutionService(
     settings,
     suiteService,
+    useCaseService,
     childProcess,
     absoluteFs,
     new DefaultCommandSafetyPolicy(),
@@ -159,11 +163,34 @@ describe("DefaultTestExecutionService", () => {
     expect(result.value.command).toBe('npm run test -- "../Specifications/features/Price \\$5.feature"');
   });
 
-  it("resolves the use-case command as a feature glob", async () => {
+  it("resolves the use-case command as a feature glob when the UC is unknown", async () => {
     const { service } = build();
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     expect(result.ok && result.value.command).toBe(
       'npm run test -- "../Specifications/features/UC-001-*.feature"',
+    );
+  });
+
+  it("targets a Use Case's declared featureFiles in order (UC-011)", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Use Cases/UC-001 Demo.md",
+      buildNote(
+        {
+          type: "use-case",
+          id: "UC-001",
+          title: "Demo",
+          feature_files: [
+            "Specifications/features/UC-001-happy-path.feature",
+            "Specifications/features/UC-001-edge.feature",
+          ],
+        },
+        "# UC-001",
+      ),
+    );
+    const result = await service.execute({ scope: "use-case", target: "UC-001" });
+    expect(result.ok && result.value.command).toBe(
+      'npm run test -- "../Specifications/features/UC-001-happy-path.feature" "../Specifications/features/UC-001-edge.feature"',
     );
   });
 
