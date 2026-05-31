@@ -23,6 +23,15 @@ export interface TestExecutionService {
   /** Id of the single active run per ADR-0018, or `null` when idle. */
   activeRunId(): RunId | null;
   /**
+   * The most recently finished run this session, or `null` before the first run
+   * completes. Lets the {@link PostRunCoordinator} (and the "Import report for
+   * last run" command) obtain the just-finished run without reconstructing it.
+   * ADR-0018 guarantees a single active run, and the bus awaits terminal-event
+   * handlers synchronously during publish, so this is stable when the
+   * coordinator's terminal-event handler reads it.
+   */
+  lastRun(): TestRun | null;
+  /**
    * Resolves when the active run's process has actually closed (or immediately
    * when idle). Lets the UI cancel-and-wait on unload without tracking the run
    * promise itself.
@@ -154,6 +163,10 @@ const runId = (now: Date): RunId => {
  */
 export class DefaultTestExecutionService implements TestExecutionService {
   private active: ActiveRun | null = null;
+  // The most recently FINISHED run (terminal event published), exposed via
+  // lastRun() so the post-run coordinator and the manual re-import command can
+  // read the just-finished run without reconstructing it from event payloads.
+  private lastFinishedRun: TestRun | null = null;
   // De-dupe run ids within the same UTC second (the id has 1s resolution): the
   // first run keeps the clean id; later same-second runs get a -2/-3/… suffix.
   private lastIdBase: RunId | null = null;
@@ -173,6 +186,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
 
   activeRunId(): RunId | null {
     return this.active?.run.id ?? null;
+  }
+
+  lastRun(): TestRun | null {
+    return this.lastFinishedRun;
   }
 
   whenActiveSettles(): Promise<void> {
@@ -553,6 +570,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
   ): Promise<void> {
     if (activeRun.terminated) return;
     activeRun.terminated = true;
+    // Record the just-finished run BEFORE publishing the terminal event so a
+    // subscriber (the PostRunCoordinator) reading lastRun() inside its
+    // synchronously-awaited handler sees this run, not the previous one.
+    this.lastFinishedRun = activeRun.run;
     await this.publish(type, activeRun.run.id, payload);
   }
 
