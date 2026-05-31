@@ -176,4 +176,49 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(result.ready).toBe(false);
     expect(result.missingItems.some((m) => m.includes("CI workflow"))).toBe(true);
   });
+
+  it("validateCiReadiness lists package.json, lockfile and workflow when nothing exists (US-041)", async () => {
+    const { service } = build();
+    const result = await service.validateCiReadiness(DEFAULT_SETTINGS);
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("package.json"))).toBe(true);
+    expect(result.missingItems.some((m) => m.includes("package-lock.json"))).toBe(true);
+    expect(result.missingItems.some((m) => m.includes("CI workflow"))).toBe(true);
+  });
+
+  it("validateCiReadiness is ready when runner, lockfile and workflow are present (UC-020)", async () => {
+    const { service, absoluteFs, types } = build();
+    absoluteFs.existing.add("/vault/.testrunner");
+    absoluteFs.existing.add("/vault/.testrunner/package.json");
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const result = await service.validateCiReadiness(DEFAULT_SETTINGS);
+
+    expect(result.ready).toBe(true);
+    expect(result.missingItems).toHaveLength(0);
+    expect(types()).toContain("ci.readiness.checked");
+  });
+
+  it("validateCiReadiness warns about committed node_modules and an empty BASE_URL", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.existing.add("/vault/.testrunner");
+    absoluteFs.existing.add("/vault/.testrunner/package.json");
+    absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
+    absoluteFs.existing.add("/vault/.testrunner/node_modules");
+    absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
+
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: {
+        active: "demo",
+        environments: { demo: { baseUrl: "" } },
+      },
+    };
+    const result = await service.validateCiReadiness(settings);
+
+    expect(result.ready).toBe(true);
+    expect(result.warnings.some((w) => w.includes("node_modules"))).toBe(true);
+    expect(result.warnings.some((w) => w.includes("E2E_BASE_URL"))).toBe(true);
+  });
 });

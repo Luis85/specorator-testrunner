@@ -149,6 +149,9 @@ export class DefaultEnvironmentValidationService
   }
 
   async validateCiReadiness(settings: TestHubSettings): Promise<CiReadinessResult> {
+    // US-041 / UC-020: a pragmatic, I/O-light pre-flight that a developer can
+    // run before pushing — does the repo hold everything a vanilla CI checkout
+    // needs to install and run the standalone runner (ADR-0006)?
     const base = await this.absoluteFs.getVaultBasePath();
     const missingItems: string[] = [];
     const warnings: string[] = [];
@@ -157,17 +160,49 @@ export class DefaultEnvironmentValidationService
       missingItems.push("Vault base path could not be resolved.");
     } else {
       const root = base.value.replace(/[/\\]$/, "");
+      const runnerAbs = `${root}/${settings.paths.testRunnerPath}`;
+
+      // The runner project must exist and be committable (US-042 standalone).
+      if (!(await this.absoluteFs.existsAbsolute(runnerAbs))) {
+        missingItems.push(`Runner folder is missing at ${settings.paths.testRunnerPath}.`);
+      }
+      // package.json + scripts the workflow invokes (US-041).
+      if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/package.json`))) {
+        missingItems.push("Runner package.json is missing.");
+      }
+      // Lockfile: `npm ci` (the CI install command) fails without it (US-041).
+      if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/package-lock.json`))) {
+        missingItems.push("Runner package-lock.json is missing (npm ci needs a lockfile).");
+      }
+      // The CI workflow itself must have been generated (UC-019 → UC-020).
       if (!(await this.absoluteFs.existsAbsolute(`${root}/${settings.ci.workflowPath}`))) {
         missingItems.push(`CI workflow not generated at ${settings.ci.workflowPath}.`);
       }
-      if (!(await this.absoluteFs.existsAbsolute(`${root}/${settings.paths.testRunnerPath}/package.json`))) {
-        missingItems.push("Runner package.json is missing.");
+      // node_modules being committed defeats `npm ci`; warn rather than block.
+      if (await this.absoluteFs.existsAbsolute(`${runnerAbs}/node_modules`)) {
+        warnings.push("Runner node_modules is present; ensure it is git-ignored, not committed.");
       }
+    }
+
+    // BASE_URL is read from a GitHub Actions variable at job time (ADR-0011), so
+    // we cannot confirm it is set in CI; warn if the active environment lacks a
+    // usable base URL so the developer remembers to define `vars.E2E_BASE_URL`.
+    const active = settings.sut.environments[settings.sut.active];
+    if (!active || !active.baseUrl.trim()) {
+      warnings.push(
+        "Active environment has no BASE_URL; set repository variable E2E_BASE_URL in CI (ADR-0011).",
+      );
     }
     if (!settings.ci.nodeVersion.trim()) warnings.push("CI Node version is empty.");
 
     const result: CiReadinessResult = { ready: missingItems.length === 0, missingItems, warnings };
-    await this.eventBus.publish(createEvent("ci.readiness.checked", { result }));
+    // Event Catalog payload: { ready, missingItems } (UC-020).
+    await this.eventBus.publish(
+      createEvent("ci.readiness.checked", {
+        ready: result.ready,
+        missingItems: result.missingItems,
+      }),
+    );
     return result;
   }
 
