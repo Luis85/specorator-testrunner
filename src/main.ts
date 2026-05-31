@@ -58,7 +58,11 @@ import {
 import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
 import type { TestRun } from "./domain/entities/test-run";
-import { DEFAULT_SETTINGS, type TestHubSettings } from "./domain/settings/settings";
+import {
+  collectCredentialValues,
+  DEFAULT_SETTINGS,
+  type TestHubSettings,
+} from "./domain/settings/settings";
 import { NodeAbsoluteFileSystem } from "./infrastructure/filesystem/node-absolute-file-system";
 import { ObsidianDataStore } from "./infrastructure/obsidian/obsidian-data-store";
 import { ObsidianVaultAdapter } from "./infrastructure/obsidian/obsidian-vault-adapter";
@@ -88,7 +92,7 @@ import {
   DashboardView,
 } from "./presentation/views/dashboard-view";
 import { InMemoryEventBus } from "./shared/event-bus/event-bus";
-import { ConsoleLogger, type Logger } from "./shared/logging/logger";
+import { ConsoleLogger } from "./shared/logging/logger";
 import type { Result } from "./shared/result/result";
 
 /**
@@ -98,7 +102,7 @@ import type { Result } from "./shared/result/result";
  */
 export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private hubSettings: TestHubSettings = DEFAULT_SETTINGS;
-  private logger!: Logger;
+  private logger!: ConsoleLogger;
   private hubSettingsService!: SettingsService;
   private initializationService!: InitializationService;
   private validationService!: EnvironmentValidationService;
@@ -129,9 +133,22 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     const pathSafety = new DefaultPathSafetyPolicy();
     const dataStore = new ObsidianDataStore(this);
 
-    this.hubSettingsService = new DefaultSettingsService(dataStore, pathSafety, eventBus);
+    // The logger is built first so SettingsService.load() can report a tampered
+    // path (P0-1) and so it exists before any settings/secrets are known. Its
+    // value-based redaction set (ADR-0019) is populated from the loaded SUT
+    // credentials immediately after load and refreshed on every settings change
+    // (P0-2). Reconstructed once the persisted log level is known.
+    const consoleLogger = new ConsoleLogger("info");
+    this.logger = consoleLogger;
+    this.hubSettingsService = new DefaultSettingsService(
+      dataStore,
+      pathSafety,
+      eventBus,
+      this.logger,
+    );
     this.hubSettings = await this.hubSettingsService.load();
     this.logger = new ConsoleLogger(this.hubSettings.logging.level);
+    this.refreshLoggerSecrets();
 
     const vault = new ObsidianVaultAdapter(this.app);
     this.vaultAdapter = vault;
@@ -176,12 +193,18 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // user's repo root via the absolute filesystem (the workflow is not a
     // VaultPath; it must live where GitHub Actions discovers it, TIS §8.13).
     this.pipelineService = new DefaultPipelineGenerationService(absoluteFs, eventBus, commandSafety);
+    // Guard repair() against an active run (P0-3). The execution service is
+    // built further down, so delegate lazily through `this`.
     this.maintenanceService = new DefaultMaintenanceService(
       this.hubSettingsService,
       this.validationService,
       runnerInstall,
       eventBus,
       this.logger,
+      {
+        activeRunId: () => this.testExecutionService.activeRunId(),
+        whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
+      },
     );
     this.initializationService = new DefaultInitializationService(
       this.hubSettingsService,
@@ -845,13 +868,40 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     const result = await this.hubSettingsService.save(next);
     if (result.ok) {
       this.hubSettings = next;
+      // New/changed SUT credentials must start being scrubbed immediately
+      // (ADR-0019 value-based redaction, P0-2 / T3).
+      this.refreshLoggerSecrets();
       this.logger.info("Settings updated");
     }
     return result;
   }
 
   async resetSettings(): Promise<void> {
+    // A reset overwrites settings/credentials; refuse while a run is active so
+    // it can't redirect evidence writes or swap credentials mid-run (P0-3).
+    if (this.testExecutionService.activeRunId() !== null) {
+      new Notice("A test run is in progress; cancel it before resetting settings.", 10000);
+      return;
+    }
+    // Let the active-run completion + in-flight evidence writes settle before
+    // mutating settings (defensive: the guard above already covers the common
+    // case, but evidence I/O outlives the active slot — see evidenceChain).
+    await this.testExecutionService.whenActiveSettles().catch(() => undefined);
+    await this.evidenceChain.catch(() => undefined);
     const result = await this.hubSettingsService.reset();
-    if (result.ok) this.hubSettings = result.value;
+    if (result.ok) {
+      this.hubSettings = result.value;
+      this.refreshLoggerSecrets();
+    }
+  }
+
+  /**
+   * Rebuilds the Logger's value-based redaction set (ADR-0019) from the current
+   * SUT credential values, so a credential logged positionally under a
+   * non-sensitive key (e.g. streamed runner stderr) is scrubbed to `***`
+   * (P0-2 / T3). Called after load and on every settings change.
+   */
+  private refreshLoggerSecrets(): void {
+    this.logger.setSecrets(collectCredentialValues(this.hubSettings));
   }
 }

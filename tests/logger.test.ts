@@ -39,4 +39,25 @@ describe("ConsoleLogger", () => {
     const fields = error.mock.calls[0][1] as { error: { message: string } };
     expect(fields.error.message).toBe("kaboom");
   });
+
+  it("redacts a configured secret logged positionally under a non-sensitive key (P0-2)", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const logger = new ConsoleLogger("info");
+    // Mirrors wiring the SUT auth.env credential values into the logger.
+    logger.setSecrets(["super-secret-token"]);
+    // The credential is echoed into streamed runner stderr under a plain key.
+    logger.info("runner output", { stderr: "login failed: super-secret-token" });
+    // Whole-value matching only — a partial credential inside a longer string is
+    // not redacted by value-based redaction (the field would need a sensitive key).
+    logger.info("exact value", { detail: "super-secret-token" });
+    expect(log).toHaveBeenLastCalledWith(expect.any(String), { detail: "***" });
+  });
+
+  it("ignores empty secret values (setSecrets) so empty strings aren't blanked", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const logger = new ConsoleLogger("info");
+    logger.setSecrets(["", "real"]);
+    logger.info("msg", { a: "", b: "real" });
+    expect(log).toHaveBeenCalledWith(expect.any(String), { a: "", b: "***" });
+  });
 });

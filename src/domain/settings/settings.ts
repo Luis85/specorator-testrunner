@@ -74,6 +74,17 @@ export interface TestHubSettings {
   logging: LoggingSettings; // per ADR-0019
 }
 
+/**
+ * Collects every SUT credential VALUE across all environments' `auth.env`
+ * (ADR-0019). The Logger redacts these positionally so a value logged under a
+ * non-sensitive key (e.g. streamed runner stderr) is still scrubbed (P0-2 /
+ * T3). Pure: trivially testable, no I/O.
+ */
+export const collectCredentialValues = (settings: TestHubSettings): string[] =>
+  Object.values(settings.sut.environments)
+    .flatMap((env) => Object.values(env.auth?.env ?? {}))
+    .filter((value) => value.length > 0);
+
 export const DEFAULT_SETTINGS: TestHubSettings = {
   paths: {
     testHubPath: "Test Hub",

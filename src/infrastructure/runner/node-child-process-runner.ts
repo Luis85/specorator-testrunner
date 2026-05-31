@@ -41,10 +41,12 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
     return this.spawn(request, onOutput);
   }
 
-  async cancel(_processId: string): Promise<Result<void>> {
-    // V1 cancels the active install/run; finer-grained targeting arrives with
-    // the test-execution epic.
-    for (const child of this.active.values()) this.killTree(child);
+  async cancel(processId: string): Promise<Result<void>> {
+    // Honor the id: kill ONLY the matching child (and its whole process tree),
+    // never sibling installs/validations sharing this runner (P0-4). An unknown
+    // id is a safe no-op (the process already closed and removed itself).
+    const child = this.active.get(processId);
+    if (child) this.killTree(child);
     return ok(undefined);
   }
 

@@ -34,4 +34,29 @@ describe("DefaultPathSafetyPolicy", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("PATH_UNSAFE");
   });
+
+  it("rejects the template-injection RCE payload reaching the cucumber.mjs glob (P0-1)", () => {
+    // A crafted featureFilesPath that would break out of the JS string literal
+    // and execute attacker code when Node loads the generated cucumber.mjs.
+    const payload = 'features"]};import("node:child_process").execSync("calc");//';
+    const result = policy.validate(payload);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("PATH_UNSAFE");
+  });
+
+  it("rejects JS/shell metacharacters and control characters in paths (P0-1)", () => {
+    for (const path of [
+      'a"b',
+      "a'b",
+      "a`b",
+      "a$b",
+      "a{b}",
+      "a\\b",
+      "a\nb",
+      "a\tb",
+      "a\u0000b",
+    ]) {
+      expect(policy.validate(path).ok, JSON.stringify(path)).toBe(false);
+    }
+  });
 });

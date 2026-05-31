@@ -1,7 +1,8 @@
 import type { EnvironmentValidationService } from "./environment-validation-service";
 import type { RunnerInstallationService } from "./runner-installation-service";
 import type { SettingsService } from "./settings-service";
-import type { VaultPath } from "../../domain/value-objects/identifiers";
+import { appError } from "../../shared/errors/errors";
+import type { RunId, VaultPath } from "../../domain/value-objects/identifiers";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
@@ -14,6 +15,16 @@ import { err, ok, type Result } from "../../shared/result/result";
  */
 export interface MaintenanceService {
   repair(): Promise<Result<RepairResult>>;
+}
+
+/**
+ * The narrow slice of the test-execution contract repair() needs to refuse and
+ * wait on an in-flight run (P0-3). Kept minimal to avoid coupling maintenance
+ * to the full execution service.
+ */
+export interface ActiveRunGuard {
+  activeRunId(): RunId | null;
+  whenActiveSettles(): Promise<void>;
 }
 
 export interface RepairResult {
@@ -29,9 +40,23 @@ export class DefaultMaintenanceService implements MaintenanceService {
     private readonly runnerInstall: RunnerInstallationService,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
+    private readonly activeRun?: ActiveRunGuard,
   ) {}
 
   async repair(): Promise<Result<RepairResult>> {
+    // Repair re-syncs `.testrunner` (and may reinstall deps/browsers); doing so
+    // while a run is in flight could rewrite files the runner is reading and
+    // redirect report/evidence writes. Refuse, then wait for the active run to
+    // fully settle before mutating anything (P0-3).
+    if (this.activeRun && this.activeRun.activeRunId() !== null) {
+      return err(
+        appError("RUN_IN_PROGRESS", "A test run is in progress; cancel it before repairing.", {
+          details: { activeRunId: this.activeRun.activeRunId() },
+        }),
+      );
+    }
+    await this.activeRun?.whenActiveSettles().catch(() => undefined);
+
     const settings = await this.settingsService.load();
 
     // 1. Diagnose what's broken (RV-8 step 1).

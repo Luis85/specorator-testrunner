@@ -1,14 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
-import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
-import { FakeDataStore, recordingEventBus } from "./fakes";
+import {
+  collectCredentialValues,
+  DEFAULT_SETTINGS,
+} from "../src/domain/settings/settings";
+import { FakeDataStore, recordingEventBus, silentLogger } from "./fakes";
 
 const makeService = (initial?: unknown) => {
   const store = new FakeDataStore(initial);
   const { bus, types } = recordingEventBus();
-  const service = new DefaultSettingsService(store, new DefaultPathSafetyPolicy(), bus);
-  return { service, store, types };
+  const logger = { ...silentLogger, error: vi.fn() };
+  const service = new DefaultSettingsService(
+    store,
+    new DefaultPathSafetyPolicy(),
+    bus,
+    logger,
+  );
+  return { service, store, types, logger };
 };
 
 describe("DefaultSettingsService", () => {
@@ -54,6 +63,42 @@ describe("DefaultSettingsService", () => {
     const validation = await service.validate(invalid);
     expect(validation.valid).toBe(false);
     expect(validation.errors.some((e) => e.field === "sut.active")).toBe(true);
+  });
+
+  it("sanitizes an unsafe stored path on load, falling back to the default and logging (P0-1)", async () => {
+    // A tampered/synced data.json carries a template-injection payload that
+    // must never reach the cucumber.mjs generator.
+    const hostile = 'features"]};import("node:child_process").execSync("calc");//';
+    const { service, logger } = makeService({
+      paths: { ...DEFAULT_SETTINGS.paths, featureFilesPath: hostile },
+    });
+    const loaded = await service.load();
+    expect(loaded.paths.featureFilesPath).toBe(DEFAULT_SETTINGS.paths.featureFilesPath);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it("falls back an unsafe logging.path on load (P0-1)", async () => {
+    const { service } = makeService({ logging: { path: "../../etc/log" } });
+    const loaded = await service.load();
+    expect(loaded.logging.path).toBe(DEFAULT_SETTINGS.logging.path);
+  });
+
+  it("collectCredentialValues gathers non-empty auth.env values across environments (P0-2)", () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: {
+        active: "demo",
+        environments: {
+          demo: { baseUrl: "http://x", auth: { env: { VAR_A: "fixture-value-one", EMPTY: "" } } },
+          staging: { baseUrl: "http://y", auth: { env: { VAR_B: "fixture-value-two" } } },
+          noauth: { baseUrl: "http://z" },
+        },
+      },
+    };
+    const values = collectCredentialValues(settings);
+    expect(values).toContain("fixture-value-one");
+    expect(values).toContain("fixture-value-two");
+    expect(values).not.toContain("");
   });
 
   it("reset restores defaults and emits settings.reset", async () => {

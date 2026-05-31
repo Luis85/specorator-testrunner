@@ -50,11 +50,25 @@ export const redactFields = (
  * available from sprint one.
  */
 export class ConsoleLogger implements Logger {
+  private secrets: ReadonlySet<string>;
+
   constructor(
     private readonly minLevel: LogLevel = "info",
-    private readonly secrets: ReadonlySet<string> = new Set(),
+    secrets: ReadonlySet<string> = new Set(),
     private readonly prefix = "[e2e-test-hub]",
-  ) {}
+  ) {
+    this.secrets = secrets;
+  }
+
+  /**
+   * Refreshes the value-based redaction set (ADR-0019). Call on settings change
+   * so newly-configured `auth.env` credentials are scrubbed without rebuilding
+   * the logger (P0-2 / T3). Empty values are ignored — redacting "" would blank
+   * every empty string in the logs.
+   */
+  setSecrets(secrets: Iterable<string>): void {
+    this.secrets = new Set([...secrets].filter((s) => s.length > 0));
+  }
 
   debug(msg: string, fields?: Record<string, unknown>): void {
     this.emit("debug", msg, fields);

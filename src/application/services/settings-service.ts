@@ -8,7 +8,16 @@ import {
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
+import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
+
+/** No-op logger so tests can construct the service without wiring one. */
+const NOOP_LOGGER: Logger = {
+  debug() {},
+  info() {},
+  warn() {},
+  error() {},
+};
 
 /** Settings application contract (TIS §5.9). */
 export interface SettingsService {
@@ -48,10 +57,44 @@ export class DefaultSettingsService implements SettingsService {
     private readonly store: DataStore,
     private readonly pathSafety: PathSafetyPolicy,
     private readonly eventBus: EventBus,
+    private readonly logger: Logger = NOOP_LOGGER,
   ) {}
 
   async load(): Promise<TestHubSettings> {
-    return mergeWithDefaults(await this.store.load());
+    return this.sanitizePaths(mergeWithDefaults(await this.store.load()));
+  }
+
+  /**
+   * Screens every configured path through PathSafetyPolicy on load. A
+   * tampered/synced `data.json` could otherwise carry an unsafe path straight
+   * into a code-generation sink (e.g. the `cucumber.mjs` feature glob, SEC-1 /
+   * P0-1) — `save()` validates, but `load()` historically did not. Any unsafe
+   * path is logged and replaced with its `DEFAULT_SETTINGS` value so the unsafe
+   * value never reaches the runner generator, without breaking normal startup.
+   */
+  private sanitizePaths(settings: TestHubSettings): TestHubSettings {
+    const paths = { ...settings.paths };
+    for (const field of Object.keys(paths) as (keyof TestHubPathSettings)[]) {
+      const safe = this.pathSafety.validate(paths[field]);
+      if (!safe.ok) {
+        this.logger.error(
+          `Configured path "paths.${field}" is unsafe; falling back to the default.`,
+          safe.error,
+          { field, value: paths[field], fallback: DEFAULT_SETTINGS.paths[field] },
+        );
+        paths[field] = DEFAULT_SETTINGS.paths[field];
+      }
+    }
+    const loggingPath = this.pathSafety.validate(settings.logging.path);
+    if (!loggingPath.ok) {
+      this.logger.error(
+        `Configured path "logging.path" is unsafe; falling back to the default.`,
+        loggingPath.error,
+        { value: settings.logging.path, fallback: DEFAULT_SETTINGS.logging.path },
+      );
+      return { ...settings, paths, logging: { ...settings.logging, path: DEFAULT_SETTINGS.logging.path } };
+    }
+    return { ...settings, paths };
   }
 
   async save(settings: TestHubSettings): Promise<Result<void>> {
