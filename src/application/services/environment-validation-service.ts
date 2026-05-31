@@ -208,7 +208,10 @@ export class DefaultEnvironmentValidationService
       // Generate CI Workflow refuses commands that aren't a shell-safe npm
       // ci/run shape, so readiness must flag the same ones rather than
       // green-light a config the generator would reject.
-      if (!isSafeCiCommand(effectiveCiCommand)) {
+      // Generation requires the run command to invoke an npm SCRIPT (not an
+      // install), so readiness must flag the same — npmRunScript returns null
+      // for a non-`npm run` command, which also leaves the script unverified.
+      if (!isSafeCiCommand(effectiveCiCommand) || npmRunScript(effectiveCiCommand) === null) {
         missingItems.push(
           `CI run command "${effectiveCiCommand}" is not supported by Generate CI Workflow.`,
         );

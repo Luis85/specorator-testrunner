@@ -121,7 +121,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
       // evidence-generation time, so last_run_date stays accurate on re-imports.
       await this.link(
         evidence,
-        this.summaryStatus(run, report.result),
+        this.perUseCaseStatus(run, report),
         run.finishedAt ?? run.startedAt,
         run.scope,
         settings.automation.generateEvidenceMarkdown,
@@ -165,7 +165,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
    */
   private async link(
     evidence: Evidence,
-    summaryStatus: TestRunStatus,
+    statusFor: (useCaseId: UseCaseId) => TestRunStatus,
     runDate: string,
     runScope: ExecutionScope,
     wroteNote: boolean,
@@ -185,7 +185,9 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
           !wroteNote || alreadyLinked ? useCase.evidence : [...useCase.evidence, evidence.path],
         lastTestRun: {
           runId: evidence.runId,
-          status: summaryStatus,
+          // Per-UC status, not the run aggregate: a broad (all/suite) run that
+          // failed because ONE UC failed must not mark every covered UC failing.
+          status: statusFor(useCaseId),
           date: runDate,
           scope: runScope,
           evidencePath: wroteNote ? evidence.path : undefined,
@@ -199,14 +201,36 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
         });
         continue;
       }
-      await this.eventBus.publish(
-        createEvent(
-          "evidence.linkedToUseCase",
-          { useCaseId, evidencePath: evidence.path },
-          { correlationId: evidence.runId },
-        ),
-      );
+      // Only advertise an evidence link when the note actually exists; otherwise
+      // the `usecase.updated` event from update() already refreshes the dashboard.
+      if (wroteNote) {
+        await this.eventBus.publish(
+          createEvent(
+            "evidence.linkedToUseCase",
+            { useCaseId, evidencePath: evidence.path },
+            { correlationId: evidence.runId },
+          ),
+        );
+      }
     }
+  }
+
+  /**
+   * Per-Use-Case last-run status from the report. A run-level terminal
+   * (cancelled/errored) applies to every UC; otherwise a UC is `failed` only
+   * when one of ITS OWN scenarios failed (so a broad run's single failure
+   * doesn't redden sibling UCs whose features passed). Falls back to the run
+   * aggregate when a UC has no scenarios in the report.
+   */
+  private perUseCaseStatus(run: TestRun, report: ImportedReport): (id: UseCaseId) => TestRunStatus {
+    return (useCaseId) => {
+      if (run.status === "cancelled" || run.status === "errored") return run.status;
+      const own = report.scenarioResults.filter(
+        (s) => useCaseIdFromPath(s.featureUri ?? s.feature) === useCaseId,
+      );
+      if (own.length === 0) return this.summaryStatus(run, report.result);
+      return own.some((s) => s.status === "failed") ? "failed" : "passed";
+    };
   }
 
   /**

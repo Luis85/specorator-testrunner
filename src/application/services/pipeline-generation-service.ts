@@ -204,6 +204,20 @@ export class DefaultPipelineGenerationService
         );
       }
     }
+    // The "Run tests" step must actually invoke an npm SCRIPT (`npm run <script>`),
+    // not an install/ci — otherwise a `ciRunCommand` of `npm ci` would generate a
+    // workflow whose test step only installs dependencies (and readiness would
+    // skip the package-script check). Install may still be install/ci/run.
+    const runTokens = effectiveRun.split(/\s+/).filter(Boolean);
+    if (runTokens[0] !== "npm" || runTokens[1] !== "run" || runTokens[2] === undefined) {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `CI run command must be an "npm run <script>": "${effectiveRun}".`,
+          { details: { command: effectiveRun } },
+        ),
+      );
+    }
 
     const base = await this.absoluteFs.getVaultBasePath();
     if (!base.ok) return err(base.error);
