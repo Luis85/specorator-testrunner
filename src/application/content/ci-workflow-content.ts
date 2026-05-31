@@ -30,6 +30,14 @@ export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string =>
   // that intentionally uses `npm install` or a wrapper would otherwise get an
   // Actions job whose install step doesn't match its lockfile/setup.
   const ciInstallCommand = settings.runner.ciInstallCommand.trim() || "npm ci";
+  // setup-node's npm cache requires a lockfile. `npm ci` always needs one, but a
+  // runner that customizes the install away from `npm ci` may not commit a
+  // package-lock.json — enabling the cache then fails the job before install. So
+  // only enable npm caching for the default lockfile-based `npm ci`.
+  const cacheLines =
+    ciInstallCommand === "npm ci"
+      ? `\n          cache: npm\n          cache-dependency-path: ${runnerPath}/package-lock.json`
+      : "";
 
   // Auth credentials are injected from CI secrets so authenticated suites match
   // local execution (runEnv merges active.auth.env, ADR-0014). Emit every
@@ -72,9 +80,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: ${nodeVersion}
-          cache: npm
-          cache-dependency-path: ${runnerPath}/package-lock.json
+          node-version: ${nodeVersion}${cacheLines}
       - name: Install dependencies
         run: ${ciInstallCommand}
       - name: Install Playwright browsers
