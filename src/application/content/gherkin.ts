@@ -25,9 +25,11 @@ const STEP_KEYWORDS: ReadonlyArray<GherkinStep["keyword"]> = [
   "*",
 ];
 
-const UC_PREFIX = /(UC-\d+)/i;
+// ADR-0012: the filename must START with `<UC-id>-<slug>`, so anchor to the
+// basename start — `archive-UC-1-old.feature` is an orphan, not UC-1.
+const UC_PREFIX = /^(UC-\d+)-/i;
 
-/** Extracts the `UC-NNN` prefix from a feature filename (ADR-0012). */
+/** Extracts the leading `UC-NNN` prefix from a feature filename (ADR-0012). */
 export const useCaseIdFromPath = (path: VaultPath): UseCaseId | null => {
   const base = path.split("/").pop() ?? path;
   const match = UC_PREFIX.exec(base);

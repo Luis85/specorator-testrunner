@@ -27,6 +27,17 @@ describe("parseStepDefinitions", () => {
   it("returns nothing for source with no step calls", () => {
     expect(parseStepDefinitions("const x = 1;")).toEqual([]);
   });
+
+  it("ignores commented-out step definitions", () => {
+    const source = `
+      // Given("a line-commented step", () => {});
+      /* When("a block-commented step", () => {}); */
+      Then("a real step", () => {});
+    `;
+    expect(parseStepDefinitions(source)).toEqual([
+      { kind: "expression", source: "a real step" },
+    ]);
+  });
 });
 
 describe("isStepDefined", () => {
