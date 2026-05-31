@@ -19,6 +19,10 @@ import {
   DefaultSettingsService,
   type SettingsService,
 } from "./application/services/settings-service";
+import {
+  DefaultSpecificationService,
+  type SpecificationService,
+} from "./application/services/specification-service";
 import { DefaultSuiteService } from "./application/services/suite-service";
 import {
   DefaultUseCaseService,
@@ -35,6 +39,7 @@ import { NodeChildProcessRunner } from "./infrastructure/runner/node-child-proce
 import { RunnerTemplateWriter } from "./infrastructure/runner/runner-template-writer";
 import { TestHubSettingTab, type SettingsHost } from "./presentation/settings/settings-tab";
 import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
+import { GenerateFeatureModal } from "./presentation/views/generate-feature-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
 import {
   USE_CASE_VIEW_TYPE,
@@ -57,6 +62,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private validationService!: EnvironmentValidationService;
   private maintenanceService!: MaintenanceService;
   private useCaseService!: UseCaseService;
+  private specificationService!: SpecificationService;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
 
   async onload(): Promise<void> {
@@ -128,6 +134,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    this.specificationService = new DefaultSpecificationService(
+      this.hubSettingsService,
+      this.useCaseService,
+      vault,
+      eventBus,
+      this.logger,
+    );
 
     this.registerView(
       USE_CASE_VIEW_TYPE,
@@ -171,6 +184,21 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.addRibbonIcon("list-checks", "Open Use Cases", () =>
       void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
     );
+    this.addCommand({
+      id: "generate-feature",
+      name: "Generate Feature from Use Case",
+      callback: () => void this.openGenerateFeature(),
+    });
+    this.addCommand({
+      id: "validate-feature",
+      name: "Validate Feature",
+      callback: () => void this.validateActiveFeature(),
+    });
+    this.addCommand({
+      id: "detect-missing-steps",
+      name: "Detect Missing Steps",
+      callback: () => void this.detectMissingSteps(),
+    });
 
     this.logger.info("E2E Test Hub loaded");
   }
@@ -193,6 +221,73 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       useCaseService: this.useCaseService,
       workspace: this.workspaceAdapter,
     }).open();
+  }
+
+  private async openGenerateFeature(): Promise<void> {
+    const useCases = await this.useCaseService.findAll();
+    if (!useCases.ok) {
+      new Notice(`Could not load Use Cases: ${useCases.error.message}`, 10000);
+      return;
+    }
+    if (useCases.value.length === 0) {
+      new Notice("No Use Cases found. Create one first.");
+      return;
+    }
+    new GenerateFeatureModal(
+      this.app,
+      {
+        useCaseService: this.useCaseService,
+        specificationService: this.specificationService,
+        workspace: this.workspaceAdapter,
+      },
+      useCases.value,
+    ).open();
+  }
+
+  /** Path of the active note, or a Notice when there is no feature open. */
+  private activeFeaturePath(): string | null {
+    const file = this.app.workspace.getActiveFile();
+    if (!file || file.extension !== "feature") {
+      new Notice("Open a .feature file first.");
+      return null;
+    }
+    return file.path;
+  }
+
+  private async validateActiveFeature(): Promise<void> {
+    const path = this.activeFeaturePath();
+    if (path === null) return;
+    const result = await this.specificationService.validate(path);
+    if (!result.ok) {
+      new Notice(`Validation failed: ${result.error.message}`, 10000);
+      return;
+    }
+    new Notice(
+      result.value.valid
+        ? "Feature is valid."
+        : `Feature has ${result.value.errors.length} issue(s): ${result.value.errors
+            .map((e) => e.message)
+            .join("; ")}`,
+      result.value.valid ? undefined : 10000,
+    );
+  }
+
+  private async detectMissingSteps(): Promise<void> {
+    const path = this.activeFeaturePath();
+    if (path === null) return;
+    const result = await this.specificationService.detectMissingSteps(path);
+    if (!result.ok) {
+      new Notice(`Detection failed: ${result.error.message}`, 10000);
+      return;
+    }
+    new Notice(
+      result.value.missingSteps.length === 0
+        ? "All steps are defined."
+        : `${result.value.missingSteps.length} missing step(s): ${result.value.missingSteps.join(
+            "; ",
+          )}`,
+      10000,
+    );
   }
 
   private async validateEnvironment(): Promise<void> {

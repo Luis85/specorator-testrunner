@@ -116,4 +116,78 @@ describe("DefaultUseCaseService", () => {
     expect(result.value[0].automationStatus).toBe("passing");
     expect(result.value[0].featureFiles).toEqual(["f.feature"]);
   });
+
+  it("findById returns the matching use case or null", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Use Cases/UC-002 Later.md",
+      buildNote({ type: "use-case", id: "UC-002", title: "Later", status: "specified" }, "# UC-002"),
+    );
+
+    const found = await service.findById("UC-002");
+    expect(found.ok && found.value?.id).toBe("UC-002");
+
+    const missing = await service.findById("UC-999");
+    expect(missing.ok && missing.value).toBe(null);
+  });
+
+  it("update drops the legacy singular feature_file so features aren't duplicated", async () => {
+    const { service, fs } = build();
+    // A note using the legacy `feature_file` key (e.g. the seeded demo).
+    const path = "Use Cases/UC-001 Legacy.md";
+    fs.files.set(
+      path,
+      buildNote(
+        { type: "use-case", id: "UC-001", title: "Legacy", feature_file: "Specifications/features/UC-001-happy-path.feature" },
+        "# UC-001",
+      ),
+    );
+    const loaded = await service.findById("UC-001");
+    if (!loaded.ok || !loaded.value) throw new Error("expected UC-001");
+    expect(loaded.value.featureFiles).toEqual(["Specifications/features/UC-001-happy-path.feature"]);
+
+    // Add a second feature and persist.
+    await service.update({
+      ...loaded.value,
+      featureFiles: [...loaded.value.featureFiles, "Specifications/features/UC-001-feature-2.feature"],
+    });
+
+    // Re-read: no duplication from the old feature_file lingering.
+    const reread = await service.findById("UC-001");
+    if (!reread.ok || !reread.value) throw new Error("expected UC-001");
+    expect(reread.value.featureFiles).toEqual([
+      "Specifications/features/UC-001-happy-path.feature",
+      "Specifications/features/UC-001-feature-2.feature",
+    ]);
+    expect(fs.files.get(path)).not.toContain("feature_file:");
+  });
+
+  it("update preserves the note body + unknown fields and emits usecase.updated", async () => {
+    const { service, fs, types } = build();
+    // A note with a hand-written body and a frontmatter field the builder
+    // doesn't emit (owner) — both must survive a featureFiles link update.
+    const path = "Use Cases/UC-001 Hand Edited.md";
+    fs.files.set(
+      path,
+      buildNote(
+        { type: "use-case", id: "UC-001", title: "Hand Edited", status: "specified", owner: "qa-team" },
+        "# UC-001\n\n## Notes\n\nHand-written analysis that must not be deleted.",
+      ),
+    );
+    const loaded = await service.findById("UC-001");
+    expect(loaded.ok && loaded.value).not.toBeNull();
+    if (!loaded.ok || !loaded.value) return;
+
+    const updated = await service.update({
+      ...loaded.value,
+      featureFiles: ["Specifications/features/UC-001-happy-path.feature"],
+    });
+    expect(updated.ok).toBe(true);
+
+    const note = fs.files.get(path) ?? "";
+    expect(note).toContain("Specifications/features/UC-001-happy-path.feature");
+    expect(note).toContain("Hand-written analysis that must not be deleted.");
+    expect(note).toContain("owner: qa-team"); // unknown field preserved
+    expect(types()).toContain("usecase.updated");
+  });
 });
