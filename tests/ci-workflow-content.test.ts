@@ -50,6 +50,14 @@ describe("buildGitHubActionsWorkflow", () => {
     expect(yaml).not.toContain("run: npm run test:ci");
   });
 
+  it("renders the configured ciInstallCommand instead of the default npm ci", () => {
+    const yaml = buildGitHubActionsWorkflow({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, ciInstallCommand: "npm install --no-audit" },
+    });
+    expect(yaml).toContain("run: npm install --no-audit");
+  });
+
   it("uses the configured Node version and checks out the repo", () => {
     const yaml = buildGitHubActionsWorkflow({
       ...DEFAULT_SETTINGS,
