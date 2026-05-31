@@ -81,6 +81,14 @@ export class DefaultCommandSafetyPolicy implements CommandSafetyPolicy {
           if (script === undefined || !ALLOWED_NPM_SCRIPTS.has(script)) {
             return disallow(`npm run script is not allowed: "${display}".`);
           }
+        } else if (sub === "install" || sub === "ci") {
+          // Only the bare runner install form. A package spec or flag (e.g.
+          // `npm install <pkg>`, `npm install -g <pkg>`) would install arbitrary
+          // packages and run their lifecycle scripts from tampered settings
+          // (ADR-0010) — reject anything past the subcommand.
+          if (rest.length !== 1) {
+            return disallow(`npm ${sub} must take no extra arguments: "${display}".`);
+          }
         }
         return ok(undefined);
       }
