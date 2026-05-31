@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultSuiteService } from "../src/application/services/suite-service";
 import {
+  appendScopedArgs,
   DefaultTestExecutionService,
   tokenizeCommand,
   type TestExecutionService,
@@ -90,6 +91,25 @@ describe("tokenizeCommand", () => {
 
   it("returns an empty array for a blank command", () => {
     expect(tokenizeCommand("   ")).toEqual([]);
+  });
+});
+
+describe("appendScopedArgs", () => {
+  it("inserts a single -- when the base has none", () => {
+    expect(appendScopedArgs(["npm", "run", "test"], ["--tags", "@x"])).toEqual([
+      "npm",
+      "run",
+      "test",
+      "--",
+      "--tags",
+      "@x",
+    ]);
+  });
+
+  it("does not add a second -- when the base already forwards args", () => {
+    expect(
+      appendScopedArgs(["npm", "run", "test", "--", "--format", "progress"], ["--tags", "@x"]),
+    ).toEqual(["npm", "run", "test", "--", "--format", "progress", "--tags", "@x"]);
   });
 });
 
