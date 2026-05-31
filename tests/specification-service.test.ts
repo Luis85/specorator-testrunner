@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultSpecificationService } from "../src/application/services/specification-service";
+import { parseFeature } from "../src/application/content/gherkin";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
@@ -122,6 +123,31 @@ describe("DefaultSpecificationService.update", () => {
     expect(written).toContain("  Scenario: A scenario");
     expect(written).toContain("    Given a precondition");
     expect(types()).toContain("specification.updated");
+  });
+
+  it("round-trips a Background block (not converted into a Scenario)", async () => {
+    const { service, fs } = build();
+    const source = `Feature: With background
+
+  Background:
+    Given I am logged in
+
+  Scenario: S
+    When I act
+    Then it works
+`;
+    const path = "Specifications/features/UC-003-bg.feature";
+    fs.files.set(path, source);
+
+    const parsed = parseFeature(source, path);
+    expect(parsed?.background?.map((s) => s.text)).toEqual(["I am logged in"]);
+    if (!parsed) return;
+
+    await service.update(parsed);
+    const written = fs.files.get(path) ?? "";
+    expect(written).toContain("  Background:");
+    expect(written).toContain("    Given I am logged in");
+    expect(written).not.toContain("Scenario: Background");
   });
 });
 

@@ -55,6 +55,13 @@ const serialiseFeature = (specification: FeatureSpecification): string => {
   const lines: string[] = [];
   if (specification.tags.length > 0) lines.push(specification.tags.join(" "));
   lines.push(`Feature: ${specification.featureName}`);
+  if (specification.background && specification.background.length > 0) {
+    lines.push("");
+    lines.push("  Background:");
+    for (const step of specification.background) {
+      lines.push(`    ${step.keyword} ${step.text}`.trimEnd());
+    }
+  }
   for (const scenario of specification.scenarios) {
     lines.push("");
     if (scenario.tags.length > 0) lines.push(`  ${scenario.tags.join(" ")}`);
