@@ -76,6 +76,8 @@ describe("DefaultSettingsService", () => {
   });
 
   it("collectCredentialValues gathers credential auth.env values across environments (P0-2)", () => {
+    // Synthetic, obviously-fake fixture values (not secret-shaped) — these stand
+    // in for SUT credential values; collection is by value, not by key name.
     const settings = {
       ...DEFAULT_SETTINGS,
       sut: {
@@ -99,14 +101,17 @@ describe("DefaultSettingsService", () => {
       sut: {
         active: "demo",
         environments: {
-          demo: { baseUrl: "http://x", auth: { env: { FLAG: "ok", N: "1", VAR_B: "fixture-value-two" } } },
+          demo: {
+            baseUrl: "http://x",
+            auth: { env: { SHORT_FLAG: "ok", SHORT_N: "1", VAR_A: "fixture-value-one" } },
+          },
         },
       },
     };
     const values = collectCredentialValues(settings);
     expect(values).not.toContain("ok");
     expect(values).not.toContain("1");
-    expect(values).toContain("fixture-value-two");
+    expect(values).toContain("fixture-value-one");
   });
 
   it("reset restores defaults and emits settings.reset", async () => {
