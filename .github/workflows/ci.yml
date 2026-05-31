@@ -26,5 +26,8 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      - name: Test
+        run: npm run test
+
       - name: Build plugin bundle
         run: npm run build

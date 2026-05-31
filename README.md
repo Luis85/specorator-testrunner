@@ -5,9 +5,13 @@ end-to-end tests** directly inside their vault — combining Use Cases, Gherkin
 specifications, test suites, Playwright execution, evidence, and CI/CD into a
 single Markdown-native, local-first workflow.
 
-> **Status:** Draft / Discovery. The product direction is captured in the
-> [PRD](./docs/Obsidian%20E2E%20Test%20Hub.md). The codebase is an empty plugin
-> shell ready to be built out against the PRD.
+> **Status:** In development. The product direction is captured in the
+> [PRD](./docs/Obsidian%20E2E%20Test%20Hub.md). **Sprint 1 (Foundation &
+> Initialization, EPIC-001/EPIC-002)** is implemented: the layered plugin
+> skeleton, settings service + UI, and the Initialization Wizard that scaffolds
+> the vault, generates documentation and demo content, and creates the default
+> Smoke/Regression suites. Runner installation and execution (EPIC-003+) are
+> next.
 
 ## Vision
 
@@ -145,6 +149,8 @@ npm install        # install dependencies
 npm run dev        # esbuild watch mode
 npm run build      # production bundle (main.js)
 npm run typecheck  # tsc --noEmit
+npm run test       # vitest unit + integration suite
+npm run test:coverage  # vitest with v8 coverage (NFR-002: ≥ 80%)
 ```
 
 ## License
