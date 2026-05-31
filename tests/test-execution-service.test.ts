@@ -89,6 +89,12 @@ describe("tokenizeCommand", () => {
     expect(tokenizeCommand('node -e "a\\"b"')).toEqual(["node", "-e", 'a"b']);
   });
 
+  it("keeps unquoted backslashes literal (Windows paths)", () => {
+    expect(
+      tokenizeCommand("npm run test -- --format json:C:\\tmp\\cucumber.json"),
+    ).toEqual(["npm", "run", "test", "--", "--format", "json:C:\\tmp\\cucumber.json"]);
+  });
+
   it("returns an empty array for a blank command", () => {
     expect(tokenizeCommand("   ")).toEqual([]);
   });
