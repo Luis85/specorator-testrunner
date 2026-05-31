@@ -250,4 +250,33 @@ describe("DefaultReportImportService", () => {
     expect(result.value.result.failed).toBe(1);
     expect(result.value.scenarioResults.some((s) => s.status === "failed")).toBe(true);
   });
+
+  it("does not carry a failed Background's failure past a later passing Background", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.seed(
+      REPORT_ABS,
+      JSON.stringify([
+        {
+          name: "F",
+          uri: "features/UC-001-x.feature",
+          elements: [
+            { name: "BG1", type: "background", steps: [{ result: { status: "failed", error_message: "setup boom" } }] },
+            { name: "S1", type: "scenario", steps: [{ result: { status: "skipped" } }] },
+            // A later (e.g. Rule-specific) background that passes must govern S2,
+            // not inherit BG1's failure.
+            { name: "BG2", type: "background", steps: [{ result: { status: "passed" } }] },
+            { name: "S2", type: "scenario", steps: [{ result: { status: "passed" } }] },
+          ],
+        },
+      ]),
+    );
+
+    const result = await service.import(run());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.result.failed).toBe(1);
+    expect(result.value.result.passed).toBe(1);
+    const s2 = result.value.scenarioResults.find((s) => s.scenario === "S2");
+    expect(s2?.status).toBe("passed");
+  });
 });

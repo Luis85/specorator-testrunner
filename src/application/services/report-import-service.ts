@@ -210,7 +210,11 @@ export class DefaultReportImportService implements ReportImportService {
           const bgSteps = (Array.isArray(scenario.steps) ? scenario.steps : []).filter(
             isRecord,
           ) as CucumberStep[];
-          if (scenarioStatus(bgSteps) === "failed") bgFailedSteps = bgSteps;
+          // A later background (e.g. a Rule-specific or per-scenario background)
+          // governs the scenarios that follow IT — so a non-failing background
+          // must clear any failure carried over from an earlier one, otherwise
+          // every following scenario would be mis-reported as failed.
+          bgFailedSteps = scenarioStatus(bgSteps) === "failed" ? bgSteps : null;
           continue;
         }
         scenarioCount += 1;
