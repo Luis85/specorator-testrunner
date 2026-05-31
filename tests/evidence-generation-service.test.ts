@@ -153,6 +153,32 @@ describe("DefaultEvidenceGenerationService", () => {
     expect(result.value.linkedUseCases).toEqual(["UC-001"]);
   });
 
+  it("links suite/all runs via the scenario feature uri (not the display name)", async () => {
+    const { service, fs } = build();
+    seedUseCase(fs);
+
+    const result = await service.generate({
+      run: run({ scope: "suite", target: "smoke" }),
+      report: report({
+        scenarioResults: [
+          // Human name has no UC prefix; the uri carries it.
+          { feature: "Checkout", featureUri: "features/UC-001-checkout.feature", scenario: "Pays", status: "passed" },
+        ],
+      }),
+    });
+    expect(result.ok && result.value.linkedUseCases).toEqual(["UC-001"]);
+  });
+
+  it("is idempotent: re-importing the same run overwrites its evidence note", async () => {
+    const { service, fs } = build();
+    seedUseCase(fs);
+    expect((await service.generate({ run: run(), report: report() })).ok).toBe(true);
+    // Second generation for the same runId must not fail on an existing note.
+    const second = await service.generate({ run: run(), report: report() });
+    expect(second.ok).toBe(true);
+    expect(fs.files.get(EVIDENCE_PATH)).toBeDefined();
+  });
+
   it("generates evidence with no linked Use Case when none can be resolved", async () => {
     const { service, fs, types } = build();
     // No Use Case seeded.

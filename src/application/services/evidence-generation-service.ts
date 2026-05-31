@@ -72,7 +72,9 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
 
     const folder = evidencePath.slice(0, evidencePath.lastIndexOf("/"));
     await this.fs.createFolder(folder);
-    const written = await this.fs.createFile(evidencePath, this.renderNote(evidence, report));
+    // writeFile (overwrite) so re-importing the same run refreshes the note;
+    // the evidence path is deterministic per runId and createFile would throw.
+    const written = await this.fs.writeFile(evidencePath, this.renderNote(evidence, report));
     if (!written.ok) {
       return err(
         appError("EVIDENCE_WRITE_FAILED", `Could not write evidence note "${evidencePath}".`, {
@@ -162,7 +164,9 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
       if (id) ids.add(id);
     } else {
       for (const scenario of report.scenarioResults) {
-        const id = useCaseIdFromPath(scenario.feature);
+        // Use the feature file path (uri); the human-readable name has no
+        // UC-NNN prefix to derive the owning Use Case from.
+        const id = useCaseIdFromPath(scenario.featureUri ?? scenario.feature);
         if (id) ids.add(id);
       }
     }

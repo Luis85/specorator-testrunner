@@ -24,7 +24,8 @@ export interface ImportedReport {
 }
 
 export interface ScenarioResult {
-  feature: string;
+  feature: string; // human-readable feature name (display)
+  featureUri?: string; // feature file path (e.g. features/UC-001-x.feature) for UC linking
   scenario: string;
   status: "passed" | "failed" | "skipped";
   durationMs?: number;
@@ -174,7 +175,9 @@ export class DefaultReportImportService implements ReportImportService {
     for (const rawFeature of features) {
       if (!isRecord(rawFeature)) continue;
       const feature = rawFeature as CucumberFeature;
-      const featureName = typeof feature.name === "string" ? feature.name : (feature.uri ?? "");
+      const featureUri = typeof feature.uri === "string" ? feature.uri : undefined;
+      const featureName =
+        typeof feature.name === "string" ? feature.name : (featureUri ?? "");
       const elements = Array.isArray(feature.elements) ? feature.elements : [];
 
       for (const rawScenario of elements) {
@@ -189,6 +192,7 @@ export class DefaultReportImportService implements ReportImportService {
         const errorMessage = this.firstErrorMessage(steps);
         scenarioResults.push({
           feature: featureName,
+          featureUri,
           scenario: typeof scenario.name === "string" ? scenario.name : "",
           status,
           durationMs,
