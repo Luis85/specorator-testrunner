@@ -73,10 +73,16 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const nsToMs = (duration: number | undefined): number | undefined =>
   typeof duration === "number" ? Math.round(duration / 1_000_000) : undefined;
 
+// Cucumber statuses that mean the run failed (a missing/ambiguous/pending step
+// still exits non-zero), as opposed to a deliberately skipped step.
+const FAILURE_STATUSES = new Set(["failed", "undefined", "ambiguous", "pending"]);
+const isFailure = (step: CucumberStep): boolean =>
+  step.result?.status !== undefined && FAILURE_STATUSES.has(step.result.status);
+
 /**
- * Rolls a scenario's step statuses into a single scenario status: any failed →
- * failed; otherwise any non-passed (skipped/undefined/pending/ambiguous) →
- * skipped; all passed → passed. A scenario with no steps is skipped.
+ * Rolls a scenario's step statuses into a single scenario status: any
+ * failed/undefined/pending/ambiguous → failed; otherwise any skipped → skipped;
+ * all passed → passed. A scenario with no steps is skipped.
  */
 const scenarioStatus = (
   steps: CucumberStep[],
@@ -85,13 +91,14 @@ const scenarioStatus = (
   // A failed Before/After hook (e.g. browser setup/teardown) fails the scenario
   // even when the step results look passed/skipped (Cucumber records hooks
   // separately from steps).
-  if (hooks.some((hook) => hook.result?.status === "failed")) return "failed";
+  if (hooks.some(isFailure)) return "failed";
   if (steps.length === 0) return "skipped";
   let allPassed = true;
   for (const step of steps) {
-    const status = step.result?.status;
-    if (status === "failed") return "failed";
-    if (status !== "passed") allPassed = false;
+    // undefined/pending/ambiguous are failure-like (the run exits non-zero),
+    // not skipped — otherwise a missing step would import as failed: 0.
+    if (isFailure(step)) return "failed";
+    if (step.result?.status !== "passed") allPassed = false;
   }
   return allPassed ? "passed" : "skipped";
 };
