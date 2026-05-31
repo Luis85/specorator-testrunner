@@ -54,7 +54,7 @@ const build = () => {
     silentLogger,
     () => FIXED_NOW,
   );
-  return { service, fs, childProcess, absoluteFs, bus, events, types };
+  return { service, fs, childProcess, absoluteFs, bus, events, types, settings };
 };
 
 /** Seeds a suite so the `suite` scope can resolve a tag expression. */
@@ -161,6 +161,21 @@ describe("DefaultTestExecutionService", () => {
     expect(childProcess.calls[0].env?.BASE_URL).toBe(
       "file://./.testrunner/src/fixtures/example.html",
     );
+  });
+
+  it("rejects a configured run command that is not npm run <script>", async () => {
+    const { service, childProcess, settings } = build();
+    const current = await settings.load();
+    await settings.save({
+      ...current,
+      runner: { ...current.runner, defaultRunCommand: "npm install" },
+    });
+
+    const result = await service.execute({ scope: "all", target: "all" });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    expect(childProcess.calls).toHaveLength(0); // never spawned a non-test command
   });
 
   it("aborts the run when the stale report cannot be cleared", async () => {

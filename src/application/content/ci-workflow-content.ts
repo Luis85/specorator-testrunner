@@ -26,6 +26,10 @@ export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string =>
   // vault whose runner package uses a different script would otherwise get an
   // Actions job that runs the wrong command. Falls back to the default.
   const ciRunCommand = settings.runner.ciRunCommand.trim() || "npm run test:ci";
+  // Honor the configured CI install command too (default `npm ci`); a runner
+  // that intentionally uses `npm install` or a wrapper would otherwise get an
+  // Actions job whose install step doesn't match its lockfile/setup.
+  const ciInstallCommand = settings.runner.ciInstallCommand.trim() || "npm ci";
 
   // Auth credentials are injected from CI secrets so authenticated suites match
   // local execution (runEnv merges active.auth.env, ADR-0014). Emit every
@@ -72,7 +76,7 @@ jobs:
           cache: npm
           cache-dependency-path: ${runnerPath}/package-lock.json
       - name: Install dependencies
-        run: npm ci
+        run: ${ciInstallCommand}
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Run tests

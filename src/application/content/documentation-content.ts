@@ -203,6 +203,15 @@ an existing one. **Check CI Readiness** reports anything still missing.
 
 Open **Settings → E2E Test Hub** to review folder locations, runner commands,
 and environments. Use **Reset to defaults** to restore the shipped configuration.
+
+## Logs and privacy (ADR-0019)
+
+When file logging is enabled, the plugin writes logs under \`${settings.logging.path}/\`.
+Logs can capture environment details and run output, so **exclude them from
+Obsidian Sync and version control** to avoid leaking them across machines or into
+your repository: add the logs folder to your \`.gitignore\` and to the Obsidian
+Sync *excluded files* list. Lower the **log level** (or disable file logging) in
+settings if you don't need a persistent trail.
 `,
   };
 };
