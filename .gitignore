@@ -26,3 +26,12 @@ npm-debug.log*
 .env
 .env.*
 !.env.example
+
+.claudian
+.obsidian
+
+Specifications
+Test Hub
+Test Suites
+Use Cases
+.testrunner
