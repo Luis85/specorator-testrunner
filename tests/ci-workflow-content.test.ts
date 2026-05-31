@@ -41,6 +41,15 @@ describe("buildGitHubActionsWorkflow", () => {
     expect(yaml).toContain("npm run test:ci");
   });
 
+  it("renders the configured ciRunCommand instead of the default test:ci", () => {
+    const yaml = buildGitHubActionsWorkflow({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, ciRunCommand: "npm run e2e:ci" },
+    });
+    expect(yaml).toContain("run: npm run e2e:ci");
+    expect(yaml).not.toContain("run: npm run test:ci");
+  });
+
   it("uses the configured Node version and checks out the repo", () => {
     const yaml = buildGitHubActionsWorkflow({
       ...DEFAULT_SETTINGS,

@@ -22,6 +22,10 @@ export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string =>
   // `e2e\runner` would otherwise point at a literal backslash path (ADR-0006).
   const runnerPath = settings.paths.testRunnerPath.replace(/\\/g, "/");
   const nodeVersion = settings.ci.nodeVersion.trim() || "22";
+  // Honor the configured CI command (settings expose runner.ciRunCommand); a
+  // vault whose runner package uses a different script would otherwise get an
+  // Actions job that runs the wrong command. Falls back to the default.
+  const ciRunCommand = settings.runner.ciRunCommand.trim() || "npm run test:ci";
 
   // Auth credentials are injected from CI secrets so authenticated suites match
   // local execution (runEnv merges active.auth.env, ADR-0014). Emit every
@@ -72,7 +76,7 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Run tests
-        run: npm run test:ci
+        run: ${ciRunCommand}
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
