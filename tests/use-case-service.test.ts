@@ -9,14 +9,14 @@ import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } f
 
 const build = () => {
   const fs = new FakeVaultFileSystem();
-  const { bus, types } = recordingEventBus();
+  const { bus, types, events } = recordingEventBus();
   const settings = new DefaultSettingsService(
     new FakeDataStore(),
     new DefaultPathSafetyPolicy(),
     bus,
   );
   const service = new DefaultUseCaseService(settings, fs, bus, silentLogger);
-  return { service, fs, types };
+  return { service, fs, types, events };
 };
 
 describe("nextUseCaseId", () => {
@@ -34,7 +34,7 @@ describe("nextUseCaseId", () => {
 
 describe("DefaultUseCaseService", () => {
   it("creates a Use Case with generated frontmatter and emits usecase.created", async () => {
-    const { service, fs, types } = build();
+    const { service, fs, types, events } = build();
 
     const result = await service.create({ title: "Checkout with a saved card" });
 
@@ -46,6 +46,15 @@ describe("DefaultUseCaseService", () => {
     expect(result.value.path).toBe("Use Cases/UC-001 Checkout with a saved card.md");
     expect(fs.files.has(result.value.path)).toBe(true);
     expect(types()).toContain("usecase.created");
+
+    // Event Catalog §4 payload { useCaseId, title, path }; §19 correlationId = useCaseId.
+    const created = events.find((e) => e.type === "usecase.created");
+    expect(created?.payload).toEqual({
+      useCaseId: "UC-001",
+      title: "Checkout with a saved card",
+      path: "Use Cases/UC-001 Checkout with a saved card.md",
+    });
+    expect(created?.correlationId).toBe("UC-001");
   });
 
   it("collapses a multi-line description into a single frontmatter line", async () => {

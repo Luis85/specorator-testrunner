@@ -79,7 +79,11 @@ export class DefaultUseCaseService implements UseCaseService {
     const created = await this.fs.createFile(path, buildUseCaseNote(useCase));
     if (!created.ok) return err(created.error);
 
-    await this.eventBus.publish(createEvent("usecase.created", { useCaseId: id, path }));
+    await this.eventBus.publish(
+      // Event Catalog §4 payload { useCaseId, title, path }; §19 sets
+      // correlationId = useCaseId for the use-case creation flow.
+      createEvent("usecase.created", { useCaseId: id, title, path }, { correlationId: id }),
+    );
     this.logger.info("Use Case created", { id, path });
     return ok(useCase);
   }

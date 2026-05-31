@@ -4,6 +4,7 @@ import {
   DEMO_FEATURE_FILE_NAME,
   DEMO_USE_CASE_FILE_NAME,
   DEMO_USE_CASE_ID,
+  DEMO_USE_CASE_TITLE,
 } from "../content/demo-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
@@ -47,12 +48,18 @@ export class DefaultDemoContentService implements DemoContentService {
     if (!useCase.ok) return err(useCase.error);
 
     await this.eventBus.publish(
-      createEvent("usecase.created", { useCaseId: DEMO_USE_CASE_ID, path: useCasePath }),
+      // §4 payload { useCaseId, title, path }; §19 correlationId = useCaseId.
+      createEvent(
+        "usecase.created",
+        { useCaseId: DEMO_USE_CASE_ID, title: DEMO_USE_CASE_TITLE, path: useCasePath },
+        { correlationId: DEMO_USE_CASE_ID },
+      ),
     );
     await this.eventBus.publish(
+      // §5 payload key is `featurePath` (matches specification-service), not `path`.
       createEvent("specification.created", {
         useCaseId: DEMO_USE_CASE_ID,
-        path: featurePath,
+        featurePath,
       }),
     );
     await this.eventBus.publish(

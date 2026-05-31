@@ -6,6 +6,7 @@ import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { ExecutionScope, TestRun } from "../../domain/entities/test-run";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
+import type { DomainEventType, EventPayloads } from "../../domain/events/domain-event";
 import type { TestHubSettings } from "../../domain/settings/settings";
 import type { RunId } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
@@ -251,7 +252,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
       if (activeRun.terminated) return ok(run);
 
       await this.publish("testrun.requested", run.id, {
-        scope: request.scope,
+        // The catalog's `testrun.requested.scope` is the four public scopes; the
+        // internal "demo" scope (a smoke run over demo content) surfaces as
+        // "suite" on the bus, which is the suite it executes.
+        scope: request.scope === "demo" ? "suite" : request.scope,
         target: request.target,
       });
       await this.publish("testrun.started", run.id, {
@@ -542,10 +546,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
   }
 
   /** Publishes a terminal event once, honouring the EN-2 single-terminal guard. */
-  private async terminal(
+  private async terminal<T extends "testrun.completed" | "testrun.failed" | "testrun.cancelled">(
     activeRun: ActiveRun,
-    type: "testrun.completed" | "testrun.failed" | "testrun.cancelled",
-    payload: Record<string, unknown>,
+    type: T,
+    payload: EventPayloads[T],
   ): Promise<void> {
     if (activeRun.terminated) return;
     activeRun.terminated = true;
@@ -553,10 +557,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
   }
 
   /** Stamps `correlationId = runId` so a run's events group (Event Catalog §correlation). */
-  private publish(
-    type: Parameters<typeof createEvent>[0],
+  private publish<T extends DomainEventType>(
+    type: T,
     correlationId: RunId,
-    payload: Record<string, unknown>,
+    payload: EventPayloads[T],
   ): Promise<void> {
     return this.eventBus.publish(createEvent(type, payload, { correlationId }));
   }
