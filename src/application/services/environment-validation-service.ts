@@ -226,8 +226,15 @@ export class DefaultEnvironmentValidationService
           missingItems.push("Runner package.json could not be read to verify the CI script.");
         }
       }
-      // Lockfile: `npm ci` (the CI install command) fails without it (US-041).
-      if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/package-lock.json`))) {
+      // Lockfile: required only by an install command that needs one. The
+      // default `npm ci` fails without it (US-041), but a runner configured to
+      // use e.g. `npm install --no-package-lock` doesn't, so don't reject that
+      // valid CI config.
+      const effectiveCiInstall = settings.runner.ciInstallCommand.trim() || "npm ci";
+      if (
+        effectiveCiInstall === "npm ci" &&
+        !(await this.absoluteFs.existsAbsolute(`${runnerAbs}/package-lock.json`))
+      ) {
         missingItems.push("Runner package-lock.json is missing (npm ci needs a lockfile).");
       }
       // The CI workflow itself must have been generated (UC-019 → UC-020).
