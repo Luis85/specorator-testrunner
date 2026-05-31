@@ -193,7 +193,13 @@ export class DefaultTestExecutionService implements TestExecutionService {
       // Delete any prior report so a run that fails BEFORE producing one (bad
       // config, missing deps, glob miss) can't have a previous run's stale
       // report imported and attributed to it (the path is fixed, no run id).
-      await this.absoluteFs.deleteAbsolute(`${cwd.value}/reports/cucumber-report.json`);
+      // deleteAbsolute uses force (an absent file is ok); a real failure
+      // (locked/read-only) must abort setup, or the stale report survives and
+      // defeats the very cleanup this performs.
+      const cleared = await this.absoluteFs.deleteAbsolute(
+        `${cwd.value}/reports/cucumber-report.json`,
+      );
+      if (!cleared.ok) return err(cleared.error);
       // Human-readable display string; the runner is given the raw argv below.
       run.command = displayCommand(argv);
 
