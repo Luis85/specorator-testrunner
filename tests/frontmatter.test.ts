@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildFrontmatter, buildNote } from "../src/shared/utils/frontmatter";
-import { joinVaultPath } from "../src/shared/utils/vault-path";
+import { joinVaultPath, relativeVaultPath } from "../src/shared/utils/vault-path";
 
 describe("buildFrontmatter", () => {
   it("serialises scalars and arrays in declaration order", () => {
@@ -38,5 +38,19 @@ describe("joinVaultPath", () => {
   it("joins, collapses duplicate slashes, and drops empty segments", () => {
     expect(joinVaultPath("Test Hub", "Getting Started.md")).toBe("Test Hub/Getting Started.md");
     expect(joinVaultPath("a/", "/b", "", "c")).toBe("a/b/c");
+  });
+});
+
+describe("relativeVaultPath", () => {
+  it("computes the path from the runner folder to the feature folder", () => {
+    expect(relativeVaultPath(".testrunner", "Specifications/features")).toBe(
+      "../Specifications/features",
+    );
+    expect(relativeVaultPath("Tools/.testrunner", "Specs/features")).toBe("../../Specs/features");
+  });
+
+  it("handles a shared ancestor and identical paths", () => {
+    expect(relativeVaultPath("a/b", "a/c")).toBe("../c");
+    expect(relativeVaultPath("a", "a")).toBe(".");
   });
 });

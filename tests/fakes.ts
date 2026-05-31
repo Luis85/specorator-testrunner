@@ -1,12 +1,34 @@
+import type { AbsoluteFileSystem } from "../src/application/ports/absolute-file-system";
+import type {
+  ChildProcessRunner,
+  RunCommandRequest,
+  RunnerCommandResult,
+  RunnerOutput,
+} from "../src/application/ports/child-process-runner";
 import type { DataStore } from "../src/application/ports/data-store";
+import type {
+  TemplateWriteRequest,
+  TemplateWriteResult,
+  TemplateWriter,
+} from "../src/application/ports/template-writer";
 import type { VaultFileSystem } from "../src/application/ports/vault-file-system";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
+import { joinVaultPath } from "../src/shared/utils/vault-path";
 import type {
   DomainEvent,
   DomainEventType,
 } from "../src/domain/events/domain-event";
 import { InMemoryEventBus } from "../src/shared/event-bus/event-bus";
+import type { Logger } from "../src/shared/logging/logger";
 import { ok, type Result } from "../src/shared/result/result";
+
+/** No-op {@link Logger} for tests. */
+export const silentLogger: Logger = {
+  debug() {},
+  info() {},
+  warn() {},
+  error() {},
+};
 
 /** In-memory {@link VaultFileSystem} for application/integration tests. */
 export class FakeVaultFileSystem implements VaultFileSystem {
@@ -59,6 +81,94 @@ export class FakeDataStore implements DataStore {
 
   async save(data: unknown): Promise<void> {
     this.data = data;
+  }
+}
+
+/** In-memory {@link AbsoluteFileSystem}. */
+export class FakeAbsoluteFileSystem implements AbsoluteFileSystem {
+  readonly written = new Map<string, string>();
+  readonly existing = new Set<string>();
+  basePath: string | null = "/vault";
+
+  async getVaultBasePath(): Promise<Result<string>> {
+    if (this.basePath === null) {
+      return { ok: false, error: { code: "INIT_FAILED", message: "no base path" } };
+    }
+    return ok(this.basePath);
+  }
+
+  async existsAbsolute(path: string): Promise<boolean> {
+    return this.existing.has(path) || this.written.has(path);
+  }
+
+  async writeAbsolute(path: string, content: string): Promise<Result<void>> {
+    this.written.set(path, content);
+    this.existing.add(path);
+    return ok(undefined);
+  }
+
+  async listAbsolute(path: string): Promise<string[]> {
+    const prefix = `${path}/`;
+    const children = new Set<string>();
+    for (const candidate of [...this.existing, ...this.written.keys()]) {
+      if (candidate.startsWith(prefix)) {
+        children.add(candidate.slice(prefix.length).split("/")[0]);
+      }
+    }
+    return [...children];
+  }
+}
+
+/** Scriptable {@link ChildProcessRunner}: matches commands by substring. */
+export class FakeChildProcessRunner implements ChildProcessRunner {
+  readonly calls: RunCommandRequest[] = [];
+  /** command-substring → exit code (default 0). */
+  readonly exitCodes = new Map<string, number>();
+  /** command substrings whose spawn should fail outright. */
+  readonly spawnFailures = new Set<string>();
+  cancelled = false;
+
+  async run(request: RunCommandRequest): Promise<Result<RunnerCommandResult>> {
+    this.calls.push(request);
+    for (const fragment of this.spawnFailures) {
+      if (request.command.includes(fragment)) {
+        return { ok: false, error: { code: "INIT_FAILED", message: "spawn failed" } };
+      }
+    }
+    let exitCode = 0;
+    for (const [fragment, code] of this.exitCodes) {
+      if (request.command.includes(fragment)) exitCode = code;
+    }
+    return ok({ exitCode, stdout: "", stderr: exitCode === 0 ? "" : "boom", durationMs: 1 });
+  }
+
+  async runStreaming(
+    request: RunCommandRequest,
+    _onOutput: (output: RunnerOutput) => void,
+  ): Promise<Result<RunnerCommandResult>> {
+    return this.run(request);
+  }
+
+  async cancel(): Promise<Result<void>> {
+    this.cancelled = true;
+    return ok(undefined);
+  }
+}
+
+/** {@link TemplateWriter} that reports every template as written. */
+export class FakeTemplateWriter implements TemplateWriter {
+  readonly requests: TemplateWriteRequest[] = [];
+  fail = false;
+
+  async writeTemplates(request: TemplateWriteRequest): Promise<Result<TemplateWriteResult>> {
+    this.requests.push(request);
+    if (this.fail) {
+      return { ok: false, error: { code: "INIT_FAILED", message: "template write failed" } };
+    }
+    return ok({
+      writtenFiles: request.templates.map((t) => joinVaultPath(request.targetPath, t.path)),
+      skippedFiles: [],
+    });
   }
 }
 

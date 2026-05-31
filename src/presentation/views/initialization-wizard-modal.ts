@@ -23,6 +23,8 @@ export interface InitializationWizardDeps {
 export class InitializationWizardModal extends Modal {
   private readonly rows = new Map<InitializationStep, HTMLElement>();
   private running = false;
+  private installDependencies = true;
+  private installBrowsers = true;
 
   constructor(app: App, private readonly deps: InitializationWizardDeps) {
     super(app);
@@ -45,8 +47,28 @@ export class InitializationWizardModal extends Modal {
     contentEl.createEl("p", {
       text:
         "This creates the vault folder structure, generates documentation and demo content, " +
-        "and adds the Smoke and Regression suites. Nothing runs automatically.",
+        "adds the Smoke and Regression suites, and installs the .testrunner. No test runs " +
+        "automatically.",
     });
+
+    new Setting(contentEl)
+      .setName("Install dependencies")
+      .setDesc("Run npm install in the .testrunner project.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.installDependencies).onChange((value) => {
+          this.installDependencies = value;
+          if (!value) this.installBrowsers = false;
+        }),
+      );
+
+    new Setting(contentEl)
+      .setName("Install browser")
+      .setDesc("Download Chromium for Playwright (~150 MB). Requires dependencies.")
+      .addToggle((toggle) =>
+        toggle.setValue(this.installBrowsers).onChange((value) => {
+          this.installBrowsers = value;
+        }),
+      );
 
     new Setting(contentEl).addButton((button) =>
       button
@@ -73,8 +95,8 @@ export class InitializationWizardModal extends Modal {
     const result = await this.deps.initialization.initialize(
       {
         settings,
-        installDependencies: false, // runner install: EPIC-003
-        installBrowsers: false,
+        installDependencies: this.installDependencies,
+        installBrowsers: this.installDependencies && this.installBrowsers,
         generateDemoContent: settings.automation.autoCreateDemoContent,
         generateDocumentation: settings.automation.autoCreateDocumentation,
       },

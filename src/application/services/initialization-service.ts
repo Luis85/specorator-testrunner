@@ -1,5 +1,7 @@
 import type { DocumentationGenerationService } from "./documentation-generation-service";
 import type { DemoContentService } from "./demo-content-service";
+import type { EnvironmentValidationService } from "./environment-validation-service";
+import type { RunnerInstallationService } from "./runner-installation-service";
 import type { SettingsService } from "./settings-service";
 import type { SuiteService } from "./suite-service";
 import type { VaultFileSystem } from "../ports/vault-file-system";
@@ -52,7 +54,10 @@ export type InitializationStep =
   | "documentation"
   | "suites"
   | "demo"
-  | "runner";
+  | "runner"
+  | "dependencies"
+  | "browsers"
+  | "validate";
 
 export class DefaultInitializationService implements InitializationService {
   constructor(
@@ -61,6 +66,8 @@ export class DefaultInitializationService implements InitializationService {
     private readonly documentation: DocumentationGenerationService,
     private readonly suites: SuiteService,
     private readonly demo: DemoContentService,
+    private readonly runnerInstall: RunnerInstallationService,
+    private readonly validation: EnvironmentValidationService,
     private readonly pathSafety: PathSafetyPolicy,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
@@ -144,17 +151,42 @@ export class DefaultInitializationService implements InitializationService {
       onProgress({ step: "demo", label: "Generating demo content", status: "skipped" });
     }
 
-    // 6. Runner installation is delivered by EPIC-003 (Test Runner). The
-    //    `.testrunner` folder is created above; dependency/browser install and
-    //    validation arrive in a later sprint.
-    if (request.installDependencies || request.installBrowsers) {
-      onProgress({
-        step: "runner",
-        label: "Installing runner",
-        status: "skipped",
-        detail: "Runner installation arrives with the Test Runner epic.",
-      });
+    // 6. Materialise the .testrunner project (US-010, RV-1).
+    onProgress({ step: "runner", label: "Creating runner project", status: "running" });
+    const runner = await this.runnerInstall.createRunner(request.settings);
+    if (!runner.ok) return fail("runner", runner.error);
+    result.runnerInstalled = true;
+    result.createdFiles.push(...runner.value.createdFiles);
+    onProgress({ step: "runner", label: "Creating runner project", status: "done" });
+
+    // 7. Install dependencies (US-011). A non-zero exit fails init (RV-1).
+    if (request.installDependencies) {
+      onProgress({ step: "dependencies", label: "Installing dependencies", status: "running" });
+      const deps = await this.runnerInstall.installDependencies(request.settings);
+      if (!deps.ok) return fail("dependencies", deps.error);
+      onProgress({ step: "dependencies", label: "Installing dependencies", status: "done" });
+
+      // 8. Install Playwright browsers (US-012) — only after deps succeed.
+      if (request.installBrowsers) {
+        onProgress({ step: "browsers", label: "Installing browsers", status: "running" });
+        const browsers = await this.runnerInstall.installBrowsers(request.settings);
+        if (!browsers.ok) return fail("browsers", browsers.error);
+        onProgress({ step: "browsers", label: "Installing browsers", status: "done" });
+      }
+    } else {
+      onProgress({ step: "dependencies", label: "Installing dependencies", status: "skipped" });
     }
+
+    // 9. Validate the environment (US-013, UC-002). Diagnostic only — an
+    //    incomplete environment (e.g. skipped install) does not fail init.
+    onProgress({ step: "validate", label: "Validating environment", status: "running" });
+    const validation = await this.validation.validateEnvironment();
+    onProgress({
+      step: "validate",
+      label: "Validating environment",
+      status: "done",
+      detail: validation.valid ? "ready" : `${validation.issues.length} issue(s)`,
+    });
 
     await this.eventBus.publish(
       createEvent("testhub.initialization.completed", { result }, { correlationId }),
