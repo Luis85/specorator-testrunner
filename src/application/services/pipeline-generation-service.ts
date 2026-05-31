@@ -10,6 +10,32 @@ import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { err, ok, type Result } from "../../shared/result/result";
 
+// npm subcommands the generated CI workflow may run: a script (`npm run …`) or
+// a dependency install (`npm install`/`npm ci` and its documented aliases).
+const NPM_CI_SUBCOMMANDS = new Set([
+  "run",
+  "install",
+  "ci",
+  "clean-install",
+  "ic",
+  "install-clean",
+  "isntall-clean",
+]);
+
+/**
+ * True when a (already charset-screened) command is an npm install/ci/run
+ * invocation. Used to permit configured CI commands — including custom scripts
+ * and install flags — while still rejecting arbitrary programs. A `run` form
+ * additionally requires a script-name token so `npm run` alone is rejected.
+ */
+const isNpmCiShape = (command: string): boolean => {
+  const tokens = command.split(/\s+/).filter(Boolean);
+  if (tokens[0] !== "npm" || tokens[1] === undefined) return false;
+  if (!NPM_CI_SUBCOMMANDS.has(tokens[1])) return false;
+  if (tokens[1] === "run" && tokens[2] === undefined) return false;
+  return true;
+};
+
 /** CI pipeline generation contract (TIS §8.13, US-040, UC-019). */
 export interface PipelineGenerationService {
   generate(request: GeneratePipelineRequest): Promise<Result<GeneratedPipeline>>;
@@ -141,12 +167,17 @@ export class DefaultPipelineGenerationService
           ),
         );
       }
-      const safe = this.commandSafety.assertSafe(command.split(/\s+/).filter(Boolean));
-      if (!safe.ok) {
+      // Unlike the local spawn allowlist (which fixes the script name), CI can
+      // legitimately use a custom npm script or install flags (`npm run e2e:ci`,
+      // `npm install --no-audit`). The shell-safe charset above already blocks
+      // every metacharacter, so here we only require the npm CI shape: an `npm`
+      // run/install/ci invocation. That permits configured CI commands while
+      // still rejecting arbitrary programs (e.g. a `curl` wrapper).
+      if (!isNpmCiShape(command)) {
         return err(
           appError(
             "VALIDATION_FAILED",
-            `Configured CI command is not allowed in the generated workflow: "${command}".`,
+            `Configured CI command must be an "npm run/install/ci" invocation: "${command}".`,
             { details: { command } },
           ),
         );
