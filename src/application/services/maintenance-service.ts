@@ -46,16 +46,24 @@ export interface ResetResult {
   correlationId: string;
 }
 
-/** Case-insensitive, separator-normalized path segments (vault paths are relative). */
+/**
+ * Case-insensitive path segments, normalized the way the vault adapter will be
+ * before it deletes: `/`+`\` separators collapsed, and `.` (current-dir) segments
+ * dropped. Without dropping `.`, a configured `./Use Cases` (or `.`) would NOT
+ * appear to overlap the protected `Use Cases`/vault-root here, yet the adapter
+ * normalizes it away and recursively deletes the real folder (review: data loss).
+ * A path that normalizes to NO segments is the vault root.
+ */
 const segmentsOf = (path: string): string[] =>
   path
     .split(/[\\/]+/)
-    .filter((s) => s.length > 0)
+    .filter((s) => s.length > 0 && s !== ".")
     .map((s) => s.toLowerCase());
 
 /**
  * True when two vault paths overlap: equal, or one is an ancestor of the other.
- * An empty path collides with everything (deleting "" would target the vault root).
+ * An empty (vault-root) path collides with everything — deleting it would take
+ * the whole vault, so reset must refuse.
  */
 const pathsOverlap = (a: string, b: string): boolean => {
   const sa = segmentsOf(a);

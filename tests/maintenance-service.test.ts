@@ -298,6 +298,31 @@ describe("DefaultMaintenanceService.reset (UC-024)", () => {
     expect(vault.files.get("Use Cases/UC-099.md")).toBe("user-authored use case");
   });
 
+  it("refuses dot-segment runner paths that normalize onto user content (review)", async () => {
+    // `./Use Cases` and `.` pass PathSafetyPolicy and the vault adapter would
+    // normalize the leading `./` away before deleting, so the overlap guard must
+    // collapse `.` segments too or it deletes user content / the whole vault.
+    for (const hostile of ["./Use Cases", "Use Cases/.", "."]) {
+      const { service, vault, settings } = buildReset();
+      expect(
+        (
+          await settings.save({
+            ...DEFAULT_SETTINGS,
+            paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: hostile },
+          })
+        ).ok,
+      ).toBe(true);
+      vault.files.set("Use Cases/UC-099.md", "user-authored use case");
+
+      const result = await service.reset();
+
+      expect(result.ok, hostile).toBe(false);
+      if (result.ok) continue;
+      expect(result.error.code).toBe("PATH_UNSAFE");
+      expect(vault.files.get("Use Cases/UC-099.md")).toBe("user-authored use case");
+    }
+  });
+
   it("removes the regenerable .testrunner runtime and re-creates defaults", async () => {
     const { service, vault } = buildReset();
     // Seed a stale runner artefact + user-authored business content.
