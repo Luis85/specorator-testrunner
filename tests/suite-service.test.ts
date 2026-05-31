@@ -85,6 +85,21 @@ describe("DefaultSuiteService", () => {
     expect(reread.ok && reread.value[0].description).toBe("Line one. Line two.");
   });
 
+  it("skips a malformed suite note whose tag expression is empty (ADR-0011)", async () => {
+    const { service, fs } = build();
+    // A test-suite note missing tag_expression would resolve to "" — the
+    // createSuite factory rejects it, so the index must omit it rather than
+    // surface a suite that runs nothing.
+    fs.files.set(
+      "Test Suites/Broken.md",
+      buildNote({ type: "test-suite", id: "broken", title: "Broken" }, "# Broken"),
+    );
+    const result = await service.findAll();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.some((s) => s.id === "broken")).toBe(false);
+  });
+
   it("indexes suites nested in subfolders (recursive)", async () => {
     const { service, fs } = build();
     fs.files.set(

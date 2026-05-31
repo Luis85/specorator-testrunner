@@ -1,7 +1,7 @@
 import { buildSuiteNote, DEFAULT_SUITES, type DefaultSuiteSeed } from "../content/default-suites";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
-import type { TestSuite } from "../../domain/entities/suite";
+import { createSuite, type TestSuite } from "../../domain/entities/suite";
 import type { SuiteId, VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
@@ -65,7 +65,10 @@ export class DefaultSuiteService implements SuiteService {
       );
     }
     // Membership/scope IS the tag expression (AD-4); a blank one resolves to ""
-    // and would run nothing meaningful, so reject it up front.
+    // and would run nothing meaningful. This invariant is enforced by the
+    // createSuite() factory (via createFromSeed below, ADR-0011), so the rule
+    // lives in one place — but check it up front too to fail before the
+    // (more expensive) duplicate-id scan and to report the cleanest error.
     if (request.tagExpression.trim() === "") {
       return err(appError("VALIDATION_FAILED", "A suite tag expression is required."));
     }
@@ -134,13 +137,18 @@ export class DefaultSuiteService implements SuiteService {
   private parse(content: string, path: VaultPath): TestSuite | null {
     const fm = parseFrontmatter(content);
     if (fm.type !== "test-suite" || typeof fm.id !== "string") return null;
-    return {
+    // Route through the invariant-enforcing factory (ADR-0011): a suite note
+    // with no `tag_expression` is malformed — skip it rather than index a suite
+    // whose tag expression is "" (which would resolve to nothing). The index is
+    // best-effort, so a rejected suite is simply omitted.
+    const built = createSuite({
       id: fm.id,
       name: typeof fm.title === "string" ? fm.title : fm.id,
       description: typeof fm.description === "string" ? fm.description : undefined,
       tagExpression: typeof fm.tag_expression === "string" ? fm.tag_expression : "",
       path,
-    };
+    });
+    return built.ok ? built.value : null;
   }
 
   private async createFromSeed(
@@ -151,13 +159,18 @@ export class DefaultSuiteService implements SuiteService {
     // Sanitize the filename segment (preserve the display title in frontmatter)
     // so a name with "/" or reserved chars can't create subfolders or fail.
     const path = joinVaultPath(settings.paths.testSuitesPath, `${sanitizeFileName(seed.name)}.md`);
-    const suite: TestSuite = {
+    // Enforce the suite invariants (non-empty name + tag expression, ADR-0011)
+    // at construction. create() already screens user input, but routing every
+    // construction site through the factory keeps the rule in exactly one place.
+    const builtSuite = createSuite({
       id: seed.id,
       name: seed.name,
       description: seed.description,
       tagExpression: seed.tagExpression,
       path,
-    };
+    });
+    if (!builtSuite.ok) return err(builtSuite.error);
+    const suite = builtSuite.value;
 
     if (!(await this.fs.exists(path))) {
       const created = await this.fs.createFile(path, buildSuiteNote(seed));
