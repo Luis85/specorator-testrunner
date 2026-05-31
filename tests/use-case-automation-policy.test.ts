@@ -67,6 +67,19 @@ describe("computeAutomationStatus (ADR-0017 roll-up)", () => {
     ).toBe("implemented");
   });
 
+  it("does not regress an already-passing multi-Feature UC on a single-Feature rerun", () => {
+    const f1 = feature({ path: "Specifications/features/UC-001-a.feature" });
+    const f2 = feature({ path: "Specifications/features/UC-001-b.feature" });
+    // The UC already reached "passing" (e.g. via an earlier UC-wide run); a
+    // later successful feature-scope rerun must not drop it back to implemented.
+    expect(
+      computeAutomationStatus(
+        useCase({ automationStatus: "passing", lastTestRun: lastRun("passed", "feature") }),
+        [f1, f2],
+      ),
+    ).toBe("passing");
+  });
+
   it("passing for a multi-Feature UC when a UC-wide run passed", () => {
     const f1 = feature({ path: "Specifications/features/UC-001-a.feature" });
     const f2 = feature({ path: "Specifications/features/UC-001-b.feature" });
