@@ -27,9 +27,15 @@ const REFRESH_ON: DomainEventType[] = [
   "specification.updated",
 ];
 
+/** The documentation entry points reachable from the dashboard (AC-016). */
+export type DashboardDocumentType = "getting-started" | "manual" | "troubleshooting";
+
 export interface DashboardViewDeps {
   traceabilityService: TraceabilityService;
   eventBus: EventBus;
+  // AC-016: open the Getting Started guide / User Manual straight from the
+  // dashboard. A callback (not the service) keeps the view decoupled.
+  openDocumentation: (documentType: DashboardDocumentType) => void | Promise<void>;
 }
 
 /**
@@ -114,6 +120,12 @@ export class DashboardView extends ItemView {
     container.empty();
     container.createEl("h2", { text: "Test Hub Dashboard" });
 
+    // Documentation access (AC-016): open the Getting Started guide / User
+    // Manual without leaving the dashboard. Rendered FIRST — before the refresh
+    // call and its error early-return — so the manual is reachable even when the
+    // dashboard can't load (exactly when a user may need it).
+    this.renderDocumentationActions(container);
+
     // refreshDashboard() emits dashboard.refreshed + dashboard.kpi.updated and
     // returns the snapshot the tiles/rows are projected from (UC-018 steps 2–3).
     const result = await this.deps.traceabilityService.refreshDashboard();
@@ -150,6 +162,26 @@ export class DashboardView extends ItemView {
       tr.createEl("td", { text: run.runId });
       tr.createEl("td", { text: run.status });
       tr.createEl("td", { text: run.date });
+    }
+  }
+
+  /** AC-016 documentation buttons (US-046: Getting Started / Manual / Troubleshooting). */
+  private renderDocumentationActions(container: HTMLElement): void {
+    const actions = container.createDiv({ cls: "e2e-test-hub-doc-actions" });
+    // All three guides US-046 maps to UC-021/022/023 must be reachable here.
+    const buttons: ReadonlyArray<[string, DashboardDocumentType]> = [
+      ["Getting Started", "getting-started"],
+      ["User Manual", "manual"],
+      ["Troubleshooting", "troubleshooting"],
+    ];
+    for (const [label, documentType] of buttons) {
+      const button = actions.createEl("button", {
+        text: label,
+        cls: "e2e-test-hub-doc-button",
+      });
+      button.addEventListener("click", () => {
+        void this.deps.openDocumentation(documentType);
+      });
     }
   }
 }
