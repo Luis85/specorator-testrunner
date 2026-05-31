@@ -75,37 +75,44 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
       artifacts: report.artifacts,
     };
 
-    const folder = evidencePath.slice(0, evidencePath.lastIndexOf("/"));
-    await this.fs.createFolder(folder);
-    // writeFile (overwrite) so re-importing the same run refreshes the note;
-    // the evidence path is deterministic per runId and createFile would throw.
-    // Resolve each linked UC's note basename so the wikilink resolves in
-    // Obsidian (the note is `UC-001 Title.md`, so bare `[[UC-001]]` would not).
-    const ucNoteNames = await this.resolveUseCaseNoteNames(linkedUseCases);
-    // Prefer a terminal cancelled/errored run status so an interrupted run with
-    // a partial report isn't recorded as PASSED in the audit note.
-    const noteStatus = this.displayStatus(run, report.result);
-    const written = await this.fs.writeFile(
-      evidencePath,
-      this.renderNote(evidence, report, ucNoteNames, noteStatus),
-    );
-    if (!written.ok) {
-      return err(
-        appError("EVIDENCE_WRITE_FAILED", `Could not write evidence note "${evidencePath}".`, {
-          details: { runId: run.id, path: evidencePath },
-          cause: written.error,
-        }),
+    // The two opt-outs are independent: `generateEvidenceMarkdown` controls the
+    // audit NOTE, `updateUseCaseFrontmatterAfterRun` controls the Use Case
+    // `lastTestRun` (which the dashboard's Recent Runs is projected from). So the
+    // frontmatter update must still run with the note disabled, otherwise a
+    // completed run silently never appears in Recent Runs (US-038).
+    if (settings.automation.generateEvidenceMarkdown) {
+      const folder = evidencePath.slice(0, evidencePath.lastIndexOf("/"));
+      await this.fs.createFolder(folder);
+      // writeFile (overwrite) so re-importing the same run refreshes the note;
+      // the evidence path is deterministic per runId and createFile would throw.
+      // Resolve each linked UC's note basename so the wikilink resolves in
+      // Obsidian (the note is `UC-001 Title.md`, so bare `[[UC-001]]` would not).
+      const ucNoteNames = await this.resolveUseCaseNoteNames(linkedUseCases);
+      // Prefer a terminal cancelled/errored run status so an interrupted run with
+      // a partial report isn't recorded as PASSED in the audit note.
+      const noteStatus = this.displayStatus(run, report.result);
+      const written = await this.fs.writeFile(
+        evidencePath,
+        this.renderNote(evidence, report, ucNoteNames, noteStatus),
       );
-    }
+      if (!written.ok) {
+        return err(
+          appError("EVIDENCE_WRITE_FAILED", `Could not write evidence note "${evidencePath}".`, {
+            details: { runId: run.id, path: evidencePath },
+            cause: written.error,
+          }),
+        );
+      }
 
-    await this.eventBus.publish(
-      createEvent(
-        "evidence.generated",
-        { runId: run.id, evidencePath, linkedUseCases },
-        { correlationId: run.id },
-      ),
-    );
-    this.logger.info("Evidence generated", { runId: run.id, path: evidencePath });
+      await this.eventBus.publish(
+        createEvent(
+          "evidence.generated",
+          { runId: run.id, evidencePath, linkedUseCases },
+          { correlationId: run.id },
+        ),
+      );
+      this.logger.info("Evidence generated", { runId: run.id, path: evidencePath });
+    }
 
     // Honor the opt-out: only write the evidence link into Use Case frontmatter
     // when the user hasn't disabled it (TIS §settings.automation).
@@ -114,9 +121,10 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
       // evidence-generation time, so last_run_date stays accurate on re-imports.
       await this.link(
         evidence,
-        this.summaryStatus(run, report.result),
+        this.perUseCaseStatus(run, report),
         run.finishedAt ?? run.startedAt,
         run.scope,
+        settings.automation.generateEvidenceMarkdown,
       );
     }
     return ok(evidence);
@@ -148,12 +156,19 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     return result.failed > 0 ? "failed" : "passed";
   }
 
-  /** Appends the evidence path + last-run summary to each owning Use Case. */
+  /**
+   * Appends the evidence path + last-run summary to each owning Use Case. When
+   * `wroteNote` is false (Markdown generation disabled) the note at
+   * `evidence.path` was never created, so we record `lastTestRun` WITHOUT an
+   * evidence path and don't append it to `evidence[]` — otherwise the Use Case
+   * and Recent Runs would link to a non-existent note.
+   */
   private async link(
     evidence: Evidence,
-    summaryStatus: TestRunStatus,
+    statusFor: (useCaseId: UseCaseId) => TestRunStatus | "skipped",
     runDate: string,
     runScope: ExecutionScope,
+    wroteNote: boolean,
   ): Promise<void> {
     for (const useCaseId of evidence.linkedUseCases) {
       const found = await this.useCaseService.findById(useCaseId);
@@ -166,13 +181,16 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
       const alreadyLinked = useCase.evidence.includes(evidence.path);
       const updated = {
         ...useCase,
-        evidence: alreadyLinked ? useCase.evidence : [...useCase.evidence, evidence.path],
+        evidence:
+          !wroteNote || alreadyLinked ? useCase.evidence : [...useCase.evidence, evidence.path],
         lastTestRun: {
           runId: evidence.runId,
-          status: summaryStatus,
+          // Per-UC status, not the run aggregate: a broad (all/suite) run that
+          // failed because ONE UC failed must not mark every covered UC failing.
+          status: statusFor(useCaseId),
           date: runDate,
           scope: runScope,
-          evidencePath: evidence.path,
+          evidencePath: wroteNote ? evidence.path : undefined,
         },
       };
       const result = await this.useCaseService.update(updated);
@@ -183,14 +201,42 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
         });
         continue;
       }
-      await this.eventBus.publish(
-        createEvent(
-          "evidence.linkedToUseCase",
-          { useCaseId, evidencePath: evidence.path },
-          { correlationId: evidence.runId },
-        ),
-      );
+      // Only advertise an evidence link when the note actually exists; otherwise
+      // the `usecase.updated` event from update() already refreshes the dashboard.
+      if (wroteNote) {
+        await this.eventBus.publish(
+          createEvent(
+            "evidence.linkedToUseCase",
+            { useCaseId, evidencePath: evidence.path },
+            { correlationId: evidence.runId },
+          ),
+        );
+      }
     }
+  }
+
+  /**
+   * Per-Use-Case last-run status from the report. A run-level terminal
+   * (cancelled/errored) applies to every UC; otherwise a UC is `failed` only
+   * when one of ITS OWN scenarios failed (so a broad run's single failure
+   * doesn't redden sibling UCs whose features passed). Falls back to the run
+   * aggregate when a UC has no scenarios in the report.
+   */
+  private perUseCaseStatus(
+    run: TestRun,
+    report: ImportedReport,
+  ): (id: UseCaseId) => TestRunStatus | "skipped" {
+    return (useCaseId) => {
+      if (run.status === "cancelled" || run.status === "errored") return run.status;
+      const own = report.scenarioResults.filter(
+        (s) => useCaseIdFromPath(s.featureUri ?? s.feature) === useCaseId,
+      );
+      if (own.length === 0) return this.summaryStatus(run, report.result);
+      if (own.some((s) => s.status === "failed")) return "failed";
+      // A UC whose own scenarios all SKIPPED didn't pass — don't inflate the
+      // Passing KPI; report skipped so the policy treats it as not-passing.
+      return own.some((s) => s.status === "passed") ? "passed" : "skipped";
+    };
   }
 
   /**

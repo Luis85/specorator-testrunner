@@ -43,7 +43,10 @@ export interface TestRun {
 
 export interface TestRunSummary {
   runId: RunId;
-  status: TestRunStatus;
+  // A per-UC roll-up can be `skipped` when all of this UC's scenarios in a broad
+  // run were skipped — distinct from a real pass (the policy treats it as
+  // exercised-but-not-passing, not as the Passing KPI).
+  status: TestRunStatus | "skipped";
   date: string;
   evidencePath?: VaultPath;
   /** Scope of the run, so the roll-up knows whether it covered the whole UC. */

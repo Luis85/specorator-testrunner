@@ -36,6 +36,10 @@ import {
   type SuiteService,
 } from "./application/services/suite-service";
 import {
+  DefaultTraceabilityService,
+  type TraceabilityService,
+} from "./application/services/traceability-service";
+import {
   DefaultTestExecutionService,
   type ExecuteTestRequest,
   type TestExecutionService,
@@ -72,6 +76,10 @@ import {
   USE_CASE_VIEW_TYPE,
   UseCaseDashboardView,
 } from "./presentation/views/use-case-dashboard-view";
+import {
+  DASHBOARD_VIEW_TYPE,
+  DashboardView,
+} from "./presentation/views/dashboard-view";
 import { InMemoryEventBus } from "./shared/event-bus/event-bus";
 import { ConsoleLogger, type Logger } from "./shared/logging/logger";
 import type { Result } from "./shared/result/result";
@@ -94,6 +102,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private testExecutionService!: TestExecutionService;
   private reportImportService!: ReportImportService;
   private evidenceGenerationService!: EvidenceGenerationService;
+  private traceabilityService!: TraceabilityService;
   private vaultAdapter!: ObsidianVaultAdapter;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
   /** Last run started this session, so report import can re-run on demand. */
@@ -211,6 +220,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+
+    // EPIC-009 Dashboard (UC-018): aggregate the Use Case index into KPI counts
+    // + recent runs for the live Test Hub Dashboard.
+    this.traceabilityService = new DefaultTraceabilityService(
+      this.useCaseService,
+      vault,
+      eventBus,
+      this.logger,
+    );
     // After a run reaches a terminal completed/failed state, import + generate
     // evidence best-effort. Subscribers must never throw into the bus (EN-1), so
     // every fault is caught, logged, and surfaced as a Notice.
@@ -238,6 +256,14 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.registerView(
       TEST_CONSOLE_VIEW_TYPE,
       (leaf) => new TestConsoleView(leaf, eventBus),
+    );
+    this.registerView(
+      DASHBOARD_VIEW_TYPE,
+      (leaf) =>
+        new DashboardView(leaf, {
+          traceabilityService: this.traceabilityService,
+          eventBus,
+        }),
     );
 
     this.addSettingTab(new TestHubSettingTab(this, this));
@@ -371,6 +397,16 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
     );
 
+    // EPIC-009 Dashboard (UC-018).
+    this.addCommand({
+      id: "open-dashboard",
+      name: "Open Dashboard",
+      callback: () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
+    });
+    this.addRibbonIcon("gauge", "Open Test Hub Dashboard", () =>
+      void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
+    );
+
     this.logger.info("E2E Test Hub loaded");
   }
 
@@ -396,6 +432,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.app.workspace.detachLeavesOfType(USE_CASE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(SUITE_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(TEST_CONSOLE_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DASHBOARD_VIEW_TYPE);
     this.logger?.info("E2E Test Hub unloaded");
   }
 
@@ -464,11 +501,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         if (notify) new Notice(`Report import failed: ${imported.error.message}`, 10000);
         return;
       }
-      // Honor the opt-out: skip evidence-note generation when disabled.
-      if (!this.hubSettings.automation.generateEvidenceMarkdown) {
-        if (notify) new Notice("Evidence Markdown generation is disabled in settings.");
-        return;
-      }
+      // Always call generate(): it honors BOTH opt-outs internally — skipping
+      // the Markdown note when generateEvidenceMarkdown is off, but still writing
+      // the Use Case lastTestRun (Recent Runs) when updateUseCaseFrontmatterAfterRun
+      // is on. Gating the whole call on the note opt-out dropped runs from the
+      // dashboard (US-038).
       const evidence = await this.evidenceGenerationService.generate({
         run,
         report: imported.value,
@@ -481,7 +518,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         if (notify) new Notice(`Evidence generation failed: ${evidence.error.message}`, 10000);
         return;
       }
-      if (notify) new Notice(`Evidence written to ${evidence.value.path}`);
+      if (notify) {
+        // generate() may return ok without writing a note (Markdown disabled) —
+        // don't point the user at a deliberately non-existent file.
+        new Notice(
+          this.hubSettings.automation.generateEvidenceMarkdown
+            ? `Evidence written to ${evidence.value.path}`
+            : "Last run recorded (evidence Markdown generation is disabled).",
+        );
+      }
     } catch (error) {
       // The subscriber must not throw into the bus (EN-1).
       this.logger.error("Report import / evidence generation threw", error as Error);
