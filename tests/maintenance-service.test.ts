@@ -3,6 +3,7 @@ import { DefaultEnvironmentValidationService } from "../src/application/services
 import { DefaultMaintenanceService } from "../src/application/services/maintenance-service";
 import { DefaultRunnerInstallationService } from "../src/application/services/runner-installation-service";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
+import { REQUIRED_RUNNER_DEPENDENCIES } from "../src/application/content/runner-templates";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import {
@@ -52,6 +53,16 @@ const build = () => {
   return { service, absoluteFs, childProcess, templates, types };
 };
 
+const seedHealthyRunner = (absoluteFs: FakeAbsoluteFileSystem) => {
+  absoluteFs.existing.add("/vault/.testrunner");
+  absoluteFs.existing.add("/vault/.testrunner/package.json");
+  absoluteFs.existing.add("/vault/.testrunner/node_modules");
+  for (const dep of REQUIRED_RUNNER_DEPENDENCIES) {
+    absoluteFs.existing.add(`/vault/.testrunner/${dep}`);
+  }
+  absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome");
+};
+
 describe("DefaultMaintenanceService", () => {
   it("recreates files and reinstalls when dependencies and browsers are missing", async () => {
     const { service, childProcess, templates, types } = build();
@@ -73,10 +84,7 @@ describe("DefaultMaintenanceService", () => {
 
   it("skips the dependency reinstall when deps are healthy, but always (re)verifies the browser", async () => {
     const { service, absoluteFs, childProcess } = build();
-    absoluteFs.existing.add("/vault/.testrunner");
-    absoluteFs.existing.add("/vault/.testrunner/package.json");
-    absoluteFs.existing.add("/vault/.testrunner/node_modules");
-    absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome");
+    seedHealthyRunner(absoluteFs);
 
     const result = await service.repair();
 
@@ -91,10 +99,7 @@ describe("DefaultMaintenanceService", () => {
 
   it("reinstalls dependencies when Playwright is present but not runnable", async () => {
     const { service, absoluteFs, childProcess } = build();
-    absoluteFs.existing.add("/vault/.testrunner");
-    absoluteFs.existing.add("/vault/.testrunner/package.json");
-    absoluteFs.existing.add("/vault/.testrunner/node_modules");
-    absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome");
+    seedHealthyRunner(absoluteFs);
     childProcess.exitCodes.set("npx playwright --version", 1);
 
     const result = await service.repair();

@@ -1,6 +1,9 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
-import { VALIDATED_RUNNER_FILES } from "../content/runner-templates";
+import {
+  REQUIRED_RUNNER_DEPENDENCIES,
+  VALIDATED_RUNNER_FILES,
+} from "../content/runner-templates";
 import { playwrightBrowsersCandidates, resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
@@ -90,7 +93,15 @@ export class DefaultEnvironmentValidationService
     }
     const packageJsonExists = !missingFiles.includes("package.json");
     const runnerFilesComplete = runnerFolderExists && missingFiles.length === 0;
-    const dependenciesInstalled = await this.absoluteFs.existsAbsolute(`${runnerAbs}/node_modules`);
+
+    const nodeModulesExists = await this.absoluteFs.existsAbsolute(`${runnerAbs}/node_modules`);
+    const missingDependencies: string[] = [];
+    if (nodeModulesExists) {
+      for (const dep of REQUIRED_RUNNER_DEPENDENCIES) {
+        if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/${dep}`))) missingDependencies.push(dep);
+      }
+    }
+    const dependenciesInstalled = nodeModulesExists && missingDependencies.length === 0;
     const playwrightAvailable =
       dependenciesInstalled &&
       (await this.commandSucceeds("npx playwright --version", cwd.value));
@@ -105,8 +116,11 @@ export class DefaultEnvironmentValidationService
     else
       for (const file of missingFiles)
         issues.push({ code: "RUNNER_MISSING_FILE", message: `.testrunner/${file} is missing.`, severity: "error" });
-    if (!dependenciesInstalled)
+    if (!nodeModulesExists)
       issues.push({ code: "DEPENDENCIES_MISSING", message: "Runner dependencies are not installed.", severity: "error" });
+    else if (missingDependencies.length > 0)
+      for (const dep of missingDependencies)
+        issues.push({ code: "DEPENDENCIES_MISSING", message: `.testrunner/${dep} is missing.`, severity: "error" });
     else if (!playwrightAvailable)
       issues.push({ code: "PLAYWRIGHT_MISSING", message: "Playwright is installed but not runnable.", severity: "error" });
     if (!browsersInstalled)

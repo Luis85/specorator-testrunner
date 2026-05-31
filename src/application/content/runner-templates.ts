@@ -257,3 +257,14 @@ export const VALIDATED_RUNNER_FILES = [
   "src/support/paths.ts",
   "src/fixtures/example.html",
 ] as const;
+
+/**
+ * node_modules markers a run depends on (US-013). The generated scripts invoke
+ * `node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js`, so both
+ * the Cucumber CLI entry and the tsx package must resolve; Playwright is probed
+ * separately via `npx playwright --version`.
+ */
+export const REQUIRED_RUNNER_DEPENDENCIES = [
+  "node_modules/@cucumber/cucumber/bin/cucumber.js",
+  "node_modules/tsx",
+] as const;
