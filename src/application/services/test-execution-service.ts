@@ -45,6 +45,12 @@ interface ActiveRun {
 const displayCommand = (args: string[]): string =>
   args.map((arg) => (arg.includes(" ") ? `"${arg}"` : arg)).join(" ");
 
+/** Splits a configured runner command string into argv, or the fallback if blank. */
+const toArgv = (command: string, fallback: string[]): string[] => {
+  const parts = command.trim().split(/\s+/).filter(Boolean);
+  return parts.length > 0 ? parts : fallback;
+};
+
 /** UTC `RUN-YYYY-MM-DD-HHMMSS` id (TIS §3.3). */
 const runId = (now: Date): RunId => {
   const iso = now.toISOString(); // 2026-06-01T10:00:00.000Z
@@ -271,20 +277,24 @@ export class DefaultTestExecutionService implements TestExecutionService {
     request: ExecuteTestRequest,
     settings: TestHubSettings,
   ): Promise<Result<string[]>> {
+    // Honor the user's configured runner commands (a wrapper script, extra
+    // Cucumber flags, a different npm script). Scoped runs append their args
+    // after the configured base command's tokens (TIS §13.2).
+    const base = toArgv(settings.runner.defaultRunCommand, ["npm", "run", "test"]);
     switch (request.scope) {
       case "demo":
-        return ok(["npm", "run", "test:smoke"]);
+        return ok(toArgv(settings.runner.smokeRunCommand, ["npm", "run", "test:smoke"]));
       case "all":
-        return ok(["npm", "run", "test"]);
+        return ok([...base]);
       case "suite": {
         const tags = await this.suiteService.resolveTagExpression(request.target);
         if (!tags.ok) return err(tags.error);
         // Verbatim tag expression as a single literal arg (AD-4, no quoting).
-        return ok(["npm", "run", "test", "--", "--tags", tags.value]);
+        return ok([...base, "--", "--tags", tags.value]);
       }
       case "feature":
         // Literal feature path arg; no shell, so no escaping needed.
-        return ok(["npm", "run", "test", "--", this.featureArg(settings, request.target)]);
+        return ok([...base, "--", this.featureArg(settings, request.target)]);
       case "use-case": {
         // UC-011: target the Use Case's declared featureFiles in order, each as
         // a separate literal arg. Falls back to the <UC-id>-*.feature glob when
