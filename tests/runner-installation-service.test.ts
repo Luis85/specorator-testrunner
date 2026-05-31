@@ -48,7 +48,7 @@ describe("DefaultRunnerInstallationService", () => {
     const { service, childProcess } = build();
     const result = await service.installDependencies(DEFAULT_SETTINGS);
     expect(result.ok).toBe(true);
-    expect(childProcess.calls[0].command).toBe(DEFAULT_SETTINGS.runner.installCommand);
+    expect(childProcess.calls[0].args.join(" ")).toBe(DEFAULT_SETTINGS.runner.installCommand);
     expect(childProcess.calls[0].cwd).toBe("/vault/.testrunner");
   });
 
@@ -68,11 +68,14 @@ describe("DefaultRunnerInstallationService", () => {
     if (!result.ok) expect(result.error.code).toBe("BROWSER_NOT_INSTALLED");
   });
 
-  it("refuses to spawn a command flagged by the safety policy", async () => {
+  it("refuses to spawn an argv flagged by the safety policy", async () => {
     const { service, childProcess } = build();
+    // Under shell: false the only way to be unsafe is a disallowed program
+    // (there is no shell, so && etc. would just be literal args): a tampered
+    // command whose program is not npm/npx/node is rejected (PR #7 rework).
     const tampered: TestHubSettings = {
       ...DEFAULT_SETTINGS,
-      runner: { ...DEFAULT_SETTINGS.runner, installCommand: "npm install && rm -rf /" },
+      runner: { ...DEFAULT_SETTINGS.runner, installCommand: "rm -rf /" },
     };
     const result = await service.installDependencies(tampered);
     expect(result.ok).toBe(false);

@@ -11,9 +11,12 @@ import { ok, type Result } from "../../shared/result/result";
 /**
  * Node `child_process.spawn`-backed runner (BBV §7 `ProcessAdapter`).
  *
- * Commands are spawned with `shell: true` for cross-platform `npm`/`npx`
- * resolution (R3); V1 commands come from trusted settings defaults and are
- * screened by `CommandSafetyPolicy` before reaching this adapter.
+ * Commands are spawned from an argv array with `shell: false` — there is no
+ * shell, so feature paths/tags with `$`, `&`, or spaces are passed verbatim as
+ * literal arguments and cannot be interpolated or word-split (TIS §13.2; the PR
+ * #7 decision to rework the runner to argv arrays). `args[0]` is the program
+ * (e.g. "npm"); the remaining entries are its arguments. They come from trusted
+ * settings defaults and are screened by `CommandSafetyPolicy` before arriving.
  */
 export class NodeChildProcessRunner implements ChildProcessRunner {
   private readonly active = new Map<string, ChildProcess>();
@@ -52,15 +55,18 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
         resolve(result);
       };
 
+      const [program, ...args] = request.args;
+      const display = request.args.join(" ");
       let child: ChildProcess;
       try {
-        child = spawn(request.command, {
+        // shell: false — args are literal, never re-parsed by a shell (TIS §13.2).
+        child = spawn(program, args, {
           cwd: request.cwd,
           env: { ...process.env, ...request.env },
-          shell: true,
+          shell: false,
         });
       } catch (cause) {
-        finish({ ok: false, error: appError("INIT_FAILED", `Could not spawn: ${request.command}`, { cause }) });
+        finish({ ok: false, error: appError("INIT_FAILED", `Could not spawn: ${display}`, { cause }) });
         return;
       }
       this.active.set(id, child);
@@ -80,7 +86,7 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       child.stdout?.on("data", (chunk: Buffer) => emit("stdout", chunk));
       child.stderr?.on("data", (chunk: Buffer) => emit("stderr", chunk));
       child.on("error", (cause) =>
-        finish({ ok: false, error: appError("INIT_FAILED", `Process error: ${request.command}`, { cause }) }),
+        finish({ ok: false, error: appError("INIT_FAILED", `Process error: ${display}`, { cause }) }),
       );
       child.on("close", (code) =>
         finish(ok({ exitCode: code ?? -1, stdout, stderr, durationMs: Date.now() - started })),
