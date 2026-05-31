@@ -509,7 +509,9 @@ Reserved for V2 — V1 does not poll CI providers.
 ```ts
 {
   path: string;
-  documentType: "getting-started" | "manual" | "troubleshooting";
+  // `index` is the navigational hub the generic "Open Documentation" command
+  // opens by default (US-046); the three guides map to UC-021/022/023.
+  documentType: "getting-started" | "manual" | "troubleshooting" | "index";
 }
 ```
 
