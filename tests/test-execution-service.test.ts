@@ -53,7 +53,7 @@ const build = () => {
     silentLogger,
     () => FIXED_NOW,
   );
-  return { service, fs, childProcess, absoluteFs, events, types };
+  return { service, fs, childProcess, absoluteFs, bus, events, types };
 };
 
 /** Seeds a suite so the `suite` scope can resolve a tag expression. */
@@ -156,6 +156,23 @@ describe("DefaultTestExecutionService", () => {
     expect(childProcess.calls).toHaveLength(0); // never spawned
     expect(types()).toContain("testrun.cancelled");
     expect(types()).not.toContain("testrun.started");
+  });
+
+  it("does not spawn when cancelled after start events publish but before runStreaming", async () => {
+    const { service, childProcess, bus, types } = build();
+    childProcess.pending = true;
+
+    // Cancel from inside the testrun.started handler — the bus awaits handlers,
+    // so terminated flips true after the start events publish and before spawn.
+    const unsubscribe = bus.subscribe("testrun.started", () => {
+      void service.cancel("RUN-2026-06-01-100000");
+    });
+    await service.execute({ scope: "demo", target: "demo" });
+    unsubscribe();
+
+    expect(types()).toContain("testrun.started"); // we got past the publishes
+    expect(types()).toContain("testrun.cancelled");
+    expect(childProcess.calls).toHaveLength(0); // but never spawned the runner
   });
 
   it("resolves the suite command from the suite's tag expression and emits suite.executed", async () => {

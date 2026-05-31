@@ -203,6 +203,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
       });
       this.logger.info("Test run started", { runId: run.id, scope: run.scope });
 
+      // Awaiting the requested/started publishes yields the event loop, so a
+      // cancel() can land here after they resolve. Re-check before spawning so
+      // we never start an untracked runner the UI already saw as cancelled.
+      if (activeRun.terminated) return ok(run);
+
       const result = await this.childProcess.runStreaming(
         { args: argv, cwd: cwd.value, env: this.runEnv(settings) },
         (output) => {
