@@ -70,14 +70,16 @@ Path: `src/presentation/{views,components,commands,settings}`.
 
 Each view subscribes to the `EventBus` for state it cares about and dispatches commands to application services for state changes. Views do not publish domain events directly; services do.
 
+> **Naming note (reconciled with code).** The implemented Obsidian `ItemView` classes are `DashboardView` (the main dashboard — drafted here as `TestHubView`), `UseCaseDashboardView` (drafted as `UseCaseExplorerView`), `SuiteDashboardView` (drafted as `SuiteExplorerView`), and `TestConsoleView` (the sidebar live-run panel — drafted as `TestRunPanel`), all under `src/presentation/views/`. There are no separate `SpecificationExplorerView`, `EvidenceExplorerView`, or `DocumentationView` leaf classes in V1; that functionality is folded into the dashboards/notes. The first-run flow is `InitializationWizardModal`. Treat the names below as the originally-planned surfaces; the parenthetical/real class names are authoritative.
+
 | View | Surface | Purpose | Consumes |
 | --- | --- | --- | --- |
-| `TestHubView` | Workspace leaf | Main dashboard: KPIs, runner health, recent runs, Use Cases, suites, quick actions. | `dashboard.refreshed`, `dashboard.kpi.updated`, `testrun.completed`, `testrunner.validated` |
+| `TestHubView` → `DashboardView` | Workspace leaf | Main dashboard: KPIs, runner health, recent runs, Use Cases, suites, quick actions. | `dashboard.refreshed`, `dashboard.kpi.updated`, `testrun.completed`, `testrunner.validated` |
 | `InitializationWizardView` | Modal | Guided first-run setup; shows progress and failure with retry. | `testhub.initialization.completed`, `testhub.initialization.failed`, `testrunner.installed`, `documentation.generated` |
 | `UseCaseExplorerView` | Workspace leaf | Browse, create, run Use Cases; show automation status. | `usecase.created`, `usecase.updated`, `usecase.status.changed`, `evidence.linkedToUseCase` |
 | `SpecificationExplorerView` | Workspace leaf | Manage feature files; validate; detect missing steps. | `specification.created`, `specification.updated`, `specification.validation.completed`, `specification.missingSteps.detected` |
 | `SuiteExplorerView` | Workspace leaf | List/create/run suites; manage tag expressions. | `suite.created`, `suite.updated`, `suite.executed` |
-| `TestRunPanel` | Sidebar leaf | Live execution: streaming output, status, results, evidence link. | `testrun.started`, `testrun.output.received`, `testrun.completed`, `testrun.failed`, `testrun.cancelled` |
+| `TestConsoleView` | Sidebar leaf | Live execution: streaming output, status, results, evidence link. (Was drafted as `TestRunPanel`; the implemented class is `TestConsoleView`, view type `e2e-test-hub-console`.) | `testrun.started`, `testrun.output.received`, `testrun.completed`, `testrun.failed`, `testrun.cancelled` |
 | `EvidenceExplorerView` | Workspace leaf | List/open evidence; jump to reports, screenshots, traces. | `evidence.generated`, `evidence.linkedToUseCase`, `report.imported` |
 | `DocumentationView` | Workspace leaf | Render generated `Test Hub` notes (Getting Started, User Manual, Troubleshooting). | `documentation.generated`, `documentation.opened` |
 | `SettingsTab` | Obsidian Settings | Edit paths, validate, reset. | `settings.updated`, `settings.validated`, `settings.reset` |
@@ -207,18 +209,17 @@ Defined in the [Event Catalog](./Event%20Catalog.md). The Domain Layer exports t
 
 | Policy | Purpose |
 | --- | --- |
-| `UseCaseIdPolicy` | Generate and validate stable `UC-NNN` identifiers. |
 | `PathSafetyPolicy` | Reject vault-escaping paths in settings and generated artifacts. |
-| `RunnerExecutionPolicy` | Decide what `--tags` expression to pass per execution scope. |
-| `EvidenceLinkingPolicy` | Determine which Use Case(s) a run's evidence attaches to. |
-| `CiReadinessPolicy` | Encode the rules for `EnvironmentValidationService` CI check. |
-| `UseCaseAutomationPolicy` | Derive `UseCase.automationStatus` from Feature states with `@wip` exclusion (per ADR-0017). |
+| `CommandSafetyPolicy` | Validate runner argv shapes before spawn (ADR-0010); backs `COMMAND_DISALLOWED`. **Was drafted as `RunnerExecutionPolicy`.** |
+| `UseCaseAutomationPolicy` | Derive `UseCase.automationStatus` from Feature states with `@wip` exclusion (per ADR-0017); scope-aware + prior-status floor. |
+
+> **Reconciled with code.** The implemented policies under `src/domain/policies/` are exactly these three: `path-safety-policy.ts`, `command-safety-policy.ts`, `use-case-automation-policy.ts`. Earlier drafts listed `UseCaseIdPolicy`, `RunnerExecutionPolicy`, `EvidenceLinkingPolicy`, and `CiReadinessPolicy` as domain policies. They are **not** domain-policy classes: identifier generation lives with the value objects/services, CI-readiness logic lives in the application service `ci-readiness.ts` / `environment-validation-service.ts`, evidence-to-UC linking lives in `EvidenceGenerationService`, and the tag-expression-per-scope logic lives in the application services (`test-execution-service.ts`, `suite-service.ts`), not in a `TagExpressionPolicy`.
 
 ### 6.5 Persistence (no repository ports — `VaultFileSystem`)
 
 > **Not built.** The per-aggregate repository interfaces (`UseCaseRepository`, `FeatureRepository`, `SuiteRepository`, `TestRunRepository`, `EvidenceRepository`) this section once described do **not** exist. There is no `src/domain/repositories/` directory.
 >
-> **Actual choice:** all persistence is read and written through one infrastructure adapter, `VaultFileSystem` (`src/infrastructure/persistence/vault-file-system.ts`), behind a single file-system port the application services depend on. Aggregates are stored as Markdown/`.feature` notes in the vault rather than reconstituted through dedicated repositories. A move to per-aggregate repository ports is a possible future refinement, not a V1 building block.
+> **Actual choice:** all persistence is read and written through file-system **ports** declared in the application layer (`src/application/ports/vault-file-system.ts`, plus `file-system.ts` / `absolute-file-system.ts`) and implemented by Obsidian/Node adapters in infrastructure (`src/infrastructure/obsidian/obsidian-vault-file-system.ts`, `src/infrastructure/filesystem/{vault-fs,absolute-fs}.ts`). Aggregates are stored as Markdown/`.feature` notes in the vault rather than reconstituted through dedicated repositories. A move to per-aggregate repository ports is a possible future refinement, not a V1 building block.
 
 ---
 
@@ -329,7 +330,7 @@ Domain → no outer layer
 - Infrastructure → concrete implementations
 - Presentation → application services
 
-Enforced via ESLint `no-restricted-imports` and a layer-import test fixture in CI.
+**Enforcement (reconciled with code).** Layering is enforced *partially*, not by the mechanism previously claimed. There **is** an ESLint setup (`eslint.config.mjs`, typescript-eslint type-checked config) wired into CI as a `npm run lint` step (`.github/workflows/ci.yml`), and it enforces `@typescript-eslint/no-floating-promises` (among others). However, there is **no** `no-restricted-imports` rule encoding the layer boundaries and **no** layer-import test fixture. So the import directions above are enforced today only by `tsconfig` structure + code review, not by a dedicated layering lint rule. Adding a `no-restricted-imports` layer rule (and/or a layer-import fixture) is a tracked backlog item (V1 Review P4-2).
 
 ---
 
