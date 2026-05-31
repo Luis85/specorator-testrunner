@@ -19,6 +19,14 @@ export interface RunCommandRequest {
   args: string[];
   cwd: string; // absolute path, must resolve under .testrunner per RunnerExecutionPolicy
   env?: Record<string, string>;
+  // Optional caller-owned cancellation handle. When set, the runner registers
+  // the spawned child under THIS id so `cancel(processId)` targets exactly this
+  // process (e.g. the TestExecutionService passes the runId — "the runId is the
+  // process handle", ADR-0018). When omitted (e.g. npm install / browser
+  // install), the child is untracked by any external id and cancel() won't
+  // target it. Without this, the internal id never reaches the caller and
+  // cancel() can never match.
+  processId?: string;
 }
 
 export interface RunnerOutput {

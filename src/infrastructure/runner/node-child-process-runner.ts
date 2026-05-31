@@ -85,7 +85,10 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
   ): Promise<Result<RunnerCommandResult>> {
     return new Promise((resolve) => {
       const started = Date.now();
-      const id = `proc-${++this.counter}`;
+      // Register under the caller's cancellation handle (e.g. runId) when given,
+      // so cancel(processId) targets exactly this child; otherwise an internal
+      // id keeps it tracked for cleanup but unreachable by external cancel.
+      const id = request.processId ?? `proc-${++this.counter}`;
       let settled = false;
       const finish = (result: Result<RunnerCommandResult>) => {
         if (settled) return;

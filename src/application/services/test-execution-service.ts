@@ -261,7 +261,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
       if (activeRun.terminated) return ok(run);
 
       const result = await this.childProcess.runStreaming(
-        { args: argv, cwd: cwd.value, env: this.runEnv(settings) },
+        { args: argv, cwd: cwd.value, env: this.runEnv(settings), processId: run.id },
         (output) => {
           void this.publish("testrun.output.received", run.id, {
             runId: run.id,
