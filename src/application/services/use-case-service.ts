@@ -1,7 +1,7 @@
 import { buildUseCaseNote, useCaseFileName } from "../content/use-case-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
-import type { TestRunStatus } from "../../domain/entities/test-run";
+import type { ExecutionScope, TestRunStatus } from "../../domain/entities/test-run";
 import type {
   AutomationStatus,
   UseCase,
@@ -142,6 +142,7 @@ export class DefaultUseCaseService implements UseCaseService {
           last_run_status: useCase.lastTestRun?.status,
           last_run_date: useCase.lastTestRun?.date,
           last_run_evidence: useCase.lastTestRun?.evidencePath,
+          last_run_scope: useCase.lastTestRun?.scope,
         })
       : buildUseCaseNote(useCase);
 
@@ -193,6 +194,10 @@ export class DefaultUseCaseService implements UseCaseService {
               date: typeof fm.last_run_date === "string" ? fm.last_run_date : "",
               evidencePath:
                 typeof fm.last_run_evidence === "string" ? fm.last_run_evidence : undefined,
+              scope:
+                typeof fm.last_run_scope === "string"
+                  ? (fm.last_run_scope as ExecutionScope)
+                  : undefined,
             }
           : undefined,
       path,
