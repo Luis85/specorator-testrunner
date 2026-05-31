@@ -200,4 +200,30 @@ describe("DefaultReportImportService", () => {
     if (!result.ok) return;
     expect(result.value.scenarioResults[0].status).toBe("passed");
   });
+
+  it("tolerates malformed embeddings/attachments (non-array / null) without throwing", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.seed(
+      REPORT_ABS,
+      JSON.stringify([
+        {
+          name: "F",
+          uri: "features/UC-001-x.feature",
+          elements: [
+            {
+              name: "S",
+              steps: [
+                { result: { status: "passed" }, embeddings: "not-an-array", attachments: [null] },
+              ],
+            },
+          ],
+        },
+      ]),
+    );
+
+    const result = await service.import(run());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.scenarioResults[0].status).toBe("passed");
+  });
 });

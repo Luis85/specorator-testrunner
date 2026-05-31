@@ -1,6 +1,7 @@
 import { resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { SuiteService } from "./suite-service";
+import type { UseCaseService } from "./use-case-service";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { ExecutionScope, TestRun } from "../../domain/entities/test-run";
@@ -76,6 +77,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
   constructor(
     private readonly settingsService: SettingsService,
     private readonly suiteService: SuiteService,
+    private readonly useCaseService: UseCaseService,
     private readonly childProcess: ChildProcessRunner,
     private readonly absoluteFs: AbsoluteFileSystem,
     private readonly commandSafety: CommandSafetyPolicy,
@@ -270,10 +272,22 @@ export class DefaultTestExecutionService implements TestExecutionService {
         // Shell-quote the interpolated path so spaces and shell-expansion chars
         // ($, `, etc.) in a configured folder/filename survive shell:true.
         return ok(`npm run test -- ${shellQuote(this.featureArg(settings, request.target))}`);
-      case "use-case":
+      case "use-case": {
+        // UC-011: target the Use Case's declared featureFiles in order. Falls
+        // back to the <UC-id>-*.feature glob when the UC or its links can't be
+        // resolved (e.g. a brand-new UC with the standard naming).
+        const found = await this.useCaseService.findById(request.target);
+        const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
+        if (featureFiles.length > 0) {
+          const args = featureFiles
+            .map((path) => shellQuote(this.featureArg(settings, path)))
+            .join(" ");
+          return ok(`npm run test -- ${args}`);
+        }
         return ok(
           `npm run test -- ${shellQuote(`${this.featurePrefix(settings)}/${request.target}-*.feature`)}`,
         );
+      }
     }
   }
 
