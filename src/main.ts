@@ -14,6 +14,14 @@ import {
   DefaultMaintenanceService,
   type MaintenanceService,
 } from "./application/services/maintenance-service";
+import {
+  DefaultEvidenceGenerationService,
+  type EvidenceGenerationService,
+} from "./application/services/evidence-generation-service";
+import {
+  DefaultReportImportService,
+  type ReportImportService,
+} from "./application/services/report-import-service";
 import { DefaultRunnerInstallationService } from "./application/services/runner-installation-service";
 import {
   DefaultSettingsService,
@@ -38,6 +46,7 @@ import {
 } from "./application/services/use-case-service";
 import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
+import type { TestRun } from "./domain/entities/test-run";
 import { DEFAULT_SETTINGS, type TestHubSettings } from "./domain/settings/settings";
 import { NodeAbsoluteFileSystem } from "./infrastructure/filesystem/node-absolute-file-system";
 import { ObsidianDataStore } from "./infrastructure/obsidian/obsidian-data-store";
@@ -83,8 +92,12 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private specificationService!: SpecificationService;
   private suiteService!: SuiteService;
   private testExecutionService!: TestExecutionService;
+  private reportImportService!: ReportImportService;
+  private evidenceGenerationService!: EvidenceGenerationService;
   private vaultAdapter!: ObsidianVaultAdapter;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
+  /** Last run started this session, so report import can re-run on demand. */
+  private lastRun: TestRun | null = null;
 
   async onload(): Promise<void> {
     const eventBus = new InMemoryEventBus((error) =>
@@ -176,6 +189,26 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+
+    // EPIC-008 Reporting & Evidence (UC-016): import the runner's JSON report
+    // and generate linked Markdown evidence once a run finishes.
+    this.reportImportService = new DefaultReportImportService(
+      this.hubSettingsService,
+      absoluteFs,
+      eventBus,
+      this.logger,
+    );
+    this.evidenceGenerationService = new DefaultEvidenceGenerationService(
+      vault,
+      this.useCaseService,
+      eventBus,
+      this.logger,
+    );
+    // After a run reaches a terminal completed/failed state, import + generate
+    // evidence best-effort. Subscribers must never throw into the bus (EN-1), so
+    // every fault is caught, logged, and surfaced as a Notice.
+    eventBus.subscribe("testrun.completed", () => void this.importAndGenerateEvidence());
+    eventBus.subscribe("testrun.failed", () => void this.importAndGenerateEvidence());
 
     this.registerView(
       USE_CASE_VIEW_TYPE,
@@ -298,6 +331,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       name: "Open Test Console",
       callback: () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
     });
+
+    // EPIC-008 (US-032 / UC-016): re-run report import + evidence for the last run.
+    this.addCommand({
+      id: "import-report-last-run",
+      name: "Import Report for Last Run",
+      callback: () => void this.importAndGenerateEvidence(true),
+    });
     this.addRibbonIcon("terminal", "Open Test Console", () =>
       void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
     );
@@ -320,6 +360,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private async runTest(request: ExecuteTestRequest): Promise<void> {
     await this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
     const result = await this.testExecutionService.execute(request);
+    if (result.ok) this.lastRun = result.value;
     if (!result.ok) {
       const active = result.error.details?.activeRunId;
       new Notice(
@@ -328,6 +369,47 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           : `Could not start run: ${result.error.message}`,
         10000,
       );
+    }
+  }
+
+  /**
+   * Imports the last run's Cucumber report and generates linked evidence
+   * (UC-016). Resilient by design: invoked from the EventBus subscriber, so it
+   * never rejects — every fault is logged and (when surfaced) shown as a Notice.
+   */
+  private async importAndGenerateEvidence(notify = false): Promise<void> {
+    const run = this.lastRun;
+    if (!run) {
+      if (notify) new Notice("No test run to import a report for yet.");
+      return;
+    }
+    try {
+      const imported = await this.reportImportService.import(run);
+      if (!imported.ok) {
+        this.logger.warn("Report import failed", {
+          runId: run.id,
+          reason: imported.error.message,
+        });
+        if (notify) new Notice(`Report import failed: ${imported.error.message}`, 10000);
+        return;
+      }
+      const evidence = await this.evidenceGenerationService.generate({
+        run,
+        report: imported.value,
+      });
+      if (!evidence.ok) {
+        this.logger.warn("Evidence generation failed", {
+          runId: run.id,
+          reason: evidence.error.message,
+        });
+        if (notify) new Notice(`Evidence generation failed: ${evidence.error.message}`, 10000);
+        return;
+      }
+      if (notify) new Notice(`Evidence written to ${evidence.value.path}`);
+    } catch (error) {
+      // The subscriber must not throw into the bus (EN-1).
+      this.logger.error("Report import / evidence generation threw", error as Error);
+      if (notify) new Notice("Report import / evidence generation failed unexpectedly.", 10000);
     }
   }
 

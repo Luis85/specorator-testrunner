@@ -110,8 +110,22 @@ export class FakeAbsoluteFileSystem implements AbsoluteFileSystem {
     return ok(this.basePath);
   }
 
+  /** Seeds file contents so {@link readAbsolute} can serve them (e.g. a report). */
+  seed(path: string, content: string): void {
+    this.written.set(path, content);
+    this.existing.add(path);
+  }
+
   async existsAbsolute(path: string): Promise<boolean> {
     return this.existing.has(path) || this.written.has(path);
+  }
+
+  async readAbsolute(path: string): Promise<Result<string>> {
+    const content = this.written.get(path);
+    if (content === undefined) {
+      return { ok: false, error: { code: "REPORT_NOT_FOUND", message: `missing ${path}` } };
+    }
+    return ok(content);
   }
 
   async writeAbsolute(path: string, content: string): Promise<Result<void>> {
