@@ -33,10 +33,19 @@ export interface StepDefinitionPattern {
 const STEP_DEF_CALL =
   /\b(?:Given|When|Then|And|But)\s*\(\s*(?:(["'`])((?:\\.|(?!\1).)*)\1|\/((?:\\.|[^/])+)\/[a-z]*)/g;
 
+/**
+ * Strips block and line comments so a commented-out step definition isn't
+ * scraped as implemented (which would hide a genuinely missing step). String
+ * literals containing `//` are rare in step patterns, and an over-strip there
+ * only risks a false "missing" report — the safe direction (UC-010).
+ */
+const stripComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
 /** Scrapes step-definition patterns from one steps file's source. */
 export const parseStepDefinitions = (source: string): StepDefinitionPattern[] => {
   const patterns: StepDefinitionPattern[] = [];
-  for (const match of source.matchAll(STEP_DEF_CALL)) {
+  for (const match of stripComments(source).matchAll(STEP_DEF_CALL)) {
     const [, , quoted, regex] = match;
     if (typeof quoted === "string") {
       patterns.push({ kind: "expression", source: quoted });
