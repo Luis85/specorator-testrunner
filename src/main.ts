@@ -200,6 +200,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       this.logger,
     );
     this.evidenceGenerationService = new DefaultEvidenceGenerationService(
+      this.hubSettingsService,
       vault,
       this.useCaseService,
       eventBus,

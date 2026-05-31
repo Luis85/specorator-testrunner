@@ -54,6 +54,8 @@ interface CucumberScenario {
   name?: string;
   type?: string; // "scenario" | "background"
   steps?: CucumberStep[];
+  before?: CucumberStep[]; // Before hooks (carry result/embeddings like steps)
+  after?: CucumberStep[]; // After hooks
 }
 
 interface CucumberFeature {
@@ -76,7 +78,14 @@ const nsToMs = (duration: number | undefined): number | undefined =>
  * failed; otherwise any non-passed (skipped/undefined/pending/ambiguous) →
  * skipped; all passed → passed. A scenario with no steps is skipped.
  */
-const scenarioStatus = (steps: CucumberStep[]): ScenarioResult["status"] => {
+const scenarioStatus = (
+  steps: CucumberStep[],
+  hooks: CucumberStep[] = [],
+): ScenarioResult["status"] => {
+  // A failed Before/After hook (e.g. browser setup/teardown) fails the scenario
+  // even when the step results look passed/skipped (Cucumber records hooks
+  // separately from steps).
+  if (hooks.some((hook) => hook.result?.status === "failed")) return "failed";
   if (steps.length === 0) return "skipped";
   let allPassed = true;
   for (const step of steps) {
@@ -190,10 +199,17 @@ export class DefaultReportImportService implements ReportImportService {
         const steps = (Array.isArray(scenario.steps) ? scenario.steps : []).filter(
           isRecord,
         ) as CucumberStep[];
+        // Before/After hooks carry their own pass/fail (and screenshots); fold
+        // them into status/duration/error/artifacts so a hook failure surfaces.
+        const hooks = [
+          ...(Array.isArray(scenario.before) ? scenario.before : []),
+          ...(Array.isArray(scenario.after) ? scenario.after : []),
+        ].filter(isRecord) as CucumberStep[];
+        const stepsAndHooks = [...steps, ...hooks];
 
-        const status = scenarioStatus(steps);
-        const durationMs = this.totalDurationMs(steps);
-        const errorMessage = this.firstErrorMessage(steps);
+        const status = scenarioStatus(steps, hooks);
+        const durationMs = this.totalDurationMs(stepsAndHooks);
+        const errorMessage = this.firstErrorMessage(stepsAndHooks);
         scenarioResults.push({
           feature: featureName,
           featureUri,
@@ -205,7 +221,7 @@ export class DefaultReportImportService implements ReportImportService {
         result[status] += 1;
         result.total += 1;
 
-        this.collectArtifacts(steps, runnerPath, artifacts);
+        this.collectArtifacts(stepsAndHooks, runnerPath, artifacts);
       }
     }
 

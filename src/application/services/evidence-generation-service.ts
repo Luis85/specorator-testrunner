@@ -1,4 +1,5 @@
 import type { ImportedReport, ScenarioResult } from "./report-import-service";
+import type { SettingsService } from "./settings-service";
 import type { UseCaseService } from "./use-case-service";
 import { useCaseIdFromPath } from "../content/gherkin";
 import type { VaultFileSystem } from "../ports/vault-file-system";
@@ -28,9 +29,6 @@ export interface GenerateEvidenceRequest {
   report: ImportedReport;
 }
 
-/** Root folder for partitioned evidence (ADR-0016). */
-const EVIDENCE_ROOT = "Test Evidence";
-
 /** `RUN-2026-05-31-...` → derived overall status for US-031 surfacing. */
 const overallStatus = (result: TestRunResult): "passed" | "failed" | "skipped" => {
   if (result.failed > 0) return "failed";
@@ -48,6 +46,7 @@ const overallStatus = (result: TestRunResult): "passed" | "failed" | "skipped" =
  */
 export class DefaultEvidenceGenerationService implements EvidenceGenerationService {
   constructor(
+    private readonly settingsService: SettingsService,
     private readonly fs: VaultFileSystem,
     private readonly useCaseService: UseCaseService,
     private readonly eventBus: EventBus,
@@ -57,7 +56,8 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
 
   async generate({ run, report }: GenerateEvidenceRequest): Promise<Result<Evidence>> {
     const createdAt = this.now().toISOString();
-    const evidencePath = this.evidencePath(run);
+    const settings = await this.settingsService.load();
+    const evidencePath = this.evidencePath(run, settings.paths.evidencePath);
     const linkedUseCases = await this.resolveUseCases(run, report);
 
     const evidence: Evidence = {
@@ -180,12 +180,12 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
   }
 
   /** `Test Evidence/YYYY/MM/<runId>/summary.md` from the run start (ADR-0016). */
-  private evidencePath(run: TestRun): VaultPath {
+  private evidencePath(run: TestRun, root: VaultPath): VaultPath {
     const started = new Date(run.startedAt);
     const valid = Number.isNaN(started.getTime()) ? this.now() : started;
     const year = String(valid.getUTCFullYear());
     const month = String(valid.getUTCMonth() + 1).padStart(2, "0");
-    return joinVaultPath(EVIDENCE_ROOT, year, month, run.id, "summary.md");
+    return joinVaultPath(root, year, month, run.id, "summary.md");
   }
 
   /** `EV-<runId without RUN- prefix>` (TIS §10.3 id form). */
