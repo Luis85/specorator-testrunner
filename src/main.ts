@@ -183,6 +183,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.testExecutionService = new DefaultTestExecutionService(
       this.hubSettingsService,
       this.suiteService,
+      this.useCaseService,
       new NodeChildProcessRunner(),
       absoluteFs,
       commandSafety,
