@@ -52,14 +52,21 @@ describe("DefaultCommandSafetyPolicy", () => {
     }
   });
 
-  it("only lets npx run the bundled Playwright CLI (ADR-0010)", () => {
+  it("only lets npx run the bundled Playwright CLI install/probe (ADR-0010)", () => {
     for (const args of [
       ["npx", "some-malicious-package"],
       ["npx", "-y", "cowsay"],
       ["npx"],
+      // playwright, but a destructive/non-install subcommand:
+      ["npx", "playwright", "uninstall", "--all"],
+      ["npx", "playwright", "test"],
+      ["npx", "playwright"],
     ]) {
       expect(policy.assertSafe(args).ok, args.join(" ")).toBe(false);
     }
+    // install/probe shapes stay allowed.
+    expect(policy.assertSafe(["npx", "playwright", "--version"]).ok).toBe(true);
+    expect(policy.assertSafe(["npx", "playwright", "install", "--with-deps", "chromium"]).ok).toBe(true);
   });
 
   it("rejects npm run options that precede the -- separator (ADR-0010)", () => {
