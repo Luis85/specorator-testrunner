@@ -151,6 +151,26 @@ describe("DefaultStepDefinitionService.generate", () => {
     expect(written).toContain(`Given("a fresh step"`);
   });
 
+  it("adds the Given import when the existing file only aliases it (review)", async () => {
+    const { service, fs } = build();
+    // The file imports Cucumber under an ALIAS, so there is no local `Given`
+    // binding — the appended stubs call Given(...), so the import must be added.
+    fs.files.set(
+      STEP_FILE,
+      `import { Given as defineStep } from "@cucumber/cucumber";\n\ndefineStep("aliased", async function () {});\n`,
+    );
+
+    const result = await service.generate(FEATURE, ["a fresh step"]);
+
+    expect(result.ok).toBe(true);
+    const written = fs.files.get(STEP_FILE) ?? "";
+    // The real `Given` import is added (the alias binding is a different name, so
+    // no duplicate declaration), and the user's aliased import is preserved.
+    expect(written).toContain(`import { Given } from "@cucumber/cucumber";`);
+    expect(written).toContain(`import { Given as defineStep }`);
+    expect(written).toContain(`Given("a fresh step"`);
+  });
+
   it("writes the stub file under .testrunner/src/steps via the VaultFileSystem port", async () => {
     const { service, fs } = build();
 

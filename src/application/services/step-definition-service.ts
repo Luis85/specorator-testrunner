@@ -1,5 +1,5 @@
 import {
-  buildStepDefinitionStubBlocks,
+  buildAppendedStubs,
   buildStepDefinitionStubFile,
   findMissingSteps,
   parseStepDefinitions,
@@ -13,10 +13,6 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath } from "../../shared/utils/vault-path";
-
-/** True when a steps file already imports `Given` from cucumber-js (any import shape). */
-const importsGiven = (source: string): boolean =>
-  /import\s*\{[^}]*\bGiven\b[^}]*\}\s*from\s*["']@cucumber\/cucumber["']/.test(source);
 
 export interface GenerateStepDefinitionsResult {
   /** Steps a stub was written for (the subset of input still undefined). */
@@ -90,17 +86,14 @@ export class DefaultStepDefinitionService implements StepDefinitionService {
     let written: Result<void>;
     if (exists) {
       // Append to (never overwrite) a hand-edited steps file: read its current
-      // content and add the new stubs below it. If the file ALREADY imports
-      // `Given`, append the stub blocks WITHOUT the import header — re-emitting
-      // it would create a duplicate top-level `Given` binding and the module
-      // would fail to load (review: duplicate-import). Only fall back to the full
-      // header+body if the existing file somehow lacks the import.
+      // content and add the new stubs below it. buildAppendedStubs emits only the
+      // imports the file does not already have (by local binding name), so it
+      // neither duplicates an existing `Given` binding nor omits one that was
+      // imported under an alias (review: duplicate/aliased imports).
       const read = await this.fs.readFile(stepFile);
       if (!read.ok) return err(read.error);
       const separator = read.value.endsWith("\n") ? "\n" : "\n\n";
-      const block = importsGiven(read.value)
-        ? `${buildStepDefinitionStubBlocks(stillMissing)}\n`
-        : buildStepDefinitionStubFile(stillMissing);
+      const block = buildAppendedStubs(read.value, stillMissing);
       written = await this.fs.writeFile(stepFile, `${read.value}${separator}${block}`);
     } else {
       written = await this.fs.createFile(stepFile, buildStepDefinitionStubFile(stillMissing));
