@@ -45,9 +45,48 @@ interface ActiveRun {
 const displayCommand = (args: string[]): string =>
   args.map((arg) => (arg.includes(" ") ? `"${arg}"` : arg)).join(" ");
 
-/** Splits a configured runner command string into argv, or the fallback if blank. */
+/**
+ * Tokenizes a configured runner command into argv with shell-style quoting, so
+ * a value like `npm run test -- --format "json:reports/cucumber report.json"`
+ * keeps the quoted path as ONE argument (the runner spawns with `shell: false`,
+ * so a naive whitespace split would hand Cucumber broken `"json:reports/cucumber`
+ * + `report.json"` tokens). Single quotes are literal; double quotes allow `\"`
+ * and `\\`; an unquoted backslash escapes the next char.
+ */
+export const tokenizeCommand = (command: string): string[] => {
+  const tokens: string[] = [];
+  let current: string | null = null;
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      else if (
+        quote === '"' &&
+        ch === "\\" &&
+        (command[i + 1] === '"' || command[i + 1] === "\\")
+      ) {
+        current = (current ?? "") + command[++i];
+      } else current = (current ?? "") + ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      current = current ?? "";
+    } else if (ch === "\\" && i + 1 < command.length) {
+      current = (current ?? "") + command[++i];
+    } else if (/\s/.test(ch)) {
+      if (current !== null) tokens.push(current);
+      current = null;
+    } else current = (current ?? "") + ch;
+  }
+  if (current !== null) tokens.push(current);
+  return tokens;
+};
+
+/** Tokenizes a configured runner command string into argv, or the fallback if blank. */
 const toArgv = (command: string, fallback: string[]): string[] => {
-  const parts = command.trim().split(/\s+/).filter(Boolean);
+  const parts = tokenizeCommand(command);
   return parts.length > 0 ? parts : fallback;
 };
 
