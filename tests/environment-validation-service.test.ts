@@ -382,22 +382,24 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(result.missingItems.some((m) => m.includes("provider"))).toBe(true);
   });
 
-  it("validateCiReadiness skips the package-script check for a non-npm ciRunCommand", async () => {
+  it("validateCiReadiness flags a CI command Generate CI Workflow would reject", async () => {
     const { service, absoluteFs } = build();
     seedManagedRunnerFiles(absoluteFs);
-    // package.json has NO npm scripts, but CI runs npx directly — so ready.
     absoluteFs.seed("/vault/.testrunner/package.json", JSON.stringify({ name: "runner" }));
     absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
     absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
 
+    // `npx cucumber-js ...` is not an npm ci/run shape, so Generate CI Workflow
+    // refuses it — readiness must flag it rather than green-light a config the
+    // generator can't produce.
     const settings = {
       ...DEFAULT_SETTINGS,
       runner: { ...DEFAULT_SETTINGS.runner, ciRunCommand: "npx cucumber-js --config cucumber.mjs" },
     };
     const result = await service.validateCiReadiness(settings);
 
-    expect(result.ready).toBe(true);
-    expect(result.missingItems.some((m) => m.includes("script"))).toBe(false);
+    expect(result.ready).toBe(false);
+    expect(result.missingItems.some((m) => m.includes("not supported by Generate CI Workflow"))).toBe(true);
   });
 
   it("validateCiReadiness is not ready when a managed runner file (cucumber.mjs) is missing", async () => {

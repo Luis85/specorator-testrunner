@@ -5,6 +5,7 @@ import {
   VALIDATED_RUNNER_FILES,
 } from "../content/runner-templates";
 import { isNpmCiCommand } from "../content/ci-workflow-content";
+import { isSafeCiCommand } from "./pipeline-generation-service";
 import { playwrightBrowsersCandidates, resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
@@ -204,6 +205,14 @@ export class DefaultEnvironmentValidationService
       // actually parses as `npm run <script>`; a custom non-npm command (e.g.
       // `npx cucumber-js …`) doesn't depend on a package script, so skip it.
       const effectiveCiCommand = settings.runner.ciRunCommand.trim() || "npm run test:ci";
+      // Generate CI Workflow refuses commands that aren't a shell-safe npm
+      // ci/run shape, so readiness must flag the same ones rather than
+      // green-light a config the generator would reject.
+      if (!isSafeCiCommand(effectiveCiCommand)) {
+        missingItems.push(
+          `CI run command "${effectiveCiCommand}" is not supported by Generate CI Workflow.`,
+        );
+      }
       const ciScript = npmRunScript(effectiveCiCommand);
       const pkgPath = `${runnerAbs}/package.json`;
       if (!(await this.absoluteFs.existsAbsolute(pkgPath))) {
@@ -232,6 +241,11 @@ export class DefaultEnvironmentValidationService
       // use e.g. `npm install --no-package-lock` doesn't, so don't reject that
       // valid CI config.
       const effectiveCiInstall = settings.runner.ciInstallCommand.trim() || "npm ci";
+      if (!isSafeCiCommand(effectiveCiInstall)) {
+        missingItems.push(
+          `CI install command "${effectiveCiInstall}" is not supported by Generate CI Workflow.`,
+        );
+      }
       if (
         isNpmCiCommand(effectiveCiInstall) &&
         !(await this.absoluteFs.existsAbsolute(`${runnerAbs}/package-lock.json`))

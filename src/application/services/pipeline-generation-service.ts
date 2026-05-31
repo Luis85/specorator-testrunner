@@ -42,6 +42,14 @@ const isNpmCiShape = (command: string): boolean => {
   return tokens.slice(2).every((token) => token.startsWith("-"));
 };
 
+// Actions runs `run:` steps through a shell, so a configured CI command must be
+// free of shell metacharacters (even after a `--` separator) AND an npm ci/run
+// shape. Exported so CI-readiness validation can reject exactly the commands
+// `generate()` would refuse to write, keeping the two consistent.
+const CI_COMMAND_CHARSET = /^[A-Za-z0-9 _:./=@-]+$/;
+export const isSafeCiCommand = (command: string): boolean =>
+  CI_COMMAND_CHARSET.test(command) && isNpmCiShape(command);
+
 /** CI pipeline generation contract (TIS §8.13, US-040, UC-019). */
 export interface PipelineGenerationService {
   generate(request: GeneratePipelineRequest): Promise<Result<GeneratedPipeline>>;
@@ -124,7 +132,11 @@ export class DefaultPipelineGenerationService
     // The runner path is a relative folder; keep it to plain path characters so
     // it can't carry YAML syntax (`:`, `#`, quotes) or shell metacharacters into
     // the working-directory / upload-path scalars.
-    if (!/^[A-Za-z0-9 _./-]+$/.test(runnerPath) || runnerPath.split("/").includes("..")) {
+    if (
+      !/^[A-Za-z0-9 _./-]+$/.test(runnerPath) ||
+      runnerPath.startsWith("/") ||
+      runnerPath.split("/").includes("..")
+    ) {
       return err(
         appError(
           "VALIDATION_FAILED",
