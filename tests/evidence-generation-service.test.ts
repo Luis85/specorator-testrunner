@@ -68,6 +68,7 @@ const build = () => {
   );
   const useCaseService = new DefaultUseCaseService(settings, fs, bus, silentLogger);
   const service = new DefaultEvidenceGenerationService(
+    settings,
     fs,
     useCaseService,
     bus,
