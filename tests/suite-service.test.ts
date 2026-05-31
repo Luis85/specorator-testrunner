@@ -33,6 +33,37 @@ describe("DefaultSuiteService", () => {
     expect(types()).toContain("suite.created");
   });
 
+  it("rejects a name with no usable characters", async () => {
+    const { service } = build();
+    const result = await service.create({ name: "  !!!  ", tagExpression: "@smoke" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("collapses a multi-line description into a single frontmatter line", async () => {
+    const { service, fs } = build();
+    const result = await service.create({
+      name: "Multi",
+      description: "Line one.\nLine two.",
+      tagExpression: "@smoke",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const reread = await service.findAll();
+    expect(reread.ok && reread.value[0].description).toBe("Line one. Line two.");
+  });
+
+  it("indexes suites nested in subfolders (recursive)", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Test Suites/archive/Old Suite.md",
+      buildSuiteNote({ id: "old", name: "Old Suite", description: "", tagExpression: "@old" }),
+    );
+    const result = await service.findAll();
+    expect(result.ok && result.value.map((s) => s.id)).toEqual(["old"]);
+    expect((await service.resolveTagExpression("old")).ok).toBe(true);
+  });
+
   it("createDefaults seeds the Smoke and Regression suites", async () => {
     const { service } = build();
     const result = await service.createDefaults();

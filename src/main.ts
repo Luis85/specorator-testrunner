@@ -238,6 +238,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
 
   async onunload(): Promise<void> {
     this.app.workspace.detachLeavesOfType(USE_CASE_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(SUITE_VIEW_TYPE);
     this.logger?.info("E2E Test Hub unloaded");
   }
 

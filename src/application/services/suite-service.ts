@@ -47,10 +47,18 @@ export class DefaultSuiteService implements SuiteService {
   ) {}
 
   async create(request: CreateSuiteRequest): Promise<Result<TestSuite>> {
+    const name = request.name.trim();
+    const id = slugify(name);
+    if (id === "") {
+      return err(
+        appError("VALIDATION_FAILED", "A suite name with at least one letter or digit is required."),
+      );
+    }
     return this.createFromSeed({
-      id: slugify(request.name),
-      name: request.name,
-      description: request.description ?? "",
+      id,
+      name,
+      // Collapse newlines: frontmatter `description` is a single-line scalar.
+      description: request.description?.replace(/\s+/g, " ").trim() ?? "",
       tagExpression: request.tagExpression,
     });
   }
@@ -68,7 +76,9 @@ export class DefaultSuiteService implements SuiteService {
   /** Indexes every `test-suite` note under the suites folder (UC-008, best-effort). */
   async findAll(): Promise<Result<TestSuite[]>> {
     const settings = await this.settingsService.load();
-    const listed = await this.fs.listFiles(settings.paths.testSuitesPath);
+    // Recurse so suites organised into subfolders are indexed (parity with
+    // UseCaseService.findAll, so resolveTagExpression can't miss a real suite).
+    const listed = await this.fs.listFilesRecursive(settings.paths.testSuitesPath);
     if (!listed.ok) return err(listed.error);
 
     const suites: TestSuite[] = [];
@@ -133,7 +143,14 @@ export class DefaultSuiteService implements SuiteService {
       }
     }
 
-    await this.eventBus.publish(createEvent("suite.created", { suite }));
+    await this.eventBus.publish(
+      createEvent("suite.created", {
+        suiteId: suite.id,
+        name: suite.name,
+        path: suite.path,
+        tagExpression: suite.tagExpression,
+      }),
+    );
     return ok(suite);
   }
 }
