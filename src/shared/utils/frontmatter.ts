@@ -77,7 +77,10 @@ const unquote = (raw: string): string => {
  * of {@link buildFrontmatter} for the plugin's own well-typed notes, not a
  * general YAML parser.
  */
-export const parseNote = (content: string): ParsedNote => {
+export const parseNote = (rawContent: string): ParsedNote => {
+  // Normalise CRLF (Windows checkouts/editors) to LF so the `---` fence and the
+  // line parsing below match regardless of line endings.
+  const content = rawContent.replace(/\r\n/g, "\n");
   // Consume the closing fence plus the blank line buildNote inserts, so the
   // body round-trips exactly.
   const match = /^---\n([\s\S]*?)\n---\n?\n?/.exec(content);
