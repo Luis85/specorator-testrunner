@@ -163,6 +163,19 @@ describe("DefaultTestExecutionService", () => {
     );
   });
 
+  it("aborts the run when the stale report cannot be cleared", async () => {
+    const { service, childProcess, absoluteFs } = build();
+    absoluteFs.deleteAbsolute = async () => ({
+      ok: false as const,
+      error: { code: "INIT_FAILED" as const, message: "report is read-only" },
+    });
+
+    const result = await service.execute({ scope: "demo", target: "demo" });
+
+    expect(result.ok).toBe(false);
+    expect(childProcess.calls).toHaveLength(0); // never spawned with a stale report present
+  });
+
   it("does not spawn a process when cancelled during setup (pre-start)", async () => {
     const { service, childProcess, types } = build();
     childProcess.pending = true;
