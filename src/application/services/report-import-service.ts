@@ -121,8 +121,10 @@ export class DefaultReportImportService implements ReportImportService {
   ) {}
 
   async import(run: TestRun): Promise<Result<ImportedReport>> {
-    const settings = await this.settingsService.load();
-    const runnerPath = settings.paths.testRunnerPath;
+    // Use the runner directory THIS run actually spawned in (recorded on the
+    // TestRun), not the current settings — a testRunnerPath changed mid-run or
+    // before a manual re-import must not read a different runner's report.
+    const runnerPath = run.workingDirectory;
     // VaultPath used for artifact references + event payloads (vault-relative).
     const reportVaultPath = joinVaultPath(runnerPath, REPORT_FILE);
 
