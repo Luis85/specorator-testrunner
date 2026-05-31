@@ -103,6 +103,27 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     }
   }
 
+  async listFolders(): Promise<Result<VaultPath[]>> {
+    // BFS from the vault root via the raw adapter (same listing API as
+    // listFilesRecursive), collecting every folder path. Used by the ADR-0015
+    // sibling-Test-Hub check. Errors return [] so validation stays advisory.
+    try {
+      const folders: VaultPath[] = [];
+      const queue = [""];
+      while (queue.length > 0) {
+        const dir = queue.shift() as string;
+        const listing = await this.app.vault.adapter.list(dir === "" ? "/" : dir);
+        for (const folder of listing.folders) {
+          folders.push(folder);
+          queue.push(folder);
+        }
+      }
+      return ok(folders);
+    } catch {
+      return ok([]);
+    }
+  }
+
   async deleteFolder(path: VaultPath): Promise<Result<void>> {
     const normalized = normalizePath(path);
     try {

@@ -80,6 +80,22 @@ export class FakeVaultFileSystem implements VaultFileSystem {
     return ok([...this.files.keys()].filter((p) => p.startsWith(`${path}/`)));
   }
 
+  async listFolders(): Promise<Result<VaultPath[]>> {
+    // Explicitly-created folders plus every ancestor directory implied by a
+    // file path, mirroring how a real vault exposes its folder tree.
+    const all = new Set<VaultPath>(this.folders);
+    for (const filePath of this.files.keys()) {
+      const segments = filePath.split("/");
+      segments.pop(); // drop the file name
+      let prefix = "";
+      for (const segment of segments) {
+        prefix = prefix === "" ? segment : `${prefix}/${segment}`;
+        all.add(prefix);
+      }
+    }
+    return ok([...all]);
+  }
+
   async deleteFolder(path: VaultPath): Promise<Result<void>> {
     if (this.failOn && this.failOn.path === path) {
       return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
