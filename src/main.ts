@@ -64,6 +64,8 @@ import {
   DEFAULT_SETTINGS,
   type TestHubSettings,
 } from "./domain/settings/settings";
+import type { VaultPath } from "./domain/value-objects/identifiers";
+import { unsafeVaultPath } from "./domain/value-objects/vault-path";
 import { NodeAbsoluteFileSystem } from "./infrastructure/filesystem/node-absolute-file-system";
 import { ObsidianDataStore } from "./infrastructure/obsidian/obsidian-data-store";
 import { ObsidianVaultAdapter } from "./infrastructure/obsidian/obsidian-vault-adapter";
@@ -730,13 +732,14 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   }
 
   /** Path of the active note, or a Notice when there is no feature open. */
-  private activeFeaturePath(): string | null {
+  private activeFeaturePath(): VaultPath | null {
     const file = this.app.workspace.getActiveFile();
     if (!file || file.extension !== "feature") {
       new Notice("Open a .feature file first.");
       return null;
     }
-    return file.path;
+    // Obsidian-managed active-file paths are vault-relative and trusted.
+    return unsafeVaultPath(file.path);
   }
 
   private async validateActiveFeature(): Promise<void> {

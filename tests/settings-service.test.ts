@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { collectCredentialValues, DEFAULT_SETTINGS } from "../src/domain/settings/settings";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
 const makeService = (initial?: unknown) => {
@@ -71,7 +72,7 @@ describe("DefaultSettingsService", () => {
     const { service, store } = makeService();
     const invalid = {
       ...DEFAULT_SETTINGS,
-      paths: { ...DEFAULT_SETTINGS.paths, useCasesPath: "../escape" },
+      paths: { ...DEFAULT_SETTINGS.paths, useCasesPath: vp("../escape") },
     };
     const result = await service.save(invalid);
     expect(result.ok).toBe(false);
@@ -95,7 +96,7 @@ describe("DefaultSettingsService", () => {
     // must never reach the cucumber.mjs generator.
     const hostile = 'features"]};import("node:child_process").execSync("calc");//';
     const { service, logger } = makeService({
-      paths: { ...DEFAULT_SETTINGS.paths, featureFilesPath: hostile },
+      paths: { ...DEFAULT_SETTINGS.paths, featureFilesPath: vp(hostile) },
     });
     const loaded = await service.load();
     expect(loaded.paths.featureFilesPath).toBe(DEFAULT_SETTINGS.paths.featureFilesPath);
@@ -106,6 +107,17 @@ describe("DefaultSettingsService", () => {
     const { service } = makeService({ logging: { path: "../../etc/log" } });
     const loaded = await service.load();
     expect(loaded.logging.path).toBe(DEFAULT_SETTINGS.logging.path);
+  });
+
+  it("recovers (does not throw) from a NON-STRING persisted path (review P2)", async () => {
+    // A corrupt/sync-mangled data.json with a number where a path string belongs
+    // must fall back to the default, not crash load with `path.trim is not a function`.
+    const { service, logger } = makeService({
+      paths: { ...DEFAULT_SETTINGS.paths, featureFilesPath: 42 as unknown as string },
+    });
+    const loaded = await service.load();
+    expect(loaded.paths.featureFilesPath).toBe(DEFAULT_SETTINGS.paths.featureFilesPath);
+    expect(logger.error).toHaveBeenCalled();
   });
 
   it("collectCredentialValues gathers credential auth.env values across environments (P0-2)", () => {
@@ -225,7 +237,7 @@ describe("DefaultSettingsService — ADR-0015 sibling Test Hub detection", () =>
     const { service } = makeServiceWithVault(["QA/Test Hub", "QA/Test Hub copy"]);
     const settings = {
       ...DEFAULT_SETTINGS,
-      paths: { ...DEFAULT_SETTINGS.paths, testHubPath: "QA/Test Hub" },
+      paths: { ...DEFAULT_SETTINGS.paths, testHubPath: vp("QA/Test Hub") },
     };
     const validation = await service.validate(settings);
     const warning = siblingWarning(validation);
@@ -239,7 +251,7 @@ describe("DefaultSettingsService — ADR-0015 sibling Test Hub detection", () =>
     const { service } = makeServiceWithVault(["QA/Test Hub", "Archive/Test Hub copy"]);
     const settings = {
       ...DEFAULT_SETTINGS,
-      paths: { ...DEFAULT_SETTINGS.paths, testHubPath: "QA/Test Hub" },
+      paths: { ...DEFAULT_SETTINGS.paths, testHubPath: vp("QA/Test Hub") },
     };
     const validation = await service.validate(settings);
     expect(siblingWarning(validation)).toBeUndefined();

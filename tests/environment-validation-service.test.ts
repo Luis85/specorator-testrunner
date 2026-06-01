@@ -6,8 +6,9 @@ import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-poli
 import {
   REQUIRED_RUNNER_DEPENDENCIES,
   VALIDATED_RUNNER_FILES,
-} from "../src/application/content/runner-templates";
+} from "../src/application/content/runner-manifest";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import {
   FakeAbsoluteFileSystem,
   FakeChildProcessRunner,
@@ -264,7 +265,7 @@ describe("DefaultEnvironmentValidationService", () => {
 
     const settings = {
       ...DEFAULT_SETTINGS,
-      paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: "e2e\\runner" },
+      paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: vp("e2e\\runner") },
     };
     const result = await service.validateCiReadiness(settings);
 

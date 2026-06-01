@@ -5,6 +5,7 @@ import {
   parseFrontmatter,
   parseNote,
 } from "../src/shared/utils/frontmatter";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { joinVaultPath, relativeVaultPath } from "../src/shared/utils/vault-path";
 
 describe("buildFrontmatter", () => {
@@ -95,14 +96,16 @@ describe("parseNote / parseFrontmatter", () => {
 
 describe("relativeVaultPath", () => {
   it("computes the path from the runner folder to the feature folder", () => {
-    expect(relativeVaultPath(".testrunner", "Specifications/features")).toBe(
+    expect(relativeVaultPath(vp(".testrunner"), vp("Specifications/features"))).toBe(
       "../Specifications/features",
     );
-    expect(relativeVaultPath("Tools/.testrunner", "Specs/features")).toBe("../../Specs/features");
+    expect(relativeVaultPath(vp("Tools/.testrunner"), vp("Specs/features"))).toBe(
+      "../../Specs/features",
+    );
   });
 
   it("handles a shared ancestor and identical paths", () => {
-    expect(relativeVaultPath("a/b", "a/c")).toBe("../c");
-    expect(relativeVaultPath("a", "a")).toBe(".");
+    expect(relativeVaultPath(vp("a/b"), vp("a/c"))).toBe("../c");
+    expect(relativeVaultPath(vp("a"), vp("a"))).toBe(".");
   });
 });

@@ -3,6 +3,7 @@ import { computeAutomationStatus } from "../src/domain/policies/use-case-automat
 import type { FeatureSpecification } from "../src/domain/entities/specification";
 import type { ExecutionScope, TestRunStatus } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const useCase = (over: Partial<UseCase> = {}): UseCase => ({
   id: "UC-001",
@@ -12,7 +13,7 @@ const useCase = (over: Partial<UseCase> = {}): UseCase => ({
   featureFiles: [],
   suites: [],
   evidence: [],
-  path: "Use Cases/UC-001 Demo.md",
+  path: vp("Use Cases/UC-001 Demo.md"),
   ...over,
 });
 
@@ -24,7 +25,7 @@ const lastRun = (status: TestRunStatus, scope?: ExecutionScope): UseCase["lastTe
 });
 
 const feature = (over: Partial<FeatureSpecification> = {}): FeatureSpecification => ({
-  path: "Specifications/features/UC-001.feature",
+  path: vp("Specifications/features/UC-001.feature"),
   useCaseId: "UC-001",
   featureName: "Demo",
   tags: [],
@@ -59,8 +60,8 @@ describe("computeAutomationStatus (ADR-0017 roll-up)", () => {
   });
 
   it("stays implemented when only one of several Features was run (ADR-0017, no latest-wins)", () => {
-    const f1 = feature({ path: "Specifications/features/UC-001-a.feature" });
-    const f2 = feature({ path: "Specifications/features/UC-001-b.feature" });
+    const f1 = feature({ path: vp("Specifications/features/UC-001-a.feature") });
+    const f2 = feature({ path: vp("Specifications/features/UC-001-b.feature") });
     // A single feature-scope passing run does not make the whole multi-Feature UC passing.
     expect(
       computeAutomationStatus(useCase({ lastTestRun: lastRun("passed", "feature") }), [f1, f2]),
@@ -68,8 +69,8 @@ describe("computeAutomationStatus (ADR-0017 roll-up)", () => {
   });
 
   it("does not regress an already-passing multi-Feature UC on a single-Feature rerun", () => {
-    const f1 = feature({ path: "Specifications/features/UC-001-a.feature" });
-    const f2 = feature({ path: "Specifications/features/UC-001-b.feature" });
+    const f1 = feature({ path: vp("Specifications/features/UC-001-a.feature") });
+    const f2 = feature({ path: vp("Specifications/features/UC-001-b.feature") });
     // The UC already reached "passing" (e.g. via an earlier UC-wide run); a
     // later successful feature-scope rerun must not drop it back to implemented.
     expect(
@@ -81,8 +82,8 @@ describe("computeAutomationStatus (ADR-0017 roll-up)", () => {
   });
 
   it("passing for a multi-Feature UC when a UC-wide run passed", () => {
-    const f1 = feature({ path: "Specifications/features/UC-001-a.feature" });
-    const f2 = feature({ path: "Specifications/features/UC-001-b.feature" });
+    const f1 = feature({ path: vp("Specifications/features/UC-001-a.feature") });
+    const f2 = feature({ path: vp("Specifications/features/UC-001-b.feature") });
     expect(
       computeAutomationStatus(useCase({ lastTestRun: lastRun("passed", "use-case") }), [f1, f2]),
     ).toBe("passing");
@@ -114,7 +115,7 @@ describe("computeAutomationStatus (ADR-0017 roll-up)", () => {
 
     it("ignores undefined steps inside a @wip Feature", () => {
       const wipIncomplete = feature({ tags: ["@wip"], scenarios: [] });
-      const good = feature({ path: "Specifications/features/UC-001b.feature" });
+      const good = feature({ path: vp("Specifications/features/UC-001b.feature") });
       // Only the non-@wip Feature counts; it is complete but never run.
       expect(computeAutomationStatus(useCase(), [wipIncomplete, good])).toBe("planned");
     });

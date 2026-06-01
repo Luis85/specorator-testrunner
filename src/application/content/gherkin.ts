@@ -29,8 +29,14 @@ const STEP_KEYWORDS: ReadonlyArray<GherkinStep["keyword"]> = [
 // basename start — `archive-UC-1-old.feature` is an orphan, not UC-1.
 const UC_PREFIX = /^(UC-\d+)-/i;
 
-/** Extracts the leading `UC-NNN` prefix from a feature filename (ADR-0012). */
-export const useCaseIdFromPath = (path: VaultPath): UseCaseId | null => {
+/**
+ * Extracts the leading `UC-NNN` prefix from a feature filename (ADR-0012).
+ *
+ * Accepts a plain `string`, not a `VaultPath`: this is a read-only parser of the
+ * filename's leading id, not a path consumer, so it also runs over report
+ * `featureUri`/`feature` strings and run targets that are not branded paths.
+ */
+export const useCaseIdFromPath = (path: string): UseCaseId | null => {
   const base = path.split("/").pop() ?? path;
   const match = UC_PREFIX.exec(base);
   return match ? match[1].toUpperCase() : null;

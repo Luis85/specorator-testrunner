@@ -1,10 +1,19 @@
-import type { TemplateFile } from "../ports/template-writer";
-import type { TestHubSettings } from "../../domain/settings/settings";
-import { relativeVaultPath } from "../../shared/utils/vault-path";
+import type { TemplateFile } from "../../../application/ports/template-writer";
+import type { TestHubSettings } from "../../../domain/settings/settings";
+import { unsafeVaultPath } from "../../../domain/value-objects/vault-path";
+import { relativeVaultPath } from "../../../shared/utils/vault-path";
 
 /**
  * The `.testrunner` standalone Node project (TIS §11, honouring AD-2 npm, AD-5
  * Chromium, AD-6 serial, AD-7 tsx loader, AD-8 local fixture).
+ *
+ * This is runtime-technology-specific Playwright/Cucumber/Node SOURCE, so it
+ * lives in INFRASTRUCTURE (P3-7): the application layer must not embed runtime
+ * tech. Generation is reached through the {@link TemplateWriter} port — the
+ * `RunnerTemplateWriter` infra adapter exposes `buildRunnerTemplates`, and the
+ * application services call the port, never this module. The plain file/dep
+ * MANIFEST the validators assert against stays in the application layer
+ * (`application/content/runner-manifest.ts`) as contract data.
  *
  * Per TIS §11 there is intentionally NO `playwright.config.ts`: Playwright is
  * driven through the Cucumber `World` (`chromium.launch()` in `world.ts`), not
@@ -232,55 +241,34 @@ Tests run serially in V1 (\`parallel: 0\`, AD-6).
 
 /** All `.testrunner` template files, paths relative to the runner root. */
 export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] => [
-  { path: "package.json", content: PACKAGE_JSON, overwrite: true },
-  { path: "tsconfig.json", content: TSCONFIG_JSON, overwrite: true },
+  // Template paths are trusted compile-time literals relative to the runner root.
+  { path: unsafeVaultPath("package.json"), content: PACKAGE_JSON, overwrite: true },
+  { path: unsafeVaultPath("tsconfig.json"), content: TSCONFIG_JSON, overwrite: true },
   {
-    path: "cucumber.mjs",
+    path: unsafeVaultPath("cucumber.mjs"),
     content: cucumberMjs(
       `${relativeVaultPath(settings.paths.testRunnerPath, settings.paths.featureFilesPath)}/**/*.feature`,
     ),
     overwrite: true,
   },
-  { path: "README.md", content: README_MD, overwrite: true },
-  { path: "src/support/world.ts", content: WORLD_TS, overwrite: true },
-  { path: "src/support/hooks.ts", content: HOOKS_TS, overwrite: true },
-  { path: "src/support/paths.ts", content: PATHS_TS, overwrite: true },
-  { path: "src/fixtures/example.html", content: EXAMPLE_HTML, overwrite: true },
+  { path: unsafeVaultPath("README.md"), content: README_MD, overwrite: true },
+  { path: unsafeVaultPath("src/support/world.ts"), content: WORLD_TS, overwrite: true },
+  { path: unsafeVaultPath("src/support/hooks.ts"), content: HOOKS_TS, overwrite: true },
+  { path: unsafeVaultPath("src/support/paths.ts"), content: PATHS_TS, overwrite: true },
+  {
+    path: unsafeVaultPath("src/fixtures/example.html"),
+    content: EXAMPLE_HTML,
+    overwrite: true,
+  },
   // User-authored automation — preserved on repair (RV-8).
-  { path: "src/pages/ExamplePage.ts", content: EXAMPLE_PAGE_TS, overwrite: false },
-  { path: "src/steps/example.steps.ts", content: EXAMPLE_STEPS_TS, overwrite: false },
+  {
+    path: unsafeVaultPath("src/pages/ExamplePage.ts"),
+    content: EXAMPLE_PAGE_TS,
+    overwrite: false,
+  },
+  {
+    path: unsafeVaultPath("src/steps/example.steps.ts"),
+    content: EXAMPLE_STEPS_TS,
+    overwrite: false,
+  },
 ];
-
-/** Files US-010 asserts the generator produces. */
-export const REQUIRED_RUNNER_FILES = [
-  "package.json",
-  "tsconfig.json",
-  "cucumber.mjs",
-  "README.md",
-] as const;
-
-/**
- * Managed files a test run depends on; checked by validation (US-013). A run
- * needs the config, the TS config tsx reads, the Cucumber support layer, and
- * the demo fixture — README.md is documentation only, so it is excluded.
- */
-export const VALIDATED_RUNNER_FILES = [
-  "package.json",
-  "tsconfig.json",
-  "cucumber.mjs",
-  "src/support/world.ts",
-  "src/support/hooks.ts",
-  "src/support/paths.ts",
-  "src/fixtures/example.html",
-] as const;
-
-/**
- * node_modules markers a run depends on (US-013). The generated scripts invoke
- * `node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js`, so both
- * the Cucumber CLI entry and the tsx package must resolve; Playwright is probed
- * separately via `npx playwright --version`.
- */
-export const REQUIRED_RUNNER_DEPENDENCIES = [
-  "node_modules/@cucumber/cucumber/bin/cucumber.js",
-  "node_modules/tsx",
-] as const;

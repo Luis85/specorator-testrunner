@@ -7,6 +7,7 @@ import {
 } from "../src/application/content/feature-content";
 import { parseFeature } from "../src/application/content/gherkin";
 import type { UseCase } from "../src/domain/entities/use-case";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const useCase = (overrides: Partial<UseCase> = {}): UseCase => ({
   id: "UC-001",
@@ -16,7 +17,7 @@ const useCase = (overrides: Partial<UseCase> = {}): UseCase => ({
   featureFiles: [],
   suites: [],
   evidence: [],
-  path: "Use Cases/UC-001 Open Example Page.md",
+  path: vp("Use Cases/UC-001 Open Example Page.md"),
   ...overrides,
 });
 
@@ -36,11 +37,11 @@ describe("nextFeatureSlug", () => {
   });
 
   it("picks feature-<n> for subsequent features", () => {
-    expect(nextFeatureSlug(useCase({ featureFiles: ["a.feature"] }))).toBe("feature-2");
+    expect(nextFeatureSlug(useCase({ featureFiles: [vp("a.feature")] }))).toBe("feature-2");
   });
 
   it("honours a caller-supplied slug", () => {
-    expect(nextFeatureSlug(useCase({ featureFiles: ["a.feature"] }), "Edge Cases")).toBe(
+    expect(nextFeatureSlug(useCase({ featureFiles: [vp("a.feature")] }), "Edge Cases")).toBe(
       "edge-cases",
     );
   });
@@ -49,8 +50,8 @@ describe("nextFeatureSlug", () => {
     // happy-path + feature-3 present (feature-2 was deleted) → must not collide.
     const uc = useCase({
       featureFiles: [
-        "Specifications/features/UC-001-happy-path.feature",
-        "Specifications/features/UC-001-feature-3.feature",
+        vp("Specifications/features/UC-001-happy-path.feature"),
+        vp("Specifications/features/UC-001-feature-3.feature"),
       ],
     });
     expect(nextFeatureSlug(uc)).toBe("feature-4");
@@ -60,7 +61,7 @@ describe("nextFeatureSlug", () => {
 describe("buildStarterFeature", () => {
   it("produces parseable Gherkin tagged with the lowercased UC id", () => {
     const content = buildStarterFeature(useCase(), "happy-path");
-    const feature = parseFeature(content, "Specifications/features/UC-001-happy-path.feature");
+    const feature = parseFeature(content, vp("Specifications/features/UC-001-happy-path.feature"));
     expect(feature).not.toBeNull();
     if (!feature) return;
     expect(feature.tags).toEqual(["@uc-001"]);

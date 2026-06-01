@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildRunnerTemplates } from "../../src/application/content/runner-templates";
+import { buildRunnerTemplates } from "../../src/infrastructure/runner/templates/runner-templates";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/settings";
+import { unsafeVaultPath as vp } from "../../src/domain/value-objects/vault-path";
 
 /**
  * US-048 — Test Runner Integration (FEAT-027).
@@ -16,7 +17,8 @@ import { DEFAULT_SETTINGS } from "../../src/domain/settings/settings";
 
 const templatesFor = (settings = DEFAULT_SETTINGS) => {
   const templates = buildRunnerTemplates(settings);
-  const byPath = new Map(templates.map((t) => [t.path, t.content]));
+  // Key by plain string so lookups can use bare path literals (t.path is a VaultPath).
+  const byPath = new Map<string, string>(templates.map((t) => [t.path, t.content]));
   const packageJson = JSON.parse(byPath.get("package.json") ?? "{}") as {
     scripts: Record<string, string>;
     devDependencies: Record<string, string>;
@@ -95,8 +97,8 @@ describe("US-048 runner integration: scripts the executor invokes exist", () => 
       ...DEFAULT_SETTINGS,
       paths: {
         ...DEFAULT_SETTINGS.paths,
-        testRunnerPath: "Tools/.testrunner",
-        featureFilesPath: "Specs/features",
+        testRunnerPath: vp("Tools/.testrunner"),
+        featureFilesPath: vp("Specs/features"),
       },
     };
     const { byPath } = templatesFor(settings);

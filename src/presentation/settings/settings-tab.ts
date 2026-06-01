@@ -8,6 +8,7 @@ import {
 } from "obsidian";
 import type { Result } from "../../shared/result/result";
 import type { TestHubPathSettings, TestHubSettings } from "../../domain/settings/settings";
+import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 
 /** What the settings tab needs from the plugin to read/persist settings. */
 export interface SettingsHost {
@@ -119,11 +120,14 @@ export class TestHubSettingTab extends PluginSettingTab {
     // the debounce already saved, or an unedited blur) — avoids redundant saves.
     if (current.paths[key] === value) return;
 
-    const paths = { ...current.paths, [key]: value };
+    // The user-typed value is staged here and authoritatively validated by
+    // SettingsService.save() (US-003), so it is branded, not re-validated here;
+    // a rejected save leaves persisted state unchanged.
+    const paths = { ...current.paths, [key]: unsafeVaultPath(value) };
     // Documentation lives inside the Test Hub folder (see the vault layout), so
     // keep documentationPath in sync rather than orphaning the generated docs
     // in the previous location.
-    if (key === "testHubPath") paths.documentationPath = value;
+    if (key === "testHubPath") paths.documentationPath = unsafeVaultPath(value);
     const next: TestHubSettings = { ...current, paths };
     // The service is the authoritative validator (US-003); a rejected save must
     // leave persisted state unchanged.

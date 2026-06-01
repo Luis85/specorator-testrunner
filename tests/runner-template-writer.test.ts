@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { RunnerTemplateWriter } from "../src/infrastructure/runner/runner-template-writer";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { FakeAbsoluteFileSystem } from "./fakes";
 
 const request = {
-  targetPath: ".testrunner",
+  targetPath: vp(".testrunner"),
   templates: [
-    { path: "package.json", content: "managed", overwrite: true },
-    { path: "src/steps/example.steps.ts", content: "user", overwrite: false },
+    { path: vp("package.json"), content: "managed", overwrite: true },
+    { path: vp("src/steps/example.steps.ts"), content: "user", overwrite: false },
   ],
 };
 

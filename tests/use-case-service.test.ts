@@ -4,6 +4,7 @@ import { DefaultUseCaseService, nextUseCaseId } from "../src/application/service
 import { buildDemoUseCaseNote } from "../src/application/content/demo-content";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { UseCase } from "../src/domain/entities/use-case";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
@@ -75,7 +76,7 @@ describe("DefaultUseCaseService", () => {
     const { service, fs } = build();
     fs.files.set(
       "Use Cases/UC-001 Demo.md",
-      buildDemoUseCaseNote("Specifications/features/demo.feature"),
+      buildDemoUseCaseNote(vp("Specifications/features/demo.feature")),
     );
 
     const result = await service.create({ title: "Second" });
@@ -156,6 +157,31 @@ describe("DefaultUseCaseService", () => {
     expect(missing.ok && missing.value).toBe(null);
   });
 
+  it("drops an unsafe frontmatter path instead of branding it (review P2, ADR-0008)", async () => {
+    const { service, fs } = build();
+    // Hand-edited / synced frontmatter is untrusted: a traversal/injection path
+    // must be validated through vaultPath() and skipped, never surfaced as a
+    // branded VaultPath that could reach an fs sink.
+    fs.files.set(
+      "Use Cases/UC-007.md",
+      buildNote(
+        {
+          type: "use-case",
+          id: "UC-007",
+          title: "Tampered",
+          feature_files: ["Specifications/features/UC-007-ok.feature", "../../etc/passwd"],
+        },
+        "# UC-007",
+      ),
+    );
+
+    const found = await service.findById("UC-007");
+    expect(found.ok).toBe(true);
+    if (!found.ok || !found.value) return;
+    // The safe path is kept; the traversal path is dropped.
+    expect(found.value.featureFiles).toEqual(["Specifications/features/UC-007-ok.feature"]);
+  });
+
   it("update drops the legacy singular feature_file so features aren't duplicated", async () => {
     const { service, fs } = build();
     // A note using the legacy `feature_file` key (e.g. the seeded demo).
@@ -183,7 +209,7 @@ describe("DefaultUseCaseService", () => {
       ...loaded.value,
       featureFiles: [
         ...loaded.value.featureFiles,
-        "Specifications/features/UC-001-feature-2.feature",
+        vp("Specifications/features/UC-001-feature-2.feature"),
       ],
     });
 
@@ -192,7 +218,7 @@ describe("DefaultUseCaseService", () => {
     if (!reread.ok || !reread.value) throw new Error("expected UC-001");
     expect(reread.value.featureFiles).toEqual([
       "Specifications/features/UC-001-happy-path.feature",
-      "Specifications/features/UC-001-feature-2.feature",
+      vp("Specifications/features/UC-001-feature-2.feature"),
     ]);
     expect(fs.files.get(path)).not.toContain("feature_file:");
   });
@@ -221,7 +247,7 @@ describe("DefaultUseCaseService", () => {
 
     const updated = await service.update({
       ...loaded.value,
-      featureFiles: ["Specifications/features/UC-001-happy-path.feature"],
+      featureFiles: [vp("Specifications/features/UC-001-happy-path.feature")],
     });
     expect(updated.ok).toBe(true);
 

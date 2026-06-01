@@ -13,6 +13,7 @@ import { DefaultSuiteService } from "../src/application/services/suite-service";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { DEMO_FEATURE_CONTENT } from "../src/application/content/demo-content";
 import type { Logger } from "../src/shared/logging/logger";
 import {
@@ -264,7 +265,7 @@ describe("DefaultInitializationService", () => {
       ...request,
       settings: {
         ...DEFAULT_SETTINGS,
-        paths: { ...DEFAULT_SETTINGS.paths, useCasesPath: "../escape" },
+        paths: { ...DEFAULT_SETTINGS.paths, useCasesPath: vp("../escape") },
       },
     };
 

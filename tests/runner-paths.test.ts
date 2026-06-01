@@ -3,27 +3,28 @@ import {
   playwrightBrowsersCandidates,
   resolveRunnerCwd,
 } from "../src/application/services/runner-paths";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { FakeAbsoluteFileSystem } from "./fakes";
 
 describe("resolveRunnerCwd", () => {
   it("joins the vault base path with the runner path", async () => {
     const fs = new FakeAbsoluteFileSystem();
     fs.basePath = "/home/u/vault";
-    const result = await resolveRunnerCwd(fs, ".testrunner");
+    const result = await resolveRunnerCwd(fs, vp(".testrunner"));
     expect(result.ok && result.value).toBe("/home/u/vault/.testrunner");
   });
 
   it("trims a trailing separator on the base path", async () => {
     const fs = new FakeAbsoluteFileSystem();
     fs.basePath = "/vault/";
-    const result = await resolveRunnerCwd(fs, ".testrunner");
+    const result = await resolveRunnerCwd(fs, vp(".testrunner"));
     expect(result.ok && result.value).toBe("/vault/.testrunner");
   });
 
   it("propagates a missing base path as an error", async () => {
     const fs = new FakeAbsoluteFileSystem();
     fs.basePath = null;
-    expect((await resolveRunnerCwd(fs, ".testrunner")).ok).toBe(false);
+    expect((await resolveRunnerCwd(fs, vp(".testrunner"))).ok).toBe(false);
   });
 });
 

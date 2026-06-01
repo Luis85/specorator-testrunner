@@ -1,4 +1,5 @@
 import type { VaultPath } from "../value-objects/identifiers";
+import { unsafeVaultPath } from "../value-objects/vault-path";
 
 /** Plugin configuration (TIS §5). */
 
@@ -89,14 +90,14 @@ export const collectCredentialValues = (settings: TestHubSettings): string[] =>
 
 export const DEFAULT_SETTINGS: TestHubSettings = {
   paths: {
-    testHubPath: "Test Hub",
-    useCasesPath: "Use Cases",
-    specificationsPath: "Specifications",
-    featureFilesPath: "Specifications/features",
-    testSuitesPath: "Test Suites",
-    evidencePath: "Test Evidence",
-    documentationPath: "Test Hub",
-    testRunnerPath: ".testrunner",
+    testHubPath: unsafeVaultPath("Test Hub"),
+    useCasesPath: unsafeVaultPath("Use Cases"),
+    specificationsPath: unsafeVaultPath("Specifications"),
+    featureFilesPath: unsafeVaultPath("Specifications/features"),
+    testSuitesPath: unsafeVaultPath("Test Suites"),
+    evidencePath: unsafeVaultPath("Test Evidence"),
+    documentationPath: unsafeVaultPath("Test Hub"),
+    testRunnerPath: unsafeVaultPath(".testrunner"),
   },
   runner: {
     packageManager: "npm",
@@ -129,7 +130,7 @@ export const DEFAULT_SETTINGS: TestHubSettings = {
   },
   logging: {
     enabled: true,
-    path: "Test Hub/logs",
+    path: unsafeVaultPath("Test Hub/logs"),
     level: "info",
   },
 };

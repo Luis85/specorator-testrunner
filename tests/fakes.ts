@@ -7,12 +7,16 @@ import type {
 } from "../src/application/ports/child-process-runner";
 import type { DataStore } from "../src/application/ports/data-store";
 import type {
+  TemplateFile,
   TemplateWriteRequest,
   TemplateWriteResult,
   TemplateWriter,
 } from "../src/application/ports/template-writer";
+import { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
 import type { VaultFileSystem } from "../src/application/ports/vault-file-system";
+import type { TestHubSettings } from "../src/domain/settings/settings";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
+import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
 import { joinVaultPath } from "../src/shared/utils/vault-path";
 import type { DomainEvent, DomainEventType } from "../src/domain/events/domain-event";
 import { InMemoryEventBus } from "../src/shared/event-bus/event-bus";
@@ -27,11 +31,18 @@ export const silentLogger: Logger = {
   error() {},
 };
 
-/** In-memory {@link VaultFileSystem} for application/integration tests. */
+/**
+ * In-memory {@link VaultFileSystem} for application/integration tests.
+ *
+ * The public methods honour the port's `VaultPath` signatures, but the internal
+ * collections are keyed by plain `string` so tests can seed and assert with bare
+ * path literals (a `VaultPath` is a `string`, so branded keys still fit). Methods
+ * that RETURN paths re-brand via {@link unsafeVaultPath}.
+ */
 export class FakeVaultFileSystem implements VaultFileSystem {
-  readonly files = new Map<VaultPath, string>();
-  readonly folders = new Set<VaultPath>();
-  failOn?: { path: VaultPath; message: string };
+  readonly files = new Map<string, string>();
+  readonly folders = new Set<string>();
+  failOn?: { path: string; message: string };
 
   async exists(path: VaultPath): Promise<boolean> {
     return this.files.has(path) || this.folders.has(path);
@@ -70,20 +81,20 @@ export class FakeVaultFileSystem implements VaultFileSystem {
     // Immediate children only, mirroring the Obsidian adapter (non-recursive).
     const prefix = `${path}/`;
     return ok(
-      [...this.files.keys()].filter(
-        (p) => p.startsWith(prefix) && !p.slice(prefix.length).includes("/"),
-      ),
+      [...this.files.keys()]
+        .filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes("/"))
+        .map(unsafeVaultPath),
     );
   }
 
   async listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>> {
-    return ok([...this.files.keys()].filter((p) => p.startsWith(`${path}/`)));
+    return ok([...this.files.keys()].filter((p) => p.startsWith(`${path}/`)).map(unsafeVaultPath));
   }
 
   async listFolders(): Promise<Result<VaultPath[]>> {
     // Explicitly-created folders plus every ancestor directory implied by a
     // file path, mirroring how a real vault exposes its folder tree.
-    const all = new Set<VaultPath>(this.folders);
+    const all = new Set<string>(this.folders);
     for (const filePath of this.files.keys()) {
       const segments = filePath.split("/");
       segments.pop(); // drop the file name
@@ -93,7 +104,7 @@ export class FakeVaultFileSystem implements VaultFileSystem {
         all.add(prefix);
       }
     }
-    return ok([...all]);
+    return ok([...all].map(unsafeVaultPath));
   }
 
   async deleteFolder(path: VaultPath): Promise<Result<void>> {
@@ -260,6 +271,10 @@ export class FakeChildProcessRunner implements ChildProcessRunner {
 export class FakeTemplateWriter implements TemplateWriter {
   readonly requests: TemplateWriteRequest[] = [];
   fail = false;
+
+  buildRunnerTemplates(settings: TestHubSettings): TemplateFile[] {
+    return buildRunnerTemplates(settings);
+  }
 
   async writeTemplates(request: TemplateWriteRequest): Promise<Result<TemplateWriteResult>> {
     this.requests.push(request);

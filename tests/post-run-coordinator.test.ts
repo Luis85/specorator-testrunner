@@ -18,6 +18,7 @@ import type { DomainEventType } from "../src/domain/events/domain-event";
 import { createEvent } from "../src/shared/event-bus/create-event";
 import { appError } from "../src/shared/errors/errors";
 import { err, ok, type Result } from "../src/shared/result/result";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { recordingEventBus, silentLogger } from "./fakes";
 
 const run = (overrides: Partial<TestRun> = {}): TestRun => ({
@@ -27,11 +28,11 @@ const run = (overrides: Partial<TestRun> = {}): TestRun => ({
   status: "passed",
   startedAt: "2026-05-31T10:00:00.000Z",
   command: "npm run test",
-  workingDirectory: ".testrunner",
+  workingDirectory: vp(".testrunner"),
   // A finished run that produced a report has its run-specific snapshot recorded
   // (the executor sets this after snapshotReport); the coordinator only imports
   // when it is present. Tests for the "no report" path override it to {}.
-  reportPaths: { json: ".testrunner/reports/RUN-2026-05-31-100000.json" },
+  reportPaths: { json: vp(".testrunner/reports/RUN-2026-05-31-100000.json") },
   ...overrides,
 });
 
@@ -42,7 +43,9 @@ const importedReport = (): ImportedReport => ({
   artifacts: [],
 });
 
-const evidence = (path = "Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md"): Evidence => ({
+const evidence = (
+  path = vp("Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md"),
+): Evidence => ({
   id: "EV-1",
   runId: "RUN-2026-05-31-100000",
   path,

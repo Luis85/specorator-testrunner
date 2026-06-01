@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { projectSuiteRows } from "../src/presentation/views/suite-rows";
 import type { TestSuite } from "../src/domain/entities/suite";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const suite = (over: Partial<TestSuite>): TestSuite => ({
   id: "smoke",
   name: "Smoke Suite",
   description: "Critical path.",
   tagExpression: "@smoke",
-  path: "Test Suites/Smoke Suite.md",
+  path: vp("Test Suites/Smoke Suite.md"),
   ...over,
 });
 
@@ -21,7 +22,7 @@ describe("projectSuiteRows", () => {
         id: "smoke",
         name: "Smoke Suite",
         tagExpression: "@smoke and not @wip",
-        path: "Test Suites/Smoke Suite.md",
+        path: vp("Test Suites/Smoke Suite.md"),
       },
     ]);
   });

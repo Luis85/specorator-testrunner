@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildRunnerTemplates,
   REQUIRED_RUNNER_FILES,
-} from "../src/application/content/runner-templates";
+  VALIDATED_RUNNER_FILES,
+} from "../src/application/content/runner-manifest";
+import { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
 import { DEFAULT_SETTINGS, type TestHubSettings } from "../src/domain/settings/settings";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const templates = buildRunnerTemplates(DEFAULT_SETTINGS);
-const byPath = new Map(templates.map((t) => [t.path, t]));
+// Key by plain string so lookups can use bare path literals (t.path is a VaultPath).
+const byPath = new Map<string, (typeof templates)[number]>(templates.map((t) => [t.path, t]));
 
 const cucumberFor = (settings: TestHubSettings): string =>
   buildRunnerTemplates(settings).find((t) => t.path === "cucumber.mjs")?.content ?? "";
@@ -14,6 +17,16 @@ const cucumberFor = (settings: TestHubSettings): string =>
 describe("buildRunnerTemplates", () => {
   it("includes the files US-010 requires", () => {
     for (const file of REQUIRED_RUNNER_FILES) {
+      expect(byPath.has(file), file).toBe(true);
+    }
+  });
+
+  it("validates only files the generator actually emits (manifest/template lockstep)", () => {
+    // VALIDATED_RUNNER_FILES (app manifest) is asserted against the .testrunner
+    // on disk; every entry must be a path buildRunnerTemplates (infra) emits, or
+    // validation would check for a file that is never generated. Guards the
+    // cross-layer split introduced by P3-7 against silent drift.
+    for (const file of VALIDATED_RUNNER_FILES) {
       expect(byPath.has(file), file).toBe(true);
     }
   });
@@ -35,8 +48,8 @@ describe("buildRunnerTemplates", () => {
         ...DEFAULT_SETTINGS,
         paths: {
           ...DEFAULT_SETTINGS.paths,
-          testRunnerPath: "Tools/.testrunner",
-          featureFilesPath: "Specs/features",
+          testRunnerPath: vp("Tools/.testrunner"),
+          featureFilesPath: vp("Specs/features"),
         },
       }),
     ).toContain('paths: ["../../Specs/features/**/*.feature"]');
@@ -74,7 +87,7 @@ describe("buildRunnerTemplates", () => {
     const hostile = 'features"]};import("node:child_process").execSync("calc");//';
     const cucumber = cucumberFor({
       ...DEFAULT_SETTINGS,
-      paths: { ...DEFAULT_SETTINGS.paths, featureFilesPath: hostile },
+      paths: { ...DEFAULT_SETTINGS.paths, featureFilesPath: vp(hostile) },
     });
     // The embedded quote that would close the literal must be backslash-escaped
     // (JSON.stringify) so it can't break out — i.e. `"` only ever appears as `\"`.

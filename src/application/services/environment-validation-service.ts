@@ -1,6 +1,6 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
-import { REQUIRED_RUNNER_DEPENDENCIES, VALIDATED_RUNNER_FILES } from "../content/runner-templates";
+import { REQUIRED_RUNNER_DEPENDENCIES, VALIDATED_RUNNER_FILES } from "../content/runner-manifest";
 import { buildGitHubActionsWorkflow, isNpmCiCommand } from "../content/ci-workflow-content";
 import { isSafeCiCommand } from "./pipeline-generation-service";
 import { playwrightBrowsersCandidates, resolveRunnerCwd } from "./runner-paths";

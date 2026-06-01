@@ -6,6 +6,8 @@ import {
   type TestHubPathSettings,
   type TestHubSettings,
 } from "../../domain/settings/settings";
+import type { VaultPath } from "../../domain/value-objects/identifiers";
+import { vaultPath } from "../../domain/value-objects/vault-path";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -88,8 +90,14 @@ export class DefaultSettingsService implements SettingsService {
   private sanitizePaths(settings: TestHubSettings): TestHubSettings {
     const paths = { ...settings.paths };
     for (const field of Object.keys(paths) as (keyof TestHubPathSettings)[]) {
-      const safe = this.pathSafety.validate(paths[field]);
-      if (!safe.ok) {
+      // The `vaultPath` smart constructor validates AND brands in one call (using
+      // the injected policy), so validation and branding can't drift apart — this
+      // is the ADR-0008 load-time chokepoint. An unsafe path is logged and
+      // replaced with its default so it never reaches the runner generator.
+      const safe = vaultPath(paths[field], this.pathSafety);
+      if (safe.ok) {
+        paths[field] = safe.value;
+      } else {
         this.logger.error(
           `Configured path "paths.${field}" is unsafe; falling back to the default.`,
           safe.error,
@@ -98,7 +106,7 @@ export class DefaultSettingsService implements SettingsService {
         paths[field] = DEFAULT_SETTINGS.paths[field];
       }
     }
-    const loggingPath = this.pathSafety.validate(settings.logging.path);
+    const loggingPath = vaultPath(settings.logging.path, this.pathSafety);
     if (!loggingPath.ok) {
       this.logger.error(
         `Configured path "logging.path" is unsafe; falling back to the default.`,
@@ -111,7 +119,11 @@ export class DefaultSettingsService implements SettingsService {
         logging: { ...settings.logging, path: DEFAULT_SETTINGS.logging.path },
       };
     }
-    return { ...settings, paths };
+    return {
+      ...settings,
+      paths,
+      logging: { ...settings.logging, path: loggingPath.value },
+    };
   }
 
   async save(settings: TestHubSettings): Promise<Result<void>> {
@@ -146,7 +158,7 @@ export class DefaultSettingsService implements SettingsService {
 
     for (const [field, value] of Object.entries(settings.paths) as [
       keyof TestHubPathSettings,
-      string,
+      VaultPath,
     ][]) {
       const safe = this.pathSafety.validate(value);
       if (!safe.ok) {

@@ -1,4 +1,5 @@
 import type { UseCase } from "../../domain/entities/use-case";
+import type { VaultPath } from "../../domain/value-objects/identifiers";
 
 /** A Use Case projected to the columns US-017 displays. */
 export interface UseCaseRow {
@@ -6,7 +7,7 @@ export interface UseCaseRow {
   title: string;
   status: string;
   automationStatus: string;
-  path: string;
+  path: VaultPath;
 }
 
 /** Pure projection so the dashboard's row shaping is unit-testable. */

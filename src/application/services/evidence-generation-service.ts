@@ -16,6 +16,7 @@ import type {
   UseCaseId,
   VaultPath,
 } from "../../domain/value-objects/identifiers";
+import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -81,7 +82,8 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     // frontmatter update must still run with the note disabled, otherwise a
     // completed run silently never appears in Recent Runs (US-038).
     if (settings.automation.generateEvidenceMarkdown) {
-      const folder = evidencePath.slice(0, evidencePath.lastIndexOf("/"));
+      // A prefix of an already-branded VaultPath is itself vault-safe.
+      const folder = unsafeVaultPath(evidencePath.slice(0, evidencePath.lastIndexOf("/")));
       await this.fs.createFolder(folder);
       // writeFile (overwrite) so re-importing the same run refreshes the note;
       // the evidence path is deterministic per runId and createFile would throw.

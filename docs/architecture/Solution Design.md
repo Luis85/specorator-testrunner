@@ -301,7 +301,7 @@ Adapters implement infrastructure ports declared in the domain/application layer
 | `ObsidianDataStore` (drafted `SettingsAdapter`) | Obsidian plugin `loadData`/`saveData` (the `DataStore` port). |
 | `NodeAbsoluteFileSystem` (drafted `FileSystemAdapter`) | Node `fs/promises` for paths outside the vault index (`.testrunner` internals, CI workflows); implements `AbsoluteFileSystem`. |
 | `NodeChildProcessRunner` (drafted `ProcessAdapter`) | Node `child_process.spawn` (`shell:false`) for runner installation and test execution; id-keyed cancellation. |
-| `RunnerTemplateWriter` | Writes `.testrunner` files (the `TemplateWriter` port). Template **content** stays in `src/application/content/runner-templates.ts` — relocation DEFERRED (P3-7), see BBV §7.1. |
+| `RunnerTemplateWriter` | Writes `.testrunner` files **and produces their content** (the `TemplateWriter` port). The runtime-tech template **source** now lives in infrastructure at `src/infrastructure/runner/templates/runner-templates.ts` (relocated, P3-7 ✅); the file/dep **manifest** the validators assert against stays as contract data at `src/application/content/runner-manifest.ts`. See BBV §7.1. |
 
 > **Not separate adapters.** There is no `ReportParserAdapter` or CI-writer infrastructure class: Cucumber/Playwright report parsing is done in `ReportImportService` and CI workflow generation in `PipelineGenerationService` (both application-layer), writing through the absolute-file-system port. **No repository ports exist** — persistence is the `VaultFileSystem`/`AbsoluteFileSystem` ports above; there is no `src/domain/repositories/`.
 

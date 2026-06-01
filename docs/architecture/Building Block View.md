@@ -234,16 +234,18 @@ Path (reconciled with code): `src/infrastructure/{obsidian,filesystem,runner}`. 
 | `ObsidianDataStore` (`obsidian/obsidian-data-store.ts`) | Obsidian plugin `loadData`/`saveData` (the `DataStore` port for settings). |
 | `NodeAbsoluteFileSystem` (`filesystem/node-absolute-file-system.ts`) | Node `fs/promises` for paths outside the vault index (`.testrunner` internals, `.github/workflows/`); implements the `AbsoluteFileSystem` port. |
 | `NodeChildProcessRunner` (`runner/node-child-process-runner.ts`) | Node `child_process.spawn` (`shell:false`) for `npm install`, browser install, runner execution; supports id-keyed cancellation. Implements the `ChildProcessRunner` port. |
-| `RunnerTemplateWriter` (`runner/runner-template-writer.ts`) | Writes the `.testrunner` template files (implements the `TemplateWriter` port). **NB:** the template *content* it writes still lives in the application layer at `src/application/content/runner-templates.ts` — see §7.1. |
+| `RunnerTemplateWriter` (`runner/runner-template-writer.ts`) | Writes the `.testrunner` template files **and produces their content** (implements the `TemplateWriter` port). The runtime-technology template *source* lives alongside it at `src/infrastructure/runner/templates/runner-templates.ts` — see §7.1. |
 | ~~`ReportParserAdapter` / `CiTemplateWriter`~~ | **Not separate infrastructure adapters.** Cucumber/Playwright report parsing is done in `ReportImportService` (application) and CI workflow generation in `PipelineGenerationService` (application), writing through the absolute-file-system port. |
 | ~~`ReportFileWatcher`~~ | **Not built / removed.** The post-run import is driven in-process by the `PostRunCoordinator` (application layer) from the EN-2 terminal run event, not by a filesystem watcher. See §5.11a and Event Catalog §8. |
 | `FeatureFileWatcher` | _(Deferred, per SDD AD-10.)_ Would subscribe to `vault.on('modify' \| 'create' \| 'rename' \| 'delete')` for `*.feature` to feed incremental traceability updates. Not in V1. |
 
-### 7.1 Runner-template content location (DEFERRED relocation)
+### 7.1 Runner-template content location (relocated to infrastructure — P3-7 ✅)
 
-The `RunnerTemplateWriter` (infrastructure) writes the `.testrunner` files, but the template *content* — `package.json`, `cucumber.mjs`, demo steps/pages/fixtures, etc. — is assembled in the **application** layer at `src/application/content/runner-templates.ts`, not under `infrastructure/`.
+The runtime-technology-specific Playwright/Cucumber/Node template *source* — `package.json`, `cucumber.mjs`, the support layer, demo steps/pages/fixtures, etc. — now lives in **infrastructure** at `src/infrastructure/runner/templates/runner-templates.ts`, alongside the `RunnerTemplateWriter` that writes it. The application layer no longer embeds any runtime-tech source.
 
-> **DEFERRED — do not assume this has moved.** Relocating the template content under `infrastructure/` is a documented deferred item (V1 Review P3-7). It is not a straight file move: the content is generated/assembled on the application side, and pushing it under infrastructure cleanly requires the generation to be pushed behind the `TemplateWriter` port first — otherwise infrastructure would have to call back into application content and invert the layer dependency rule. Until that refactor lands, the content stays at `src/application/content/runner-templates.ts`.
+> **Relocated (P3-7).** Generation is reached through the `TemplateWriter` port: the port declares `buildRunnerTemplates(settings): TemplateFile[]`, the `RunnerTemplateWriter` infra adapter implements it (importing the relocated content — infra→infra is allowed), and the application services (`RunnerInstallationService`, `EnvironmentValidationService`) call the port, never the content module. This keeps the layer dependency rule intact — no `src/application/**` file imports from `src/infrastructure/**`.
+>
+> The plain file/dependency **manifest** the validators assert against (`REQUIRED_RUNNER_FILES`, `VALIDATED_RUNNER_FILES`, `REQUIRED_RUNNER_DEPENDENCIES`) is contract/policy *data*, not runtime-tech source, so it stays in the application layer at `src/application/content/runner-manifest.ts` — the validation services depend on it directly rather than routing string arrays through the port.
 
 ---
 
