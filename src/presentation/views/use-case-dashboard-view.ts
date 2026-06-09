@@ -25,6 +25,10 @@ export interface UseCaseDashboardDeps {
   // use-case-scoped run through the same launcher the command palette uses.
   runLauncher: Pick<RunLauncher, "launch">;
   onCreate: () => void;
+  // Wave D: clicking a Use Case id opens its detail view (the UI-driven
+  // authoring & testing surface). Raw note access stays available via a
+  // separate per-row "Note" link.
+  onOpenDetail: (useCaseId: string) => void;
 }
 
 /**
@@ -96,24 +100,35 @@ export class UseCaseDashboardView extends ItemView {
 
     const table = container.createEl("table", { cls: "e2e-test-hub-uc-table" });
     const headRow = table.createEl("thead").createEl("tr");
-    for (const label of ["ID", "Title", "Status", "Automation", "Run"]) {
+    for (const label of ["ID", "Title", "Status", "Automation", "Note", "Run"]) {
       headRow.createEl("th", { text: label });
     }
 
     const body = table.createEl("tbody");
     for (const row of rows) {
       const tr = body.createEl("tr");
+      // Wave D: the id opens the Use Case detail view (Feature Specifications +
+      // authoring/testing actions); raw note access stays a separate "Note"
+      // link in its own column.
       const open = tr.createEl("td").createEl("button", {
         text: row.id,
         cls: "e2e-test-hub-link-button",
-        attr: { "aria-label": `Open Use Case ${row.id}` },
+        attr: { "aria-label": `Open Use Case ${row.id} detail` },
       });
       open.addEventListener("click", () => {
-        void this.deps.workspace.openFile(row.path);
+        this.deps.onOpenDetail(row.id);
       });
       tr.createEl("td", { text: row.title });
       tr.createEl("td", { text: row.status });
       tr.createEl("td", { text: row.automationStatus });
+      const note = tr.createEl("td").createEl("button", {
+        text: "Note",
+        cls: "e2e-test-hub-link-button",
+        attr: { "aria-label": `Open the ${row.id} note` },
+      });
+      note.addEventListener("click", () => {
+        void this.deps.workspace.openFile(row.path);
+      });
       // Per-row Run button (Wave B): launches a use-case-scoped run via the
       // shared launcher, which reveals the Test Console first.
       const run = tr.createEl("td").createEl("button", {

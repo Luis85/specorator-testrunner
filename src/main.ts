@@ -81,6 +81,11 @@ import {
   USE_CASE_VIEW_TYPE,
   UseCaseDashboardView,
 } from "./presentation/views/use-case-dashboard-view";
+import {
+  USE_CASE_DETAIL_VIEW_TYPE,
+  UseCaseDetailView,
+} from "./presentation/views/use-case-detail-view";
+import { generateFeatureForUseCase } from "./presentation/views/generate-feature-modal";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
 import { InMemoryEventBus } from "./shared/event-bus/event-bus";
 import { ConsoleLogger } from "./shared/logging/logger";
@@ -330,6 +335,37 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           eventBus,
           runLauncher: this.runLauncher,
           onCreate: () => this.openCreateUseCase(),
+          // Wave D: the id column opens the Use Case detail view (authoring &
+          // testing surface); the per-row "Note" link keeps raw note access.
+          onOpenDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
+        }),
+    );
+    // Wave D: the Use Case detail view — the UI-driven authoring & testing
+    // surface for one Use Case. Deps are the narrow lookup + spec/step services
+    // it orchestrates, the workspace port, the shared run launcher, and the
+    // generate-Feature opener (which reuses the command palette's slug-prompt
+    // flow rather than forking the generation logic).
+    this.registerView(
+      USE_CASE_DETAIL_VIEW_TYPE,
+      (leaf) =>
+        new UseCaseDetailView(leaf, {
+          useCaseService: this.useCaseService,
+          specificationService: this.specificationService,
+          stepDefinitionService: this.stepDefinitionService,
+          workspace: this.workspaceAdapter,
+          eventBus,
+          runLauncher: this.runLauncher,
+          openGenerateFeature: (useCase, onGenerated) =>
+            generateFeatureForUseCase(
+              this.app,
+              {
+                useCaseService: this.useCaseService,
+                specificationService: this.specificationService,
+                workspace: this.workspaceAdapter,
+              },
+              useCase,
+              () => onGenerated(),
+            ),
         }),
     );
     this.registerView(
@@ -500,6 +536,22 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       useCaseService: this.useCaseService,
       workspace: this.workspaceAdapter,
     }).open();
+  }
+
+  // Wave D: open (or re-target) the Use Case detail view for `useCaseId`. The id
+  // travels in the leaf's view state so the leaf survives a workspace reload and
+  // the view re-renders itself for the new target. A single detail leaf is
+  // reused (re-targeted) rather than stacking one per Use Case.
+  private async openUseCaseDetail(useCaseId: string): Promise<void> {
+    const { workspace } = this.app;
+    const leaf =
+      workspace.getLeavesOfType(USE_CASE_DETAIL_VIEW_TYPE)[0] ?? workspace.getLeaf("tab");
+    await leaf.setViewState({
+      type: USE_CASE_DETAIL_VIEW_TYPE,
+      active: true,
+      state: { useCaseId },
+    });
+    void workspace.revealLeaf(leaf);
   }
 
   private openCreateSuite(): void {

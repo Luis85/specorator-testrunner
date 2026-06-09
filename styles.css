@@ -565,3 +565,101 @@
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
 }
+
+/* ── Use Case detail (Wave D, UI-driven authoring & testing) ───────────────────
+ * The detail view turns one Use Case into an executable, traceable surface: a
+ * header (status + automation status), Open note / Run Use Case / Generate
+ * Feature actions, and a list of Feature Specifications whose per-row actions
+ * (Validate / Detect missing steps / Generate step definitions) render their
+ * result inline. Status pills + inline rows reuse the existing Obsidian vars and
+ * the [data-status] convention; the inline result rows share the settings/wizard
+ * `.e2e-test-hub-settings-check-row` styles, so colour is reinforcement only and
+ * the ✓/✗/! icon carries the signal. */
+.e2e-test-hub-uc-detail {
+  padding: var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-uc-detail-header {
+  margin-bottom: var(--size-4-4, 16px);
+}
+
+.e2e-test-hub-uc-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+  margin-bottom: var(--size-4-2, 8px);
+}
+
+/* Status / automation-status pills. Default to muted; [data-status] tints them
+ * with the same vocabulary the dashboard KPI tiles + run cells use. */
+.e2e-test-hub-uc-detail-status {
+  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-uc-detail-status[data-status="passing"],
+.e2e-test-hub-uc-detail-status[data-status="verified"],
+.e2e-test-hub-uc-detail-status[data-status="automated"] {
+  color: var(--text-success);
+}
+
+.e2e-test-hub-uc-detail-status[data-status="failing"] {
+  color: var(--text-error);
+}
+
+.e2e-test-hub-uc-detail-status[data-status="missing-steps"] {
+  color: var(--text-warning, var(--text-muted));
+}
+
+.e2e-test-hub-uc-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-uc-detail-features {
+  margin-top: var(--size-4-4, 16px);
+}
+
+.e2e-test-hub-uc-detail-empty {
+  color: var(--text-muted);
+}
+
+/* One Feature Specification card: name + actions on top, the inline result area
+ * (validate / detect / generate) below. */
+.e2e-test-hub-uc-detail-feature {
+  padding: var(--size-4-2, 8px) 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.e2e-test-hub-uc-detail-feature-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-uc-detail-feature-name {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-uc-detail-feature-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1, 4px);
+}
+
+/* Hidden until an action runs (mirrors the settings result area). */
+.e2e-test-hub-uc-detail-feature-result {
+  margin-top: var(--size-4-1, 4px);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-uc-detail-feature-result:empty {
+  display: none;
+}
