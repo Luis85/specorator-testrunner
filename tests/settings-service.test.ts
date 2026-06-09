@@ -177,6 +177,223 @@ describe("DefaultSettingsService", () => {
   });
 });
 
+describe("DefaultSettingsService — runner-env hardening (SEC: child-process env sink)", () => {
+  // test-execution-service injects `{ BASE_URL: active.baseUrl, ...auth.env }`
+  // verbatim into the runner subprocess; these tests pin down that a tampered
+  // data.json can't smuggle hostile values through either validate() or load().
+  const sutWith = (
+    environments: Record<string, { baseUrl: string; auth?: { env: Record<string, string> } }>,
+  ) => ({
+    ...DEFAULT_SETTINGS,
+    sut: { active: "demo", environments },
+  });
+
+  describe("validate()", () => {
+    it("accepts DEFAULT_SETTINGS with zero errors (demo file:// fixture stays valid)", async () => {
+      const { service } = makeService();
+      const validation = await service.validate(DEFAULT_SETTINGS);
+      expect(validation.errors).toEqual([]);
+      expect(validation.valid).toBe(true);
+    });
+
+    it.each(["BAD KEY", "1LEADING", "X\nY", "A-B", "$(evil)"])(
+      "flags auth.env key %j as an error with the full field path",
+      async (key) => {
+        const { service } = makeService();
+        const settings = sutWith({
+          demo: { baseUrl: "http://localhost", auth: { env: { [key]: "fixture-value" } } },
+        });
+        const validation = await service.validate(settings);
+        expect(validation.valid).toBe(false);
+        const error = validation.errors.find(
+          (e) => e.field === `sut.environments.demo.auth.env.${key}`,
+        );
+        expect(error?.severity).toBe("error");
+      },
+    );
+
+    it("does not flag identifier-shaped auth.env keys (GITHUB_ prefix is CI-only, allowed here)", async () => {
+      const { service } = makeService();
+      const settings = sutWith({
+        demo: {
+          baseUrl: "http://localhost",
+          auth: { env: { VAR_A: "x", _UNDERSCORE: "y", GITHUB_TOKEN_LOCAL: "z" } },
+        },
+      });
+      const validation = await service.validate(settings);
+      expect(validation.errors).toEqual([]);
+    });
+
+    it.each([
+      "http://x\nEVIL=1", // newline could break out of a later text sink
+      "http://x\u0000y", // NUL
+      "not a url",
+      "javascript:alert(1)", // parseable but not an allowed protocol
+    ])("flags baseUrl %j as an error", async (baseUrl) => {
+      const { service } = makeService();
+      const validation = await service.validate(sutWith({ demo: { baseUrl } }));
+      expect(validation.valid).toBe(false);
+      expect(
+        validation.errors.some(
+          (e) => e.field === "sut.environments.demo.baseUrl" && e.severity === "error",
+        ),
+      ).toBe(true);
+    });
+
+    it("treats an EMPTY baseUrl as a warning, not an error (incomplete config, not injection)", async () => {
+      const { service } = makeService();
+      const validation = await service.validate(sutWith({ demo: { baseUrl: "" } }));
+      expect(validation.errors).toEqual([]);
+      expect(validation.warnings.some((w) => w.field === "sut.environments.demo.baseUrl")).toBe(
+        true,
+      );
+    });
+
+    it.each([
+      "../../../usr/bin/node", // POSIX traversal
+      "..\\..\\evil\\node", // Windows-style traversal must not slip through on POSIX
+      "node\n", // newline
+      "no\u0000de", // NUL
+    ])("flags runner.nodeExecutable %j as an error", async (nodeExecutable) => {
+      const { service } = makeService();
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        runner: { ...DEFAULT_SETTINGS.runner, nodeExecutable },
+      };
+      const validation = await service.validate(settings);
+      expect(validation.valid).toBe(false);
+      expect(
+        validation.errors.some(
+          (e) => e.field === "runner.nodeExecutable" && e.severity === "error",
+        ),
+      ).toBe(true);
+    });
+
+    it.each(["node", "/usr/local/bin/node", "C:\\Program Files\\nodejs\\node.exe"])(
+      "allows nodeExecutable %j (CommandSafetyPolicy governs the basename)",
+      async (nodeExecutable) => {
+        const { service } = makeService();
+        const settings = {
+          ...DEFAULT_SETTINGS,
+          runner: { ...DEFAULT_SETTINGS.runner, nodeExecutable },
+        };
+        const validation = await service.validate(settings);
+        expect(validation.errors.some((e) => e.field === "runner.nodeExecutable")).toBe(false);
+      },
+    );
+  });
+
+  describe("load() sanitization", () => {
+    it("drops a tampered auth.env key but keeps valid siblings, logging the key only", async () => {
+      const { service, logger } = makeService({
+        sut: {
+          active: "demo",
+          environments: {
+            demo: {
+              baseUrl: "http://localhost",
+              auth: { env: { "BAD KEY": "fixture-secret-value", VAR_A: "fixture-ok" } },
+            },
+          },
+        },
+      });
+      const loaded = await service.load();
+      const env = loaded.sut.environments.demo.auth?.env ?? {};
+      expect(env).toEqual({ VAR_A: "fixture-ok" }); // hostile key gone, sibling intact
+      expect(logger.error).toHaveBeenCalled();
+      // The dropped entry's VALUE may be a credential and must never be logged.
+      const loggedText = JSON.stringify(logger.error.mock.calls);
+      expect(loggedText).toContain("BAD KEY");
+      expect(loggedText).not.toContain("fixture-secret-value");
+    });
+
+    it.each(["1LEADING", "X\nY"])("drops tampered auth.env key %j on load", async (key) => {
+      const { service } = makeService({
+        sut: {
+          active: "demo",
+          environments: {
+            demo: { baseUrl: "http://localhost", auth: { env: { [key]: "v", SAFE: "s" } } },
+          },
+        },
+      });
+      const loaded = await service.load();
+      expect(loaded.sut.environments.demo.auth?.env).toEqual({ SAFE: "s" });
+    });
+
+    it("leaves valid auth.env entries completely untouched (passthrough)", async () => {
+      const { service, logger } = makeService({
+        sut: {
+          active: "demo",
+          environments: {
+            demo: {
+              baseUrl: "https://example.test",
+              auth: { env: { VAR_A: "fixture-one", GITHUB_LOCAL: "fixture-two" } },
+            },
+          },
+        },
+      });
+      const loaded = await service.load();
+      expect(loaded.sut.environments.demo).toEqual({
+        baseUrl: "https://example.test",
+        auth: { env: { VAR_A: "fixture-one", GITHUB_LOCAL: "fixture-two" } },
+      });
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it("restores the DEFAULT environment's baseUrl when the demo baseUrl was tampered", async () => {
+      const { service, logger } = makeService({
+        sut: {
+          active: "demo",
+          environments: { demo: { baseUrl: "http://x\nEVIL=1" } },
+        },
+      });
+      const loaded = await service.load();
+      expect(loaded.sut.environments.demo.baseUrl).toBe(
+        DEFAULT_SETTINGS.sut.environments.demo.baseUrl,
+      );
+      expect(logger.error).toHaveBeenCalled();
+    });
+
+    it("falls back a tampered NON-default environment baseUrl to '' (inert BASE_URL)", async () => {
+      const { service } = makeService({
+        sut: {
+          active: "demo",
+          environments: {
+            demo: DEFAULT_SETTINGS.sut.environments.demo,
+            staging: { baseUrl: "http://y\u0000" },
+          },
+        },
+      });
+      const loaded = await service.load();
+      expect(loaded.sut.environments.staging.baseUrl).toBe("");
+    });
+
+    it.each(["../../../usr/bin/node", "node\n"])(
+      "falls back tampered runner.nodeExecutable %j to the default on load",
+      async (nodeExecutable) => {
+        const { service, logger } = makeService({ runner: { nodeExecutable } });
+        const loaded = await service.load();
+        expect(loaded.runner.nodeExecutable).toBe(DEFAULT_SETTINGS.runner.nodeExecutable);
+        expect(logger.error).toHaveBeenCalled();
+      },
+    );
+
+    it("loaded (sanitized) settings validate with zero errors — load/validate stay aligned", async () => {
+      const { service } = makeService({
+        runner: { nodeExecutable: "../escape/node" },
+        sut: {
+          active: "demo",
+          environments: {
+            demo: { baseUrl: "http://x\nEVIL=1", auth: { env: { "BAD KEY": "v", OK_VAR: "v" } } },
+          },
+        },
+      });
+      const loaded = await service.load();
+      const validation = await service.validate(loaded);
+      expect(validation.errors).toEqual([]);
+    });
+  });
+});
+
 describe("DefaultSettingsService — ADR-0015 sibling Test Hub detection", () => {
   const makeServiceWithVault = (folders: string[]) => {
     const store = new FakeDataStore();

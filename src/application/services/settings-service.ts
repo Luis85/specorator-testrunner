@@ -3,6 +3,8 @@ import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { PathSafetyPolicy } from "../../domain/policies/path-safety-policy";
 import {
   DEFAULT_SETTINGS,
+  isValidAuthEnvKey,
+  type SutEnvironment,
   type TestHubPathSettings,
   type TestHubSettings,
 } from "../../domain/settings/settings";
@@ -76,7 +78,9 @@ export class DefaultSettingsService implements SettingsService {
   ) {}
 
   async load(): Promise<TestHubSettings> {
-    return this.sanitizePaths(mergeWithDefaults(await this.store.load()));
+    return this.sanitizeRunnerEnvInputs(
+      this.sanitizePaths(mergeWithDefaults(await this.store.load())),
+    );
   }
 
   /**
@@ -124,6 +128,81 @@ export class DefaultSettingsService implements SettingsService {
       paths,
       logging: { ...settings.logging, path: loggingPath.value },
     };
+  }
+
+  /**
+   * Screens the three settings values that reach the runner child process on
+   * load, mirroring the {@link sanitizePaths} posture for the env-injection
+   * sink (SEC: test-execution-service builds the subprocess env as
+   * `{ BASE_URL: active.baseUrl, ...active.auth.env }` VERBATIM, and
+   * CommandSafetyPolicy only screens the node executable's BASENAME). A
+   * tampered/synced `data.json` could otherwise carry a hostile env-var name,
+   * a control-character baseUrl, or a traversal node path straight into the
+   * spawn — `save()` validates, but `load()` historically did not. Every
+   * invalid value is logged and dropped/replaced so it never reaches the
+   * runner, without breaking normal startup:
+   *
+   *  - an invalid `auth.env` KEY drops that single entry (valid siblings
+   *    survive). Only the KEY is logged — its value may be a credential
+   *    (ADR-0019), and the load-time logger may not have the redaction set yet.
+   *  - an invalid `baseUrl` falls back to the default environment's baseUrl
+   *    when the environment IS a default one (so the demo `file://` fixture
+   *    keeps working), else to `""`. Empty is the conservative choice: an
+   *    empty `BASE_URL` is inert in the child env and `validate()` surfaces it
+   *    as a warning, whereas inventing a URL could silently point runs at the
+   *    wrong system.
+   *  - an invalid `nodeExecutable` falls back to the default (`node`), whose
+   *    basename CommandSafetyPolicy already trusts.
+   */
+  private sanitizeRunnerEnvInputs(settings: TestHubSettings): TestHubSettings {
+    let runner = settings.runner;
+    const nodeProblem = nodeExecutableProblem(runner.nodeExecutable);
+    if (nodeProblem) {
+      this.logger.error(
+        `Configured "runner.nodeExecutable" ${nodeProblem}; falling back to the default.`,
+        undefined,
+        { value: runner.nodeExecutable, fallback: DEFAULT_SETTINGS.runner.nodeExecutable },
+      );
+      runner = { ...runner, nodeExecutable: DEFAULT_SETTINGS.runner.nodeExecutable };
+    }
+
+    const environments: Record<string, SutEnvironment> = {};
+    for (const [name, environment] of Object.entries(settings.sut.environments)) {
+      let env = environment;
+
+      const authEnv = environment.auth?.env;
+      if (authEnv && Object.keys(authEnv).some((key) => !isValidAuthEnvKey(key))) {
+        const kept: Record<string, string> = {};
+        for (const [key, value] of Object.entries(authEnv)) {
+          if (isValidAuthEnvKey(key)) {
+            kept[key] = value;
+          } else {
+            // Log the offending KEY only — never its value (credential, ADR-0019).
+            this.logger.error(
+              `Configured auth env key in "sut.environments.${name}" is not a valid environment-variable name; dropping that entry.`,
+              undefined,
+              { environment: name, key },
+            );
+          }
+        }
+        env = { ...env, auth: { ...env.auth, env: kept } };
+      }
+
+      const urlProblem = baseUrlProblem(env.baseUrl);
+      if (urlProblem) {
+        const fallback = DEFAULT_SETTINGS.sut.environments[name]?.baseUrl ?? "";
+        this.logger.error(
+          `Configured "sut.environments.${name}.baseUrl" ${urlProblem}; falling back to ${JSON.stringify(fallback)}.`,
+          undefined,
+          { environment: name, value: env.baseUrl, fallback },
+        );
+        env = { ...env, baseUrl: fallback };
+      }
+
+      environments[name] = env;
+    }
+
+    return { ...settings, runner, sut: { ...settings.sut, environments } };
   }
 
   async save(settings: TestHubSettings): Promise<Result<void>> {
@@ -179,6 +258,64 @@ export class DefaultSettingsService implements SettingsService {
       errors.push({
         field: "sut.active",
         message: `Active environment "${settings.sut.active}" is not defined.`,
+        severity: "error",
+      });
+    }
+
+    // SEC: the values below feed the runner subprocess environment verbatim
+    // (test-execution-service: `{ BASE_URL: active.baseUrl, ...auth.env }`),
+    // so validate() must flag what {@link sanitizeRunnerEnvInputs} would have
+    // to repair on load — keeping save() from ever persisting such a value.
+    for (const [name, environment] of Object.entries(settings.sut.environments)) {
+      // auth.env KEYS become environment-variable names in the child process
+      // and `secrets.<KEY>` references in the generated workflow, so they must
+      // be identifier-shaped. The rule is shared with pipeline generation via
+      // {@link isValidAuthEnvKey} in the domain settings module. The CI-only
+      // `GITHUB_`-prefix rejection deliberately stays in
+      // pipeline-generation-service: locally a `GITHUB_*` env var is
+      // legitimate — it only fails as a GitHub repository SECRET name.
+      for (const key of Object.keys(environment.auth?.env ?? {})) {
+        if (!isValidAuthEnvKey(key)) {
+          errors.push({
+            field: `sut.environments.${name}.auth.env.${key}`,
+            message: `Auth env key ${JSON.stringify(key)} is not a valid environment-variable name (letters, digits, and "_" only; must not start with a digit).`,
+            severity: "error",
+          });
+        }
+      }
+
+      const urlProblem = baseUrlProblem(environment.baseUrl);
+      if (urlProblem) {
+        errors.push({
+          field: `sut.environments.${name}.baseUrl`,
+          message: `Environment "${name}" baseUrl ${urlProblem}.`,
+          severity: "error",
+        });
+      } else if (environment.baseUrl.trim() === "") {
+        // Empty baseUrl is a WARNING, not an error: it is incomplete
+        // configuration rather than an injection vector (an empty BASE_URL is
+        // inert in the child env), it is the load()-time fallback for a
+        // tampered non-default environment, and erroring would block saving a
+        // half-configured environment. DEFAULT_SETTINGS uses a non-empty
+        // file:// demo fixture, so the defaults hit neither branch.
+        warnings.push({
+          field: `sut.environments.${name}.baseUrl`,
+          message: `Environment "${name}" has an empty baseUrl; runs against it will receive an empty BASE_URL.`,
+          severity: "warning",
+        });
+      }
+    }
+
+    // Bare names ("node") and absolute paths stay allowed — CommandSafetyPolicy
+    // governs the basename at spawn time. Settings only reject what that check
+    // cannot see: control characters/newlines and `..` traversal segments,
+    // which could steer the spawn to a different binary than the basename
+    // suggests.
+    const nodeProblem = nodeExecutableProblem(settings.runner.nodeExecutable);
+    if (nodeProblem) {
+      errors.push({
+        field: "runner.nodeExecutable",
+        message: `Node executable ${nodeProblem}.`,
         severity: "error",
       });
     }
@@ -283,6 +420,62 @@ export class DefaultSettingsService implements SettingsService {
     };
   }
 }
+
+/**
+ * C0 control characters + DEL. Any one of these in a value destined for the
+ * runner subprocess env (or a downstream text sink) is a smuggling primitive —
+ * a newline especially can split a value into extra lines/steps wherever it is
+ * later rendered. Same class pipeline-generation-service rejects before
+ * writing the workflow.
+ */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+
+/** Protocols a SUT baseUrl may use; file: stays allowed for the demo fixture. */
+const ALLOWED_BASE_URL_PROTOCOLS = new Set(["http:", "https:", "file:"]);
+
+/**
+ * Why these rules: `baseUrl` is injected verbatim into the runner subprocess
+ * as `BASE_URL` (test-execution-service), so control characters are rejected
+ * outright, and anything non-empty must parse as an http:/https:/file: URL so
+ * a tampered value can't masquerade as something the runner would misuse
+ * (DEFAULT_SETTINGS' demo environment is a `file://` fixture, hence file:).
+ * Empty/whitespace-only is NOT a problem here — it is incomplete configuration,
+ * not an injection vector; `validate()` surfaces it as a warning instead.
+ * Returns the problem text, or `undefined` when the value is acceptable.
+ * Pure: shared by validate() and load()-time sanitization so the two can't
+ * drift apart.
+ */
+const baseUrlProblem = (value: string): string | undefined => {
+  if (CONTROL_CHARS.test(value)) return "contains a control character";
+  if (value.trim() === "") return undefined; // warning-level, handled by callers
+  let protocol: string;
+  try {
+    protocol = new URL(value).protocol;
+  } catch {
+    return `is not a parseable URL: ${JSON.stringify(value)}`;
+  }
+  if (!ALLOWED_BASE_URL_PROTOCOLS.has(protocol)) {
+    return `uses unsupported protocol "${protocol}" (allowed: http:, https:, file:)`;
+  }
+  return undefined;
+};
+
+/**
+ * Why these rules: CommandSafetyPolicy allowlists the node executable's
+ * BASENAME only, so settings must reject what that check cannot see — control
+ * characters/newlines, and `..` traversal segments that could resolve the
+ * spawn to a different binary than the basename suggests (e.g.
+ * `../../../usr/bin/node` escaping the expected location while still ending
+ * in a trusted basename). Split on BOTH separators so a Windows-style
+ * `..\\evil\\node` can't slip through on a POSIX host. Bare names ("node")
+ * and absolute paths remain allowed. Returns the problem text, or `undefined`.
+ */
+const nodeExecutableProblem = (value: string): string | undefined => {
+  if (CONTROL_CHARS.test(value)) return "contains a control character";
+  if (value.split(/[/\\]/).includes("..")) return 'contains a ".." path traversal segment';
+  return undefined;
+};
 
 /** Last `/`-separated, non-empty segment of a vault path. */
 const baseName = (path: string): string => {

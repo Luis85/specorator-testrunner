@@ -88,6 +88,23 @@ export const collectCredentialValues = (settings: TestHubSettings): string[] =>
     .flatMap((env) => Object.values(env.auth?.env ?? {}))
     .filter((value) => value.length >= MIN_CREDENTIAL_LEN);
 
+/**
+ * Identifier shape an `auth.env` KEY must have to be safe in BOTH env-var
+ * sinks: the local runner subprocess environment (test-execution-service
+ * injects `{ BASE_URL, ...auth.env }` verbatim) and the generated GitHub
+ * Actions workflow (rendered as `secrets.<KEY>` / YAML map keys). A key with
+ * any other character could smuggle YAML syntax into the workflow or mint a
+ * malformed/hostile variable in the child process, so both chokepoints apply
+ * one rule.
+ *
+ * Lives in the domain settings module so settings-service (load sanitization
+ * + validate) can share it. NOTE: pipeline-generation-service.ts currently
+ * screens with this same regex inline (plus its CI-only `GITHUB_`-prefix
+ * rejection, which is NOT part of this rule — locally a `GITHUB_*` env var is
+ * legitimate); keep the two in sync if this shape ever changes. Pure: no I/O.
+ */
+export const isValidAuthEnvKey = (key: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
+
 export const DEFAULT_SETTINGS: TestHubSettings = {
   paths: {
     testHubPath: unsafeVaultPath("Test Hub"),
