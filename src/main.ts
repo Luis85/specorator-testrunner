@@ -336,7 +336,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         }),
     );
 
-    this.addSettingTab(new TestHubSettingTab(this, this));
+    // The settings tab drives validate/repair/CI inline (Wave A); it receives
+    // only the narrow service slices its SettingsTabServices contract names.
+    this.addSettingTab(
+      new TestHubSettingTab(this, this, {
+        validation: this.validationService,
+        maintenance: this.maintenanceService,
+        pipeline: this.pipelineService,
+      }),
+    );
 
     // Ribbon icons stay in the composition root (they are plugin chrome, not
     // command bodies).
