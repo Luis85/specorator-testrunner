@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DashboardSnapshot } from "../src/application/services/traceability-service";
 import {
-  isHubInitialized,
   NO_EVIDENCE_TOOLTIP,
   projectDashboard,
   projectEnvironmentBadge,
@@ -93,16 +92,6 @@ describe("projectDashboard", () => {
 
   it("yields an empty recent-runs list when there are no runs", () => {
     expect(projectDashboard(snapshot()).recentRuns).toEqual([]);
-  });
-});
-
-describe("isHubInitialized", () => {
-  it("treats a successful snapshot as initialized", () => {
-    expect(isHubInitialized(true)).toBe(true);
-  });
-
-  it("treats a failed snapshot as not initialized (show the Initialize CTA)", () => {
-    expect(isHubInitialized(false)).toBe(false);
   });
 });
 

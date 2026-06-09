@@ -337,6 +337,13 @@ export class UseCaseDetailView extends ItemView {
 
   /** Replaces a feature's result container with the given checklist rows. */
   private renderChecklist(container: HTMLElement, rows: ChecklistRow[]): void {
+    // The result container is captured when the feature row is built. An inline
+    // op (validate/detect/generate) awaits a service call, and an unrelated
+    // event can trigger a full re-render in that window — detaching THIS
+    // container and replacing it with a fresh one. Writing into the detached
+    // node would render the outcome invisibly, so skip it; the freshly rendered
+    // row is ready for a re-click.
+    if (!container.isConnected) return;
     container.empty();
     for (const row of rows) {
       const el = container.createDiv({

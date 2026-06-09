@@ -186,18 +186,6 @@ export const QUICK_ACTION_GROUPS: ReadonlyArray<{
   { group: "open", heading: "Open" },
 ];
 
-/**
- * Whether the Test Hub is initialized enough to drive from the dashboard
- * (Wave C §1). The dashboard's only cheap, decoupled signal is whether the
- * traceability snapshot loaded: before the Initialization Wizard runs, the Use
- * Cases folder it reads does not exist and `snapshot()` returns an error, so a
- * failed snapshot means "not initialized yet" and the view shows the Initialize
- * CTA instead of the hub. Once initialized the snapshot succeeds (even with zero
- * Use Cases), so this never hides the hub from a real, empty-but-set-up vault.
- * Pure so the branch is unit-tested without the service or a DOM.
- */
-export const isHubInitialized = (snapshotOk: boolean): boolean => snapshotOk;
-
 /** The badge model for the active environment top-bar control (Wave C §2). */
 export interface EnvironmentBadge {
   /** The active environment name, shown as "Environment: <active>". */

@@ -87,6 +87,13 @@ export class TestHubSettingTab extends PluginSettingTab {
   /** Pending per-field persist debouncers, cancelled on re-render / close. */
   private readonly pendingFlushes: { cancel(): void }[] = [];
 
+  /**
+   * Pending `window.setTimeout` handles (e.g. the remove-environment two-click
+   * disarm), cleared on re-render / close so an orphaned timeout can't fire into
+   * a button that a later display() already rebuilt.
+   */
+  private readonly pendingTimeouts: number[] = [];
+
   /** Inline save-blocking error surface for the "System under test" section. */
   private sutErrorsEl: HTMLElement | null = null;
 
@@ -98,10 +105,12 @@ export class TestHubSettingTab extends PluginSettingTab {
     super(plugin.app, plugin);
   }
 
-  /** Cancels any debounced saves still queued from a prior render (PRES-L2). */
+  /** Cancels any debounced saves + pending timeouts queued from a prior render (PRES-L2). */
   private cancelPendingFlushes(): void {
     for (const flush of this.pendingFlushes) flush.cancel();
     this.pendingFlushes.length = 0;
+    for (const handle of this.pendingTimeouts) window.clearTimeout(handle);
+    this.pendingTimeouts.length = 0;
   }
 
   hide(): void {
@@ -326,6 +335,8 @@ export class TestHubSettingTab extends PluginSettingTab {
           button.setButtonText("Remove environment");
           button.buttonEl.removeClass("mod-warning");
         }, CONFIRM_DISARM_MS);
+        // Track it so a re-render / tab close clears it (no orphaned fire).
+        this.pendingTimeouts.push(disarmTimer);
         return;
       }
       window.clearTimeout(disarmTimer);

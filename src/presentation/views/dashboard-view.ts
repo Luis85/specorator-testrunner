@@ -5,7 +5,6 @@ import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import {
-  isHubInitialized,
   NO_EVIDENCE_TOOLTIP,
   projectDashboard,
   projectEnvironmentBadge,
@@ -59,6 +58,12 @@ export interface DashboardViewDeps {
   // AC-016: open the Getting Started guide / User Manual straight from the
   // dashboard.
   openDocumentation: (documentType: DashboardDocumentType) => void | Promise<void>;
+  // Wave C §1: a REAL initialization signal (does the Test Hub vault structure
+  // exist yet?), wired in main.ts to a vault folder-existence check. snapshot()
+  // can't tell us — a fresh vault's missing Use Cases folder lists as ok([]), so
+  // it succeeds with zero Use Cases and would hide the Initialize CTA from
+  // first-time users.
+  isInitialized: () => Promise<boolean>;
   // Wave C §1 quick actions. Create / run entry points reuse the openCreate*
   // helpers + the RunLauncher; open* navigates via the workspace adapter.
   openWizard: () => void;
@@ -158,22 +163,24 @@ export class DashboardView extends ItemView {
     container.empty();
     container.createEl("h2", { text: "Test Hub Dashboard" });
 
+    // Wave C §1: gate on a REAL initialization signal (the vault structure
+    // exists). A fresh vault returns ok([]) from the snapshot — the missing Use
+    // Cases folder lists empty — so snapshot success can't distinguish
+    // "not set up yet" from "set up but empty". Show the prominent Initialize
+    // CTA for the former.
+    if (!(await this.deps.isInitialized())) {
+      this.renderInitializeCta(container);
+      return;
+    }
+
     // Read the NON-emitting snapshot (P2-6): the tiles/rows are projected from
     // it without re-publishing dashboard.* events, so a render driven by a
     // dashboard.refreshed/kpi.updated event can't re-trigger a refresh (no loop).
     // The one-time emitting push happens in onOpen and from the coordinator.
     const result = await this.deps.traceabilityService.snapshot();
-
-    // Wave C §1: a failed snapshot means the hub is not initialized yet (the Use
-    // Cases folder the snapshot reads doesn't exist pre-wizard). Show a single
-    // prominent Initialize CTA instead of an empty hub.
-    if (!isHubInitialized(result.ok)) {
-      this.renderInitializeCta(container);
-      return;
-    }
     if (!result.ok) {
-      // Unreachable given isHubInitialized === result.ok, but keeps the message
-      // available if the initialized signal ever decouples from snapshot.
+      // Initialized but the snapshot failed (a real I/O error, not a fresh
+      // vault) — surface it rather than masquerading as "not initialized".
       container.createEl("p", { text: `Could not load dashboard: ${result.error.message}` });
       return;
     }

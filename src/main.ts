@@ -400,6 +400,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         new DashboardView(leaf, {
           traceabilityService: this.traceabilityService,
           eventBus,
+          // Real initialization signal: the Use Cases folder the snapshot reads
+          // exists once the wizard has scaffolded the vault. A fresh vault lists
+          // it as ok([]), so snapshot success can't distinguish "not set up" —
+          // this folder-existence check can.
+          isInitialized: () => vault.exists(this.hubSettings.paths.useCasesPath),
           openDocumentation: (documentType) => this.openDocumentation(documentType),
           openWizard: () => this.openWizard(),
           openCreateUseCase: () => this.openCreateUseCase(),

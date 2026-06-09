@@ -151,6 +151,11 @@ export class TestConsoleView extends ItemView {
     for (const unsubscribe of this.subscriptions) unsubscribe();
     this.subscriptions.length = 0;
     this.stopTimer();
+    // Clear the per-run timer state so a REOPEN during a later run starts its
+    // elapsed clock fresh. onOpen does `runStartMs ??= Date.now()`, so a stale
+    // value left here would make the timer count from a previous run's start.
+    this.runStartMs = null;
+    this.activeScopeLabel = null;
   }
 
   /** Header toolbar: Cancel / Re-run / Clear (Wave B). */
