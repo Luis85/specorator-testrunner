@@ -212,6 +212,32 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
       },
     );
 
+    it.each([
+      "PATH", // basename hijack: redirects which npm/node the spawn resolves
+      "Path", // case-insensitive: Windows env names ignore case
+      "NODE_OPTIONS", // --require ./evil.js injects code into the spawned node
+      "NODE_PATH",
+      "LD_PRELOAD", // native loader injection (Linux)
+      "DYLD_INSERT_LIBRARIES", // native loader injection (macOS)
+      "npm_config_script_shell", // overrides the shell npm runs scripts with
+      "COMSPEC",
+    ])(
+      "flags reserved process-control auth.env key %j as an error (PR #18 review)",
+      async (key) => {
+        const { service } = makeService();
+        const settings = sutWith({
+          demo: { baseUrl: "http://localhost", auth: { env: { [key]: "x" } } },
+        });
+        const validation = await service.validate(settings);
+        expect(validation.valid).toBe(false);
+        const error = validation.errors.find(
+          (e) => e.field === `sut.environments.demo.auth.env.${key}`,
+        );
+        expect(error?.severity).toBe("error");
+        expect(error?.message).toMatch(/reserved process-control/);
+      },
+    );
+
     it("does not flag identifier-shaped auth.env keys (GITHUB_ prefix is CI-only, allowed here)", async () => {
       const { service } = makeService();
       const settings = sutWith({
@@ -315,18 +341,22 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
       expect(loggedText).not.toContain("fixture-secret-value");
     });
 
-    it.each(["1LEADING", "X\nY"])("drops tampered auth.env key %j on load", async (key) => {
-      const { service } = makeService({
-        sut: {
-          active: "demo",
-          environments: {
-            demo: { baseUrl: "http://localhost", auth: { env: { [key]: "v", SAFE: "s" } } },
+    it.each(["1LEADING", "X\nY", "PATH", "NODE_OPTIONS", "LD_PRELOAD", "npm_config_script_shell"])(
+      "drops tampered/reserved auth.env key %j on load",
+      async (key) => {
+        const { service } = makeService({
+          sut: {
+            active: "demo",
+            environments: {
+              demo: { baseUrl: "http://localhost", auth: { env: { [key]: "v", SAFE: "s" } } },
+            },
           },
-        },
-      });
-      const loaded = await service.load();
-      expect(loaded.sut.environments.demo.auth?.env).toEqual({ SAFE: "s" });
-    });
+        });
+        const loaded = await service.load();
+        // The reserved/invalid key never reaches the runner env sink; SAFE survives.
+        expect(loaded.sut.environments.demo.auth?.env).toEqual({ SAFE: "s" });
+      },
+    );
 
     it("leaves valid auth.env entries completely untouched (passthrough)", async () => {
       const { service, logger } = makeService({

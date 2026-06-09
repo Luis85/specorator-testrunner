@@ -223,4 +223,28 @@ describe("DefaultPipelineGenerationService", () => {
     }
     expect(types()).not.toContain("ci.pipeline.generated");
   });
+
+  it.each(["PATH", "NODE_OPTIONS", "LD_PRELOAD", "npm_config_script_shell", "GITHUB_PAT"])(
+    "refuses to render a reserved/forbidden auth key %j into the workflow",
+    async (key) => {
+      const { service, absoluteFs, types } = build();
+      const settings = {
+        ...DEFAULT_SETTINGS,
+        sut: {
+          active: "demo",
+          environments: {
+            demo: { baseUrl: "https://example.test", auth: { env: { [key]: "x" } } },
+          },
+        },
+      };
+
+      const result = await service.generate({ provider: "github-actions", settings });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("VALIDATION_FAILED");
+      expect(absoluteFs.written.has(workflowAbs)).toBe(false);
+      expect(types()).not.toContain("ci.pipeline.generated");
+    },
+  );
 });

@@ -106,6 +106,61 @@ export const collectCredentialValues = (settings: TestHubSettings): string[] =>
  */
 export const isValidAuthEnvKey = (key: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
 
+/**
+ * Env-var names that are NOT credentials but control how the runner PROCESS
+ * resolves binaries or loads code. They are identifier-shaped, so they pass
+ * {@link isValidAuthEnvKey} — yet `auth.env` is spread over the child's
+ * `process.env` into the `npm`/`node` spawn (TestExecutionService.runEnv →
+ * NodeChildProcessRunner), so a synced/tampered `data.json` could use one to
+ * escalate from "set a credential" to "run my code":
+ *  - `PATH`/`COMSPEC`/`SHELL` redirect which `npm`/`node`/shell binary runs;
+ *  - `NODE_OPTIONS` (`--require ./evil.js`), `NODE_PATH`, `BASH_ENV`/`ENV`
+ *    inject code into the spawned Node/shell;
+ *  - the `LD_*`/`DYLD_*` loader families inject native libraries;
+ *  - `NPM_CONFIG_*` overrides npm itself (e.g. `npm_config_script_shell`).
+ * `auth.env` is for SUT credentials only; these are rejected outright.
+ */
+const RESERVED_ENV_KEYS = new Set([
+  "PATH",
+  "COMSPEC",
+  "SHELL",
+  "IFS",
+  "ENV",
+  "BASH_ENV",
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "NODE_REPL_EXTERNAL_MODULE",
+]);
+const RESERVED_ENV_PREFIXES = ["LD_", "DYLD_", "NPM_CONFIG_"];
+
+/**
+ * True when `key` names a process-control / loader-injection variable that must
+ * never be settable through `auth.env` (see {@link RESERVED_ENV_KEYS}). Matched
+ * case-INSENSITIVELY because Windows environment-variable names are
+ * case-insensitive (`Path` === `PATH`), so a lower/mixed-case spelling can't
+ * dodge the check. Pure: no I/O.
+ */
+export const isReservedEnvKey = (key: string): boolean => {
+  const upper = key.toUpperCase();
+  return RESERVED_ENV_KEYS.has(upper) || RESERVED_ENV_PREFIXES.some((p) => upper.startsWith(p));
+};
+
+/**
+ * The single `auth.env` KEY rule, shared by settings load/validate and CI
+ * pipeline generation: a key must be identifier-shaped AND not a reserved
+ * process-control variable. Returns a human-readable problem, or `undefined`
+ * when the key is an acceptable credential name. Pure: no I/O.
+ */
+export const authEnvKeyProblem = (key: string): string | undefined => {
+  if (!isValidAuthEnvKey(key)) {
+    return `is not a valid environment-variable name (letters, digits, and "_" only; must not start with a digit)`;
+  }
+  if (isReservedEnvKey(key)) {
+    return `is a reserved process-control variable and cannot be used as a credential`;
+  }
+  return undefined;
+};
+
 export const DEFAULT_SETTINGS: TestHubSettings = {
   paths: {
     testHubPath: unsafeVaultPath("Test Hub"),

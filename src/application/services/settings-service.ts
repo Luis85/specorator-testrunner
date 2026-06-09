@@ -2,8 +2,8 @@ import type { DataStore } from "../ports/data-store";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { PathSafetyPolicy } from "../../domain/policies/path-safety-policy";
 import {
+  authEnvKeyProblem,
   DEFAULT_SETTINGS,
-  isValidAuthEnvKey,
   type SutEnvironment,
   type TestHubPathSettings,
   type TestHubSettings,
@@ -185,15 +185,18 @@ export class DefaultSettingsService implements SettingsService {
       let env = environment;
 
       const authEnv = environment.auth?.env;
-      if (authEnv && Object.keys(authEnv).some((key) => !isValidAuthEnvKey(key))) {
+      if (authEnv && Object.keys(authEnv).some((key) => authEnvKeyProblem(key) !== undefined)) {
         const kept: Record<string, string> = {};
         for (const [key, value] of Object.entries(authEnv)) {
-          if (isValidAuthEnvKey(key)) {
+          const problem = authEnvKeyProblem(key);
+          if (!problem) {
             kept[key] = value;
           } else {
-            // Log the offending KEY only — never its value (credential, ADR-0019).
+            // Log the offending KEY + reason only — never its value (credential,
+            // ADR-0019). Reserved process-control keys (PATH, NODE_OPTIONS, …)
+            // are dropped here too, so they can't reach the runner env sink.
             this.logger.error(
-              `Configured auth env key in "sut.environments.${name}" is not a valid environment-variable name; dropping that entry.`,
+              `Configured auth env key in "sut.environments.${name}" ${problem}; dropping that entry.`,
               undefined,
               { environment: name, key },
             );
@@ -397,16 +400,18 @@ export class DefaultSettingsService implements SettingsService {
       }
       // auth.env KEYS become environment-variable names in the child process
       // and `secrets.<KEY>` references in the generated workflow, so they must
-      // be identifier-shaped. The rule is shared with pipeline generation via
-      // {@link isValidAuthEnvKey} in the domain settings module. The CI-only
-      // `GITHUB_`-prefix rejection deliberately stays in
-      // pipeline-generation-service: locally a `GITHUB_*` env var is
-      // legitimate — it only fails as a GitHub repository SECRET name.
+      // be identifier-shaped AND not a reserved process-control variable (PATH,
+      // NODE_OPTIONS, LD_*, …) that could redirect/inject the spawn. The rule is
+      // shared with pipeline generation via {@link authEnvKeyProblem} in the
+      // domain settings module. The CI-only `GITHUB_`-prefix rejection
+      // deliberately stays in pipeline-generation-service: locally a `GITHUB_*`
+      // env var is legitimate — it only fails as a GitHub repository SECRET name.
       for (const key of Object.keys(environment.auth?.env ?? {})) {
-        if (!isValidAuthEnvKey(key)) {
+        const problem = authEnvKeyProblem(key);
+        if (problem) {
           errors.push({
             field: `sut.environments.${name}.auth.env.${key}`,
-            message: `Auth env key ${JSON.stringify(key)} is not a valid environment-variable name (letters, digits, and "_" only; must not start with a digit).`,
+            message: `Auth env key ${JSON.stringify(key)} ${problem}.`,
             severity: "error",
           });
         }
