@@ -303,12 +303,19 @@ export class DefaultSettingsService implements SettingsService {
     }
 
     if (typeof sut.active !== "string") {
+      // Since WE pick the replacement here, it must point at a surviving
+      // environment — the default name when it survived, else the first one.
+      // (A user-authored active STRING that dangles is different: it is left
+      // as-is below for validate() to flag, never silently rewritten.)
+      const active = environments[DEFAULT_SETTINGS.sut.active]
+        ? DEFAULT_SETTINGS.sut.active
+        : Object.keys(environments)[0];
       this.logger.error(
-        `Configured "sut.active" is not a string; falling back to the default.`,
+        `Configured "sut.active" is not a string; falling back to ${JSON.stringify(active)}.`,
         undefined,
-        { value: sut.active },
+        { value: sut.active, fallback: active },
       );
-      return { active: DEFAULT_SETTINGS.sut.active, environments };
+      return { active, environments };
     }
     return { active: sut.active, environments };
   }

@@ -594,6 +594,19 @@ describe("DefaultSettingsService — structural repair of tampered sut shapes", 
     expect(loaded.sut.environments.demo).toEqual({ baseUrl: "http://localhost" });
   });
 
+  it("load() repairs a non-string sut.active to a SURVIVING environment when the default is absent", async () => {
+    // Coherence: when WE pick the replacement active (the configured one was
+    // garbage), it must point at an environment that actually survived repair
+    // — not at a dangling default name (review-loop finding).
+    const { service } = makeService({
+      sut: { active: 7, environments: { staging: { baseUrl: "https://staging.test" } } },
+    });
+    const loaded = await service.load();
+    expect(loaded.sut.active).toBe("staging");
+    const validation = await service.validate(loaded);
+    expect(validation.errors).toEqual([]);
+  });
+
   it("validate() flags (not crashes on) a pre-repair non-record environments map", async () => {
     const { service } = makeService();
     const settings = {
