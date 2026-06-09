@@ -498,3 +498,132 @@ describe("DefaultSettingsService — ADR-0015 sibling Test Hub detection", () =>
     expect(siblingWarning(validation)).toBeUndefined();
   });
 });
+
+describe("DefaultSettingsService — structural repair of tampered sut shapes", () => {
+  // A synced/tampered data.json controls the full JSON shape, not just leaf
+  // values: the shallow merge preserves whatever it carries at sut.environments
+  // and below. Review finding (2026-06-09 follow-up): `environments: null`
+  // crashed load() via Object.entries(null) at plugin startup.
+
+  it("load() survives sut.environments: null and falls back to the defaults", async () => {
+    const { service, logger } = makeService({ sut: { environments: null } });
+    const loaded = await service.load();
+    expect(loaded.sut).toEqual(DEFAULT_SETTINGS.sut);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it.each([[42], ["text"], [["array"]]])(
+    "load() survives non-record sut.environments %j",
+    async (environments) => {
+      const { service } = makeService({ sut: { environments } });
+      const loaded = await service.load();
+      expect(loaded.sut).toEqual(DEFAULT_SETTINGS.sut);
+    },
+  );
+
+  it("load() replaces a non-object default-named environment with its default", async () => {
+    const { service, logger } = makeService({
+      sut: { active: "demo", environments: { demo: null } },
+    });
+    const loaded = await service.load();
+    expect(loaded.sut.environments.demo).toEqual(DEFAULT_SETTINGS.sut.environments.demo);
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it("load() drops a non-object custom environment but keeps valid siblings", async () => {
+    const { service } = makeService({
+      sut: {
+        active: "staging",
+        environments: { staging: { baseUrl: "https://staging.test" }, broken: "junk" },
+      },
+    });
+    const loaded = await service.load();
+    expect(loaded.sut.environments).toEqual({ staging: { baseUrl: "https://staging.test" } });
+  });
+
+  it("load() treats a non-string baseUrl as a malformed environment", async () => {
+    const { service } = makeService({
+      sut: { active: "demo", environments: { demo: { baseUrl: 42 } } },
+    });
+    const loaded = await service.load();
+    expect(loaded.sut.environments.demo).toEqual(DEFAULT_SETTINGS.sut.environments.demo);
+  });
+
+  it("load() strips a malformed auth section but keeps the environment", async () => {
+    const { service } = makeService({
+      sut: {
+        active: "demo",
+        environments: { demo: { baseUrl: "http://localhost", auth: "junk" } },
+      },
+    });
+    const loaded = await service.load();
+    expect(loaded.sut.environments.demo).toEqual({ baseUrl: "http://localhost" });
+  });
+
+  it("load() drops a non-string auth.env value, logging the key only", async () => {
+    const { service, logger } = makeService({
+      sut: {
+        active: "demo",
+        environments: {
+          demo: {
+            baseUrl: "http://localhost",
+            auth: { env: { NUMERIC: 7, SAFE: "fixture-ok" } },
+          },
+        },
+      },
+    });
+    const loaded = await service.load();
+    expect(loaded.sut.environments.demo.auth?.env).toEqual({ SAFE: "fixture-ok" });
+    expect(JSON.stringify(logger.error.mock.calls)).toContain("NUMERIC");
+  });
+
+  it("load() restores the defaults when every environment is unusable", async () => {
+    const { service } = makeService({
+      sut: { active: "ghost", environments: { ghost: "junk" } },
+    });
+    const loaded = await service.load();
+    expect(loaded.sut).toEqual(DEFAULT_SETTINGS.sut);
+  });
+
+  it("load() repairs a non-string sut.active to the default", async () => {
+    const { service } = makeService({
+      sut: { active: 7, environments: { demo: { baseUrl: "http://localhost" } } },
+    });
+    const loaded = await service.load();
+    expect(loaded.sut.active).toBe(DEFAULT_SETTINGS.sut.active);
+    expect(loaded.sut.environments.demo).toEqual({ baseUrl: "http://localhost" });
+  });
+
+  it("validate() flags (not crashes on) a pre-repair non-record environments map", async () => {
+    const { service } = makeService();
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: { active: "demo", environments: null },
+    } as unknown as Parameters<typeof service.validate>[0];
+    const validation = await service.validate(settings);
+    expect(validation.valid).toBe(false);
+    expect(validation.errors.some((e) => e.field === "sut.active")).toBe(true);
+  });
+
+  it("validate() flags a non-record environment entry without crashing", async () => {
+    const { service } = makeService();
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: { active: "demo", environments: { demo: null } },
+    } as unknown as Parameters<typeof service.validate>[0];
+    const validation = await service.validate(settings);
+    expect(validation.errors.some((e) => e.field === "sut.environments.demo")).toBe(true);
+  });
+
+  it("a structurally repaired load() output validates with zero errors", async () => {
+    const { service } = makeService({
+      sut: {
+        active: 7,
+        environments: { demo: null, broken: "junk", ok: { baseUrl: "https://x.test" } },
+      },
+    });
+    const loaded = await service.load();
+    const validation = await service.validate(loaded);
+    expect(validation.errors).toEqual([]);
+  });
+});

@@ -97,11 +97,12 @@ export const collectCredentialValues = (settings: TestHubSettings): string[] =>
  * malformed/hostile variable in the child process, so both chokepoints apply
  * one rule.
  *
- * Lives in the domain settings module so settings-service (load sanitization
- * + validate) can share it. NOTE: pipeline-generation-service.ts currently
- * screens with this same regex inline (plus its CI-only `GITHUB_`-prefix
- * rejection, which is NOT part of this rule — locally a `GITHUB_*` env var is
- * legitimate); keep the two in sync if this shape ever changes. Pure: no I/O.
+ * Lives in the domain settings module so every consumer shares the ONE rule:
+ * settings-service (load sanitization + validate) and
+ * pipeline-generation-service (which layers its CI-only `GITHUB_`-prefix
+ * rejection on top — that prefix is NOT part of this rule, because locally a
+ * `GITHUB_*` env var is legitimate; it only fails as a GitHub repository
+ * SECRET name). Pure: no I/O.
  */
 export const isValidAuthEnvKey = (key: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
 

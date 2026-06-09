@@ -50,6 +50,16 @@ export interface SettingsValidationMessage {
   severity: "error" | "warning";
 }
 
+/**
+ * True for a plain JSON record (not null, not an array). {@link mergeWithDefaults}
+ * merges one level deep, so a tampered/synced `data.json` can place ANY JSON
+ * shape at nested positions (`sut.environments: null`, an array, a string) —
+ * consumers must re-establish "this is a record" before iterating, or
+ * `Object.entries(null)` crashes settings load at plugin startup.
+ */
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
 /** Shallow-by-section merge of persisted data over defaults. */
 const mergeWithDefaults = (raw: unknown): TestHubSettings => {
   const data = (raw ?? {}) as Partial<TestHubSettings>;
@@ -166,8 +176,12 @@ export class DefaultSettingsService implements SettingsService {
       runner = { ...runner, nodeExecutable: DEFAULT_SETTINGS.runner.nodeExecutable };
     }
 
+    // Structural repair FIRST: the value checks below (and Object.entries)
+    // assume plain records, but the shallow merge preserves whatever shape
+    // data.json carried (review finding: `environments: null` crashed load).
+    const sut = this.repairSutShape(settings.sut);
     const environments: Record<string, SutEnvironment> = {};
-    for (const [name, environment] of Object.entries(settings.sut.environments)) {
+    for (const [name, environment] of Object.entries(sut.environments)) {
       let env = environment;
 
       const authEnv = environment.auth?.env;
@@ -202,7 +216,101 @@ export class DefaultSettingsService implements SettingsService {
       environments[name] = env;
     }
 
-    return { ...settings, runner, sut: { ...settings.sut, environments } };
+    return { ...settings, runner, sut: { ...sut, environments } };
+  }
+
+  /**
+   * Structural repair for the `sut` section, run BEFORE the value-level
+   * screening in {@link sanitizeRunnerEnvInputs}. Same posture as the value
+   * checks — log + fall back, never break startup:
+   *
+   *  - a non-record `environments` map (null/array/scalar) → the defaults;
+   *  - a non-record entry, or one whose `baseUrl` is not a string → replaced
+   *    with the same-named default environment when one exists, else dropped;
+   *  - a malformed `auth`/`auth.env` → auth stripped; a non-string `auth.env`
+   *    VALUE → that entry dropped (the subprocess env requires string values;
+   *    only the KEY is logged — the value may be a credential, ADR-0019);
+   *  - an emptied map or a non-string `active` → the defaults, so startup
+   *    always has an addressable active environment. (An `active` string that
+   *    points at a missing environment is left for validate() to flag.)
+   */
+  private repairSutShape(sut: TestHubSettings["sut"]): TestHubSettings["sut"] {
+    if (!isPlainRecord(sut.environments)) {
+      this.logger.error(
+        `Configured "sut.environments" is not an object; falling back to the defaults.`,
+        undefined,
+        { value: sut.environments },
+      );
+      return DEFAULT_SETTINGS.sut;
+    }
+
+    const environments: Record<string, SutEnvironment> = {};
+    for (const [name, candidate] of Object.entries<unknown>(sut.environments)) {
+      if (!isPlainRecord(candidate) || typeof candidate.baseUrl !== "string") {
+        const fallback = DEFAULT_SETTINGS.sut.environments[name];
+        this.logger.error(
+          `Configured "sut.environments.${name}" is not an environment object; ` +
+            (fallback ? `falling back to the default.` : `dropping it.`),
+          undefined,
+          { environment: name },
+        );
+        if (fallback) environments[name] = fallback;
+        continue;
+      }
+
+      const rawAuth = candidate.auth;
+      let auth: SutEnvironment["auth"];
+      if (rawAuth !== undefined) {
+        const rawEnv = isPlainRecord(rawAuth) ? rawAuth.env : undefined;
+        if (!isPlainRecord(rawEnv)) {
+          this.logger.error(
+            `Configured "sut.environments.${name}.auth" is malformed; removing it.`,
+            undefined,
+            { environment: name },
+          );
+        } else {
+          const env: Record<string, string> = {};
+          for (const [key, value] of Object.entries(rawEnv)) {
+            if (typeof value === "string") {
+              env[key] = value;
+            } else {
+              // KEY only — the value may be a credential (ADR-0019).
+              this.logger.error(
+                `Configured auth env value in "sut.environments.${name}" is not a string; dropping that entry.`,
+                undefined,
+                { environment: name, key },
+              );
+            }
+          }
+          auth = { env };
+        }
+      }
+
+      // Rebuild from the known fields so junk keys a tampered data.json added
+      // to an environment object don't ride along into the typed settings.
+      environments[name] = auth
+        ? { baseUrl: candidate.baseUrl, auth }
+        : { baseUrl: candidate.baseUrl };
+    }
+
+    if (Object.keys(environments).length === 0) {
+      this.logger.error(
+        `Configured "sut.environments" contains no usable environment; falling back to the defaults.`,
+        undefined,
+        {},
+      );
+      return DEFAULT_SETTINGS.sut;
+    }
+
+    if (typeof sut.active !== "string") {
+      this.logger.error(
+        `Configured "sut.active" is not a string; falling back to the default.`,
+        undefined,
+        { value: sut.active },
+      );
+      return { active: DEFAULT_SETTINGS.sut.active, environments };
+    }
+    return { active: sut.active, environments };
   }
 
   async save(settings: TestHubSettings): Promise<Result<void>> {
@@ -254,7 +362,12 @@ export class DefaultSettingsService implements SettingsService {
       });
     }
 
-    if (!settings.sut.environments[settings.sut.active]) {
+    // Defensive shape guard: validate() is typed, but a caller can hand it a
+    // pre-repair shape (raw merged data.json, adversarial tests). A non-record
+    // map must validate as "active not defined" rather than crash.
+    const environments = isPlainRecord(settings.sut.environments) ? settings.sut.environments : {};
+
+    if (!environments[settings.sut.active]) {
       errors.push({
         field: "sut.active",
         message: `Active environment "${settings.sut.active}" is not defined.`,
@@ -266,7 +379,15 @@ export class DefaultSettingsService implements SettingsService {
     // (test-execution-service: `{ BASE_URL: active.baseUrl, ...auth.env }`),
     // so validate() must flag what {@link sanitizeRunnerEnvInputs} would have
     // to repair on load — keeping save() from ever persisting such a value.
-    for (const [name, environment] of Object.entries(settings.sut.environments)) {
+    for (const [name, environment] of Object.entries(environments)) {
+      if (!isPlainRecord(environment)) {
+        errors.push({
+          field: `sut.environments.${name}`,
+          message: `Environment "${name}" is not an environment object.`,
+          severity: "error",
+        });
+        continue;
+      }
       // auth.env KEYS become environment-variable names in the child process
       // and `secrets.<KEY>` references in the generated workflow, so they must
       // be identifier-shaped. The rule is shared with pipeline generation via
@@ -447,6 +568,9 @@ const ALLOWED_BASE_URL_PROTOCOLS = new Set(["http:", "https:", "file:"]);
  * drift apart.
  */
 const baseUrlProblem = (value: string): string | undefined => {
+  // Runtime shape defense: the parameter is typed, but adversarial settings
+  // shapes can reach the validate() path before load()-time repair has run.
+  if (typeof value !== "string") return "is not a string";
   if (CONTROL_CHARS.test(value)) return "contains a control character";
   if (value.trim() === "") return undefined; // warning-level, handled by callers
   let protocol: string;
@@ -472,6 +596,8 @@ const baseUrlProblem = (value: string): string | undefined => {
  * and absolute paths remain allowed. Returns the problem text, or `undefined`.
  */
 const nodeExecutableProblem = (value: string): string | undefined => {
+  // Runtime shape defense, mirroring baseUrlProblem.
+  if (typeof value !== "string") return "is not a string";
   if (CONTROL_CHARS.test(value)) return "contains a control character";
   if (value.split(/[/\\]/).includes("..")) return 'contains a ".." path traversal segment';
   return undefined;

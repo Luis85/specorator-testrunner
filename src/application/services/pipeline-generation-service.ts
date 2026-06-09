@@ -1,7 +1,11 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import { buildGitHubActionsWorkflow } from "../content/ci-workflow-content";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
-import type { CiProvider, TestHubSettings } from "../../domain/settings/settings";
+import {
+  isValidAuthEnvKey,
+  type CiProvider,
+  type TestHubSettings,
+} from "../../domain/settings/settings";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -138,13 +142,16 @@ export class DefaultPipelineGenerationService implements PipelineGenerationServi
         ),
       );
     }
-    // GitHub secret/env names (and our auth keys) are identifier-shaped; a key
-    // with any other character can't be safely rendered as `secrets.<KEY>`.
-    // GitHub also forbids the `GITHUB_` prefix for repository secrets, so a key
-    // like `GITHUB_PAT` could never be created — reject it instead of emitting a
-    // `secrets.GITHUB_PAT` reference that always resolves empty.
+    // GitHub secret/env names (and our auth keys) are identifier-shaped — the
+    // shared domain rule `isValidAuthEnvKey`, the same one settings-service
+    // enforces at load/validate time; a key with any other character can't be
+    // safely rendered as `secrets.<KEY>`. GitHub additionally forbids the
+    // `GITHUB_` prefix for repository secrets, so a key like `GITHUB_PAT`
+    // could never be created — reject it instead of emitting a
+    // `secrets.GITHUB_PAT` reference that always resolves empty (this CI-only
+    // prefix rule deliberately stays here, not in the shared helper).
     for (const key of authKeys) {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || key.startsWith("GITHUB_")) {
+      if (!isValidAuthEnvKey(key) || key.startsWith("GITHUB_")) {
         return err(
           appError(
             "VALIDATION_FAILED",
