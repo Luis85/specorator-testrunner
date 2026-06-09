@@ -3,7 +3,7 @@
   "name": "E2E Test Hub",
   "version": "0.0.1",
   "minAppVersion": "1.8.0",
-  "description": "Define, manage, execute, and document end-to-end tests directly inside Obsidian.",
+  "description": "Define, manage, execute, and document end-to-end tests directly inside your vault.",
   "author": "Luis85",
   "isDesktopOnly": true
 }
