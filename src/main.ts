@@ -358,10 +358,28 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.registerView(
       DASHBOARD_VIEW_TYPE,
       (leaf) =>
+        // Wave C: the dashboard hub drives create/run/open/generate-docs/switch-
+        // environment/open-evidence through callbacks wired to the EXISTING
+        // helpers + the Wave B RunLauncher (no run/create logic is duplicated).
         new DashboardView(leaf, {
           traceabilityService: this.traceabilityService,
           eventBus,
           openDocumentation: (documentType) => this.openDocumentation(documentType),
+          openWizard: () => this.openWizard(),
+          openCreateUseCase: () => this.openCreateUseCase(),
+          openCreateSuite: () => this.openCreateSuite(),
+          runAll: () => this.runLauncher.launch({ scope: "all", target: "all" }),
+          runDemo: () => this.runLauncher.launch({ scope: "demo", target: "demo" }),
+          generateDocumentation: () => this.generateDocumentation(),
+          navigate: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
+          openSuites: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
+          openConsole: () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
+          openEvidence: (path) => void this.workspaceAdapter.openFile(path),
+          getEnvironments: () => ({
+            active: this.hubSettings.sut.active,
+            names: Object.keys(this.hubSettings.sut.environments),
+          }),
+          switchEnvironment: (name) => this.switchEnvironment(name),
         }),
     );
 
@@ -501,6 +519,40 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     const opened = await this.documentationService.open(documentType);
     if (!opened.ok) {
       new Notice(`Could not open documentation: ${opened.error.message}`, 10000);
+    }
+  }
+
+  // Wave C §1: the dashboard hub's "Generate documentation" quick action.
+  // Reuses the documentation service the command palette uses; the UI is thin.
+  private async generateDocumentation(): Promise<void> {
+    new Notice("Generating Test Hub documentation…");
+    const result = await this.documentationService.generate();
+    if (result.ok) {
+      new Notice(`Documentation generated (${result.value.documents.length} note(s)).`);
+    } else {
+      new Notice(`Could not generate documentation: ${result.error.message}`, 10000);
+    }
+  }
+
+  // Wave C §2: switch the active environment from the dashboard top bar. The
+  // composition root owns the settings save path (updateSettings persists +
+  // emits settings.updated, which the dashboard subscribes to for its refresh),
+  // so the view passes a name and never writes settings itself.
+  private async switchEnvironment(name: string): Promise<void> {
+    if (!(name in this.hubSettings.sut.environments)) {
+      new Notice(`Unknown environment: ${name}`, 10000);
+      return;
+    }
+    if (name === this.hubSettings.sut.active) return;
+    const next: TestHubSettings = {
+      ...this.hubSettings,
+      sut: { ...this.hubSettings.sut, active: name },
+    };
+    const result = await this.updateSettings(next);
+    if (result.ok) {
+      new Notice(`Active environment: ${name}.`);
+    } else {
+      new Notice(`Could not switch environment: ${result.error.message}`, 10000);
     }
   }
 

@@ -440,3 +440,128 @@
   outline-offset: 2px;
   border-radius: var(--radius-s, 4px);
 }
+
+/* ── Dashboard hub (DashboardView, Wave C) ────────────────────────────────────
+ * The Dashboard is the home/hub a user lands on: a quick-action bar, an active-
+ * environment badge + switcher, navigable KPI tiles, and clickable recent-run
+ * rows. Reuses the Obsidian vars + the existing [data-status]/kpi conventions
+ * above so it adapts to themes and stays colour-blind-safe (status text always
+ * present; colour is reinforcement only). */
+
+/* Initialize CTA shown when the hub isn't set up yet (snapshot fails). */
+.e2e-test-hub-init-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--size-4-3, 12px);
+  padding: var(--size-4-4, 16px);
+  margin: var(--size-4-4, 16px) 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background-color: var(--background-secondary);
+}
+
+.e2e-test-hub-init-cta-text {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* Top bar: active-environment badge (Wave C §2). */
+.e2e-test-hub-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  margin: var(--size-4-2, 8px) 0;
+}
+
+.e2e-test-hub-env-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+/* When 2+ environments exist the badge is a button — give it the affordance. */
+.e2e-test-hub-env-badge.is-switchable {
+  cursor: pointer;
+}
+
+.e2e-test-hub-env-badge.is-switchable:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.e2e-test-hub-env-badge.is-switchable:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Quick-action bar (Wave C §1): Create / Run / Open groups, scannable. */
+.e2e-test-hub-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-4, 16px);
+  margin: var(--size-4-3, 12px) 0;
+}
+
+.e2e-test-hub-quick-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-1, 4px);
+}
+
+.e2e-test-hub-quick-group-label {
+  font-size: var(--font-ui-smaller, 0.8rem);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.e2e-test-hub-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-quick-button {
+  cursor: pointer;
+}
+
+.e2e-test-hub-quick-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* KPI tiles are <button>s in the hub (Wave C §4): reset button chrome but keep
+ * the tile look from the .e2e-test-hub-kpi-tile rules above, and add a clear
+ * keyboard-focus affordance since they navigate to the Use Cases explorer. */
+.e2e-test-hub-kpi-tile {
+  cursor: pointer;
+  width: 100%;
+  font: inherit;
+}
+
+.e2e-test-hub-kpi-tile:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.e2e-test-hub-kpi-tile:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Clickable recent-run rows (Wave C §3): rows that link to an Evidence note get
+ * a pointer + focus ring (they are role=link, tabindex=0). Rows without evidence
+ * keep the default cursor and carry an explanatory tooltip via `title`. */
+.e2e-test-hub-run-row.is-navigable {
+  cursor: pointer;
+}
+
+.e2e-test-hub-run-row.is-navigable:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}

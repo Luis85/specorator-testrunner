@@ -1,9 +1,19 @@
-import { ItemView, type WorkspaceLeaf } from "obsidian";
+import { type App, FuzzySuggestModal, ItemView, type WorkspaceLeaf } from "obsidian";
 import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
+import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
-import { projectDashboard } from "./dashboard-rows";
+import {
+  isHubInitialized,
+  NO_EVIDENCE_TOOLTIP,
+  projectDashboard,
+  projectEnvironmentBadge,
+  QUICK_ACTION_GROUPS,
+  QUICK_ACTIONS,
+  type DashboardNavTarget,
+  type QuickActionId,
+} from "./dashboard-rows";
 import { RenderScheduler } from "./render-scheduler";
 
 export const DASHBOARD_VIEW_TYPE = "e2e-test-hub-dashboard";
@@ -37,18 +47,47 @@ const REFRESH_ON: DomainEventType[] = [
 /** The documentation entry points reachable from the dashboard (AC-016). */
 export type DashboardDocumentType = "getting-started" | "manual" | "troubleshooting";
 
+/**
+ * Callbacks the dashboard hub drives (Wave C). Every entry is a callback (never
+ * a service) so the view stays decoupled from the composition root: main.ts
+ * wires these to the EXISTING helpers and the Wave B {@link RunLauncher} rather
+ * than the view reimplementing create/run/open/persist logic.
+ */
 export interface DashboardViewDeps {
   traceabilityService: TraceabilityService;
   eventBus: EventBus;
   // AC-016: open the Getting Started guide / User Manual straight from the
-  // dashboard. A callback (not the service) keeps the view decoupled.
+  // dashboard.
   openDocumentation: (documentType: DashboardDocumentType) => void | Promise<void>;
+  // Wave C §1 quick actions. Create / run entry points reuse the openCreate*
+  // helpers + the RunLauncher; open* navigates via the workspace adapter.
+  openWizard: () => void;
+  openCreateUseCase: () => void;
+  openCreateSuite: () => void;
+  runAll: () => void | Promise<void>;
+  runDemo: () => void | Promise<void>;
+  generateDocumentation: () => void | Promise<void>;
+  // Wave C §4: KPI tiles + the Open quick-actions navigate the explorers.
+  navigate: (target: DashboardNavTarget) => void | Promise<void>;
+  openSuites: () => void | Promise<void>;
+  openConsole: () => void | Promise<void>;
+  // Wave C §3: open the Evidence note a recent-run row links to.
+  openEvidence: (path: VaultPath) => void | Promise<void>;
+  // Wave C §2: the active environment + the full list, read fresh each render
+  // so a switch (persisted via switchEnvironment) repaints with the new active.
+  getEnvironments: () => { active: string; names: string[] };
+  // Persists the chosen environment through the settings save path main.ts owns
+  // (the view never writes settings directly). main.ts shows the Notice + the
+  // settings.updated event drives the refresh; the resolved Result lets the view
+  // skip a redundant local refresh on failure.
+  switchEnvironment: (name: string) => Promise<void>;
 }
 
 /**
- * Live "Test Hub Dashboard" panel (FEAT-019, US-037/US-038, UC-018). Shows the
- * KPI tiles (total / specified / automated / passing / failing) and a recent-
- * runs list, refreshing on use-case / test-run / evidence events.
+ * Live "Test Hub Dashboard" panel (FEAT-019, US-037/US-038, UC-018) turned into
+ * the home/hub a user lands on (Wave C). Shows a quick-action bar, the active-
+ * environment badge + switcher, navigable KPI tiles, and actionable recent-run
+ * rows, refreshing on use-case / test-run / evidence / settings events.
  *
  * Counts + ordering are aggregated by {@link TraceabilityService.refreshDashboard}
  * (which itself emits `dashboard.refreshed` + `dashboard.kpi.updated`); this view
@@ -90,6 +129,11 @@ export class DashboardView extends ItemView {
     for (const type of REFRESH_ON) {
       this.subscriptions.push(this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()));
     }
+    // An active-environment switch persists through settings, which emits
+    // `settings.updated`; repaint the badge (+ anything env-derived) on it.
+    this.subscriptions.push(
+      this.deps.eventBus.subscribe("settings.updated", () => this.scheduler.schedule()),
+    );
     // First paint: PUSH a refresh once (emits dashboard.refreshed + kpi.updated
     // per UC-018 steps 2–3). Subsequent event-driven re-renders read the
     // non-emitting snapshot() so they never loop. The subscriptions above ignore
@@ -114,21 +158,35 @@ export class DashboardView extends ItemView {
     container.empty();
     container.createEl("h2", { text: "Test Hub Dashboard" });
 
-    // Documentation access (AC-016): open the Getting Started guide / User
-    // Manual without leaving the dashboard. Rendered FIRST — before the refresh
-    // call and its error early-return — so the manual is reachable even when the
-    // dashboard can't load (exactly when a user may need it).
-    this.renderDocumentationActions(container);
-
     // Read the NON-emitting snapshot (P2-6): the tiles/rows are projected from
     // it without re-publishing dashboard.* events, so a render driven by a
     // dashboard.refreshed/kpi.updated event can't re-trigger a refresh (no loop).
     // The one-time emitting push happens in onOpen and from the coordinator.
     const result = await this.deps.traceabilityService.snapshot();
+
+    // Wave C §1: a failed snapshot means the hub is not initialized yet (the Use
+    // Cases folder the snapshot reads doesn't exist pre-wizard). Show a single
+    // prominent Initialize CTA instead of an empty hub.
+    if (!isHubInitialized(result.ok)) {
+      this.renderInitializeCta(container);
+      return;
+    }
     if (!result.ok) {
+      // Unreachable given isHubInitialized === result.ok, but keeps the message
+      // available if the initialized signal ever decouples from snapshot.
       container.createEl("p", { text: `Could not load dashboard: ${result.error.message}` });
       return;
     }
+
+    // Top bar: active-environment badge (Wave C §2).
+    this.renderEnvironmentBadge(container);
+
+    // Quick actions (Wave C §1): the common entry points as real buttons.
+    this.renderQuickActions(container);
+
+    // Documentation access (AC-016): open the Getting Started guide / User
+    // Manual without leaving the dashboard.
+    this.renderDocumentationActions(container);
 
     const view = projectDashboard(result.value);
 
@@ -140,13 +198,17 @@ export class DashboardView extends ItemView {
     for (const kpi of view.kpis) {
       // data-status (lowercased label, e.g. "passing" / "failing") drives a
       // color-blind-safe border accent in styles.css. The text label always
-      // remains, so the status is never communicated by colour alone.
-      const tile = tiles.createDiv({
+      // remains, so the status is never communicated by colour alone. Each tile
+      // is a <button> so it is keyboard-focusable and navigates (Wave C §4).
+      const tile = tiles.createEl("button", {
         cls: "e2e-test-hub-kpi-tile",
-        attr: { "data-status": kpi.label.toLowerCase() },
+        attr: { "data-status": kpi.label.toLowerCase(), "aria-label": kpi.ariaLabel },
       });
       tile.createDiv({ cls: "e2e-test-hub-kpi-value", text: String(kpi.value) });
       tile.createDiv({ cls: "e2e-test-hub-kpi-label", text: kpi.label });
+      tile.addEventListener("click", () => {
+        void this.deps.navigate(kpi.navigateTo);
+      });
     }
 
     // Recent runs (US-038).
@@ -163,7 +225,14 @@ export class DashboardView extends ItemView {
     }
     const body = table.createEl("tbody");
     for (const run of view.recentRuns) {
-      const tr = body.createEl("tr");
+      // Clicking a row opens its linked Evidence note (Wave C §3). Rows without
+      // evidence (e.g. errored runs) are inert with an explanatory tooltip.
+      const tr = body.createEl("tr", {
+        cls: run.navigable ? "e2e-test-hub-run-row is-navigable" : "e2e-test-hub-run-row",
+        attr: run.navigable
+          ? { "aria-label": run.ariaLabel, role: "link", tabindex: "0" }
+          : { "aria-label": run.ariaLabel, title: NO_EVIDENCE_TOOLTIP },
+      });
       tr.createEl("td", { text: run.runId });
       // data-status mirrors the raw TestRunStatus so styles.css can tint the
       // cell via Obsidian theme vars. The status TEXT stays, so the outcome is
@@ -174,6 +243,123 @@ export class DashboardView extends ItemView {
         attr: { "data-status": run.status },
       });
       tr.createEl("td", { text: run.date });
+      if (run.navigable && run.evidencePath !== undefined) {
+        const path = run.evidencePath;
+        const open = (): void => {
+          void this.deps.openEvidence(path);
+        };
+        tr.addEventListener("click", open);
+        // Keyboard activation (the row is role=link, tabindex=0).
+        tr.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            open();
+          }
+        });
+      }
+    }
+  }
+
+  /**
+   * Wave C §1: the prominent "Initialize Test Hub" call-to-action shown when the
+   * hub is not set up yet, with a one-line explanation. Opens the wizard.
+   */
+  private renderInitializeCta(container: HTMLElement): void {
+    const panel = container.createDiv({ cls: "e2e-test-hub-init-cta" });
+    panel.createEl("p", {
+      cls: "e2e-test-hub-init-cta-text",
+      text: "Set up your Test Hub to create Use Cases, write specifications, and run tests in this vault.",
+    });
+    panel
+      .createEl("button", {
+        text: "Initialize Test Hub",
+        cls: "mod-cta",
+        attr: { "aria-label": "Initialize the Test Hub" },
+      })
+      .addEventListener("click", () => this.deps.openWizard());
+  }
+
+  /**
+   * Wave C §2: "Environment: <active>" badge in the top bar. With 2+
+   * environments it is a button that opens a fuzzy picker to switch the active
+   * environment; with one it renders non-interactive. Persisting + the success
+   * Notice are owned by main.ts (the view never writes settings).
+   */
+  private renderEnvironmentBadge(container: HTMLElement): void {
+    const { active, names } = this.deps.getEnvironments();
+    const badge = projectEnvironmentBadge(active, names);
+    const bar = container.createDiv({ cls: "e2e-test-hub-topbar" });
+    const text = `Environment: ${badge.active}`;
+    if (!badge.switchable) {
+      bar.createEl("span", {
+        cls: "e2e-test-hub-env-badge",
+        text,
+        attr: { "aria-label": badge.ariaLabel },
+      });
+      return;
+    }
+    const button = bar.createEl("button", {
+      cls: "e2e-test-hub-env-badge is-switchable",
+      text,
+      attr: { "aria-label": badge.ariaLabel },
+    });
+    button.addEventListener("click", () => {
+      new EnvironmentPickerModal(this.app, badge.options, badge.active, (name) => {
+        if (name !== badge.active) void this.deps.switchEnvironment(name);
+      }).open();
+    });
+  }
+
+  /**
+   * Wave C §1: the quick-action bar. A single primary "New Use Case" CTA plus a
+   * compact grouped row (Create / Run / Open) so it stays scannable. The view is
+   * thin — labels, grouping, and the primary flag come from {@link QUICK_ACTIONS}
+   * and each id dispatches to a deps callback.
+   */
+  private renderQuickActions(container: HTMLElement): void {
+    const bar = container.createDiv({ cls: "e2e-test-hub-quick-actions" });
+    for (const { group, heading } of QUICK_ACTION_GROUPS) {
+      const groupEl = bar.createDiv({ cls: "e2e-test-hub-quick-group" });
+      groupEl.createEl("span", { cls: "e2e-test-hub-quick-group-label", text: heading });
+      const row = groupEl.createDiv({ cls: "e2e-test-hub-quick-row" });
+      for (const action of QUICK_ACTIONS.filter((a) => a.group === group)) {
+        const button = row.createEl("button", {
+          text: action.label,
+          cls: action.primary ? "e2e-test-hub-quick-button mod-cta" : "e2e-test-hub-quick-button",
+          attr: { "aria-label": action.ariaLabel },
+        });
+        button.addEventListener("click", () => this.dispatchQuickAction(action.id));
+      }
+    }
+  }
+
+  /** Maps a {@link QuickActionId} to the deps callback that performs it. */
+  private dispatchQuickAction(id: QuickActionId): void {
+    switch (id) {
+      case "new-use-case":
+        this.deps.openCreateUseCase();
+        return;
+      case "new-suite":
+        this.deps.openCreateSuite();
+        return;
+      case "run-all":
+        void this.deps.runAll();
+        return;
+      case "run-demo":
+        void this.deps.runDemo();
+        return;
+      case "generate-docs":
+        void this.deps.generateDocumentation();
+        return;
+      case "open-use-cases":
+        void this.deps.navigate("use-cases");
+        return;
+      case "open-suites":
+        void this.deps.openSuites();
+        return;
+      case "open-console":
+        void this.deps.openConsole();
+        return;
     }
   }
 
@@ -199,5 +385,35 @@ export class DashboardView extends ItemView {
         void this.deps.openDocumentation(documentType);
       });
     }
+  }
+}
+
+/**
+ * Fuzzy picker for switching the active environment (Wave C §2). Mirrors
+ * {@link RunPickerModal} — a thin {@link FuzzySuggestModal} over the environment
+ * names; the chosen name is handed back to the view, which persists it through
+ * the main.ts-owned settings save path.
+ */
+class EnvironmentPickerModal extends FuzzySuggestModal<string> {
+  constructor(
+    app: App,
+    private readonly names: string[],
+    private readonly active: string,
+    private readonly onChoose: (name: string) => void,
+  ) {
+    super(app);
+    this.setPlaceholder("Switch active environment");
+  }
+
+  getItems(): string[] {
+    return this.names;
+  }
+
+  getItemText(name: string): string {
+    return name === this.active ? `${name} (active)` : name;
+  }
+
+  onChooseItem(name: string): void {
+    this.onChoose(name);
   }
 }
