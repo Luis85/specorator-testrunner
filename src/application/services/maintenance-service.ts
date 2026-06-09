@@ -87,6 +87,16 @@ export class DefaultMaintenanceService implements MaintenanceService {
     private readonly initialization?: InitializationService,
     private readonly fs?: VaultFileSystem,
     private readonly maintenanceLock?: MaintenanceLock,
+    /**
+     * Resolves when the post-run import→evidence chain has settled (the
+     * PostRunCoordinator's `whenSettled`). Evidence I/O outlives the active-run
+     * slot — the coordinator writes Use Case frontmatter after the slot frees —
+     * so repair()/reset() await this INSIDE the maintenance lock: the lock
+     * guarantees no NEW run (and thus no new post-run task) can start, and this
+     * drains the tail of the PREVIOUS run's import/evidence writes before any
+     * files are touched.
+     */
+    private readonly whenPostRunSettled?: () => Promise<void>,
   ) {}
 
   async repair(): Promise<Result<RepairResult>> {
@@ -103,6 +113,11 @@ export class DefaultMaintenanceService implements MaintenanceService {
       // When no lock is wired (repair-only construction/tests), keep the legacy
       // wait-for-settle behaviour so an already-finishing run drains first.
       if (!lock) await this.activeRun?.whenActiveSettles().catch(() => undefined);
+
+      // Drain the tail of the previous run's post-run import/evidence chain
+      // UNDER the lock (no new run can start now) so the re-sync below cannot
+      // overlap in-flight evidence I/O. See the constructor doc.
+      await this.whenPostRunSettled?.().catch(() => undefined);
 
       const settings = await this.settingsService.load();
 
@@ -156,6 +171,11 @@ export class DefaultMaintenanceService implements MaintenanceService {
    * `correlationId` is minted up front and stamped across the whole chain so the
    * `settings.reset` and the re-initialization events group (Event Catalog §19).
    *
+   * Once the maintenance lock is acquired (no new run can start), any tail of
+   * the previous run's post-run import/evidence chain is drained via the
+   * injected `whenPostRunSettled` hook BEFORE the destructive delete, so late
+   * evidence writes cannot overlap the reset.
+   *
    * Destructive scope is DELIBERATELY conservative: only the regenerable
    * `.testrunner` runtime (managed runner scaffolding — generated config, step
    * stubs, npm project) is deleted, then re-materialised by re-initialization.
@@ -189,6 +209,13 @@ export class DefaultMaintenanceService implements MaintenanceService {
     if (!acquired.ok) return err(acquired.error);
     try {
       if (!lock) await this.activeRun?.whenActiveSettles().catch(() => undefined);
+
+      // Drain the tail of the previous run's post-run import/evidence chain
+      // UNDER the lock — evidence writes outlive the active-run slot, and the
+      // lock is already held so no new run can enqueue more work. This must
+      // happen before the destructive delete below so a late evidence write
+      // cannot overlap the reset (see the constructor doc).
+      await this.whenPostRunSettled?.().catch(() => undefined);
 
       // One id for the whole reset flow (Event Catalog §19 "reset invocation id").
       const correlationId = newId();

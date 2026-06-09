@@ -157,8 +157,12 @@ export class PostRunCoordinator {
     // safe miss, so skip it. passed/failed/cancelled may all have a report.
     if (!IMPORTABLE_STATUSES.has(run.status)) return;
     // Fire-and-forget: the chain tracks completion (whenSettled) and the task is
-    // fault-isolated (runImportAndGenerate never rejects), so nothing escapes.
-    void this.enqueue(() => this.runImportAndGenerate(run));
+    // fault-isolated (runImportAndGenerate never rejects today). The catch is a
+    // backstop so a future edit that lets a rejection slip through becomes a
+    // logged error instead of an unhandled promise rejection.
+    this.enqueue(() => this.runImportAndGenerate(run)).catch((error) =>
+      this.logger.error("Post-run task rejected unexpectedly", error as Error),
+    );
   }
 
   /**

@@ -8,7 +8,10 @@ import { DefaultRunnerInstallationService } from "../src/application/services/ru
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import { DefaultSuiteService } from "../src/application/services/suite-service";
-import { DefaultTestExecutionService } from "../src/application/services/test-execution-service";
+import {
+  DefaultTestExecutionService,
+  type MaintenanceLock,
+} from "../src/application/services/test-execution-service";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
 import { REQUIRED_RUNNER_DEPENDENCIES } from "../src/application/content/runner-manifest";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
@@ -170,7 +173,14 @@ describe("DefaultMaintenanceService", () => {
  * DefaultTestExecutionService (for its synchronous maintenance lock), so the
  * tests exercise the actual event chain, deletion scope, and TOCTOU close.
  */
-const buildReset = () => {
+const buildReset = (
+  opts: {
+    /** Injected post-run settle hook (PostRunCoordinator.whenSettled). */
+    whenPostRunSettled?: () => Promise<void>;
+    /** Wraps the execution service's lock, e.g. to record acquisition order. */
+    wrapLock?: (lock: MaintenanceLock) => MaintenanceLock;
+  } = {},
+) => {
   const vault = new FakeVaultFileSystem();
   const absoluteFs = new FakeAbsoluteFileSystem();
   const childProcess = new FakeChildProcessRunner();
@@ -226,6 +236,7 @@ const buildReset = () => {
     activeRunId: () => execution.activeRunId(),
     whenActiveSettles: () => execution.whenActiveSettles(),
   };
+  const lock = opts.wrapLock ? opts.wrapLock(execution.maintenanceLock) : execution.maintenanceLock;
   const service = new DefaultMaintenanceService(
     settings,
     validation,
@@ -235,7 +246,8 @@ const buildReset = () => {
     activeRun,
     initialization,
     vault,
-    execution.maintenanceLock,
+    lock,
+    opts.whenPostRunSettled,
   );
   return { service, vault, execution, types, events, settings };
 };
@@ -395,6 +407,70 @@ describe("DefaultMaintenanceService.reset (UC-024)", () => {
 
     await execution.cancel(execution.activeRunId() as string).catch(() => undefined);
     await execution.whenActiveSettles().catch(() => undefined);
+  });
+
+  it("drains the post-run evidence chain AFTER lock acquisition and BEFORE deletion", async () => {
+    // Evidence writes outlive the active-run slot (the coordinator updates Use
+    // Case frontmatter after the slot frees), so reset() must await the injected
+    // settle hook INSIDE the lock (no new run can start) and before the
+    // destructive delete — observable via call-order recording.
+    const order: string[] = [];
+    const env = buildReset({
+      whenPostRunSettled: async () => {
+        order.push("post-run-settled");
+      },
+      wrapLock: (lock) => ({
+        inProgress: () => lock.inProgress(),
+        begin: () => {
+          order.push("lock-acquired");
+          return lock.begin();
+        },
+        end: () => {
+          order.push("lock-released");
+          lock.end();
+        },
+      }),
+    });
+    env.vault.files.set(".testrunner/cucumber.mjs", "stale generated config");
+    const realDelete = env.vault.deleteFolder.bind(env.vault);
+    env.vault.deleteFolder = async (path) => {
+      order.push("delete-runner");
+      return realDelete(path);
+    };
+
+    const result = await env.service.reset();
+
+    expect(result.ok).toBe(true);
+    expect(order.indexOf("lock-acquired")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("post-run-settled")).toBeGreaterThan(order.indexOf("lock-acquired"));
+    expect(order.indexOf("delete-runner")).toBeGreaterThan(order.indexOf("post-run-settled"));
+    expect(order[order.length - 1]).toBe("lock-released");
+  });
+
+  it("repair() also drains the post-run evidence chain under the lock", async () => {
+    const order: string[] = [];
+    const env = buildReset({
+      whenPostRunSettled: async () => {
+        order.push("post-run-settled");
+      },
+      wrapLock: (lock) => ({
+        inProgress: () => lock.inProgress(),
+        begin: () => {
+          order.push("lock-acquired");
+          return lock.begin();
+        },
+        end: () => {
+          order.push("lock-released");
+          lock.end();
+        },
+      }),
+    });
+
+    const result = await env.service.repair();
+
+    expect(result.ok).toBe(true);
+    expect(order.slice(0, 2)).toEqual(["lock-acquired", "post-run-settled"]);
+    expect(order[order.length - 1]).toBe("lock-released");
   });
 
   it("rejects a run started while reset holds the maintenance lock (TOCTOU, both directions)", async () => {
