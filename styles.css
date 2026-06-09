@@ -39,6 +39,19 @@
   color: var(--text-muted);
 }
 
+/* Colour-blind-safe accents for the outcome tiles only: the border POSITION
+ * carries the signal alongside the colour, and the text label always remains,
+ * so status is never colour-only. `data-status` is the lowercased KPI label
+ * set by DashboardView; neutral tiles (total/specified/automated) match no
+ * rule and keep the plain border. */
+.e2e-test-hub-kpi-tile[data-status="passing"] {
+  border-left: 3px solid var(--text-success);
+}
+
+.e2e-test-hub-kpi-tile[data-status="failing"] {
+  border-left: 3px solid var(--text-error);
+}
+
 /* ── Tables (dashboard recent runs, suites, use cases) ────────────────────── */
 
 .e2e-test-hub-runs-table,
@@ -67,6 +80,23 @@
   border-bottom: 1px solid var(--background-modifier-border);
   color: var(--text-normal);
   vertical-align: top;
+}
+
+/* Recent-runs status cell (DashboardView, US-038). `data-status` mirrors the
+ * raw TestRunStatus union (same convention as the console banner below); the
+ * cell text spells out the status, so colour is reinforcement, not the only
+ * channel. queued/running fall through to the default cell colour. */
+.e2e-test-hub-run-status[data-status="passed"] {
+  color: var(--text-success);
+}
+
+.e2e-test-hub-run-status[data-status="failed"],
+.e2e-test-hub-run-status[data-status="errored"] {
+  color: var(--text-error);
+}
+
+.e2e-test-hub-run-status[data-status="cancelled"] {
+  color: var(--text-muted);
 }
 
 .e2e-test-hub-runs-table tbody tr:hover,
@@ -121,6 +151,14 @@
 
 .e2e-test-hub-doc-button {
   cursor: pointer;
+}
+
+/* Keyboard focus ring matching .e2e-test-hub-link-button:focus-visible, so
+ * tabbing through the documentation actions is visibly tracked. */
+.e2e-test-hub-doc-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
 }
 
 /* ── Test Console (TestConsoleView, US-030 / UC-015) ──────────────────────── */

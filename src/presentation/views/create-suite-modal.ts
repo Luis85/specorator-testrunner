@@ -30,11 +30,12 @@ export class CreateSuiteModal extends Modal {
     const { contentEl } = this;
     contentEl.createEl("h2", { text: "Create Test Suite" });
 
-    new Setting(contentEl)
-      .setName("Name")
-      .addText((text) =>
-        text.setPlaceholder("e.g. Checkout Smoke").onChange((value) => (this.suiteName = value)),
-      );
+    new Setting(contentEl).setName("Name").addText((text) => {
+      text.setPlaceholder("e.g. Checkout Smoke").onChange((value) => (this.suiteName = value));
+      // Autofocus the first input so the user can start typing immediately
+      // instead of tabbing/clicking into the field first.
+      text.inputEl.focus();
+    });
     new Setting(contentEl)
       .setName("Description")
       .addTextArea((area) =>

@@ -71,11 +71,12 @@ class SlugPromptModal extends Modal {
     contentEl.createEl("p", {
       text: `${this.useCase.id} already has ${this.useCase.featureFiles.length} Feature(s). Enter a slug for the new one (e.g. "edge-cases").`,
     });
-    new Setting(contentEl)
-      .setName("Slug")
-      .addText((text) =>
-        text.setPlaceholder("edge-cases").onChange((value) => (this.slug = value)),
-      );
+    new Setting(contentEl).setName("Slug").addText((text) => {
+      text.setPlaceholder("edge-cases").onChange((value) => (this.slug = value));
+      // Autofocus the only input so the user can type the slug immediately
+      // instead of tabbing/clicking into the field first.
+      text.inputEl.focus();
+    });
     new Setting(contentEl).addButton((button) =>
       button
         .setButtonText("Create Feature")

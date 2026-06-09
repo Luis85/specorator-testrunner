@@ -61,9 +61,11 @@ export class UseCaseDashboardView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    this.scheduler.dispose();
+    // Unsubscribe BEFORE disposing the scheduler so a handler firing mid-teardown
+    // can't schedule() on an already-disposed scheduler (PRES-M1 ordering).
     for (const unsubscribe of this.subscriptions) unsubscribe();
     this.subscriptions.length = 0;
+    this.scheduler.dispose();
   }
 
   private async render(): Promise<void> {

@@ -24,13 +24,14 @@ export class CreateUseCaseModal extends Modal {
     const { contentEl } = this;
     contentEl.createEl("h2", { text: "Create Use Case" });
 
-    new Setting(contentEl)
-      .setName("Title")
-      .addText((text) =>
-        text
-          .setPlaceholder("e.g. Checkout with a saved card")
-          .onChange((value) => (this.useCaseTitle = value)),
-      );
+    new Setting(contentEl).setName("Title").addText((text) => {
+      text
+        .setPlaceholder("e.g. Checkout with a saved card")
+        .onChange((value) => (this.useCaseTitle = value));
+      // Autofocus the first input so the user can start typing immediately
+      // instead of tabbing/clicking into the field first.
+      text.inputEl.focus();
+    });
     new Setting(contentEl)
       .setName("Description")
       .addTextArea((area) =>

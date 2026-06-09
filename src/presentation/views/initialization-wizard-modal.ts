@@ -66,7 +66,11 @@ export class InitializationWizardModal extends Modal {
 
     new Setting(contentEl)
       .setName("Install browser")
-      .setDesc("Download Chromium for Playwright (~150 MB). Requires dependencies.")
+      .setDesc(
+        // Be honest about the total download: the browser itself plus the npm
+        // packages npm install pulls alongside it.
+        "Download Chromium for Playwright (~150 MB browser + npm packages). Requires dependencies.",
+      )
       .addToggle((toggle) =>
         toggle.setValue(this.installBrowsers).onChange((value) => {
           this.installBrowsers = value;
@@ -134,8 +138,14 @@ export class InitializationWizardModal extends Modal {
 
   private renderSuccess(settings: TestHubSettings, result: InitializeTestHubResult): void {
     const { contentEl } = this;
+    // Point at the next step. The walkthrough hint references the "Open Getting
+    // Started" button rendered just below, so only show it when documentation
+    // was actually generated (otherwise the button — and the guide — don't exist).
+    const summary = `Test Hub ready: ${result.createdFolders.length} folders and ${result.createdFiles.length} files created.`;
     contentEl.createEl("p", {
-      text: `Test Hub ready: ${result.createdFolders.length} folders and ${result.createdFiles.length} files created.`,
+      text: result.documentationGenerated
+        ? `${summary} Open Getting Started for a walkthrough.`
+        : summary,
     });
     new Notice("E2E Test Hub initialized.");
 
@@ -159,6 +169,13 @@ export class InitializationWizardModal extends Modal {
     const { contentEl } = this;
     const error = contentEl.createDiv({ cls: "e2e-test-hub-error" });
     error.createEl("p", { text: `Initialization failed: ${message}` });
+    // Actionable next steps, not just the raw error: the console has the full
+    // stack/output, and the validate command diagnoses environment problems.
+    error.createEl("p", {
+      text:
+        "Check the developer console for details, or run the 'Validate Environment' " +
+        "command to diagnose.",
+    });
     new Setting(contentEl)
       .addButton((button) =>
         button

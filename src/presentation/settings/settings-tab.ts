@@ -64,7 +64,8 @@ export class TestHubSettingTab extends PluginSettingTab {
     containerEl.empty();
     const settings = this.host.getSettings();
 
-    containerEl.createEl("h2", { text: "E2E Test Hub" });
+    // Glossary term is "Test Hub" (CONTEXT.md) — not "E2E Test Hub"/"test hub".
+    containerEl.createEl("h2", { text: "Test Hub" });
 
     new Setting(containerEl).setName("Folders").setHeading();
     for (const field of PATH_FIELDS) {

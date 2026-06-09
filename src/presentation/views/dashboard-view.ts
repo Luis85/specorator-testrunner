@@ -102,9 +102,11 @@ export class DashboardView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    this.scheduler.dispose();
+    // Unsubscribe BEFORE disposing the scheduler so a handler firing mid-teardown
+    // can't schedule() on an already-disposed scheduler (PRES-M1 ordering).
     for (const unsubscribe of this.subscriptions) unsubscribe();
     this.subscriptions.length = 0;
+    this.scheduler.dispose();
   }
 
   private async render(): Promise<void> {
@@ -130,10 +132,19 @@ export class DashboardView extends ItemView {
 
     const view = projectDashboard(result.value);
 
-    // KPI tiles (US-037).
+    // KPI tiles (US-037). The grid gets its own h3 so the heading hierarchy
+    // under the h2 root is h3 peers ("Coverage" / "Recent Runs") for screen
+    // readers and the outline view.
+    container.createEl("h3", { text: "Coverage" });
     const tiles = container.createDiv({ cls: "e2e-test-hub-kpi-tiles" });
     for (const kpi of view.kpis) {
-      const tile = tiles.createDiv({ cls: "e2e-test-hub-kpi-tile" });
+      // data-status (lowercased label, e.g. "passing" / "failing") drives a
+      // color-blind-safe border accent in styles.css. The text label always
+      // remains, so the status is never communicated by colour alone.
+      const tile = tiles.createDiv({
+        cls: "e2e-test-hub-kpi-tile",
+        attr: { "data-status": kpi.label.toLowerCase() },
+      });
       tile.createDiv({ cls: "e2e-test-hub-kpi-value", text: String(kpi.value) });
       tile.createDiv({ cls: "e2e-test-hub-kpi-label", text: kpi.label });
     }
@@ -141,7 +152,7 @@ export class DashboardView extends ItemView {
     // Recent runs (US-038).
     container.createEl("h3", { text: "Recent Runs" });
     if (view.recentRuns.length === 0) {
-      container.createEl("p", { text: "No test runs yet." });
+      container.createEl("p", { text: "No test runs yet. Run a Test Suite to see results here." });
       return;
     }
 
@@ -154,7 +165,14 @@ export class DashboardView extends ItemView {
     for (const run of view.recentRuns) {
       const tr = body.createEl("tr");
       tr.createEl("td", { text: run.runId });
-      tr.createEl("td", { text: run.status });
+      // data-status mirrors the raw TestRunStatus so styles.css can tint the
+      // cell via Obsidian theme vars. The status TEXT stays, so the outcome is
+      // legible without colour (colour-blind / high-contrast safe).
+      tr.createEl("td", {
+        text: run.status,
+        cls: "e2e-test-hub-run-status",
+        attr: { "data-status": run.status },
+      });
       tr.createEl("td", { text: run.date });
     }
   }
@@ -169,9 +187,13 @@ export class DashboardView extends ItemView {
       ["Troubleshooting", "troubleshooting"],
     ];
     for (const [label, documentType] of buttons) {
+      // aria-label spells out the action for assistive tech (the visible text
+      // alone reads as a bare noun) — same pattern as the link-buttons in the
+      // Use Case / Test Suite views.
       const button = actions.createEl("button", {
         text: label,
         cls: "e2e-test-hub-doc-button",
+        attr: { "aria-label": `Open ${label} documentation` },
       });
       button.addEventListener("click", () => {
         void this.deps.openDocumentation(documentType);
