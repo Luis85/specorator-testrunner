@@ -234,7 +234,13 @@ export class TestConsoleView extends ItemView {
     this.runStartMs = null;
     this.activeScopeLabel = null;
     this.setBanner(status, durationMs);
-    this.refreshControls();
+    // Force the idle state: this handler runs WHILE the in-process bus is still
+    // synchronously publishing the terminal event, i.e. BEFORE execute()'s
+    // `finally` clears the single-run slot — so `activeRunId()` would still
+    // report this just-finished run and wrongly leave the toolbar stuck
+    // "running" (Cancel enabled, Re-run disabled) until the view is reopened.
+    // The terminal event IS the "run is over" signal, so treat it as idle.
+    this.refreshControls(false);
   }
 
   private setBanner(status: TestRunStatus, durationMs?: number): void {
@@ -244,12 +250,14 @@ export class TestConsoleView extends ItemView {
 
   /**
    * Recomputes button enabled/disabled state and the metadata line. A run is
-   * active iff the execution service reports an active id. The Cancel button is
-   * enabled only while active; Re-run only when idle with a last run; Clear is
-   * always enabled.
+   * active iff the execution service reports an active id — EXCEPT callers in a
+   * terminal-event context pass `activeOverride = false`, because the slot is
+   * not cleared until after the synchronous terminal publish returns (see
+   * {@link onTerminal}). The Cancel button is enabled only while active; Re-run
+   * only when idle with a last run; Clear is always enabled.
    */
-  private refreshControls(): void {
-    const active = this.deps.activeRunId() !== null;
+  private refreshControls(activeOverride?: boolean): void {
+    const active = activeOverride ?? this.deps.activeRunId() !== null;
     const last = this.deps.lastRun();
 
     this.cancelButton.disabled = !active;
