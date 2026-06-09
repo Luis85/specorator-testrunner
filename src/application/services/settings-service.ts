@@ -593,20 +593,33 @@ const baseUrlProblem = (value: string): string | undefined => {
 };
 
 /**
+ * Absolute executable path on either platform: POSIX `/usr/bin/node`, a
+ * Windows drive path `C:\nodejs\node.exe` (or `C:/…`), or a UNC share
+ * `\\server\tools\node.exe`.
+ */
+const isAbsoluteExecutablePath = (value: string): boolean =>
+  value.startsWith("/") || /^[A-Za-z]:[/\\]/.test(value) || value.startsWith("\\\\");
+
+/**
  * Why these rules: CommandSafetyPolicy allowlists the node executable's
  * BASENAME only, so settings must reject what that check cannot see — control
- * characters/newlines, and `..` traversal segments that could resolve the
- * spawn to a different binary than the basename suggests (e.g.
- * `../../../usr/bin/node` escaping the expected location while still ending
- * in a trusted basename). Split on BOTH separators so a Windows-style
- * `..\\evil\\node` can't slip through on a POSIX host. Bare names ("node")
- * and absolute paths remain allowed. Returns the problem text, or `undefined`.
+ * characters/newlines, `..` traversal segments, and RELATIVE paths with
+ * separators. The runner spawns from the vault, so a vault-relative value
+ * like `evil/node` (no `..` needed) would execute a binary an attacker
+ * synced/committed INTO the vault while still ending in the trusted basename
+ * (PR #18 review). Separators are checked on BOTH `/` and `\` so a
+ * Windows-style `..\\evil\\node` can't slip through on a POSIX host. Bare
+ * names ("node", resolved via PATH) and absolute paths remain allowed.
+ * Returns the problem text, or `undefined`.
  */
 const nodeExecutableProblem = (value: string): string | undefined => {
   // Runtime shape defense, mirroring baseUrlProblem.
   if (typeof value !== "string") return "is not a string";
   if (CONTROL_CHARS.test(value)) return "contains a control character";
   if (value.split(/[/\\]/).includes("..")) return 'contains a ".." path traversal segment';
+  if (/[/\\]/.test(value) && !isAbsoluteExecutablePath(value)) {
+    return "is a relative path; use a bare command name or an absolute path";
+  }
   return undefined;
 };
 

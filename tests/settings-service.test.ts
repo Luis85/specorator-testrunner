@@ -254,6 +254,9 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
       "..\\..\\evil\\node", // Windows-style traversal must not slip through on POSIX
       "node\n", // newline
       "no\u0000de", // NUL
+      "evil/node", // vault-relative: would spawn a binary synced INTO the vault (PR #18 review)
+      "./node", // vault-relative with explicit dot segment
+      ".\\tools\\node.exe", // Windows-style vault-relative
     ])("flags runner.nodeExecutable %j as an error", async (nodeExecutable) => {
       const { service } = makeService();
       const settings = {
@@ -269,7 +272,13 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
       ).toBe(true);
     });
 
-    it.each(["node", "/usr/local/bin/node", "C:\\Program Files\\nodejs\\node.exe"])(
+    it.each([
+      "node",
+      "/usr/local/bin/node",
+      "C:\\Program Files\\nodejs\\node.exe",
+      "C:/nodejs/node.exe", // forward-slash Windows drive path is still absolute
+      "\\\\server\\tools\\node.exe", // UNC share is absolute
+    ])(
       "allows nodeExecutable %j (CommandSafetyPolicy governs the basename)",
       async (nodeExecutable) => {
         const { service } = makeService();
@@ -367,7 +376,7 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
       expect(loaded.sut.environments.staging.baseUrl).toBe("");
     });
 
-    it.each(["../../../usr/bin/node", "node\n"])(
+    it.each(["../../../usr/bin/node", "node\n", "evil/node"])(
       "falls back tampered runner.nodeExecutable %j to the default on load",
       async (nodeExecutable) => {
         const { service, logger } = makeService({ runner: { nodeExecutable } });
