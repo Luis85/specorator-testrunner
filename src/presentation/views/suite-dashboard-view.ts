@@ -3,6 +3,7 @@ import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { SuiteService } from "../../application/services/suite-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import type { RunLauncher } from "../run/run-launcher";
 import { RenderScheduler } from "./render-scheduler";
 import { projectSuiteRows } from "./suite-rows";
 
@@ -15,6 +16,9 @@ export interface SuiteDashboardDeps {
   suiteService: SuiteService;
   workspace: WorkspacePort;
   eventBus: EventBus;
+  // Shared run-launch surface (Wave B): the per-row Run button starts a
+  // suite-scoped run through the same launcher the command palette uses.
+  runLauncher: Pick<RunLauncher, "launch">;
   onCreate: () => void;
 }
 
@@ -88,7 +92,7 @@ export class SuiteDashboardView extends ItemView {
 
     const table = container.createEl("table", { cls: "e2e-test-hub-suite-table" });
     const headRow = table.createEl("thead").createEl("tr");
-    for (const label of ["Name", "ID", "Tag Expression"]) {
+    for (const label of ["Name", "ID", "Tag Expression", "Run"]) {
       headRow.createEl("th", { text: label });
     }
 
@@ -105,6 +109,16 @@ export class SuiteDashboardView extends ItemView {
       });
       tr.createEl("td", { text: row.id });
       tr.createEl("td", { text: row.tagExpression });
+      // Per-row Run button (Wave B): launches a suite-scoped run via the shared
+      // launcher, which reveals the Test Console first so output streams in.
+      const run = tr.createEl("td").createEl("button", {
+        text: "Run",
+        cls: "e2e-test-hub-run-button",
+        attr: { "aria-label": `Run suite ${row.name}` },
+      });
+      run.addEventListener("click", () => {
+        void this.deps.runLauncher.launch({ scope: "suite", target: row.id });
+      });
     }
   }
 }

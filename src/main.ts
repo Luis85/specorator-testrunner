@@ -70,6 +70,7 @@ import { ObsidianWorkspaceAdapter } from "./infrastructure/obsidian/obsidian-wor
 import { NodeChildProcessRunner } from "./infrastructure/runner/node-child-process-runner";
 import { RunnerTemplateWriter } from "./infrastructure/runner/runner-template-writer";
 import { registerCommands } from "./presentation/commands/register-commands";
+import { RunLauncher } from "./presentation/run/run-launcher";
 import { TestHubSettingTab, type SettingsHost } from "./presentation/settings/settings-tab";
 import { CreateSuiteModal } from "./presentation/views/create-suite-modal";
 import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
@@ -104,6 +105,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private stepDefinitionService!: StepDefinitionService;
   private suiteService!: SuiteService;
   private testExecutionService!: TestExecutionService;
+  // Single owner of "start a run / cancel the active run" for every UI surface
+  // (command palette, explorer Run buttons, Test Console toolbar). Wave B
+  // altitude requirement: the launch logic lives here, not duplicated per call
+  // site.
+  private runLauncher!: RunLauncher;
   private reportImportService!: ReportImportService;
   private evidenceGenerationService!: EvidenceGenerationService;
   private traceabilityService!: TraceabilityService;
@@ -262,6 +268,16 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       this.logger,
     );
 
+    // Single run-launch surface shared by the command palette and the explorer
+    // / Test Console buttons (Wave B). It reveals the live Test Console BEFORE
+    // execute() publishes (the bus does not replay) and surfaces
+    // RUN_IN_PROGRESS / errors as Notices. The open-console port is backed by
+    // the workspace adapter so the launcher itself stays free of Obsidian view
+    // plumbing.
+    this.runLauncher = new RunLauncher(this.testExecutionService, {
+      openConsole: () => this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
+    });
+
     // EPIC-008 Reporting & Evidence (UC-016): import the runner's JSON report
     // and generate linked Markdown evidence once a run finishes.
     this.reportImportService = new DefaultReportImportService(
@@ -312,6 +328,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           useCaseService: this.useCaseService,
           workspace: this.workspaceAdapter,
           eventBus,
+          runLauncher: this.runLauncher,
           onCreate: () => this.openCreateUseCase(),
         }),
     );
@@ -322,10 +339,22 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           suiteService: this.suiteService,
           workspace: this.workspaceAdapter,
           eventBus,
+          runLauncher: this.runLauncher,
           onCreate: () => this.openCreateSuite(),
         }),
     );
-    this.registerView(TEST_CONSOLE_VIEW_TYPE, (leaf) => new TestConsoleView(leaf, eventBus));
+    this.registerView(
+      TEST_CONSOLE_VIEW_TYPE,
+      (leaf) =>
+        new TestConsoleView(leaf, {
+          eventBus,
+          runLauncher: this.runLauncher,
+          // Narrow read-only slice: the toolbar checks for an active run on open
+          // and reads the last run's scope to power Re-run.
+          activeRunId: () => this.testExecutionService.activeRunId(),
+          lastRun: () => this.testExecutionService.lastRun(),
+        }),
+    );
     this.registerView(
       DASHBOARD_VIEW_TYPE,
       (leaf) =>
@@ -384,7 +413,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       specificationService: this.specificationService,
       stepDefinitionService: this.stepDefinitionService,
       suiteService: this.suiteService,
-      testExecutionService: this.testExecutionService,
+      runLauncher: this.runLauncher,
       postRunCoordinator: this.postRunCoordinator,
       workspace: this.workspaceAdapter,
       openWizard: () => this.openWizard(),

@@ -3,6 +3,7 @@ import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import type { RunLauncher } from "../run/run-launcher";
 import { RenderScheduler } from "./render-scheduler";
 import { projectUseCaseRows } from "./use-case-rows";
 
@@ -20,6 +21,9 @@ export interface UseCaseDashboardDeps {
   useCaseService: UseCaseService;
   workspace: WorkspacePort;
   eventBus: EventBus;
+  // Shared run-launch surface (Wave B): the per-row Run button starts a
+  // use-case-scoped run through the same launcher the command palette uses.
+  runLauncher: Pick<RunLauncher, "launch">;
   onCreate: () => void;
 }
 
@@ -92,7 +96,7 @@ export class UseCaseDashboardView extends ItemView {
 
     const table = container.createEl("table", { cls: "e2e-test-hub-uc-table" });
     const headRow = table.createEl("thead").createEl("tr");
-    for (const label of ["ID", "Title", "Status", "Automation"]) {
+    for (const label of ["ID", "Title", "Status", "Automation", "Run"]) {
       headRow.createEl("th", { text: label });
     }
 
@@ -110,6 +114,16 @@ export class UseCaseDashboardView extends ItemView {
       tr.createEl("td", { text: row.title });
       tr.createEl("td", { text: row.status });
       tr.createEl("td", { text: row.automationStatus });
+      // Per-row Run button (Wave B): launches a use-case-scoped run via the
+      // shared launcher, which reveals the Test Console first.
+      const run = tr.createEl("td").createEl("button", {
+        text: "Run",
+        cls: "e2e-test-hub-run-button",
+        attr: { "aria-label": `Run Use Case ${row.id}` },
+      });
+      run.addEventListener("click", () => {
+        void this.deps.runLauncher.launch({ scope: "use-case", target: row.id });
+      });
     }
   }
 }

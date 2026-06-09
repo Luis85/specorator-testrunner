@@ -9,14 +9,11 @@ import type { PostRunCoordinator } from "../../application/services/post-run-coo
 import type { SpecificationService } from "../../application/services/specification-service";
 import type { StepDefinitionService } from "../../application/services/step-definition-service";
 import type { SuiteService } from "../../application/services/suite-service";
-import type {
-  ExecuteTestRequest,
-  TestExecutionService,
-} from "../../application/services/test-execution-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { TestHubSettings } from "../../domain/settings/settings";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
+import type { RunLauncher } from "../run/run-launcher";
 import { DASHBOARD_VIEW_TYPE } from "../views/dashboard-view";
 import { GenerateFeatureModal } from "../views/generate-feature-modal";
 import { RunPickerModal } from "../views/run-picker-modal";
@@ -41,7 +38,13 @@ export interface TestHubCommandDeps {
   specificationService: SpecificationService;
   stepDefinitionService: StepDefinitionService;
   suiteService: SuiteService;
-  testExecutionService: TestExecutionService;
+  /**
+   * Shared run-launch surface: starts a scoped run (opening the live console
+   * first) and cancels the active run. The same launcher backs the explorer /
+   * Test Console buttons, so the launch logic lives in exactly one place (Wave
+   * B altitude requirement) rather than being duplicated here.
+   */
+  runLauncher: RunLauncher;
   postRunCoordinator: Pick<PostRunCoordinator, "importLastRun">;
   workspace: WorkspacePort;
   // Shared with ribbon icons / view registrations in the composition root:
@@ -60,39 +63,6 @@ export interface TestHubCommandDeps {
  * Ribbon icons and view registration stay in the composition root.
  */
 export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void {
-  /**
-   * Starts a run, revealing the live Test Console first so output streams in
-   * (US-030, UC-015). ADR-0018 surfaces `RUN_IN_PROGRESS` as a Notice with the
-   * active run id so the user can cancel it.
-   */
-  const runTest = async (request: ExecuteTestRequest): Promise<void> => {
-    // Reveal the live console FIRST so it is subscribed to testrun.started /
-    // output events before execute() publishes them (the bus doesn't replay).
-    // The single-active slot is reserved synchronously inside execute(), and the
-    // service owns the cancel-and-wait completion (whenActiveSettles), so onunload
-    // no longer needs to track the run promise here.
-    await deps.workspace.openView(TEST_CONSOLE_VIEW_TYPE);
-    const result = await deps.testExecutionService.execute(request);
-    if (!result.ok) {
-      // `details` is typed `Record<string, unknown>`, so `activeRunId` widens
-      // to `unknown`; at runtime it is always the active run's id string.
-      const active =
-        typeof result.error.details?.activeRunId === "string"
-          ? result.error.details.activeRunId
-          : "";
-      new Notice(
-        active
-          ? `A run is already in progress (${active}). Cancel it first.`
-          : `Could not start run: ${result.error.message}`,
-        10000,
-      );
-      return;
-    }
-    // The PostRunCoordinator reacts to the terminal run event (EN-2) and runs
-    // import → evidence → dashboard refresh for the finished run; runTest no
-    // longer imports here, so the flow happens exactly once (no double-process).
-  };
-
   /**
    * Re-runs report import + evidence for the last finished run on demand
    * (UC-016, US-032). The eligibility rule and serialization live in the
@@ -140,7 +110,7 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
       plugin.app,
       "Select a Test Suite to run",
       suites.value.map((s) => ({ id: s.id, label: `${s.id} — ${s.name}` })),
-      (id) => void runTest({ scope: "suite", target: id }),
+      (id) => void deps.runLauncher.launch({ scope: "suite", target: id }),
     ).open();
   };
 
@@ -158,7 +128,7 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
       plugin.app,
       "Select a Use Case to run",
       useCases.value.map((u) => ({ id: u.id, label: `${u.id} — ${u.title}` })),
-      (id) => void runTest({ scope: "use-case", target: id }),
+      (id) => void deps.runLauncher.launch({ scope: "use-case", target: id }),
     ).open();
   };
 
@@ -178,21 +148,8 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
       plugin.app,
       "Select a Feature file to run",
       listed.value.map((feature) => ({ id: feature.path, label: feature.label })),
-      (path) => void runTest({ scope: "feature", target: path }),
+      (path) => void deps.runLauncher.launch({ scope: "feature", target: path }),
     ).open();
-  };
-
-  const cancelTestRun = async (): Promise<void> => {
-    const active = deps.testExecutionService.activeRunId();
-    if (active === null) {
-      new Notice("No Test Run is in progress.");
-      return;
-    }
-    const result = await deps.testExecutionService.cancel(active);
-    new Notice(
-      result.ok ? "Test Run cancelled." : `Could not cancel run: ${result.error.message}`,
-      result.ok ? undefined : 10000,
-    );
   };
 
   const openGenerateFeature = async (): Promise<void> => {
@@ -447,12 +404,12 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   plugin.addCommand({
     id: "run-demo-test",
     name: "Run Demo Test",
-    callback: () => void runTest({ scope: "demo", target: "demo" }),
+    callback: () => void deps.runLauncher.launch({ scope: "demo", target: "demo" }),
   });
   plugin.addCommand({
     id: "run-all-tests",
     name: "Run All Tests",
-    callback: () => void runTest({ scope: "all", target: "all" }),
+    callback: () => void deps.runLauncher.launch({ scope: "all", target: "all" }),
   });
   plugin.addCommand({
     id: "run-suite",
@@ -472,7 +429,7 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   plugin.addCommand({
     id: "cancel-test-run",
     name: "Cancel Test Run",
-    callback: () => void cancelTestRun(),
+    callback: () => void deps.runLauncher.cancel(),
   });
   plugin.addCommand({
     id: "open-test-console",

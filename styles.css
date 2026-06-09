@@ -349,3 +349,94 @@
   outline-offset: 2px;
   border-radius: var(--radius-s, 4px);
 }
+
+/* ── Test Console toolbar / run controls (Wave B, US-030 / UC-015) ─────────────
+ * A header toolbar above the output lets a normal user start, watch, and cancel
+ * a Test Run without leaving the panel for the command palette. Buttons reuse
+ * the Obsidian button defaults; this section only adds layout, the disabled +
+ * :focus-visible parity the rest of the plugin uses, the metadata line, and the
+ * per-row Run buttons in the Test Suites / Use Cases explorers. Status colours
+ * reuse the existing [data-status] convention (raw TestRunStatus). */
+
+.e2e-test-hub-console-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+  align-items: center;
+  margin: var(--size-4-2, 8px) 0;
+}
+
+.e2e-test-hub-console-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-1, 4px);
+  cursor: pointer;
+}
+
+/* Disabled state: dimmed and non-interactive (e.g. Cancel while idle, Re-run
+ * with no last run). Status is never colour-only — the button keeps its label
+ * and an explanatory aria-label set by refreshControls(). */
+.e2e-test-hub-console-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Inline icon glyph sized to the button text. */
+.e2e-test-hub-console-action-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.e2e-test-hub-console-action-icon svg {
+  width: var(--icon-s, 16px);
+  height: var(--icon-s, 16px);
+}
+
+/* Keyboard focus ring matching .e2e-test-hub-link-button:focus-visible, so the
+ * console actions keep :focus-visible parity with the other plugin buttons. */
+.e2e-test-hub-console-action:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* Run metadata line: scope/target + live elapsed timer while active, last
+ * run's outcome when idle, empty-state copy before the first run. Muted by
+ * default; [data-status] tints it to mirror the banner's TestRunStatus. */
+.e2e-test-hub-console-meta {
+  margin: var(--size-4-1, 4px) 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 0.8rem);
+}
+
+.e2e-test-hub-console-meta[data-status="running"],
+.e2e-test-hub-console-meta[data-status="queued"] {
+  color: var(--text-normal);
+}
+
+.e2e-test-hub-console-meta[data-status="passed"] {
+  color: var(--text-success);
+}
+
+.e2e-test-hub-console-meta[data-status="failed"],
+.e2e-test-hub-console-meta[data-status="errored"] {
+  color: var(--text-error);
+}
+
+.e2e-test-hub-console-meta[data-status="cancelled"] {
+  color: var(--text-warning, var(--text-muted));
+}
+
+/* Per-row Run button in the Test Suites / Use Cases explorer tables. Sits in
+ * its own "Run" column next to the Name/ID link; compact so it doesn't crowd
+ * the row. */
+.e2e-test-hub-run-button {
+  cursor: pointer;
+  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-run-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatElapsed,
   formatOutputLine,
   formatStatusBanner,
   statusModifier,
@@ -32,5 +33,21 @@ describe("test-console-format", () => {
 
   it("uses the status as the CSS modifier", () => {
     expect(statusModifier("failed")).toBe("failed");
+  });
+
+  it("formats elapsed time as mm:ss, padded", () => {
+    expect(formatElapsed(0)).toBe("00:00");
+    expect(formatElapsed(9_000)).toBe("00:09");
+    expect(formatElapsed(65_000)).toBe("01:05");
+    expect(formatElapsed(600_000)).toBe("10:00");
+  });
+
+  it("floors partial seconds and clamps negatives to zero", () => {
+    expect(formatElapsed(1_999)).toBe("00:01");
+    expect(formatElapsed(-500)).toBe("00:00");
+  });
+
+  it("does not cap minutes at 60 for long runs", () => {
+    expect(formatElapsed(75 * 60_000 + 9_000)).toBe("75:09");
   });
 });
