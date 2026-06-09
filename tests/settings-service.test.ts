@@ -221,6 +221,8 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
       "DYLD_INSERT_LIBRARIES", // native loader injection (macOS)
       "npm_config_script_shell", // overrides the shell npm runs scripts with
       "COMSPEC",
+      "BASE_URL", // the runner injects BASE_URL from the active environment
+      "base_url", // case-insensitive
     ])(
       "flags reserved process-control auth.env key %j as an error (PR #18 review)",
       async (key) => {

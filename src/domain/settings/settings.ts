@@ -118,6 +118,10 @@ export const isValidAuthEnvKey = (key: string): boolean => /^[A-Za-z_][A-Za-z0-9
  *    inject code into the spawned Node/shell;
  *  - the `LD_*`/`DYLD_*` loader families inject native libraries;
  *  - `NPM_CONFIG_*` overrides npm itself (e.g. `npm_config_script_shell`).
+ * `BASE_URL` is also reserved — not for security but for correctness: the runner
+ * injects `{ BASE_URL: active.baseUrl, ...auth.env }`, so an `auth.env.BASE_URL`
+ * would silently override the SELECTED environment's URL (and the generated CI
+ * workflow already filters it out to avoid exactly this conflict).
  * `auth.env` is for SUT credentials only; these are rejected outright.
  */
 const RESERVED_ENV_KEYS = new Set([
@@ -130,6 +134,7 @@ const RESERVED_ENV_KEYS = new Set([
   "NODE_OPTIONS",
   "NODE_PATH",
   "NODE_REPL_EXTERNAL_MODULE",
+  "BASE_URL",
 ]);
 const RESERVED_ENV_PREFIXES = ["LD_", "DYLD_", "NPM_CONFIG_"];
 
