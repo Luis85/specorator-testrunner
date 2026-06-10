@@ -570,6 +570,56 @@
   outline-offset: -2px;
 }
 
+/* ── Onboarding (Wave G §2) ────────────────────────────────────────────────────
+ * "Get started" panel on the dashboard hub, shown only when the Test Hub IS
+ * initialized but the vault has zero Use Cases (a first-time user right after
+ * the wizard). Three numbered steps as real buttons — create a Use Case, run
+ * the shipped demo, open the Getting Started guide — each with a one-line
+ * explanation. Reuses the Obsidian vars + the :focus-visible parity the rest
+ * of the plugin's buttons keep; it disappears once a Use Case exists. */
+.e2e-test-hub-onboarding {
+  padding: var(--size-4-4, 16px);
+  margin: var(--size-4-3, 12px) 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background-color: var(--background-secondary);
+}
+
+.e2e-test-hub-onboarding h3 {
+  margin: 0 0 var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-onboarding-intro {
+  margin: 0 0 var(--size-4-3, 12px);
+  color: var(--text-muted);
+}
+
+/* A semantic <ol>: the browser numbering IS the step number (1–3). */
+.e2e-test-hub-onboarding-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3, 12px);
+  margin: 0;
+  padding-left: var(--size-4-5, 20px);
+}
+
+.e2e-test-hub-onboarding-button {
+  cursor: pointer;
+}
+
+.e2e-test-hub-onboarding-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* One-line explanation under each step button. */
+.e2e-test-hub-onboarding-desc {
+  margin-top: var(--size-4-1, 4px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 0.8rem);
+}
+
 /* ── Use Case detail (Wave D, UI-driven authoring & testing) ───────────────────
  * The detail view turns one Use Case into an executable, traceable surface: a
  * header (status + automation status), Open note / Run Use Case / Generate

@@ -3,14 +3,22 @@ import type { TestRunSummary } from "./test-run";
 
 /** Use Case domain entity (TIS §6.1–§6.3). */
 
+/**
+ * Business lifecycle states, as a runtime list so UI dropdowns and runtime
+ * validation (UseCaseService.updateMetadata) enumerate the same single source
+ * the {@link UseCaseStatus} union is derived from (Wave G §3).
+ */
+export const USE_CASE_STATUSES = [
+  "draft",
+  "specified",
+  "ready-for-automation",
+  "automated",
+  "verified",
+  "deprecated",
+] as const;
+
 /** Business lifecycle. */
-export type UseCaseStatus =
-  | "draft"
-  | "specified"
-  | "ready-for-automation"
-  | "automated"
-  | "verified"
-  | "deprecated";
+export type UseCaseStatus = (typeof USE_CASE_STATUSES)[number];
 
 /** Test state, derived per ADR-0017 with `@wip` exclusion. */
 export type AutomationStatus =

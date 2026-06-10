@@ -2,7 +2,12 @@ import { buildUseCaseNote, useCaseFileName } from "../content/use-case-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import type { ExecutionScope, TestRunStatus } from "../../domain/entities/test-run";
-import type { AutomationStatus, UseCase, UseCaseStatus } from "../../domain/entities/use-case";
+import {
+  USE_CASE_STATUSES,
+  type AutomationStatus,
+  type UseCase,
+  type UseCaseStatus,
+} from "../../domain/entities/use-case";
 import type { SuiteId, UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import { vaultPath } from "../../domain/value-objects/vault-path";
 import { appError } from "../../shared/errors/errors";
@@ -20,6 +25,18 @@ export interface CreateUseCaseRequest {
 }
 
 /**
+ * The user-editable Use Case metadata (Wave G §3, UC-005). Deliberately ONLY
+ * the title and the business status: the id is immutable identity, and
+ * `automationStatus` is owned by the UseCaseAutomationPolicy (ADR-0017) —
+ * derived from the UC's Features + last run — so a hand-set value would be
+ * silently overwritten on the next roll-up and is not offered for editing.
+ */
+export interface UseCaseMetadataChanges {
+  title?: string;
+  status?: UseCaseStatus;
+}
+
+/**
  * Use Case lifecycle (TIS §8.6, UC-004). EPIC-004 delivers `create` (US-015)
  * and `findAll` (US-016); EPIC-005 adds `findById`/`update` so the
  * SpecificationService can back-reference Features into a Use Case (UC-006).
@@ -29,6 +46,8 @@ export interface UseCaseService {
   findAll(): Promise<Result<UseCase[]>>;
   findById(id: UseCaseId): Promise<Result<UseCase | null>>;
   update(useCase: UseCase): Promise<Result<void>>;
+  /** Quick edit of title/status from the UI (Wave G §3, UC-005). */
+  updateMetadata(id: UseCaseId, changes: UseCaseMetadataChanges): Promise<Result<UseCase>>;
 }
 
 const ID_PATTERN = /^UC-(\d+)$/;
@@ -164,6 +183,85 @@ export class DefaultUseCaseService implements UseCaseService {
     );
     this.logger.info("Use Case updated", { id: useCase.id, path: useCase.path });
     return ok(undefined);
+  }
+
+  /**
+   * Quick edit of a Use Case's title and/or business status from the UI
+   * (Wave G §3, UC-005), so a Product Owner never has to hand-edit YAML.
+   *
+   * Scope is deliberately {@link UseCaseMetadataChanges} only: the id is
+   * immutable identity, and `automationStatus` is owned by the
+   * UseCaseAutomationPolicy (ADR-0017) so it is NOT editable here. The note is
+   * not renamed (the path stays stable so links keep resolving); only the
+   * frontmatter — and the `# UC-NNN Title` H1 that create() writes, when the
+   * title changed — is rewritten, preserving the body and unknown fields.
+   *
+   * A no-op (nothing actually changed) returns the entity WITHOUT writing or
+   * publishing. Otherwise publishes `usecase.updated` (Event Catalog §4) and,
+   * when the status moved, `usecase.status.changed`, both with
+   * correlationId = useCaseId (§19).
+   */
+  async updateMetadata(id: UseCaseId, changes: UseCaseMetadataChanges): Promise<Result<UseCase>> {
+    const title = changes.title?.trim();
+    if (title !== undefined && title === "") {
+      return err(appError("VALIDATION_FAILED", "A Use Case title is required."));
+    }
+    // The status arrives from UI input; TypeScript can't protect a cast value,
+    // so reject anything outside the UseCaseStatus union at runtime too.
+    if (changes.status !== undefined && !USE_CASE_STATUSES.includes(changes.status)) {
+      return err(
+        appError("VALIDATION_FAILED", `Invalid Use Case status: ${String(changes.status)}.`),
+      );
+    }
+
+    const found = await this.findById(id);
+    if (!found.ok) return err(found.error);
+    if (found.value === null) {
+      return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
+    }
+    const existing = found.value;
+
+    const nextTitle = title ?? existing.title;
+    const nextStatus = changes.status ?? existing.status;
+    const changedFields = [
+      ...(nextTitle !== existing.title ? ["title"] : []),
+      ...(nextStatus !== existing.status ? ["status"] : []),
+    ];
+    // No-op: nothing changed, so neither write nor publish (subscribers would
+    // otherwise re-render for a phantom edit).
+    if (changedFields.length === 0) return ok(existing);
+
+    const read = await this.fs.readFile(existing.path);
+    if (!read.ok) return err(read.error);
+    let content = updateNoteFrontmatter(read.value, { title: nextTitle, status: nextStatus });
+    if (nextTitle !== existing.title) {
+      // create() writes the body H1 as `# <id> <title>`; mirror that exact
+      // format on retitle so heading and frontmatter don't drift. Only the
+      // FIRST matching H1 is touched (no /g): hand-written headings stay.
+      const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      content = content.replace(new RegExp(`^# ${escapedId} .*$`, "m"), `# ${id} ${nextTitle}`);
+    }
+    const written = await this.fs.writeFile(existing.path, content);
+    if (!written.ok) return err(written.error);
+
+    await this.eventBus.publish(
+      createEvent(
+        "usecase.updated",
+        { useCaseId: id, path: existing.path, changedFields },
+        { correlationId: id },
+      ),
+    );
+    if (nextStatus !== existing.status) {
+      await this.eventBus.publish(
+        createEvent(
+          "usecase.status.changed",
+          { useCaseId: id, previousStatus: existing.status, nextStatus },
+          { correlationId: id },
+        ),
+      );
+    }
+    this.logger.info("Use Case metadata updated", { id, changedFields });
+    return ok({ ...existing, title: nextTitle, status: nextStatus });
   }
 
   /** Maps a note's frontmatter to a {@link UseCase}; returns null if it is not one. */

@@ -1,7 +1,9 @@
 import { ItemView, setIcon, type WorkspaceLeaf } from "obsidian";
+import type { LastEvidence } from "../../application/services/post-run-coordinator";
 import type { TestRun, TestRunStatus } from "../../domain/entities/test-run";
 import type { DomainEvent } from "../../domain/events/domain-event";
-import type { RunId } from "../../domain/value-objects/identifiers";
+import type { RunId, VaultPath } from "../../domain/value-objects/identifiers";
+import { vaultPath } from "../../domain/value-objects/vault-path";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import { RunLauncher, scopeLabel } from "../run/run-launcher";
 import {
@@ -40,6 +42,12 @@ interface CompletedPayload {
   durationMs: number;
 }
 
+/** Subset of the `evidence.generated` payload (Event Catalog §9). */
+interface EvidenceGeneratedPayload {
+  runId: string;
+  evidencePath: string;
+}
+
 /**
  * The narrow slice of the composition root the Test Console needs (Wave B): the
  * event bus it streams from, the shared run launcher its Cancel / Re-run buttons
@@ -53,6 +61,13 @@ export interface TestConsoleDeps {
   runLauncher: Pick<RunLauncher, "launch" | "cancel">;
   activeRunId(): RunId | null;
   lastRun(): TestRun | null;
+  // Wave G §1: synchronous probe for the last generated evidence note (wired in
+  // main.ts to PostRunCoordinator.lastEvidence). The bus does not replay, so a
+  // console opened AFTER `evidence.generated` fired still needs to know the
+  // last run's evidence exists to enable its "Open evidence" button.
+  lastEvidence(): LastEvidence | null;
+  // Opens the evidence note via the workspace (wired to the workspace adapter).
+  openEvidence(path: VaultPath): void | Promise<void>;
 }
 
 /**
@@ -81,7 +96,13 @@ export class TestConsoleView extends ItemView {
   private meta!: HTMLElement;
   private cancelButton!: HTMLButtonElement;
   private rerunButton!: HTMLButtonElement;
+  private evidenceButton!: HTMLButtonElement;
   private clearButton!: HTMLButtonElement;
+
+  // Evidence note for the LAST run (Wave G §1): null until `evidence.generated`
+  // arrives for lastRun() (or the probe reports it on open), cleared when a new
+  // run starts. Drives the "Open evidence" toolbar button.
+  private evidencePathForLastRun: VaultPath | null = null;
 
   // Active-run state powering the toolbar + live metadata line. `runStartMs` is
   // set when the run starts and drives the elapsed timer; `activeScopeLabel` is
@@ -149,7 +170,19 @@ export class TestConsoleView extends ItemView {
       ),
       this.deps.eventBus.subscribe("testrun.failed", () => this.onTerminal("errored")),
       this.deps.eventBus.subscribe("testrun.cancelled", () => this.onTerminal("cancelled")),
+      // Wave G §1: the post-run flow generates evidence asynchronously AFTER the
+      // terminal event; enable "Open evidence" once the note for the last run
+      // exists.
+      this.deps.eventBus.subscribe<EvidenceGeneratedPayload>("evidence.generated", (event) =>
+        this.onEvidenceGenerated(event),
+      ),
     );
+
+    // The console may open after the last run's evidence was already generated
+    // (the bus does not replay `evidence.generated`): seed the button from the
+    // synchronous probe. Skipped while a run is active — its evidence doesn't
+    // exist yet, and the probe would report a PREVIOUS run's note.
+    if (this.deps.activeRunId() === null) this.syncEvidenceFromProbe();
 
     // A run may already be in flight when the console is opened from the
     // palette/ribbon mid-run: reflect that immediately rather than waiting for
@@ -170,9 +203,11 @@ export class TestConsoleView extends ItemView {
     // value left here would make the timer count from a previous run's start.
     this.runStartMs = null;
     this.activeScopeLabel = null;
+    // Re-seeded from the lastEvidence() probe on the next onOpen.
+    this.evidencePathForLastRun = null;
   }
 
-  /** Header toolbar: Cancel / Re-run / Clear (Wave B). */
+  /** Header toolbar: Cancel / Re-run / Open evidence / Clear (Wave B, Wave G §1). */
   private renderToolbar(container: HTMLElement): void {
     const toolbar = container.createDiv({ cls: "e2e-test-hub-console-toolbar" });
 
@@ -196,6 +231,24 @@ export class TestConsoleView extends ItemView {
       void this.deps.runLauncher.launch({ scope: last.scope, target: last.target });
     });
 
+    // Wave G §1: jump from the console to the Evidence note of the last run.
+    // Disabled until evidence exists for THAT run (post-run generation is
+    // asynchronous, so it enables shortly after the terminal banner).
+    this.evidenceButton = toolbar.createEl("button", {
+      cls: "e2e-test-hub-console-action",
+      attr: { "aria-label": "No evidence for the last run yet" },
+    });
+    setIcon(
+      this.evidenceButton.createSpan({ cls: "e2e-test-hub-console-action-icon" }),
+      "file-text",
+    );
+    this.evidenceButton.createSpan({ text: "Open evidence" });
+    this.evidenceButton.addEventListener("click", () => {
+      const path = this.evidencePathForLastRun;
+      if (path === null) return;
+      void this.deps.openEvidence(path);
+    });
+
     this.clearButton = toolbar.createEl("button", {
       cls: "e2e-test-hub-console-action",
       attr: { "aria-label": "Clear the Test Console output" },
@@ -216,6 +269,9 @@ export class TestConsoleView extends ItemView {
 
   private onStarted(event: DomainEvent<StartedPayload>): void {
     this.output.empty();
+    // A new run owns the console now — the previous run's evidence is stale for
+    // the "Open evidence" affordance (it is about the LAST run).
+    this.evidencePathForLastRun = null;
     this.runStartMs = Date.now();
     this.setBanner("running");
     this.output.createEl("div", {
@@ -262,6 +318,36 @@ export class TestConsoleView extends ItemView {
     this.refreshControls(false);
   }
 
+  /**
+   * Wave G §1: `evidence.generated` for the LAST run enables the "Open
+   * evidence" button. The payload's runId is matched against `lastRun()` so an
+   * on-demand re-import of an older run can't be attributed to the latest one.
+   */
+  private onEvidenceGenerated(event: DomainEvent<EvidenceGeneratedPayload>): void {
+    if (event.payload.runId !== this.deps.lastRun()?.id) return;
+    // The payload travels as a plain string; re-validate through the ADR-0008
+    // vaultPath() chokepoint before it can reach the workspace opener.
+    const safe = vaultPath(event.payload.evidencePath);
+    if (!safe.ok) return;
+    this.evidencePathForLastRun = safe.value;
+    this.refreshControls();
+  }
+
+  /**
+   * Seeds {@link evidencePathForLastRun} from the synchronous lastEvidence()
+   * probe — for a console opened AFTER the last run's `evidence.generated`
+   * already fired (the bus does not replay). The recorded runId must match the
+   * last run, so a previous run's note is never offered for the latest run.
+   */
+  private syncEvidenceFromProbe(): void {
+    const last = this.deps.lastRun();
+    const evidence = this.deps.lastEvidence();
+    this.evidencePathForLastRun =
+      last !== null && evidence !== null && evidence.runId === last.id
+        ? evidence.evidencePath
+        : null;
+  }
+
   private setBanner(status: TestRunStatus, durationMs?: number): void {
     this.banner.setText(formatStatusBanner(status, durationMs));
     this.banner.dataset.status = statusModifier(status);
@@ -293,6 +379,17 @@ export class TestConsoleView extends ItemView {
         : last === null
           ? "No Test Run to re-run yet"
           : `Re-run ${scopeLabel(last.scope, last.target)}`,
+    );
+
+    // "Open evidence" (Wave G §1): enabled only once the LAST run's evidence
+    // note exists. The disabled reason stays spoken via the aria-label.
+    const hasEvidence = this.evidencePathForLastRun !== null;
+    this.evidenceButton.disabled = !hasEvidence;
+    this.evidenceButton.setAttr(
+      "aria-label",
+      hasEvidence
+        ? "Open the evidence note for the last Test Run"
+        : "No evidence for the last run yet",
     );
 
     this.renderMeta(active, last);

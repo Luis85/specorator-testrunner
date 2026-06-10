@@ -6,11 +6,14 @@ import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import {
   NO_EVIDENCE_TOOLTIP,
+  ONBOARDING_STEPS,
   projectDashboard,
   projectEnvironmentBadge,
   QUICK_ACTION_GROUPS,
   QUICK_ACTIONS,
+  shouldShowOnboarding,
   type DashboardNavTarget,
+  type OnboardingActionId,
   type QuickActionId,
 } from "./dashboard-rows";
 import { RenderScheduler } from "./render-scheduler";
@@ -191,6 +194,14 @@ export class DashboardView extends ItemView {
     // Quick actions (Wave C §1): the common entry points as real buttons.
     this.renderQuickActions(container);
 
+    // Onboarding (Wave G §2): when the hub is initialized but holds no Use
+    // Cases yet (a first-time user right after the wizard), guide the
+    // create-UC → demo-run → docs path. We only reach this branch when
+    // isInitialized() returned true above. Disappears once a Use Case exists.
+    if (shouldShowOnboarding(true, result.value.totalUseCases)) {
+      this.renderOnboarding(container);
+    }
+
     // Documentation access (AC-016): open the Getting Started guide / User
     // Manual without leaving the dashboard.
     this.renderDocumentationActions(container);
@@ -338,6 +349,50 @@ export class DashboardView extends ItemView {
         });
         button.addEventListener("click", () => this.dispatchQuickAction(action.id));
       }
+    }
+  }
+
+  /**
+   * Wave G §2: the "Get started" panel for a first-time user — three numbered
+   * steps as real buttons (create a Use Case, run the shipped demo, open the
+   * Getting Started guide), each with a one-line explanation. The step model is
+   * the pure {@link ONBOARDING_STEPS}; the view only renders and dispatches.
+   */
+  private renderOnboarding(container: HTMLElement): void {
+    const panel = container.createDiv({ cls: "e2e-test-hub-onboarding" });
+    panel.createEl("h3", { text: "Get started" });
+    panel.createEl("p", {
+      cls: "e2e-test-hub-onboarding-intro",
+      text: "Your Test Hub is ready. Three steps take you to your first green run:",
+    });
+    // A real <ol> so the numbering is semantic (screen readers announce
+    // "list, 3 items" and the step position).
+    const list = panel.createEl("ol", { cls: "e2e-test-hub-onboarding-steps" });
+    for (const step of ONBOARDING_STEPS) {
+      const item = list.createEl("li", { cls: "e2e-test-hub-onboarding-step" });
+      item
+        .createEl("button", {
+          text: step.label,
+          cls: "e2e-test-hub-onboarding-button",
+          attr: { "aria-label": step.ariaLabel },
+        })
+        .addEventListener("click", () => this.dispatchOnboarding(step.action));
+      item.createDiv({ cls: "e2e-test-hub-onboarding-desc", text: step.description });
+    }
+  }
+
+  /** Maps an {@link OnboardingActionId} to the EXISTING deps callback for it. */
+  private dispatchOnboarding(id: OnboardingActionId): void {
+    switch (id) {
+      case "create-use-case":
+        this.deps.openCreateUseCase();
+        return;
+      case "run-demo":
+        void this.deps.runDemo();
+        return;
+      case "open-getting-started":
+        void this.deps.openDocumentation("getting-started");
+        return;
     }
   }
 

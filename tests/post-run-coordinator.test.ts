@@ -491,6 +491,38 @@ describe("PostRunCoordinator", () => {
     });
   });
 
+  describe("lastEvidence probe (Wave G §1)", () => {
+    it("is null before any evidence has been generated", () => {
+      const env = build();
+      expect(env.coordinator.lastEvidence()).toBeNull();
+    });
+
+    it("records the last generated evidence note (runId + path) after a run imports", async () => {
+      const env = build();
+      env.coordinator.start();
+      env.setLastRun(run({ status: "passed" }));
+
+      await publishTerminal(env.bus, "testrun.completed");
+      await env.coordinator.whenSettled();
+
+      expect(env.coordinator.lastEvidence()).toEqual({
+        runId: "RUN-2026-05-31-100000",
+        evidencePath: vp("Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md"),
+      });
+    });
+
+    it("records nothing when evidence Markdown is disabled (no note exists to open)", async () => {
+      const env = build();
+      env.setMarkdownEnabled(false);
+      env.setLastRun(run({ status: "passed" }));
+
+      const outcome = await env.coordinator.importLastRun();
+
+      expect(outcome.ok).toBe(true);
+      expect(env.coordinator.lastEvidence()).toBeNull();
+    });
+  });
+
   describe("whenSettled", () => {
     it("resolves immediately when idle", async () => {
       const env = build();

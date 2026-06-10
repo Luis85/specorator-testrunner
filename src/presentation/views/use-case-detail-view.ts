@@ -10,6 +10,7 @@ import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifier
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import { type ChecklistRow } from "../settings/settings-rows";
 import type { RunLauncher } from "../run/run-launcher";
+import { EditUseCaseModal } from "./edit-use-case-modal";
 import { RenderScheduler } from "./render-scheduler";
 import {
   featureHealthLine,
@@ -55,7 +56,9 @@ const REFRESH_ON: DomainEventType[] = [
  * the command palette's slug-prompt flow rather than forking it).
  */
 export interface UseCaseDetailDeps {
-  useCaseService: Pick<UseCaseService, "findById">;
+  // findById powers the render; updateMetadata backs the header's quick-edit
+  // modal (Wave G §3).
+  useCaseService: Pick<UseCaseService, "findById" | "updateMetadata">;
   specificationService: Pick<
     SpecificationService,
     "listFeatures" | "validate" | "detectMissingSteps"
@@ -190,6 +193,20 @@ export class UseCaseDetailView extends ItemView {
         attr: { "aria-label": `Open the ${header.id} note` },
       })
       .addEventListener("click", () => void this.deps.workspace.openFile(header.path));
+    // Wave G §3: quick-edit title/status without hand-editing YAML frontmatter.
+    // The view refreshes via its existing `usecase.updated` subscription once
+    // the service publishes, so the modal needs no callback.
+    actions
+      .createEl("button", {
+        text: "Edit",
+        attr: { "aria-label": `Edit the title or status of ${header.id}` },
+      })
+      .addEventListener("click", () =>
+        new EditUseCaseModal(this.app, {
+          useCaseService: this.deps.useCaseService,
+          useCase,
+        }).open(),
+      );
     actions
       .createEl("button", {
         text: "Run Use Case",

@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { DashboardSnapshot } from "../src/application/services/traceability-service";
 import {
   NO_EVIDENCE_TOOLTIP,
+  ONBOARDING_STEPS,
   projectDashboard,
   projectEnvironmentBadge,
   QUICK_ACTIONS,
   QUICK_ACTION_GROUPS,
+  shouldShowOnboarding,
 } from "../src/presentation/views/dashboard-rows";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
@@ -116,6 +118,34 @@ describe("QUICK_ACTIONS", () => {
   it("gives every action a non-empty aria-label", () => {
     for (const action of QUICK_ACTIONS) {
       expect(action.ariaLabel.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("onboarding panel (Wave G §2)", () => {
+  it("shows only when initialized AND the vault has zero Use Cases", () => {
+    expect(shouldShowOnboarding(true, 0)).toBe(true);
+    // Not initialized: the Initialize CTA owns the screen instead.
+    expect(shouldShowOnboarding(false, 0)).toBe(false);
+    // A Use Case exists: the panel disappears naturally.
+    expect(shouldShowOnboarding(true, 1)).toBe(false);
+    expect(shouldShowOnboarding(false, 3)).toBe(false);
+  });
+
+  it("walks create-UC → demo run → Getting Started as numbered steps 1–3", () => {
+    expect(ONBOARDING_STEPS.map((s) => s.step)).toEqual([1, 2, 3]);
+    expect(ONBOARDING_STEPS.map((s) => s.action)).toEqual([
+      "create-use-case",
+      "run-demo",
+      "open-getting-started",
+    ]);
+  });
+
+  it("gives every step a label, a one-line explanation, and an aria-label", () => {
+    for (const step of ONBOARDING_STEPS) {
+      expect(step.label.length).toBeGreaterThan(0);
+      expect(step.description.length).toBeGreaterThan(0);
+      expect(step.ariaLabel).toContain(`Step ${step.step}`);
     }
   });
 });

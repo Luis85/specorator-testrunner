@@ -404,6 +404,12 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           // and reads the last run's scope to power Re-run.
           activeRunId: () => this.testExecutionService.activeRunId(),
           lastRun: () => this.testExecutionService.lastRun(),
+          // Wave G §1: the "Open evidence" button. The coordinator already owns
+          // the post-run evidence flow, so it is the cleanest synchronous source
+          // for "the last generated evidence note" when the console opens after
+          // `evidence.generated` already fired (the bus does not replay).
+          lastEvidence: () => this.postRunCoordinator.lastEvidence(),
+          openEvidence: (path) => void this.workspaceAdapter.openFile(path),
         }),
     );
     this.registerView(
