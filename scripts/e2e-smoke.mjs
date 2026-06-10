@@ -20,9 +20,10 @@ import { build } from "esbuild";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+// Throw (not process.exit) so the temp-vault cleanup in `finally` still runs
+// on assertion failures; the catch below sets the exit code.
 const fail = (message) => {
-  console.error(`\nE2E smoke FAILED: ${message}`);
-  process.exit(1);
+  throw new Error(message);
 };
 
 const run = (command, cwd) => {
@@ -89,7 +90,9 @@ try {
   }
   console.log(`\nE2E smoke PASSED: ${scenarios.length} scenario(s), all steps passed.`);
 } catch (error) {
-  fail(error instanceof Error ? error.message : String(error));
+  console.error(`\nE2E smoke FAILED: ${error instanceof Error ? error.message : String(error)}`);
+  // exitCode (not process.exit) lets the finally cleanup complete first.
+  process.exitCode = 1;
 } finally {
   // Best-effort: the temp vault is large (node_modules); don't leave it behind.
   try {
