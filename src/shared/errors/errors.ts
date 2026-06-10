@@ -21,6 +21,7 @@ export type ErrorCode =
   | "REPORT_NOT_FOUND"
   | "REPORT_PARSE_FAILED"
   | "EVIDENCE_WRITE_FAILED"
+  | "EVIDENCE_LIST_FAILED"
   // settings / validation
   | "SETTINGS_INVALID"
   | "VALIDATION_FAILED"
