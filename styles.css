@@ -188,11 +188,24 @@
   color: var(--text-success);
 }
 
+/* NOT --background-modifier-error: that's a saturated red, and --text-error on
+ * it is red-on-red — the failed-run banner rendered as an unreadable solid
+ * block (testvault demo run). Same fix as .e2e-test-hub-error. */
 .e2e-test-hub-console-banner[data-status="failed"],
 .e2e-test-hub-console-banner[data-status="errored"] {
-  background-color: var(--background-modifier-error);
+  background-color: var(--background-secondary);
   border-left-color: var(--text-error);
   color: var(--text-error);
+}
+
+/* Actionable guidance under the terminal banner headline (e.g. undefined
+ * steps -> generate step definitions). Normal text colour: it's advice, not
+ * part of the red/green status signal. */
+.e2e-test-hub-console-banner-hint {
+  margin-top: var(--size-4-1, 4px);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 0.875rem);
+  font-weight: var(--font-normal, 400);
 }
 
 .e2e-test-hub-console-banner[data-status="cancelled"] {
@@ -222,10 +235,11 @@
   margin-bottom: var(--size-4-1, 4px);
 }
 
-/* stderr lines are emphasised so failures stand out in the stream. */
+/* stderr lines are emphasised so failures stand out in the stream. Text colour
+ * + the "[stderr]" prefix carry the signal — a --background-modifier-error fill
+ * would render red-on-red (same bug as the failed banner). */
 .e2e-test-hub-console-stderr {
   color: var(--text-error);
-  background-color: var(--background-modifier-error);
 }
 
 /* ── Initialization wizard progress / error (initialization-wizard-modal) ─── */

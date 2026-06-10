@@ -434,7 +434,7 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   plugin.addCommand({
     id: "open-test-console",
     name: "Open Test Console",
-    callback: () => void deps.workspace.openView(TEST_CONSOLE_VIEW_TYPE),
+    callback: () => void deps.workspace.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
   });
 
   // EPIC-008 (US-032 / UC-016): re-run report import + evidence for the last run.

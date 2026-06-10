@@ -7,10 +7,12 @@ import { vaultPath } from "../../domain/value-objects/vault-path";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import { RunLauncher, scopeLabel } from "../run/run-launcher";
 import {
+  extractCucumberSummary,
   formatElapsed,
   formatOutputLine,
   formatStatusBanner,
   statusModifier,
+  summaryHint,
 } from "./test-console-format";
 
 export const TEST_CONSOLE_VIEW_TYPE = "e2e-test-hub-console";
@@ -111,6 +113,10 @@ export class TestConsoleView extends ItemView {
   private runStartMs: number | null = null;
   private activeScopeLabel: string | null = null;
   private timerHandle: number | null = null;
+  // Cucumber's end-of-run summary lines ("1 scenario (1 undefined)", …),
+  // captured from the stream so the terminal banner can show the OUTCOME at
+  // the top instead of only "Run failed" (testvault demo-run feedback).
+  private summaryLines: string[] = [];
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -272,6 +278,7 @@ export class TestConsoleView extends ItemView {
     // A new run owns the console now — the previous run's evidence is stale for
     // the "Open evidence" affordance (it is about the LAST run).
     this.evidencePathForLastRun = null;
+    this.summaryLines = [];
     this.runStartMs = Date.now();
     this.setBanner("running");
     this.output.createEl("div", {
@@ -289,6 +296,9 @@ export class TestConsoleView extends ItemView {
     // earlier output.
     const pinnedToBottom =
       this.output.scrollHeight - this.output.scrollTop - this.output.clientHeight < 4;
+
+    const summary = extractCucumberSummary(event.payload.line);
+    if (summary !== null) this.summaryLines.push(summary);
 
     this.output.createEl("div", {
       text: formatOutputLine(event.payload.stream, event.payload.line),
@@ -349,7 +359,20 @@ export class TestConsoleView extends ItemView {
   }
 
   private setBanner(status: TestRunStatus, durationMs?: number): void {
-    this.banner.setText(formatStatusBanner(status, durationMs));
+    this.banner.empty();
+    const headline = formatStatusBanner(status, durationMs);
+    // On a terminal state, append Cucumber's own counts so the WHY is readable
+    // at the top ("Run failed (0.1s) — 1 scenario (1 undefined), 3 steps
+    // (3 undefined)"), plus an actionable hint for undefined steps.
+    const isTerminal = status !== "running" && status !== "queued";
+    const summary = isTerminal && this.summaryLines.length > 0 ? this.summaryLines : [];
+    this.banner.createDiv({
+      text: summary.length > 0 ? `${headline} — ${summary.join(", ")}` : headline,
+    });
+    const hint = isTerminal ? summaryHint(summary) : null;
+    if (hint !== null) {
+      this.banner.createDiv({ cls: "e2e-test-hub-console-banner-hint", text: hint });
+    }
     this.banner.dataset.status = statusModifier(status);
   }
 

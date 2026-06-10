@@ -66,19 +66,24 @@ const TSCONFIG_JSON = `{
 // JS string literal — even if a hostile `featureFilesPath` somehow reaches here
 // it cannot break out of the literal and inject code into the module Node loads
 // (defence in depth behind PathSafetyPolicy; see SEC-1 / P0-1).
+// SHAPE: the options object is the DEFAULT EXPORT ITSELF. Cucumber's ESM
+// config loading reads \`(await import(file)).default\` as the options — the
+// profile-keyed \`{ default: { … } }\` wrapper (a CJS \`module.exports\` idiom)
+// is NOT unwrapped for an ESM default export, so wrapping silently discarded
+// the WHOLE config: no step imports (every demo step ran "Undefined"), no
+// json report (evidence import found nothing). Found via the first real
+// testvault demo run.
 const cucumberMjs = (featuresGlob: string): string => `export default {
-  default: {
-    import: ["src/support/**/*.ts", "src/steps/**/*.ts"],
-    paths: [${JSON.stringify(featuresGlob)}],
-    format: [
-      "progress",
-      "json:reports/cucumber-report.json",
-    ],
-    // NOTE: the deprecated \`publishQuiet\` option was REMOVED in Cucumber 12
-    // (the publish banner it suppressed no longer exists). Cucumber 12 rejects
-    // unknown options, so it must not be emitted here (P4-5).
-    parallel: 0,
-  },
+  import: ["src/support/**/*.ts", "src/steps/**/*.ts"],
+  paths: [${JSON.stringify(featuresGlob)}],
+  format: [
+    "progress",
+    "json:reports/cucumber-report.json",
+  ],
+  // NOTE: the deprecated \`publishQuiet\` option was REMOVED in Cucumber 12
+  // (the publish banner it suppressed no longer exists). Cucumber 12 rejects
+  // unknown options, so it must not be emitted here (P4-5).
+  parallel: 0,
 };
 `;
 

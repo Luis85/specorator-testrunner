@@ -299,7 +299,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // the workspace adapter so the launcher itself stays free of Obsidian view
     // plumbing.
     this.runLauncher = new RunLauncher(this.testExecutionService, {
-      openConsole: () => this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
+      openConsole: () => this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
     });
 
     // EPIC-008 Reporting & Evidence (UC-016): import the runner's JSON report
@@ -442,7 +442,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           generateDocumentation: () => this.generateDocumentation(),
           navigate: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
           openSuites: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
-          openConsole: () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
+          openConsole: () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
           openEvidence: (path) => this.openEvidenceNote(path),
           getEnvironments: () => ({
             active: this.hubSettings.sut.active,
@@ -478,7 +478,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.addRibbonIcon(
       "terminal",
       "Open Test Console",
-      () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
+      () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
     );
     this.addRibbonIcon(
       "gauge",
