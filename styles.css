@@ -673,3 +673,64 @@
 .e2e-test-hub-uc-detail-feature-result:empty {
   display: none;
 }
+
+/* ── Wave F insight (counts, health, Tag Expression preview) ───────────────────
+ * Read-only insight surfaces: the suites explorer "Scenarios" column, the Use
+ * Cases explorer "Features" column, the per-Feature health line in the Use Case
+ * detail view, and the live Tag Expression preview in CreateSuiteModal. Zero
+ * counts reuse the existing [data-status] vocabulary (warning = amber nudge);
+ * colour is reinforcement only — the tooltip / aria-label carries the message. */
+
+/* Zero-count accents: a suite whose Tag Expression matches no scenarios, or a
+ * Use Case with no Feature Specifications yet. */
+.e2e-test-hub-suite-scenarios[data-status="warning"],
+.e2e-test-hub-uc-features[data-status="warning"] {
+  color: var(--text-warning, var(--text-muted));
+  font-weight: var(--font-semibold, 600);
+}
+
+/* Muted per-Feature health line in the Use Case detail view:
+ * "N scenarios (M @wip)" plus the feature-level @wip badge. Hidden while the
+ * (fire-and-forget) insight read is still in flight or failed. */
+.e2e-test-hub-uc-detail-feature-health {
+  margin-top: var(--size-4-1, 4px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-uc-detail-feature-health:empty {
+  display: none;
+}
+
+/* Feature-level @wip badge: the Feature is excluded from the KPI roll-up per
+ * ADR-0017 (the tooltip says so). */
+.e2e-test-hub-wip-badge {
+  margin-left: var(--size-4-1, 4px);
+  padding: 0 var(--size-4-1, 4px);
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-secondary);
+  color: var(--text-warning, var(--text-muted));
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller, 0.75rem);
+}
+
+/* CreateSuiteModal: the debounced "Matches N scenarios" preview under the
+ * tag-expression field. Muted by default; [data-status] tints the 0-match
+ * warning and the parse-error message. Hidden while empty. */
+.e2e-test-hub-suite-tag-preview {
+  margin-top: var(--size-4-1, 4px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-suite-tag-preview:empty {
+  display: none;
+}
+
+.e2e-test-hub-suite-tag-preview[data-status="warning"] {
+  color: var(--text-warning, var(--text-muted));
+}
+
+.e2e-test-hub-suite-tag-preview[data-status="error"] {
+  color: var(--text-error);
+}

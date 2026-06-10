@@ -1,11 +1,12 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
+import type { SpecificationService } from "../../application/services/specification-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
 import { RenderScheduler } from "./render-scheduler";
-import { projectUseCaseRows } from "./use-case-rows";
+import { featureCountCell, projectUseCaseRows } from "./use-case-rows";
 
 export const USE_CASE_VIEW_TYPE = "e2e-test-hub-use-cases";
 
@@ -15,10 +16,15 @@ const REFRESH_ON: DomainEventType[] = [
   "usecase.updated",
   "usecase.deleted",
   "usecase.status.changed",
+  // Wave F: a newly generated Feature changes the "Features" column count.
+  "specification.created",
 ];
 
 export interface UseCaseDashboardDeps {
   useCaseService: UseCaseService;
+  // Wave F insight: the Feature listing powers the per-Use-Case "Features"
+  // column (count by the ADR-0012 filename back-reference).
+  specificationService: Pick<SpecificationService, "listFeatures">;
   workspace: WorkspacePort;
   eventBus: EventBus;
   // Shared run-launch surface (Wave B): the per-row Run button starts a
@@ -86,13 +92,18 @@ export class UseCaseDashboardView extends ItemView {
       .createEl("button", { text: "New Use Case", cls: "mod-cta" })
       .addEventListener("click", () => this.deps.onCreate());
 
-    const result = await this.deps.useCaseService.findAll();
+    const [result, listed] = await Promise.all([
+      this.deps.useCaseService.findAll(),
+      this.deps.specificationService.listFeatures(),
+    ]);
     if (!result.ok) {
       container.createEl("p", { text: `Could not load Use Cases: ${result.error.message}` });
       return;
     }
 
-    const rows = projectUseCaseRows(result.value);
+    // A failed Feature listing degrades the "Features" column to "—" (unknown)
+    // rather than hiding the whole explorer — the listing is insight, not data.
+    const rows = projectUseCaseRows(result.value, listed.ok ? listed.value : null);
     if (rows.length === 0) {
       container.createEl("p", { text: "No Use Cases yet. Create one to get started." });
       return;
@@ -100,7 +111,7 @@ export class UseCaseDashboardView extends ItemView {
 
     const table = container.createEl("table", { cls: "e2e-test-hub-uc-table" });
     const headRow = table.createEl("thead").createEl("tr");
-    for (const label of ["ID", "Title", "Status", "Automation", "Note", "Run"]) {
+    for (const label of ["ID", "Title", "Status", "Automation", "Features", "Note", "Run"]) {
       // scope="col" ties each header to its column for screen-reader tables.
       headRow.createEl("th", { text: label, attr: { scope: "col" } });
     }
@@ -122,6 +133,21 @@ export class UseCaseDashboardView extends ItemView {
       tr.createEl("td", { text: row.title });
       tr.createEl("td", { text: row.status });
       tr.createEl("td", { text: row.automationStatus });
+      // Wave F insight: Feature Specification count per Use Case, warning-
+      // accented at 0 so a spec gap is visible without opening anything.
+      const featuresCell = featureCountCell(row.featureCount);
+      const featuresTd = tr.createEl("td", {
+        text: featuresCell.text,
+        cls: "e2e-test-hub-uc-features",
+        attr: {
+          "aria-label":
+            row.featureCount === null
+              ? `Feature Specifications for ${row.id} could not be listed`
+              : `${row.featureCount} Feature Specification${row.featureCount === 1 ? "" : "s"}`,
+        },
+      });
+      if (featuresCell.tooltip !== null) featuresTd.setAttr("title", featuresCell.tooltip);
+      if (featuresCell.status !== null) featuresTd.dataset.status = featuresCell.status;
       const note = tr.createEl("td").createEl("button", {
         text: "Note",
         cls: "e2e-test-hub-link-button",

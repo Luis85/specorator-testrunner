@@ -1,5 +1,6 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
+import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SpecificationService } from "../../application/services/specification-service";
 import type { StepDefinitionService } from "../../application/services/step-definition-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
@@ -11,6 +12,7 @@ import { type ChecklistRow } from "../settings/settings-rows";
 import type { RunLauncher } from "../run/run-launcher";
 import { RenderScheduler } from "./render-scheduler";
 import {
+  featureHealthLine,
   featureValidationRows,
   missingStepsRows,
   projectFeatureRows,
@@ -59,6 +61,9 @@ export interface UseCaseDetailDeps {
     "listFeatures" | "validate" | "detectMissingSteps"
   >;
   stepDefinitionService: Pick<StepDefinitionService, "generate">;
+  // Wave F insight: per-Feature health (scenario count, @wip work, the
+  // feature-level @wip badge) rendered as a muted line on each Feature row.
+  featureInsight: Pick<FeatureInsightService, "healthFor">;
   workspace: WorkspacePort;
   eventBus: EventBus;
   // Shared run-launch surface (Wave B): the "Run Use Case" / per-feature "Run"
@@ -242,6 +247,11 @@ export class UseCaseDetailView extends ItemView {
     });
 
     const actions = head.createDiv({ cls: "e2e-test-hub-uc-detail-feature-actions" });
+    // Wave F insight: a muted per-Feature health line ("N scenarios (M @wip)" +
+    // the feature-level @wip badge). Filled asynchronously (fire-and-forget)
+    // so the action buttons render immediately; :empty CSS hides it until then.
+    const healthEl = featureEl.createDiv({ cls: "e2e-test-hub-uc-detail-feature-health" });
+    void this.renderFeatureHealth(row.path, healthEl);
     // A per-feature result area below the action buttons: validate / detect /
     // generate render their outcome here INLINE (not just a Notice), reusing the
     // wizard's ✓/✗/! checklist vocabulary so every inline surface reads alike.
@@ -281,6 +291,29 @@ export class UseCaseDetailView extends ItemView {
       "Generate step definitions",
       `Generate step definitions for ${row.label}`,
     ).addEventListener("click", () => void this.generateStepDefinitions(row.path, resultEl));
+  }
+
+  /**
+   * Wave F: fills a Feature row's muted health line from FeatureInsightService.
+   * Read+parse-per-render is cheap (features are small, matching how
+   * traceability works); an unreadable/unparseable Feature leaves the line
+   * empty (the Validate action is the place that explains why).
+   */
+  private async renderFeatureHealth(featurePath: VaultPath, healthEl: HTMLElement): Promise<void> {
+    const health = await this.deps.featureInsight.healthFor(featurePath);
+    // An event-driven re-render may have replaced the row while we awaited —
+    // writing into the detached node would be invisible (same guard as
+    // renderChecklist).
+    if (!health.ok || !healthEl.isConnected) return;
+    const line = featureHealthLine(health.value);
+    healthEl.createSpan({ text: line.text });
+    if (line.wipBadge) {
+      healthEl.createSpan({
+        cls: "e2e-test-hub-wip-badge",
+        text: "@wip",
+        attr: { title: line.wipTooltip, "aria-label": line.wipTooltip },
+      });
+    }
   }
 
   /** UC-007: validate the chosen Feature and render the outcome inline. */

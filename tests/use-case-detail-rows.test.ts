@@ -7,6 +7,7 @@ import type {
 import type { GenerateStepDefinitionsResult } from "../src/application/services/step-definition-service";
 import type { UseCase } from "../src/domain/entities/use-case";
 import {
+  featureHealthLine,
   featureValidationRows,
   missingStepsRows,
   projectFeatureRows,
@@ -73,6 +74,35 @@ describe("projectFeatureRows", () => {
       entry("Features/UC-001-a.feature"),
     ]);
     expect(rows.map((r) => r.label)).toEqual(["UC-001-b.feature", "UC-001-a.feature"]);
+  });
+});
+
+describe("featureHealthLine (Wave F)", () => {
+  const health = (over: Partial<Parameters<typeof featureHealthLine>[0]> = {}) => ({
+    path: vp("Features/UC-001-happy-path.feature"),
+    scenarioCount: 3,
+    wipScenarioCount: 0,
+    featureIsWip: false,
+    ...over,
+  });
+
+  it("phrases the scenario count, singular and plural", () => {
+    expect(featureHealthLine(health()).text).toBe("3 scenarios");
+    expect(featureHealthLine(health({ scenarioCount: 1 })).text).toBe("1 scenario");
+    expect(featureHealthLine(health({ scenarioCount: 0 })).text).toBe("0 scenarios");
+  });
+
+  it("appends the @wip count only when scenario-level @wip work exists", () => {
+    expect(featureHealthLine(health({ wipScenarioCount: 2 })).text).toBe("3 scenarios (2 @wip)");
+    expect(featureHealthLine(health({ wipScenarioCount: 0 })).text).toBe("3 scenarios");
+  });
+
+  it("renders the feature-level @wip badge with the ADR-0017 exclusion tooltip", () => {
+    const line = featureHealthLine(health({ featureIsWip: true }));
+    expect(line.wipBadge).toBe(true);
+    expect(line.wipTooltip).toContain("excluded from the KPI roll-up");
+    expect(line.wipTooltip).toContain("ADR-0017");
+    expect(featureHealthLine(health()).wipBadge).toBe(false);
   });
 });
 

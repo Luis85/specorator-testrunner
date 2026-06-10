@@ -1,16 +1,27 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
+import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SuiteService } from "../../application/services/suite-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
 import { RenderScheduler } from "./render-scheduler";
-import { projectSuiteRows } from "./suite-rows";
+import { projectSuiteRows, scenarioCountCell } from "./suite-rows";
 
 export const SUITE_VIEW_TYPE = "e2e-test-hub-suites";
 
-/** Suite events that should refresh the live list (US-024/US-025). */
-const REFRESH_ON: DomainEventType[] = ["suite.created", "suite.updated", "suite.deleted"];
+/**
+ * Suite events that should refresh the live list (US-024/US-025), plus the
+ * Feature lifecycle events (Wave F): a created/edited Feature changes which
+ * scenarios a Tag Expression matches, so the "Scenarios" column re-counts.
+ */
+const REFRESH_ON: DomainEventType[] = [
+  "suite.created",
+  "suite.updated",
+  "suite.deleted",
+  "specification.created",
+  "specification.updated",
+];
 
 export interface SuiteDashboardDeps {
   suiteService: SuiteService;
@@ -19,6 +30,9 @@ export interface SuiteDashboardDeps {
   // Shared run-launch surface (Wave B): the per-row Run button starts a
   // suite-scoped run through the same launcher the command palette uses.
   runLauncher: Pick<RunLauncher, "launch">;
+  // Wave F insight: evaluates a suite's Tag Expression against every Feature's
+  // scenarios so the "Scenarios" column shows the actual matched count.
+  featureInsight: Pick<FeatureInsightService, "countMatchingScenarios">;
   onCreate: () => void;
 }
 
@@ -92,7 +106,7 @@ export class SuiteDashboardView extends ItemView {
 
     const table = container.createEl("table", { cls: "e2e-test-hub-suite-table" });
     const headRow = table.createEl("thead").createEl("tr");
-    for (const label of ["Name", "ID", "Tag Expression", "Run"]) {
+    for (const label of ["Name", "ID", "Tag Expression", "Scenarios", "Run"]) {
       // scope="col" ties each header to its column for screen-reader tables.
       headRow.createEl("th", { text: label, attr: { scope: "col" } });
     }
@@ -110,6 +124,19 @@ export class SuiteDashboardView extends ItemView {
       });
       tr.createEl("td", { text: row.id });
       tr.createEl("td", { text: row.tagExpression });
+      // Wave F insight: how many scenarios this Tag Expression actually
+      // matches (effective tags, so feature-level tags count). Read+parse per
+      // render is cheap (features are small) and matches how traceability
+      // derives automation status. The projection is pure (scenarioCountCell).
+      const counted = await this.deps.featureInsight.countMatchingScenarios(row.tagExpression);
+      const cell = scenarioCountCell(counted);
+      const scenariosTd = tr.createEl("td", {
+        text: cell.text,
+        cls: "e2e-test-hub-suite-scenarios",
+        attr: { "aria-label": cell.ariaLabel },
+      });
+      if (cell.tooltip !== null) scenariosTd.setAttr("title", cell.tooltip);
+      if (cell.status !== null) scenariosTd.dataset.status = cell.status;
       // Per-row Run button (Wave B): launches a suite-scoped run via the shared
       // launcher, which reveals the Test Console first so output streams in.
       const run = tr.createEl("td").createEl("button", {

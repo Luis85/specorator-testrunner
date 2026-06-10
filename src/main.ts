@@ -26,6 +26,10 @@ import {
   type EvidenceGenerationService,
 } from "./application/services/evidence-generation-service";
 import {
+  DefaultFeatureInsightService,
+  type FeatureInsightService,
+} from "./application/services/feature-insight-service";
+import {
   DefaultReportImportService,
   type ReportImportService,
 } from "./application/services/report-import-service";
@@ -107,6 +111,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private pipelineService!: PipelineGenerationService;
   private useCaseService!: UseCaseService;
   private specificationService!: SpecificationService;
+  // Wave F insight: read-only scenario/tag queries (Tag Expression match
+  // counts, per-Feature health) shared by the suites explorer, the
+  // CreateSuiteModal preview, and the Use Case detail view.
+  private featureInsightService!: FeatureInsightService;
   private stepDefinitionService!: StepDefinitionService;
   private suiteService!: SuiteService;
   private testExecutionService!: TestExecutionService;
@@ -250,6 +258,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    // Wave F insight: composes listFeatures (discovery stays defined once) with
+    // the shared Gherkin parser to answer "how many scenarios does this Tag
+    // Expression match?" and "how healthy is this Feature?" for the views.
+    this.featureInsightService = new DefaultFeatureInsightService(this.specificationService, vault);
     // UC-010 / RV-4: generate step-definition stubs for a feature's undefined
     // steps. Writes via the same VaultFileSystem + `.testrunner/src/steps` path
     // that detectMissingSteps reads from, so a stub is picked up next detection.
@@ -331,6 +343,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       (leaf) =>
         new UseCaseDashboardView(leaf, {
           useCaseService: this.useCaseService,
+          specificationService: this.specificationService,
           workspace: this.workspaceAdapter,
           eventBus,
           runLauncher: this.runLauncher,
@@ -352,6 +365,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           useCaseService: this.useCaseService,
           specificationService: this.specificationService,
           stepDefinitionService: this.stepDefinitionService,
+          featureInsight: this.featureInsightService,
           workspace: this.workspaceAdapter,
           eventBus,
           runLauncher: this.runLauncher,
@@ -376,6 +390,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           workspace: this.workspaceAdapter,
           eventBus,
           runLauncher: this.runLauncher,
+          featureInsight: this.featureInsightService,
           onCreate: () => this.openCreateSuite(),
         }),
     );
@@ -563,6 +578,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     new CreateSuiteModal(this.app, {
       suiteService: this.suiteService,
       workspace: this.workspaceAdapter,
+      featureInsight: this.featureInsightService,
     }).open();
   }
 

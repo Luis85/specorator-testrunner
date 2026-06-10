@@ -1,4 +1,5 @@
 import { useCaseIdFromPath } from "../../application/content/gherkin";
+import type { FeatureHealth } from "../../application/services/feature-insight-service";
 import type {
   FeatureFileEntry,
   MissingStepResult,
@@ -63,6 +64,31 @@ export const projectFeatureRows = (
   features
     .filter((feature) => useCaseIdFromPath(feature.path) === useCaseId)
     .map((feature) => ({ path: feature.path, label: feature.label }));
+
+/** The muted per-Feature health line (Wave F insight). */
+export interface FeatureHealthLine {
+  /** e.g. "3 scenarios" or "3 scenarios (1 @wip)". */
+  text: string;
+  /** The Feature itself is tagged @wip — render the badge. */
+  wipBadge: boolean;
+  /** Tooltip for the badge, naming the ADR-0017 KPI exclusion. */
+  wipTooltip: string;
+}
+
+/**
+ * Pure projection of a Feature's {@link FeatureHealth} to the muted info line
+ * each Feature row shows (Wave F): scenario count, the scenario-level @wip
+ * count when any, and whether to render the feature-level @wip badge.
+ */
+export const featureHealthLine = (health: FeatureHealth): FeatureHealthLine => {
+  const scenarios = `${health.scenarioCount} ${health.scenarioCount === 1 ? "scenario" : "scenarios"}`;
+  const wip = health.wipScenarioCount > 0 ? ` (${health.wipScenarioCount} @wip)` : "";
+  return {
+    text: `${scenarios}${wip}`,
+    wipBadge: health.featureIsWip,
+    wipTooltip: "This Feature is tagged @wip and is excluded from the KPI roll-up (ADR-0017).",
+  };
+};
 
 /**
  * Maps a Feature validation result to checklist rows: a single ✓ row when the
