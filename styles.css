@@ -247,13 +247,33 @@
   color: var(--text-muted);
 }
 
+/* NOT --background-modifier-error: that's a saturated red, and --text-error on
+ * it is red-on-red — the wizard's failure box rendered as an unreadable solid
+ * block (testvault bug report). Subtle background + error border + error text
+ * stays readable in light and dark themes. */
 .e2e-test-hub-error {
   margin: var(--size-4-3, 12px) 0;
   padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
   border-left: 4px solid var(--text-error);
   border-radius: var(--radius-s, 4px);
-  background-color: var(--background-modifier-error);
+  background-color: var(--background-secondary);
   color: var(--text-error);
+}
+
+/* The failing child process's stderr tail inside the wizard failure box: the
+ * actual reason (npm/network/loader errors) without opening the dev console. */
+.e2e-test-hub-error-output {
+  margin: var(--size-4-2, 8px) 0 0;
+  padding: var(--size-4-2, 8px);
+  max-height: 14em;
+  overflow: auto;
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-primary-alt);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller, 0.8125rem);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ── Settings (TestHubSettingTab — SUT environments, maintenance, CI) ─────── */
@@ -291,7 +311,9 @@
   padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
   border-left: 4px solid var(--text-error);
   border-radius: var(--radius-s, 4px);
-  background-color: var(--background-modifier-error);
+  /* Same red-on-red fix as .e2e-test-hub-error: --background-modifier-error
+   * makes --text-error unreadable. */
+  background-color: var(--background-secondary);
   color: var(--text-error);
   font-size: var(--font-ui-small, 0.875rem);
 }

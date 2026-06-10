@@ -180,15 +180,25 @@ const fakeSpawn = () => {
 };
 
 describe("buildCmdShimCommandLine (pure cmd /s /c composition)", () => {
-  it("quotes each token and wraps the joined line in one outer quote pair", () => {
-    // The documented `cmd /s /c ""x" "y""` form: per-token quotes inside, plus an
-    // outer pair `/s` strips so the inner argv boundaries survive.
-    expect(buildCmdShimCommandLine(["npm", "run", "test"])).toBe('""npm" "run" "test""');
+  it("leaves a bare program name UNQUOTED and quotes every argument", () => {
+    // REGRESSION (testvault install failure): a QUOTED bare name ("npm")
+    // keeps %0 as the literal `"npm"`, so %~dp0 inside npm.cmd resolves
+    // against the CWD — npm dies with `Cannot find module
+    // '<cwd>\\node_modules\\npm\\bin\\npm-prefix.js'` (exit 1). Unquoted, cmd
+    // resolves via PATH and rewrites %0 to the full script path.
+    expect(buildCmdShimCommandLine(["npm", "run", "test"])).toBe('"npm "run" "test""');
+    expect(buildCmdShimCommandLine(["npm", "install"])).toBe('"npm "install""');
   });
 
-  it("keeps spaces and cmd metacharacters literal inside the quotes", () => {
+  it("quotes a program PATH that needs it (spaces) — %0 then carries the directory", () => {
+    expect(buildCmdShimCommandLine(["C:\\node js\\npm.cmd", "install"])).toBe(
+      '""C:\\node js\\npm.cmd" "install""',
+    );
+  });
+
+  it("keeps spaces and cmd metacharacters literal inside the argument quotes", () => {
     expect(buildCmdShimCommandLine(["npm", "run", "test -- --tags @a and @b"])).toBe(
-      '""npm" "run" "test -- --tags @a and @b""',
+      '"npm "run" "test -- --tags @a and @b""',
     );
   });
 });
@@ -220,12 +230,12 @@ describe("NodeChildProcessRunner (win32 cmd-shim path, injected platform)", () =
     // cmd.exe (or %ComSpec%) launched with the documented /d /s /c flags…
     expect(call.command).toMatch(/cmd(\.exe)?$/i);
     expect(call.args.slice(0, 3)).toEqual(["/d", "/s", "/c"]);
-    // …and the final arg is the pure builder's output: each token quoted, the
-    // whole line wrapped in one outer quote pair.
+    // …and the final arg is the pure builder's output: bare program unquoted
+    // (npm.cmd %~dp0), each ARGUMENT quoted, one outer wrapping quote pair.
     expect(call.args[3]).toBe(
       buildCmdShimCommandLine(["npm", "run", "test", "--", "--tags", "@smoke and not @wip"]),
     );
-    expect(call.args[3]).toBe('""npm" "run" "test" "--" "--tags" "@smoke and not @wip""');
+    expect(call.args[3]).toBe('"npm "run" "test" "--" "--tags" "@smoke and not @wip""');
     // Verbatim args so Node doesn't re-quote our hand-built command line.
     expect((call.options as { windowsVerbatimArguments?: boolean }).windowsVerbatimArguments).toBe(
       true,
@@ -248,3 +258,27 @@ describe("NodeChildProcessRunner (win32 cmd-shim path, injected platform)", () =
     expect(calls[0].args).toEqual(["-v", "%KEEP%"]);
   });
 });
+
+// Runs ONLY on the windows-latest CI leg: a REAL cmd.exe + npm.cmd through the
+// composed shim line. This is the test that would have caught the testvault
+// install failure — a QUOTED bare "npm" broke %~dp0 inside npm.cmd, which then
+// looked for npm-prefix.js/npm-cli.js under the CWD and exited 1. The win32
+// unit tests above use a fake spawn, so only a real spawn proves the shim
+// composition against the actual cmd quoting rules.
+describe.skipIf(process.platform !== "win32")(
+  "NodeChildProcessRunner (real spawn, Windows cmd shim)",
+  () => {
+    it("runs npm --version via the cmd shim from a cwd that has no npm", async () => {
+      const runner = new NodeChildProcessRunner();
+      // A cwd WITHOUT node_modules/npm: with the broken quoting, npm.cmd's
+      // %~dp0 pointed here and npm died with MODULE_NOT_FOUND (exit 1).
+      const result = await runner.run({ args: ["npm", "--version"], cwd: process.cwd() });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.stderr).not.toContain("npm-prefix.js");
+      expect(result.value.exitCode).toBe(0);
+      expect(result.value.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+    }, 60000);
+  },
+);
