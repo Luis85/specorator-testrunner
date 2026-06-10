@@ -626,6 +626,35 @@ describe("DefaultSettingsService — structural repair of tampered sut shapes", 
     expect(loaded.sut).toEqual(DEFAULT_SETTINGS.sut);
   });
 
+  it.each([
+    { prod: { baseUrl: 42 }, staging: { baseUrl: "https://staging.test" } }, // record, bad baseUrl
+    { prod: null, staging: { baseUrl: "https://staging.test" } }, // non-record entry
+  ])(
+    "load() repoints sut.active to a survivor when the repair dropped the active entry (PR #18 review)",
+    async (environments) => {
+      const { service, logger } = makeService({ sut: { active: "prod", environments } });
+      const loaded = await service.load();
+      // "prod" existed in data.json but was dropped as malformed; a dangling
+      // active would make runEnv() silently execute with an empty env.
+      expect(loaded.sut.active).toBe("staging");
+      expect(loaded.sut.environments.staging).toEqual({ baseUrl: "https://staging.test" });
+      expect(JSON.stringify(logger.error.mock.calls)).toContain("prod");
+    },
+  );
+
+  it("load() leaves a user-authored dangling sut.active alone for validate() to flag", async () => {
+    const { service } = makeService({
+      sut: { active: "ghost", environments: { staging: { baseUrl: "https://staging.test" } } },
+    });
+    const loaded = await service.load();
+    // "ghost" never existed in the environments map — that dangle is the
+    // user's data, not repair damage, so it is surfaced (settings UI marks it
+    // "(missing)") rather than silently rewritten.
+    expect(loaded.sut.active).toBe("ghost");
+    const validation = await service.validate(loaded);
+    expect(validation.errors.some((e) => e.field === "sut.active")).toBe(true);
+  });
+
   it("load() repairs a non-string sut.active to the default", async () => {
     const { service } = makeService({
       sut: { active: 7, environments: { demo: { baseUrl: "http://localhost" } } },

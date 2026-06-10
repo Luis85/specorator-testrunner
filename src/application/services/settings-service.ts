@@ -234,8 +234,11 @@ export class DefaultSettingsService implements SettingsService {
    *    VALUE → that entry dropped (the subprocess env requires string values;
    *    only the KEY is logged — the value may be a credential, ADR-0019);
    *  - an emptied map or a non-string `active` → the defaults, so startup
-   *    always has an addressable active environment. (An `active` string that
-   *    points at a missing environment is left for validate() to flag.)
+   *    always has an addressable active environment;
+   *  - an `active` whose entry existed but was dropped by THIS repair →
+   *    repointed to a surviving environment (PR #18 review: a repair-made
+   *    dangle would silently run with an empty env). An `active` string naming
+   *    an entry that never existed is left for validate() to flag.
    */
   private repairSutShape(sut: TestHubSettings["sut"]): TestHubSettings["sut"] {
     if (!isPlainRecord(sut.environments)) {
@@ -315,6 +318,23 @@ export class DefaultSettingsService implements SettingsService {
         : Object.keys(environments)[0];
       this.logger.error(
         `Configured "sut.active" is not a string; falling back to ${JSON.stringify(active)}.`,
+        undefined,
+        { value: sut.active, fallback: active },
+      );
+      return { active, environments };
+    }
+    if (!environments[sut.active] && sut.active in sut.environments) {
+      // The active environment EXISTED in data.json but THIS repair just
+      // dropped it as malformed (PR #18 review). Leaving the dangle would make
+      // runEnv() silently execute with an empty env (no BASE_URL, no auth), so
+      // repoint to a surviving environment exactly like the non-string repair
+      // above. (An active naming an entry that never existed stays as-is for
+      // validate() to flag — that dangle is user-authored, not repair-made.)
+      const active = environments[DEFAULT_SETTINGS.sut.active]
+        ? DEFAULT_SETTINGS.sut.active
+        : Object.keys(environments)[0];
+      this.logger.error(
+        `Configured "sut.active" pointed at the malformed environment ${JSON.stringify(sut.active)} that was just dropped; falling back to ${JSON.stringify(active)}.`,
         undefined,
         { value: sut.active, fallback: active },
       );
