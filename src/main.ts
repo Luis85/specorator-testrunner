@@ -92,6 +92,14 @@ import {
 } from "./presentation/views/use-case-detail-view";
 import { generateFeatureForUseCase } from "./presentation/views/generate-feature-modal";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
+import {
+  DefaultRunHistoryService,
+  type RunHistoryService,
+} from "./application/services/run-history-service";
+import {
+  EVIDENCE_EXPLORER_VIEW_TYPE,
+  EvidenceExplorerView,
+} from "./presentation/views/evidence-explorer-view";
 import { InMemoryEventBus } from "./shared/event-bus/event-bus";
 import { ConsoleLogger } from "./shared/logging/logger";
 import type { Result } from "./shared/result/result";
@@ -127,6 +135,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private reportImportService!: ReportImportService;
   private evidenceGenerationService!: EvidenceGenerationService;
   private traceabilityService!: TraceabilityService;
+  private runHistoryService!: RunHistoryService;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
   // In-process post-run flow (P2-1/P2-6/P2-7). Subscribes to the EN-2 terminal
   // run events and runs import→evidence→dashboard-refresh, owning the `lastRun`
@@ -326,6 +335,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    this.runHistoryService = new DefaultRunHistoryService(
+      this.hubSettingsService,
+      vault,
+      this.logger,
+    );
 
     // After a run reaches a terminal state (EN-2), the coordinator reacts to the
     // bus event and runs import → evidence → dashboard refresh for the just-
@@ -449,6 +463,17 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
             names: Object.keys(this.hubSettings.sut.environments),
           }),
           switchEnvironment: (name) => this.switchEnvironment(name),
+          openEvidenceExplorer: () =>
+            void this.workspaceAdapter.openView(EVIDENCE_EXPLORER_VIEW_TYPE),
+        }),
+    );
+    this.registerView(
+      EVIDENCE_EXPLORER_VIEW_TYPE,
+      (leaf) =>
+        new EvidenceExplorerView(leaf, {
+          runHistory: this.runHistoryService,
+          eventBus,
+          openEvidence: (path) => this.openEvidenceNote(path),
         }),
     );
 
@@ -484,6 +509,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       "gauge",
       "Open Test Hub Dashboard",
       () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
+    );
+    this.addRibbonIcon(
+      "history",
+      "Open Evidence Explorer",
+      () => void this.workspaceAdapter.openView(EVIDENCE_EXPLORER_VIEW_TYPE),
     );
 
     // Command-palette surface (P2-7): the command bodies live in

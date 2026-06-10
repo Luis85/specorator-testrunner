@@ -81,6 +81,9 @@ export interface DashboardViewDeps {
   openConsole: () => void | Promise<void>;
   // Wave C §3: open the Evidence note a recent-run row links to.
   openEvidence: (path: VaultPath) => void | Promise<void>;
+  // EPIC-008: the Recent Runs header links into the full history explorer
+  // (Recent Runs shows only the latest run per Use Case).
+  openEvidenceExplorer: () => void | Promise<void>;
   // Wave C §2: the active environment + the full list, read fresh each render
   // so a switch (persisted via switchEnvironment) repaints with the new active.
   getEnvironments: () => { active: string; names: string[] };
@@ -231,6 +234,15 @@ export class DashboardView extends ItemView {
 
     // Recent runs (US-038).
     container.createEl("h3", { text: "Recent Runs" });
+    container
+      .createEl("button", {
+        text: "View all runs",
+        cls: "e2e-test-hub-doc-button",
+        attr: { "aria-label": "Open the Evidence Explorer with the full run history" },
+      })
+      .addEventListener("click", () => {
+        void this.deps.openEvidenceExplorer();
+      });
     if (view.recentRuns.length === 0) {
       container.createEl("p", { text: "No Test Runs yet. Run a Test Suite to see results here." });
       return;
