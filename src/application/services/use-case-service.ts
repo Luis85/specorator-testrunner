@@ -238,8 +238,14 @@ export class DefaultUseCaseService implements UseCaseService {
       // create() writes the body H1 as `# <id> <title>`; mirror that exact
       // format on retitle so heading and frontmatter don't drift. Only the
       // FIRST matching H1 is touched (no /g): hand-written headings stay.
+      // The replacement is a FUNCTION so a title containing `$&`/`$$`/`$1`
+      // is inserted literally instead of being interpreted as a
+      // String.replace substitution pattern (review: data corruption).
       const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      content = content.replace(new RegExp(`^# ${escapedId} .*$`, "m"), `# ${id} ${nextTitle}`);
+      content = content.replace(
+        new RegExp(`^# ${escapedId} .*$`, "m"),
+        () => `# ${id} ${nextTitle}`,
+      );
     }
     const written = await this.fs.writeFile(existing.path, content);
     if (!written.ok) return err(written.error);

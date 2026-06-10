@@ -152,6 +152,52 @@ describe("DefaultFeatureInsightService.countMatchingScenarios", () => {
   });
 });
 
+describe("DefaultFeatureInsightService.scenarioCounter", () => {
+  const makeCounting = (files: Record<string, string>) => {
+    const fs = new FakeVaultFileSystem();
+    for (const [path, content] of Object.entries(files)) fs.files.set(path, content);
+    const lister = listFeaturesFrom(fs);
+    let listCalls = 0;
+    const counting = {
+      listFeatures: () => {
+        listCalls += 1;
+        return lister.listFeatures();
+      },
+    };
+    return { service: new DefaultFeatureInsightService(counting, fs), calls: () => listCalls };
+  };
+
+  it("loads the corpus ONCE for many expressions (review: was O(suites × features))", async () => {
+    const { service, calls } = makeCounting({
+      [`${FEATURES_DIR}/UC-001-login.feature`]: SMOKE_FEATURE,
+      [`${FEATURES_DIR}/UC-002-demo.feature`]: DEMO_FEATURE,
+    });
+
+    const counter = await service.scenarioCounter();
+    expect(counter.ok).toBe(true);
+    if (!counter.ok) return;
+
+    // One suites-explorer render: many suite rows, one corpus load.
+    expect(counter.value("@smoke")).toEqual(ok(3));
+    expect(counter.value("@smoke and not @wip")).toEqual(ok(2));
+    expect(counter.value("@demo")).toEqual(ok(1));
+    expect(calls()).toBe(1);
+  });
+
+  it("reports a malformed expression per call without failing the counter", async () => {
+    const { service } = makeCounting({
+      [`${FEATURES_DIR}/UC-001-login.feature`]: SMOKE_FEATURE,
+    });
+    const counter = await service.scenarioCounter();
+    expect(counter.ok).toBe(true);
+    if (!counter.ok) return;
+    const malformed = counter.value("@a and");
+    expect(malformed.ok).toBe(false);
+    // The same counter still answers well-formed expressions afterwards.
+    expect(counter.value("@smoke")).toEqual(ok(2));
+  });
+});
+
 describe("DefaultFeatureInsightService.healthFor", () => {
   it("projects scenario count, @wip work, and the feature-level @wip flag", async () => {
     const path = `${FEATURES_DIR}/UC-001-login.feature`;

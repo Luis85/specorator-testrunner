@@ -84,6 +84,15 @@ export const countMatchingScenariosInFeature = (
     matchesTags(expression, effectiveScenarioTags(feature, scenario)),
   ).length;
 
+/**
+ * Counts the scenarios a Tag Expression matches against an ALREADY-LOADED
+ * Feature corpus, synchronously. Obtained from
+ * {@link FeatureInsightService.scenarioCounter} so callers evaluating MANY
+ * expressions (the suites explorer renders one count per suite) pay the
+ * list+read+parse cost once per render, not once per row.
+ */
+export type ScenarioCounter = (tagExpression: string) => Result<number>;
+
 export interface FeatureInsightService {
   /**
    * Evaluates `tagExpression` against every scenario of every `.feature` file
@@ -91,9 +100,18 @@ export interface FeatureInsightService {
    * total. A malformed expression returns the parse error (VALIDATION_FAILED)
    * so callers can surface it verbatim. Best-effort over the corpus:
    * unreadable or unparseable Feature files are skipped, matching how
-   * TraceabilityService derives automation status.
+   * TraceabilityService derives automation status. For a SINGLE expression
+   * (e.g. the CreateSuiteModal preview); evaluating many expressions should
+   * go through {@link scenarioCounter} instead.
    */
   countMatchingScenarios(tagExpression: string): Promise<Result<number>>;
+  /**
+   * Loads + parses the Feature corpus ONCE and returns a synchronous
+   * {@link ScenarioCounter} over it (review: the per-row variant made the
+   * suites explorer re-read every Feature file once PER SUITE per render —
+   * O(suites × features) I/O on every event-driven re-render).
+   */
+  scenarioCounter(): Promise<Result<ScenarioCounter>>;
   /** Reads + parses one Feature file and projects its {@link FeatureHealth}. */
   healthFor(featurePath: VaultPath): Promise<Result<FeatureHealth>>;
 }
@@ -105,21 +123,36 @@ export class DefaultFeatureInsightService implements FeatureInsightService {
   ) {}
 
   async countMatchingScenarios(tagExpression: string): Promise<Result<number>> {
+    // Cheap pre-check so a malformed expression never costs a corpus load.
     const parsed = parseTagExpression(tagExpression);
     if (!parsed.ok) return err(parsed.error);
+    const counter = await this.scenarioCounter();
+    if (!counter.ok) return err(counter.error);
+    return counter.value(tagExpression);
+  }
 
+  async scenarioCounter(): Promise<Result<ScenarioCounter>> {
     const listed = await this.specifications.listFeatures();
     if (!listed.ok) return err(listed.error);
 
-    let total = 0;
+    const features: FeatureSpecification[] = [];
     for (const entry of listed.value) {
       const read = await this.fs.readFile(entry.path);
       if (!read.ok) continue; // best-effort: skip unreadable files
       const feature = parseFeature(read.value, entry.path);
       if (feature === null) continue; // not valid Gherkin — skip
-      total += countMatchingScenariosInFeature(parsed.value, feature);
+      features.push(feature);
     }
-    return ok(total);
+
+    return ok((tagExpression: string): Result<number> => {
+      const parsed = parseTagExpression(tagExpression);
+      if (!parsed.ok) return err(parsed.error);
+      let total = 0;
+      for (const feature of features) {
+        total += countMatchingScenariosInFeature(parsed.value, feature);
+      }
+      return ok(total);
+    });
   }
 
   async healthFor(featurePath: VaultPath): Promise<Result<FeatureHealth>> {

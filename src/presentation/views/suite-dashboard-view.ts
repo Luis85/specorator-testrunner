@@ -32,7 +32,7 @@ export interface SuiteDashboardDeps {
   runLauncher: Pick<RunLauncher, "launch">;
   // Wave F insight: evaluates a suite's Tag Expression against every Feature's
   // scenarios so the "Scenarios" column shows the actual matched count.
-  featureInsight: Pick<FeatureInsightService, "countMatchingScenarios">;
+  featureInsight: Pick<FeatureInsightService, "scenarioCounter">;
   onCreate: () => void;
 }
 
@@ -111,6 +111,13 @@ export class SuiteDashboardView extends ItemView {
       headRow.createEl("th", { text: label, attr: { scope: "col" } });
     }
 
+    // Wave F insight, batched (review): load + parse the Feature corpus ONCE
+    // per render and count per suite synchronously — the per-row variant
+    // re-read every Feature file once PER SUITE (O(suites × features) I/O on
+    // every event-driven re-render). A corpus-load failure degrades every
+    // row's cell the same way a per-row failure did.
+    const counter = await this.deps.featureInsight.scenarioCounter();
+
     const body = table.createEl("tbody");
     for (const row of rows) {
       const tr = body.createEl("tr");
@@ -124,12 +131,10 @@ export class SuiteDashboardView extends ItemView {
       });
       tr.createEl("td", { text: row.id });
       tr.createEl("td", { text: row.tagExpression });
-      // Wave F insight: how many scenarios this Tag Expression actually
-      // matches (effective tags, so feature-level tags count). Read+parse per
-      // render is cheap (features are small) and matches how traceability
-      // derives automation status. The projection is pure (scenarioCountCell).
-      const counted = await this.deps.featureInsight.countMatchingScenarios(row.tagExpression);
-      const cell = scenarioCountCell(counted);
+      // How many scenarios this Tag Expression actually matches (effective
+      // tags, so feature-level tags count). The projection is pure
+      // (scenarioCountCell); a malformed expression surfaces its parse error.
+      const cell = scenarioCountCell(counter.ok ? counter.value(row.tagExpression) : counter);
       const scenariosTd = tr.createEl("td", {
         text: cell.text,
         cls: "e2e-test-hub-suite-scenarios",

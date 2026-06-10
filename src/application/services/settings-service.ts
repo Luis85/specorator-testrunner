@@ -323,7 +323,9 @@ export class DefaultSettingsService implements SettingsService {
       );
       return { active, environments };
     }
-    if (!environments[sut.active] && sut.active in sut.environments) {
+    // Object.hasOwn (not `in`): an environment named "constructor"/"toString"
+    // would hit the prototype chain with `in` and misreport as repair-dropped.
+    if (!environments[sut.active] && Object.hasOwn(sut.environments, sut.active)) {
       // The active environment EXISTED in data.json but THIS repair just
       // dropped it as malformed (PR #18 review). Leaving the dangle would make
       // runEnv() silently execute with an empty env (no BASE_URL, no auth), so

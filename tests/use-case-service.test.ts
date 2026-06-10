@@ -332,6 +332,28 @@ describe("DefaultUseCaseService", () => {
       expect(note).toContain("owner: po-team");
     });
 
+    it("inserts a title containing $-substitution patterns literally into the H1", async () => {
+      const { service, fs } = build();
+      const path = "Use Cases/UC-003 Old.md";
+      fs.files.set(
+        path,
+        buildNote(
+          { type: "use-case", id: "UC-003", title: "Old", status: "draft" },
+          "# UC-003 Old",
+        ),
+      );
+
+      // `$&` / `$$` / `$1` are String.replace substitution tokens — a string
+      // replacement would expand them (`$&` re-inserts the whole old heading,
+      // corrupting the note). The function replacement must keep them literal.
+      const result = await service.updateMetadata("UC-003", { title: "Cost: $& or $$5 ($1)" });
+
+      expect(result.ok).toBe(true);
+      const note = fs.files.get(path) ?? "";
+      expect(note).toContain("# UC-003 Cost: $& or $$5 ($1)");
+      expect(note).not.toContain("# UC-003 Cost: # UC-003"); // the $& corruption shape
+    });
+
     it("is a no-op (no write, no events) when nothing actually changed", async () => {
       const { service, fs, events } = build();
       const created = await service.create({ title: "Same" });
