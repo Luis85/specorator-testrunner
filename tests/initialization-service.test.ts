@@ -32,7 +32,7 @@ const silentLogger: Logger = {
   error() {},
 };
 
-const buildHarness = () => {
+const buildHarness = (activeRunId: () => string | null = () => null) => {
   const store = new FakeDataStore();
   const fs = new FakeVaultFileSystem();
   const pathSafety = new DefaultPathSafetyPolicy();
@@ -72,6 +72,7 @@ const buildHarness = () => {
     pathSafety,
     bus,
     silentLogger,
+    activeRunId,
   );
   return { service, fs, types, events, childProcess, templates };
 };
@@ -83,6 +84,40 @@ const request: InitializeTestHubRequest = {
   generateDemoContent: true,
   generateDocumentation: true,
 };
+
+describe("DefaultInitializationService — entry-point guards", () => {
+  it("refuses to initialize while a Test Run is active (RUN_IN_PROGRESS)", async () => {
+    // Init rewrites the .testrunner files an in-flight run is READING — the
+    // same exclusion repair()/reset() enforce via the maintenance lock.
+    const { service, types } = buildHarness(() => "RUN-1");
+
+    const result = await service.initialize(request);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("RUN_IN_PROGRESS");
+    // Refused BEFORE any work: no initialization events were published.
+    expect(types()).not.toContain("testhub.initialization.started");
+  });
+
+  it("refuses a second concurrent initialize (double wizard / Retry race)", async () => {
+    const { service } = buildHarness();
+
+    // Start the first init and, without awaiting it, immediately start a second.
+    const first = service.initialize(request);
+    const second = await service.initialize(request);
+    const firstResult = await first;
+
+    expect(firstResult.ok).toBe(true);
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.error.message).toContain("already in progress");
+
+    // Once the first settles, initialize is available again (flag released).
+    const third = await service.initialize(request);
+    expect(third.ok).toBe(true);
+  });
+});
 
 describe("DefaultInitializationService", () => {
   it("creates folders, docs, suites, and demo content end to end", async () => {

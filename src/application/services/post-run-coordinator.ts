@@ -3,6 +3,7 @@ import type { ReportImportService } from "./report-import-service";
 import type { TraceabilityService } from "./traceability-service";
 import type { TestRun, TestRunStatus } from "../../domain/entities/test-run";
 import type { DomainEvent, DomainEventType } from "../../domain/events/domain-event";
+import type { RunId, VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
@@ -26,6 +27,12 @@ export type ImportLastRunOutcome =
   | { kind: "no-report" } // run finished but wrote no run-specific report (e.g. cancelled in setup)
   | { kind: "run-in-progress"; activeRunId: string }
   | { kind: "ineligible"; status: TestRunStatus }; // errored/queued/running — no report
+
+/** The evidence note generated for a run, exposed via {@link PostRunCoordinator.lastEvidence}. */
+export interface LastEvidence {
+  runId: RunId;
+  evidencePath: VaultPath;
+}
 
 export interface PostRunCoordinatorDeps {
   reportImportService: ReportImportService;
@@ -76,8 +83,25 @@ export class PostRunCoordinator {
   // back runs could interleave and clobber each other's evidence/last_run fields
   // — serialize them through a single chain.
   private evidenceChain: Promise<void> = Promise.resolve();
+  // Wave G §1: the most recently generated evidence note (run id + path). The
+  // bus does not replay, so a Test Console opened AFTER `evidence.generated`
+  // fired needs a synchronous probe to know the last run's evidence already
+  // exists. Trivial recorded state: set only when the note was actually
+  // written (the "imported" outcome), never for the note-disabled "recorded"
+  // outcome — the probe must not point the UI at a non-existent file.
+  private lastGenerated: LastEvidence | null = null;
 
   constructor(private readonly deps: PostRunCoordinatorDeps) {}
+
+  /**
+   * The evidence note generated for the most recent imported run, or null when
+   * none has been generated this session (Wave G §1). Consumers match
+   * `runId` against the execution service's `lastRun()` so stale evidence from
+   * a PREVIOUS run is never attributed to the latest one.
+   */
+  lastEvidence(): LastEvidence | null {
+    return this.lastGenerated;
+  }
 
   /**
    * Subscribes to the terminal run events. Returns/stores Unsubscribe handles so
@@ -157,8 +181,12 @@ export class PostRunCoordinator {
     // safe miss, so skip it. passed/failed/cancelled may all have a report.
     if (!IMPORTABLE_STATUSES.has(run.status)) return;
     // Fire-and-forget: the chain tracks completion (whenSettled) and the task is
-    // fault-isolated (runImportAndGenerate never rejects), so nothing escapes.
-    void this.enqueue(() => this.runImportAndGenerate(run));
+    // fault-isolated (runImportAndGenerate never rejects today). The catch is a
+    // backstop so a future edit that lets a rejection slip through becomes a
+    // logged error instead of an unhandled promise rejection.
+    this.enqueue(() => this.runImportAndGenerate(run)).catch((error) =>
+      this.logger.error("Post-run task rejected unexpectedly", error as Error),
+    );
   }
 
   /**
@@ -243,6 +271,8 @@ export class PostRunCoordinator {
       // generate() may return ok without writing a note (Markdown disabled) —
       // tell the UI which so it doesn't point the user at a missing file.
       if (this.deps.isEvidenceMarkdownEnabled()) {
+        // Record the note for the synchronous lastEvidence() probe (Wave G §1).
+        this.lastGenerated = { runId: run.id, evidencePath: evidence.value.path };
         return ok({ kind: "imported", evidencePath: evidence.value.path });
       }
       return ok({ kind: "recorded" });

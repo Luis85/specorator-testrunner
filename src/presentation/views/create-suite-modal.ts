@@ -1,10 +1,18 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
+import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SuiteService } from "../../application/services/suite-service";
+import { tagExpressionPreview } from "./suite-rows";
+
+/** Debounce for the live Tag Expression preview (Wave F). */
+const PREVIEW_DEBOUNCE_MS = 400;
 
 export interface CreateSuiteDeps {
   suiteService: SuiteService;
   workspace: WorkspacePort;
+  // Wave F insight: powers the live "Matches N scenarios" preview under the
+  // tag-expression field. Informational only — creation is never blocked.
+  featureInsight: Pick<FeatureInsightService, "countMatchingScenarios">;
 }
 
 /**
@@ -18,6 +26,11 @@ export class CreateSuiteModal extends Modal {
   private description = "";
   private tagExpression = "";
   private submitting = false;
+  // Debounce timer + monotonic token for the Tag Expression preview: the token
+  // discards a slow count that resolves after the user has typed further, so a
+  // stale result can never overwrite a newer preview.
+  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+  private previewToken = 0;
 
   constructor(
     app: App,
@@ -30,11 +43,25 @@ export class CreateSuiteModal extends Modal {
     const { contentEl } = this;
     contentEl.createEl("h2", { text: "Create Test Suite" });
 
-    new Setting(contentEl)
-      .setName("Name")
-      .addText((text) =>
-        text.setPlaceholder("e.g. Checkout Smoke").onChange((value) => (this.suiteName = value)),
-      );
+    // Enter submits in the single-line text inputs (mirrors
+    // AddEnvironmentModal) so the keyboard flow doesn't force a mouse trip; the
+    // description textarea keeps Enter for newlines and is NOT wired this way.
+    const submitOnEnter = (input: HTMLInputElement): void => {
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void this.submit();
+        }
+      });
+    };
+
+    new Setting(contentEl).setName("Name").addText((text) => {
+      text.setPlaceholder("e.g. Checkout Smoke").onChange((value) => (this.suiteName = value));
+      submitOnEnter(text.inputEl);
+      // Autofocus the first input so the user can start typing immediately
+      // instead of tabbing/clicking into the field first.
+      text.inputEl.focus();
+    });
     new Setting(contentEl)
       .setName("Description")
       .addTextArea((area) =>
@@ -43,11 +70,21 @@ export class CreateSuiteModal extends Modal {
     new Setting(contentEl)
       .setName("Tag expression")
       .setDesc("Cucumber tag expression deciding membership (AD-4).")
-      .addText((text) =>
-        text
-          .setPlaceholder("@smoke and not @wip")
-          .onChange((value) => (this.tagExpression = value)),
-      );
+      .addText((text) => {
+        text.setPlaceholder("@smoke and not @wip").onChange((value) => {
+          this.tagExpression = value;
+          this.schedulePreview(previewEl);
+        });
+        submitOnEnter(text.inputEl);
+      });
+
+    // Wave F insight: a live, debounced "Matches N scenarios" preview under the
+    // tag-expression field. aria-live announces updates to assistive tech;
+    // the line is informational only (0 matches still creates).
+    const previewEl = contentEl.createDiv({
+      cls: "e2e-test-hub-suite-tag-preview",
+      attr: { "aria-live": "polite" },
+    });
 
     new Setting(contentEl).addButton((button) =>
       button
@@ -58,7 +95,38 @@ export class CreateSuiteModal extends Modal {
   }
 
   onClose(): void {
+    if (this.previewTimer !== null) clearTimeout(this.previewTimer);
+    this.previewTimer = null;
+    // Invalidate any in-flight count so it can't write into the emptied modal.
+    this.previewToken += 1;
     this.contentEl.empty();
+  }
+
+  /**
+   * Debounced (~400 ms) live preview of how many scenarios the typed Tag
+   * Expression matches, reusing the same insight dep as the suites explorer.
+   * Renders via the pure {@link tagExpressionPreview} projection.
+   */
+  private schedulePreview(previewEl: HTMLElement): void {
+    if (this.previewTimer !== null) clearTimeout(this.previewTimer);
+    const token = ++this.previewToken;
+    this.previewTimer = setTimeout(() => {
+      this.previewTimer = null;
+      const expression = this.tagExpression.trim();
+      if (expression === "") {
+        previewEl.empty();
+        delete previewEl.dataset.status;
+        return;
+      }
+      void this.deps.featureInsight.countMatchingScenarios(expression).then((counted) => {
+        // A newer keystroke superseded this count, or the modal closed.
+        if (token !== this.previewToken || !previewEl.isConnected) return;
+        const preview = tagExpressionPreview(counted);
+        previewEl.setText(preview.text);
+        if (preview.status === null) delete previewEl.dataset.status;
+        else previewEl.dataset.status = preview.status;
+      });
+    }, PREVIEW_DEBOUNCE_MS);
   }
 
   private async submit(): Promise<void> {

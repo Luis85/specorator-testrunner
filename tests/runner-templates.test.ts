@@ -95,18 +95,32 @@ describe("buildRunnerTemplates", () => {
     // The emitted module must still be valid JS that evaluates to a config with
     // a single string `paths` entry — i.e. nothing escaped the literal.
     const config = evalModule(cucumber);
-    expect(Array.isArray(config.default.paths)).toBe(true);
-    expect(config.default.paths).toHaveLength(1);
-    expect(typeof config.default.paths[0]).toBe("string");
+    expect(Array.isArray(config.paths)).toBe(true);
+    expect(config.paths).toHaveLength(1);
+    expect(typeof config.paths[0]).toBe("string");
     // The breakout sequence survived as inert STRING DATA inside the literal —
     // nothing escaped to module scope (which would have thrown or changed shape).
-    expect(config.default.paths[0]).toContain('"]};import(');
+    expect(config.paths[0]).toContain('"]};import(');
+  });
+
+  it("exports the options DIRECTLY (no profile wrapper) so Cucumber's ESM loader reads them", () => {
+    // REGRESSION (testvault demo run): `export default { default: {…} }` — the
+    // CJS profile-keyed idiom — is NOT unwrapped for an ESM default export, so
+    // Cucumber silently ignored the whole config: step imports never loaded
+    // (every demo step "Undefined") and the json report was never written.
+    const config = evalModule(cucumberFor(DEFAULT_SETTINGS));
+    expect(config).not.toHaveProperty("default");
+    expect(config.import).toEqual(["src/support/**/*.ts", "src/steps/**/*.ts"]);
+    expect(config.paths).toEqual(["../Specifications/features/**/*.feature"]);
+    expect(config.format).toContain("json:reports/cucumber-report.json");
   });
 });
 
 /** Evaluates the generated `export default { … }` module body in isolation. */
-const evalModule = (source: string): { default: { paths: unknown[] } } => {
-  const body = source.replace(/^export default/, "return");
+const evalModule = (
+  source: string,
+): { paths: unknown[]; import?: unknown[]; format?: unknown[] } => {
+  const body = source.replace(/^export default/, "return").replace(/^\/\/.*$/gm, "");
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  return new Function(body)() as { default: { paths: unknown[] } };
+  return new Function(body)() as { paths: unknown[]; import?: unknown[]; format?: unknown[] };
 };

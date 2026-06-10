@@ -342,7 +342,11 @@ export class DefaultReportImportService implements ReportImportService {
           // snapshot when present) — not the fixed path, which a later run
           // deletes/overwrites, leaving the link dangling.
           path: reportVaultPath,
-          label: mime || type,
+          // The MIME string is report-controlled, display-only data; constrain
+          // it to the RFC token charset so a crafted value can't smuggle
+          // Markdown/link syntax into the evidence note (defense-in-depth — the
+          // evidence sink also sanitizes wikilink aliases).
+          label: mime && /^[A-Za-z0-9.+/-]+$/.test(mime) ? mime : type,
         });
       }
     }

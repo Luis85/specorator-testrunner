@@ -1,9 +1,16 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",
+    // The published `obsidian` package is types-only (no runtime entry), so
+    // presentation modules that import a value from it (Notice, setIcon) need a
+    // runtime stand-in to be unit-testable. Alias it to a tiny test stub.
+    alias: {
+      obsidian: fileURLToPath(new URL("./tests/__stubs__/obsidian.ts", import.meta.url)),
+    },
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],

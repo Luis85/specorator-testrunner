@@ -1,0 +1,435 @@
+import { ItemView, type WorkspaceLeaf } from "obsidian";
+import type { WorkspacePort } from "../../application/ports/workspace-port";
+import type { FeatureInsightService } from "../../application/services/feature-insight-service";
+import type { SpecificationService } from "../../application/services/specification-service";
+import type { StepDefinitionService } from "../../application/services/step-definition-service";
+import type { UseCaseService } from "../../application/services/use-case-service";
+import type { UseCase } from "../../domain/entities/use-case";
+import type { DomainEventType } from "../../domain/events/domain-event";
+import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
+import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import { type ChecklistRow } from "../settings/settings-rows";
+import type { RunLauncher } from "../run/run-launcher";
+import { EditUseCaseModal } from "./edit-use-case-modal";
+import { RenderScheduler } from "./render-scheduler";
+import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
+import {
+  featureHealthLine,
+  featureValidationRows,
+  missingStepsRows,
+  projectFeatureRows,
+  projectUseCaseHeader,
+  stepGenerationRows,
+  type FeatureRow,
+} from "./use-case-detail-rows";
+
+export const USE_CASE_DETAIL_VIEW_TYPE = "e2e-test-hub-use-case-detail";
+
+/** Persisted view state: which Use Case this detail leaf is showing. */
+interface UseCaseDetailState {
+  useCaseId?: string;
+}
+
+/**
+ * Events that should refresh the detail view's Feature list and Use Case header
+ * (Wave D). Feature-lifecycle + step-generation events keep the Feature list and
+ * its per-feature affordances current; Use Case events keep the header status /
+ * automation status live; the terminal run events refresh after a Test Run so
+ * the latest automation status (and any new evidence) is reflected.
+ */
+const REFRESH_ON: DomainEventType[] = [
+  "specification.created",
+  "specification.updated",
+  "stepdefinition.generated",
+  "usecase.updated",
+  "usecase.status.changed",
+  "usecase.deleted",
+  "testrun.completed",
+  "testrun.failed",
+  "testrun.cancelled",
+];
+
+/**
+ * The narrow slice of the composition root the Use Case detail view needs. Kept
+ * minimal and named per the layer rules: the lookup + services the view
+ * orchestrates, the workspace port for opening the raw note / Feature files, the
+ * shared run launcher (Wave B), and the generate-Feature opener (which reuses
+ * the command palette's slug-prompt flow rather than forking it).
+ */
+export interface UseCaseDetailDeps {
+  // findById powers the render; updateMetadata backs the header's quick-edit
+  // modal (Wave G §3).
+  useCaseService: Pick<UseCaseService, "findById" | "updateMetadata">;
+  specificationService: Pick<
+    SpecificationService,
+    "listFeatures" | "validate" | "detectMissingSteps"
+  >;
+  stepDefinitionService: Pick<StepDefinitionService, "generate">;
+  // Wave F insight: per-Feature health (scenario count, @wip work, the
+  // feature-level @wip badge) rendered as a muted line on each Feature row.
+  featureInsight: Pick<FeatureInsightService, "healthFor">;
+  workspace: WorkspacePort;
+  eventBus: EventBus;
+  // Shared run-launch surface (Wave B): the "Run Use Case" / per-feature "Run"
+  // buttons start a scoped run through the same launcher the command palette
+  // and explorers use.
+  runLauncher: Pick<RunLauncher, "launch">;
+  // Opens the slug-prompt generate-Feature flow scoped to ONE Use Case, reusing
+  // the command palette's logic (no generation logic is duplicated here). The
+  // `onGenerated` callback lets the view refresh once the Feature lands.
+  openGenerateFeature: (useCase: UseCase, onGenerated: () => void) => void;
+}
+
+/**
+ * Use Case detail view (Wave D): the UI-driven authoring & testing surface for
+ * one Use Case. It shows the Use Case header (status + automation status), an
+ * "Open note" / "Run Use Case" affordance, and the Feature Specifications that
+ * belong to the Use Case (by the ADR-0012 `<UC-id>-<slug>.feature` filename
+ * back-reference). Each Feature row drives Open / Run / Validate /
+ * Detect missing steps / Generate step definitions, rendering the validate /
+ * detect / generate result INLINE with the wizard's ✓/✗/! checklist vocabulary
+ * — so a user gets from a Use Case to executable, traceable Features without the
+ * command palette.
+ */
+export class UseCaseDetailView extends ItemView {
+  private readonly subscriptions: Unsubscribe[] = [];
+  private readonly scheduler = new RenderScheduler(() => this.render());
+  private useCaseId: UseCaseId | null = null;
+
+  constructor(
+    leaf: WorkspaceLeaf,
+    private readonly deps: UseCaseDetailDeps,
+  ) {
+    super(leaf);
+  }
+
+  getViewType(): string {
+    return USE_CASE_DETAIL_VIEW_TYPE;
+  }
+
+  getDisplayText(): string {
+    return this.useCaseId ? `Use Case ${this.useCaseId}` : "Use Case";
+  }
+
+  getIcon(): string {
+    return "file-check";
+  }
+
+  /** Persist the target Use Case id so the leaf survives a workspace reload. */
+  getState(): Record<string, unknown> {
+    return { useCaseId: this.useCaseId ?? undefined };
+  }
+
+  async setState(state: unknown, result: { history: boolean }): Promise<void> {
+    const next = (state as UseCaseDetailState | null)?.useCaseId;
+    if (typeof next === "string" && next !== this.useCaseId) {
+      this.useCaseId = next;
+      // On a workspace RESTORE, Obsidian calls setState() BEFORE onOpen() — the
+      // bus subscriptions don't exist yet, so a render here could show data an
+      // event in that gap already invalidated. Let onOpen() do the first render
+      // (after subscribing); only re-render here when the view is already open
+      // (the leaf-reuse path in main.ts openUseCaseDetail).
+      if (this.subscriptions.length > 0) await this.scheduler.schedule();
+    }
+    await super.setState(state, result);
+  }
+
+  async onOpen(): Promise<void> {
+    for (const type of REFRESH_ON) {
+      this.subscriptions.push(this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()));
+    }
+    await this.scheduler.schedule();
+  }
+
+  async onClose(): Promise<void> {
+    // Unsubscribe BEFORE disposing the scheduler so a handler firing mid-teardown
+    // can't schedule() on an already-disposed scheduler (PRES-M1 ordering).
+    for (const unsubscribe of this.subscriptions) unsubscribe();
+    this.subscriptions.length = 0;
+    this.scheduler.dispose();
+  }
+
+  private async render(): Promise<void> {
+    const container = this.contentEl;
+    container.empty();
+    container.addClass("e2e-test-hub-uc-detail");
+
+    if (this.useCaseId === null) {
+      container.createEl("p", { text: "Open a Use Case to see its Feature Specifications." });
+      return;
+    }
+
+    const found = await this.deps.useCaseService.findById(this.useCaseId);
+    if (!found.ok) {
+      container.createEl("p", { text: `Could not load Use Case: ${found.error.message}` });
+      return;
+    }
+    if (found.value === null) {
+      // Recoverable dead-end (entry-point review): the persisted leaf id can
+      // outlive its Use Case (deleted note + workspace restore). Say what
+      // happened and offer the explorer instead of a bare terminal message.
+      container.createEl("p", {
+        text: `Use Case ${this.useCaseId} was not found. It may have been renamed or deleted.`,
+      });
+      container
+        .createEl("button", {
+          text: "Open Use Cases",
+          cls: "mod-cta",
+          attr: { "aria-label": "Open the Use Cases explorer" },
+        })
+        .addEventListener("click", () => void this.deps.workspace.openView(USE_CASE_VIEW_TYPE));
+      return;
+    }
+    const useCase = found.value;
+
+    this.renderHeader(container, useCase);
+    await this.renderFeatures(container, useCase);
+  }
+
+  private renderHeader(container: HTMLElement, useCase: UseCase): void {
+    const header = projectUseCaseHeader(useCase);
+
+    const headerEl = container.createDiv({ cls: "e2e-test-hub-uc-detail-header" });
+    headerEl.createEl("h2", { text: `${header.id} — ${header.title}` });
+
+    const meta = headerEl.createDiv({ cls: "e2e-test-hub-uc-detail-meta" });
+    const status = meta.createSpan({
+      cls: "e2e-test-hub-uc-detail-status",
+      text: `Status: ${header.status}`,
+    });
+    status.dataset.status = header.status;
+    const automation = meta.createSpan({
+      cls: "e2e-test-hub-uc-detail-status",
+      text: `Automation: ${header.automationStatus}`,
+    });
+    automation.dataset.status = header.automationStatus;
+
+    const actions = headerEl.createDiv({ cls: "e2e-test-hub-uc-detail-actions" });
+    actions
+      .createEl("button", {
+        text: "Open note",
+        attr: { "aria-label": `Open the ${header.id} note` },
+      })
+      .addEventListener("click", () => void this.deps.workspace.openFile(header.path));
+    // Wave G §3: quick-edit title/status without hand-editing YAML frontmatter.
+    // The view refreshes via its existing `usecase.updated` subscription once
+    // the service publishes, so the modal needs no callback.
+    actions
+      .createEl("button", {
+        text: "Edit",
+        attr: { "aria-label": `Edit the title or status of ${header.id}` },
+      })
+      .addEventListener("click", () =>
+        new EditUseCaseModal(this.app, {
+          useCaseService: this.deps.useCaseService,
+          useCase,
+        }).open(),
+      );
+    actions
+      .createEl("button", {
+        text: "Run Use Case",
+        cls: "mod-cta",
+        attr: { "aria-label": `Run Use Case ${header.id}` },
+      })
+      .addEventListener(
+        "click",
+        () => void this.deps.runLauncher.launch({ scope: "use-case", target: header.id }),
+      );
+    actions
+      .createEl("button", {
+        text: "Generate Feature",
+        attr: { "aria-label": `Generate a Feature Specification for ${header.id}` },
+      })
+      .addEventListener("click", () =>
+        this.deps.openGenerateFeature(useCase, () => void this.scheduler.schedule()),
+      );
+  }
+
+  private async renderFeatures(container: HTMLElement, useCase: UseCase): Promise<void> {
+    const section = container.createDiv({ cls: "e2e-test-hub-uc-detail-features" });
+    section.createEl("h3", { text: "Feature Specifications" });
+
+    const listed = await this.deps.specificationService.listFeatures();
+    if (!listed.ok) {
+      section.createEl("p", {
+        text: `Could not load Feature Specifications: ${listed.error.message}`,
+      });
+      return;
+    }
+
+    const rows = projectFeatureRows(useCase.id, listed.value);
+    if (rows.length === 0) {
+      section.createEl("p", {
+        cls: "e2e-test-hub-uc-detail-empty",
+        text: "No Feature Specifications yet. Generate one to make this Use Case executable.",
+      });
+      return;
+    }
+
+    for (const row of rows) this.renderFeatureRow(section, row);
+  }
+
+  private renderFeatureRow(container: HTMLElement, row: FeatureRow): void {
+    const featureEl = container.createDiv({ cls: "e2e-test-hub-uc-detail-feature" });
+
+    const head = featureEl.createDiv({ cls: "e2e-test-hub-uc-detail-feature-head" });
+    // `title` carries the full vault path so a label truncated by the CSS
+    // ellipsis (long paths) is still recoverable on hover.
+    head.createSpan({
+      cls: "e2e-test-hub-uc-detail-feature-name",
+      text: row.label,
+      attr: { title: row.path },
+    });
+
+    const actions = head.createDiv({ cls: "e2e-test-hub-uc-detail-feature-actions" });
+    // Wave F insight: a muted per-Feature health line ("N scenarios (M @wip)" +
+    // the feature-level @wip badge). Filled asynchronously (fire-and-forget)
+    // so the action buttons render immediately; :empty CSS hides it until then.
+    const healthEl = featureEl.createDiv({ cls: "e2e-test-hub-uc-detail-feature-health" });
+    void this.renderFeatureHealth(row.path, healthEl);
+    // A per-feature result area below the action buttons: validate / detect /
+    // generate render their outcome here INLINE (not just a Notice), reusing the
+    // wizard's ✓/✗/! checklist vocabulary so every inline surface reads alike.
+    const resultEl = featureEl.createDiv({
+      cls: "e2e-test-hub-uc-detail-feature-result",
+      attr: { "aria-live": "polite" },
+    });
+
+    const button = (text: string, ariaLabel: string, cls?: string): HTMLButtonElement => {
+      const el = actions.createEl("button", {
+        text,
+        attr: { "aria-label": ariaLabel },
+        ...(cls ? { cls } : {}),
+      });
+      return el;
+    };
+
+    button("Open", `Open ${row.label}`).addEventListener(
+      "click",
+      () => void this.deps.workspace.openFile(row.path),
+    );
+    // Visible label matches the explorers' per-row "Run"; the aria-label keeps
+    // the full "Run <feature label>" so assistive tech still hears the target.
+    button("Run", `Run ${row.label}`).addEventListener(
+      "click",
+      () => void this.deps.runLauncher.launch({ scope: "feature", target: row.path }),
+    );
+    button("Validate", `Validate ${row.label}`).addEventListener(
+      "click",
+      () => void this.validate(row.path, resultEl),
+    );
+    button("Detect missing steps", `Detect missing steps in ${row.label}`).addEventListener(
+      "click",
+      () => void this.detectMissingSteps(row.path, resultEl),
+    );
+    button(
+      "Generate step definitions",
+      `Generate step definitions for ${row.label}`,
+    ).addEventListener("click", () => void this.generateStepDefinitions(row.path, resultEl));
+  }
+
+  /**
+   * Wave F: fills a Feature row's muted health line from FeatureInsightService.
+   * Read+parse-per-render is cheap (features are small, matching how
+   * traceability works); an unreadable/unparseable Feature leaves the line
+   * empty (the Validate action is the place that explains why).
+   */
+  private async renderFeatureHealth(featurePath: VaultPath, healthEl: HTMLElement): Promise<void> {
+    const health = await this.deps.featureInsight.healthFor(featurePath);
+    // An event-driven re-render may have replaced the row while we awaited —
+    // writing into the detached node would be invisible (same guard as
+    // renderChecklist).
+    if (!health.ok || !healthEl.isConnected) return;
+    const line = featureHealthLine(health.value);
+    healthEl.createSpan({ text: line.text });
+    if (line.wipBadge) {
+      healthEl.createSpan({
+        cls: "e2e-test-hub-wip-badge",
+        text: "@wip",
+        attr: { title: line.wipTooltip, "aria-label": line.wipTooltip },
+      });
+    }
+  }
+
+  /** UC-007: validate the chosen Feature and render the outcome inline. */
+  private async validate(featurePath: VaultPath, resultEl: HTMLElement): Promise<void> {
+    this.renderChecklist(resultEl, [{ status: "pending", icon: "…", text: "Validating…" }]);
+    const result = await this.deps.specificationService.validate(featurePath);
+    if (!result.ok) {
+      this.renderChecklist(resultEl, [
+        { status: "error", icon: "✗", text: `Validation failed: ${result.error.message}` },
+      ]);
+      return;
+    }
+    this.renderChecklist(resultEl, featureValidationRows(result.value));
+  }
+
+  /** UC-010: detect undefined steps for the chosen Feature, rendered inline. */
+  private async detectMissingSteps(featurePath: VaultPath, resultEl: HTMLElement): Promise<void> {
+    this.renderChecklist(resultEl, [{ status: "pending", icon: "…", text: "Detecting…" }]);
+    const result = await this.deps.specificationService.detectMissingSteps(featurePath);
+    if (!result.ok) {
+      this.renderChecklist(resultEl, [
+        { status: "error", icon: "✗", text: `Detection failed: ${result.error.message}` },
+      ]);
+      return;
+    }
+    this.renderChecklist(resultEl, missingStepsRows(result.value));
+  }
+
+  /**
+   * UC-010 / RV-4: detect the Feature's undefined steps then generate
+   * non-destructive step-definition stubs — exactly the two-call orchestration
+   * the command palette uses (the logic lives in the services), rendered inline.
+   */
+  private async generateStepDefinitions(
+    featurePath: VaultPath,
+    resultEl: HTMLElement,
+  ): Promise<void> {
+    this.renderChecklist(resultEl, [
+      { status: "pending", icon: "…", text: "Generating step definitions…" },
+    ]);
+    const detected = await this.deps.specificationService.detectMissingSteps(featurePath);
+    if (!detected.ok) {
+      this.renderChecklist(resultEl, [
+        { status: "error", icon: "✗", text: `Detection failed: ${detected.error.message}` },
+      ]);
+      return;
+    }
+    const generated = await this.deps.stepDefinitionService.generate(
+      featurePath,
+      detected.value.missingSteps,
+      detected.value.detectionEventId,
+    );
+    if (!generated.ok) {
+      this.renderChecklist(resultEl, [
+        {
+          status: "error",
+          icon: "✗",
+          text: `Could not generate step definitions: ${generated.error.message}`,
+        },
+      ]);
+      return;
+    }
+    this.renderChecklist(resultEl, stepGenerationRows(generated.value));
+  }
+
+  /** Replaces a feature's result container with the given checklist rows. */
+  private renderChecklist(container: HTMLElement, rows: ChecklistRow[]): void {
+    // The result container is captured when the feature row is built. An inline
+    // op (validate/detect/generate) awaits a service call, and an unrelated
+    // event can trigger a full re-render in that window — detaching THIS
+    // container and replacing it with a fresh one. Writing into the detached
+    // node would render the outcome invisibly, so skip it; the freshly rendered
+    // row is ready for a re-click.
+    if (!container.isConnected) return;
+    container.empty();
+    for (const row of rows) {
+      const el = container.createDiv({
+        cls: "e2e-test-hub-settings-check-row",
+        text: `${row.icon} ${row.text}`,
+      });
+      el.dataset.status = row.status;
+    }
+  }
+}

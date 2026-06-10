@@ -26,6 +26,10 @@ import {
   type EvidenceGenerationService,
 } from "./application/services/evidence-generation-service";
 import {
+  DefaultFeatureInsightService,
+  type FeatureInsightService,
+} from "./application/services/feature-insight-service";
+import {
   DefaultReportImportService,
   type ReportImportService,
 } from "./application/services/report-import-service";
@@ -50,7 +54,6 @@ import {
 } from "./application/services/traceability-service";
 import {
   DefaultTestExecutionService,
-  type ExecuteTestRequest,
   type TestExecutionService,
 } from "./application/services/test-execution-service";
 import {
@@ -59,31 +62,35 @@ import {
 } from "./application/services/use-case-service";
 import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
+import type { VaultPath } from "./domain/value-objects/identifiers";
 import {
   collectCredentialValues,
   DEFAULT_SETTINGS,
   type TestHubSettings,
 } from "./domain/settings/settings";
-import type { VaultPath } from "./domain/value-objects/identifiers";
-import { unsafeVaultPath } from "./domain/value-objects/vault-path";
 import { NodeAbsoluteFileSystem } from "./infrastructure/filesystem/node-absolute-file-system";
 import { ObsidianDataStore } from "./infrastructure/obsidian/obsidian-data-store";
 import { ObsidianVaultAdapter } from "./infrastructure/obsidian/obsidian-vault-adapter";
 import { ObsidianWorkspaceAdapter } from "./infrastructure/obsidian/obsidian-workspace-adapter";
 import { NodeChildProcessRunner } from "./infrastructure/runner/node-child-process-runner";
 import { RunnerTemplateWriter } from "./infrastructure/runner/runner-template-writer";
+import { registerCommands } from "./presentation/commands/register-commands";
+import { RunLauncher } from "./presentation/run/run-launcher";
 import { TestHubSettingTab, type SettingsHost } from "./presentation/settings/settings-tab";
 import { CreateSuiteModal } from "./presentation/views/create-suite-modal";
 import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
-import { GenerateFeatureModal } from "./presentation/views/generate-feature-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
 import { SUITE_VIEW_TYPE, SuiteDashboardView } from "./presentation/views/suite-dashboard-view";
-import { RunPickerModal } from "./presentation/views/run-picker-modal";
 import { TEST_CONSOLE_VIEW_TYPE, TestConsoleView } from "./presentation/views/test-console-view";
 import {
   USE_CASE_VIEW_TYPE,
   UseCaseDashboardView,
 } from "./presentation/views/use-case-dashboard-view";
+import {
+  USE_CASE_DETAIL_VIEW_TYPE,
+  UseCaseDetailView,
+} from "./presentation/views/use-case-detail-view";
+import { generateFeatureForUseCase } from "./presentation/views/generate-feature-modal";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
 import { InMemoryEventBus } from "./shared/event-bus/event-bus";
 import { ConsoleLogger } from "./shared/logging/logger";
@@ -105,13 +112,21 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private pipelineService!: PipelineGenerationService;
   private useCaseService!: UseCaseService;
   private specificationService!: SpecificationService;
+  // Wave F insight: read-only scenario/tag queries (Tag Expression match
+  // counts, per-Feature health) shared by the suites explorer, the
+  // CreateSuiteModal preview, and the Use Case detail view.
+  private featureInsightService!: FeatureInsightService;
   private stepDefinitionService!: StepDefinitionService;
   private suiteService!: SuiteService;
   private testExecutionService!: TestExecutionService;
+  // Single owner of "start a run / cancel the active run" for every UI surface
+  // (command palette, explorer Run buttons, Test Console toolbar). Wave B
+  // altitude requirement: the launch logic lives here, not duplicated per call
+  // site.
+  private runLauncher!: RunLauncher;
   private reportImportService!: ReportImportService;
   private evidenceGenerationService!: EvidenceGenerationService;
   private traceabilityService!: TraceabilityService;
-  private vaultAdapter!: ObsidianVaultAdapter;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
   // In-process post-run flow (P2-1/P2-6/P2-7). Subscribes to the EN-2 terminal
   // run events and runs import→evidence→dashboard-refresh, owning the `lastRun`
@@ -134,7 +149,6 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     const consoleLogger = new ConsoleLogger("info");
     this.logger = consoleLogger;
     const vault = new ObsidianVaultAdapter(this.app);
-    this.vaultAdapter = vault;
     // The vault is passed so validate() can run the ADR-0015 one-project-per-vault
     // sibling Test Hub check.
     this.hubSettingsService = new DefaultSettingsService(
@@ -204,6 +218,12 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       pathSafety,
       eventBus,
       this.logger,
+      // Init rewrites the `.testrunner` files an in-flight run reads, so it
+      // refuses while a run is active (entry-point review). The execution
+      // service is built further down — probe lazily through `this`. During a
+      // reset's nested re-init the maintenance lock already blocks new runs,
+      // so this probe reads null there (no deadlock).
+      () => this.testExecutionService?.activeRunId() ?? null,
     );
     // Maintenance (repair/reset). The execution service — which owns the
     // synchronous maintenance lock that closes the reset/run TOCTOU (security
@@ -227,6 +247,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         begin: () => this.testExecutionService.maintenanceLock.begin(),
         end: () => this.testExecutionService.maintenanceLock.end(),
       },
+      // Drained INSIDE repair()/reset() after the lock is acquired, so the tail
+      // of the previous run's import/evidence chain (which outlives the
+      // active-run slot) settles before maintenance touches any files.
+      () => this.postRunCoordinator.whenSettled(),
     );
     this.useCaseService = new DefaultUseCaseService(
       this.hubSettingsService,
@@ -241,6 +265,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    // Wave F insight: composes listFeatures (discovery stays defined once) with
+    // the shared Gherkin parser to answer "how many scenarios does this Tag
+    // Expression match?" and "how healthy is this Feature?" for the views.
+    this.featureInsightService = new DefaultFeatureInsightService(this.specificationService, vault);
     // UC-010 / RV-4: generate step-definition stubs for a feature's undefined
     // steps. Writes via the same VaultFileSystem + `.testrunner/src/steps` path
     // that detectMissingSteps reads from, so a stub is picked up next detection.
@@ -263,6 +291,16 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+
+    // Single run-launch surface shared by the command palette and the explorer
+    // / Test Console buttons (Wave B). It reveals the live Test Console BEFORE
+    // execute() publishes (the bus does not replay) and surfaces
+    // RUN_IN_PROGRESS / errors as Notices. The open-console port is backed by
+    // the workspace adapter so the launcher itself stays free of Obsidian view
+    // plumbing.
+    this.runLauncher = new RunLauncher(this.testExecutionService, {
+      openConsole: () => this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
+    });
 
     // EPIC-008 Reporting & Evidence (UC-016): import the runner's JSON report
     // and generate linked Markdown evidence once a run finishes.
@@ -312,9 +350,43 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       (leaf) =>
         new UseCaseDashboardView(leaf, {
           useCaseService: this.useCaseService,
+          specificationService: this.specificationService,
           workspace: this.workspaceAdapter,
           eventBus,
+          runLauncher: this.runLauncher,
           onCreate: () => this.openCreateUseCase(),
+          // Wave D: the id column opens the Use Case detail view (authoring &
+          // testing surface); the per-row "Note" link keeps raw note access.
+          onOpenDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
+        }),
+    );
+    // Wave D: the Use Case detail view — the UI-driven authoring & testing
+    // surface for one Use Case. Deps are the narrow lookup + spec/step services
+    // it orchestrates, the workspace port, the shared run launcher, and the
+    // generate-Feature opener (which reuses the command palette's slug-prompt
+    // flow rather than forking the generation logic).
+    this.registerView(
+      USE_CASE_DETAIL_VIEW_TYPE,
+      (leaf) =>
+        new UseCaseDetailView(leaf, {
+          useCaseService: this.useCaseService,
+          specificationService: this.specificationService,
+          stepDefinitionService: this.stepDefinitionService,
+          featureInsight: this.featureInsightService,
+          workspace: this.workspaceAdapter,
+          eventBus,
+          runLauncher: this.runLauncher,
+          openGenerateFeature: (useCase, onGenerated) =>
+            generateFeatureForUseCase(
+              this.app,
+              {
+                useCaseService: this.useCaseService,
+                specificationService: this.specificationService,
+                workspace: this.workspaceAdapter,
+              },
+              useCase,
+              () => onGenerated(),
+            ),
         }),
     );
     this.registerView(
@@ -324,190 +396,120 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           suiteService: this.suiteService,
           workspace: this.workspaceAdapter,
           eventBus,
+          runLauncher: this.runLauncher,
+          featureInsight: this.featureInsightService,
           onCreate: () => this.openCreateSuite(),
         }),
     );
-    this.registerView(TEST_CONSOLE_VIEW_TYPE, (leaf) => new TestConsoleView(leaf, eventBus));
+    this.registerView(
+      TEST_CONSOLE_VIEW_TYPE,
+      (leaf) =>
+        new TestConsoleView(leaf, {
+          eventBus,
+          runLauncher: this.runLauncher,
+          // Narrow read-only slice: the toolbar checks for an active run on open
+          // and reads the last run's scope to power Re-run.
+          activeRunId: () => this.testExecutionService.activeRunId(),
+          lastRun: () => this.testExecutionService.lastRun(),
+          // Wave G §1: the "Open evidence" button. The coordinator already owns
+          // the post-run evidence flow, so it is the cleanest synchronous source
+          // for "the last generated evidence note" when the console opens after
+          // `evidence.generated` already fired (the bus does not replay).
+          lastEvidence: () => this.postRunCoordinator.lastEvidence(),
+          openEvidence: (path) => this.openEvidenceNote(path),
+        }),
+    );
     this.registerView(
       DASHBOARD_VIEW_TYPE,
       (leaf) =>
+        // Wave C: the dashboard hub drives create/run/open/generate-docs/switch-
+        // environment/open-evidence through callbacks wired to the EXISTING
+        // helpers + the Wave B RunLauncher (no run/create logic is duplicated).
         new DashboardView(leaf, {
           traceabilityService: this.traceabilityService,
           eventBus,
+          // Real initialization signal: the Use Cases folder the snapshot reads
+          // exists once the wizard has scaffolded the vault. A fresh vault lists
+          // it as ok([]), so snapshot success can't distinguish "not set up" —
+          // this folder-existence check can.
+          isInitialized: () => vault.exists(this.hubSettings.paths.useCasesPath),
           openDocumentation: (documentType) => this.openDocumentation(documentType),
+          openWizard: () => this.openWizard(),
+          openCreateUseCase: () => this.openCreateUseCase(),
+          openCreateSuite: () => this.openCreateSuite(),
+          runAll: () => this.runLauncher.launch({ scope: "all", target: "all" }),
+          runDemo: () => this.runLauncher.launch({ scope: "demo", target: "demo" }),
+          generateDocumentation: () => this.generateDocumentation(),
+          navigate: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
+          openSuites: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
+          openConsole: () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
+          openEvidence: (path) => this.openEvidenceNote(path),
+          getEnvironments: () => ({
+            active: this.hubSettings.sut.active,
+            names: Object.keys(this.hubSettings.sut.environments),
+          }),
+          switchEnvironment: (name) => this.switchEnvironment(name),
         }),
     );
 
-    this.addSettingTab(new TestHubSettingTab(this, this));
+    // The settings tab drives validate/repair/CI inline (Wave A); it receives
+    // only the narrow service slices its SettingsTabServices contract names.
+    this.addSettingTab(
+      new TestHubSettingTab(this, this, {
+        validation: this.validationService,
+        maintenance: this.maintenanceService,
+        pipeline: this.pipelineService,
+      }),
+    );
 
+    // Ribbon icons stay in the composition root (they are plugin chrome, not
+    // command bodies).
     this.addRibbonIcon("flask-conical", "Initialize Test Hub", () => this.openWizard());
-    this.addCommand({
-      id: "initialize-test-hub",
-      name: "Initialize Test Hub",
-      callback: () => this.openWizard(),
-    });
-    this.addCommand({
-      id: "validate-environment",
-      name: "Validate Environment",
-      callback: () => void this.validateEnvironment(),
-    });
-    this.addCommand({
-      id: "repair-installation",
-      name: "Repair Installation",
-      callback: () => void this.repairInstallation(),
-    });
-    this.addCommand({
-      id: "generate-ci-workflow",
-      name: "Generate CI Workflow",
-      callback: () => void this.generateCiWorkflow(),
-    });
-    this.addCommand({
-      id: "overwrite-ci-workflow",
-      name: "Overwrite CI Workflow",
-      callback: () => void this.generateCiWorkflow(true),
-    });
-    this.addCommand({
-      id: "check-ci-readiness",
-      name: "Check CI Readiness",
-      callback: () => void this.checkCiReadiness(),
-    });
-    this.addCommand({
-      id: "create-use-case",
-      name: "Create Use Case",
-      callback: () => this.openCreateUseCase(),
-    });
-    this.addCommand({
-      id: "open-use-cases",
-      name: "Open Use Cases",
-      callback: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
-    });
     this.addRibbonIcon(
       "list-checks",
       "Open Use Cases",
       () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
     );
-    this.addCommand({
-      id: "create-test-suite",
-      name: "Create Test Suite",
-      callback: () => this.openCreateSuite(),
-    });
-    this.addCommand({
-      id: "open-test-suites",
-      name: "Open Test Suites",
-      callback: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
-    });
     this.addRibbonIcon(
       "layers",
       "Open Test Suites",
       () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
     );
-    this.addCommand({
-      id: "generate-feature",
-      name: "Generate Feature from Use Case",
-      callback: () => void this.openGenerateFeature(),
-    });
-    this.addCommand({
-      id: "validate-feature",
-      name: "Validate Feature",
-      callback: () => void this.validateActiveFeature(),
-    });
-    this.addCommand({
-      id: "detect-missing-steps",
-      name: "Detect Missing Steps",
-      callback: () => void this.detectMissingSteps(),
-    });
-    // UC-010 / RV-4: explicit user command (NOT auto-on-edit) — detect the
-    // active feature's missing steps, then generate non-destructive stubs.
-    this.addCommand({
-      id: "generate-step-definitions",
-      name: "Generate Step Definitions",
-      callback: () => void this.generateStepDefinitions(),
-    });
-
-    // EPIC-007 Test Execution (US-026/027/028/029/030).
-    this.addCommand({
-      id: "run-demo-test",
-      name: "Run Demo Test",
-      callback: () => void this.runTest({ scope: "demo", target: "demo" }),
-    });
-    this.addCommand({
-      id: "run-all-tests",
-      name: "Run All Tests",
-      callback: () => void this.runTest({ scope: "all", target: "all" }),
-    });
-    this.addCommand({
-      id: "run-suite",
-      name: "Run Suite…",
-      callback: () => void this.runSuite(),
-    });
-    this.addCommand({
-      id: "run-use-case",
-      name: "Run Use Case…",
-      callback: () => void this.runUseCase(),
-    });
-    this.addCommand({
-      id: "run-feature",
-      name: "Run Feature…",
-      callback: () => void this.runFeature(),
-    });
-    this.addCommand({
-      id: "cancel-test-run",
-      name: "Cancel Test Run",
-      callback: () => void this.cancelTestRun(),
-    });
-    this.addCommand({
-      id: "open-test-console",
-      name: "Open Test Console",
-      callback: () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
-    });
-
-    // EPIC-008 (US-032 / UC-016): re-run report import + evidence for the last run.
-    this.addCommand({
-      id: "import-report-last-run",
-      name: "Import Report for Last Run",
-      callback: () => void this.importLastRun(),
-    });
     this.addRibbonIcon(
       "terminal",
       "Open Test Console",
-      () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
+      () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
     );
-
-    // EPIC-009 Dashboard (UC-018).
-    this.addCommand({
-      id: "open-dashboard",
-      name: "Open Dashboard",
-      callback: () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
-    });
     this.addRibbonIcon(
       "gauge",
       "Open Test Hub Dashboard",
       () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
     );
 
-    // EPIC-011 Documentation (FEAT-024 US-043/044/045, FEAT-025 US-046).
-    this.addCommand({
-      id: "generate-documentation",
-      name: "Generate Documentation",
-      callback: () => void this.generateDocumentation(),
-    });
-    this.addCommand({
-      id: "open-documentation",
-      name: "Open Documentation",
-      callback: () => void this.openDocumentation(),
-    });
-    this.addCommand({
-      id: "open-user-manual",
-      name: "Open User Manual",
-      callback: () => void this.openDocumentation("manual"),
-    });
-    this.addCommand({
-      id: "open-troubleshooting",
-      name: "Open Troubleshooting",
-      callback: () => void this.openDocumentation("troubleshooting"),
+    // Command-palette surface (P2-7): the command bodies live in
+    // presentation/commands/register-commands.ts behind a narrow deps contract;
+    // the composition root only supplies the wired services plus the few
+    // open-a-modal helpers it shares with the ribbons/views above.
+    registerCommands(this, {
+      getSettings: () => this.hubSettings,
+      validationService: this.validationService,
+      maintenanceService: this.maintenanceService,
+      pipelineService: this.pipelineService,
+      documentationService: this.documentationService,
+      useCaseService: this.useCaseService,
+      specificationService: this.specificationService,
+      stepDefinitionService: this.stepDefinitionService,
+      suiteService: this.suiteService,
+      runLauncher: this.runLauncher,
+      postRunCoordinator: this.postRunCoordinator,
+      workspace: this.workspaceAdapter,
+      openWizard: () => this.openWizard(),
+      openCreateUseCase: () => this.openCreateUseCase(),
+      openCreateSuite: () => this.openCreateSuite(),
+      openDocumentation: (documentType) => this.openDocumentation(documentType),
     });
 
-    this.logger.info("E2E Test Hub loaded");
+    this.logger.info("Test Hub loaded");
   }
 
   onunload(): void {
@@ -542,7 +544,8 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // Detach the post-run coordinator's bus subscriptions so a late terminal
     // event after unload can't drive a new import (synchronous, race-free).
     // Any in-flight import/evidence task is awaited where evidence I/O must
-    // settle before mutating settings (resetSettings); onunload is best-effort
+    // settle before files are mutated (MaintenanceService.repair()/reset()
+    // drain it under the maintenance lock); onunload is best-effort
     // synchronous per PRES-H1, and the per-run snapshot already protects
     // attribution, so we do not block teardown on whenSettled() here.
     this.postRunCoordinator?.stop();
@@ -550,142 +553,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // detachLeavesOfType is explicitly discouraged (it destroys the user's saved
     // workspace layout across reloads/updates), so it is intentionally NOT called
     // here (P1-3 / PRES-H2).
-    this.logger?.info("E2E Test Hub unloaded");
-  }
-
-  /**
-   * Starts a run, revealing the live Test Console first so output streams in
-   * (US-030, UC-015). ADR-0018 surfaces `RUN_IN_PROGRESS` as a Notice with the
-   * active run id so the user can cancel it.
-   */
-  private async runTest(request: ExecuteTestRequest): Promise<void> {
-    // Reveal the live console FIRST so it is subscribed to testrun.started /
-    // output events before execute() publishes them (the bus doesn't replay).
-    // The single-active slot is reserved synchronously inside execute(), and the
-    // service owns the cancel-and-wait completion (whenActiveSettles), so onunload
-    // no longer needs to track the run promise here.
-    await this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE);
-    const result = await this.testExecutionService.execute(request);
-    if (!result.ok) {
-      // `details` is typed `Record<string, unknown>`, so `activeRunId` widens
-      // to `unknown`; at runtime it is always the active run's id string.
-      const active =
-        typeof result.error.details?.activeRunId === "string"
-          ? result.error.details.activeRunId
-          : "";
-      new Notice(
-        active
-          ? `A run is already in progress (${active}). Cancel it first.`
-          : `Could not start run: ${result.error.message}`,
-        10000,
-      );
-      return;
-    }
-    // The PostRunCoordinator reacts to the terminal run event (EN-2) and runs
-    // import → evidence → dashboard refresh for the finished run; runTest no
-    // longer imports here, so the flow happens exactly once (no double-process).
-  }
-
-  /**
-   * Re-runs report import + evidence for the last finished run on demand
-   * (UC-016, US-032). The eligibility rule and serialization live in the
-   * coordinator; this surfaces its typed outcome as a Notice.
-   */
-  private async importLastRun(): Promise<void> {
-    const result = await this.postRunCoordinator.importLastRun();
-    if (!result.ok) {
-      new Notice(`Report import failed: ${result.error.message}`, 10000);
-      return;
-    }
-    switch (result.value.kind) {
-      case "imported":
-        new Notice(`Evidence written to ${result.value.evidencePath}`);
-        break;
-      case "recorded":
-        new Notice("Last run recorded (evidence Markdown generation is disabled).");
-        break;
-      case "no-run":
-        new Notice("No test run to import a report for yet.");
-        break;
-      case "no-report":
-        new Notice("The last run produced no report to import (it did not finish a test run).");
-        break;
-      case "run-in-progress":
-        new Notice("A test run is in progress; import its report once it finishes.");
-        break;
-      case "ineligible":
-        new Notice(`The last run (${result.value.status}) produced no report to import.`);
-        break;
-    }
-  }
-
-  private async runSuite(): Promise<void> {
-    const suites = await this.suiteService.findAll();
-    if (!suites.ok) {
-      new Notice(`Could not load Test Suites: ${suites.error.message}`, 10000);
-      return;
-    }
-    if (suites.value.length === 0) {
-      new Notice("No Test Suites found. Create one first.");
-      return;
-    }
-    new RunPickerModal(
-      this.app,
-      "Select a Test Suite to run",
-      suites.value.map((s) => ({ id: s.id, label: `${s.id} — ${s.name}` })),
-      (id) => void this.runTest({ scope: "suite", target: id }),
-    ).open();
-  }
-
-  private async runUseCase(): Promise<void> {
-    const useCases = await this.useCaseService.findAll();
-    if (!useCases.ok) {
-      new Notice(`Could not load Use Cases: ${useCases.error.message}`, 10000);
-      return;
-    }
-    if (useCases.value.length === 0) {
-      new Notice("No Use Cases found. Create one first.");
-      return;
-    }
-    new RunPickerModal(
-      this.app,
-      "Select a Use Case to run",
-      useCases.value.map((u) => ({ id: u.id, label: `${u.id} — ${u.title}` })),
-      (id) => void this.runTest({ scope: "use-case", target: id }),
-    ).open();
-  }
-
-  private async runFeature(): Promise<void> {
-    const folder = this.hubSettings.paths.featureFilesPath;
-    const listed = await this.vaultAdapter.listFilesRecursive(folder);
-    if (!listed.ok) {
-      new Notice(`Could not list Feature files: ${listed.error.message}`, 10000);
-      return;
-    }
-    const features = listed.value.filter((p) => p.endsWith(".feature"));
-    if (features.length === 0) {
-      new Notice("No Feature files found. Generate one first.");
-      return;
-    }
-    new RunPickerModal(
-      this.app,
-      "Select a Feature file to run",
-      features.map((path) => ({ id: path, label: path.slice(folder.length + 1) })),
-      (path) => void this.runTest({ scope: "feature", target: path }),
-    ).open();
-  }
-
-  private async cancelTestRun(): Promise<void> {
-    const active = this.testExecutionService.activeRunId();
-    if (active === null) {
-      new Notice("No test run is in progress.");
-      return;
-    }
-    const result = await this.testExecutionService.cancel(active);
-    new Notice(
-      result.ok ? "Test run cancelled." : `Could not cancel run: ${result.error.message}`,
-      result.ok ? undefined : 10000,
-    );
+    this.logger?.info("Test Hub unloaded");
   }
 
   private openWizard(): void {
@@ -703,185 +571,28 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     }).open();
   }
 
+  // Wave D: open (or re-target) the Use Case detail view for `useCaseId`. The id
+  // travels in the leaf's view state so the leaf survives a workspace reload and
+  // the view re-renders itself for the new target. A single detail leaf is
+  // reused (re-targeted) rather than stacking one per Use Case.
+  private async openUseCaseDetail(useCaseId: string): Promise<void> {
+    const { workspace } = this.app;
+    const leaf =
+      workspace.getLeavesOfType(USE_CASE_DETAIL_VIEW_TYPE)[0] ?? workspace.getLeaf("tab");
+    await leaf.setViewState({
+      type: USE_CASE_DETAIL_VIEW_TYPE,
+      active: true,
+      state: { useCaseId },
+    });
+    void workspace.revealLeaf(leaf);
+  }
+
   private openCreateSuite(): void {
     new CreateSuiteModal(this.app, {
       suiteService: this.suiteService,
       workspace: this.workspaceAdapter,
+      featureInsight: this.featureInsightService,
     }).open();
-  }
-
-  private async openGenerateFeature(): Promise<void> {
-    const useCases = await this.useCaseService.findAll();
-    if (!useCases.ok) {
-      new Notice(`Could not load Use Cases: ${useCases.error.message}`, 10000);
-      return;
-    }
-    if (useCases.value.length === 0) {
-      new Notice("No Use Cases found. Create one first.");
-      return;
-    }
-    new GenerateFeatureModal(
-      this.app,
-      {
-        useCaseService: this.useCaseService,
-        specificationService: this.specificationService,
-        workspace: this.workspaceAdapter,
-      },
-      useCases.value,
-    ).open();
-  }
-
-  /** Path of the active note, or a Notice when there is no feature open. */
-  private activeFeaturePath(): VaultPath | null {
-    const file = this.app.workspace.getActiveFile();
-    if (!file || file.extension !== "feature") {
-      new Notice("Open a .feature file first.");
-      return null;
-    }
-    // Obsidian-managed active-file paths are vault-relative and trusted.
-    return unsafeVaultPath(file.path);
-  }
-
-  private async validateActiveFeature(): Promise<void> {
-    const path = this.activeFeaturePath();
-    if (path === null) return;
-    const result = await this.specificationService.validate(path);
-    if (!result.ok) {
-      new Notice(`Validation failed: ${result.error.message}`, 10000);
-      return;
-    }
-    new Notice(
-      result.value.valid
-        ? "Feature is valid."
-        : `Feature has ${result.value.errors.length} issue(s): ${result.value.errors
-            .map((e) => e.message)
-            .join("; ")}`,
-      result.value.valid ? undefined : 10000,
-    );
-  }
-
-  private async detectMissingSteps(): Promise<void> {
-    const path = this.activeFeaturePath();
-    if (path === null) return;
-    const result = await this.specificationService.detectMissingSteps(path);
-    if (!result.ok) {
-      new Notice(`Detection failed: ${result.error.message}`, 10000);
-      return;
-    }
-    new Notice(
-      result.value.missingSteps.length === 0
-        ? "All steps are defined."
-        : `${result.value.missingSteps.length} missing step(s): ${result.value.missingSteps.join(
-            "; ",
-          )}`,
-      10000,
-    );
-  }
-
-  /**
-   * UC-010 / RV-4: detect the active feature's undefined steps via
-   * `SpecificationService`, then generate non-destructive step-definition stubs
-   * via `StepDefinitionService`. Generation is an explicit user command (not
-   * auto-on-every-edit); the detection event's id is threaded through as the
-   * `causationId` of `stepdefinition.generated` (Event Catalog §5), so a future
-   * auto-path can reuse the same wiring. Logic lives in the services — this only
-   * orchestrates the two calls and surfaces the outcome as a Notice.
-   */
-  private async generateStepDefinitions(): Promise<void> {
-    const path = this.activeFeaturePath();
-    if (path === null) return;
-    const detected = await this.specificationService.detectMissingSteps(path);
-    if (!detected.ok) {
-      new Notice(`Detection failed: ${detected.error.message}`, 10000);
-      return;
-    }
-    if (detected.value.missingSteps.length === 0) {
-      new Notice("No missing steps — nothing to generate.");
-      return;
-    }
-    const generated = await this.stepDefinitionService.generate(
-      path,
-      detected.value.missingSteps,
-      detected.value.detectionEventId,
-    );
-    if (!generated.ok) {
-      new Notice(`Could not generate step definitions: ${generated.error.message}`, 10000);
-      return;
-    }
-    const count = generated.value.generatedSteps.length;
-    new Notice(
-      count === 0
-        ? "No missing steps — nothing to generate."
-        : `Generated ${count} step stub(s) in ${generated.value.stepFile}.`,
-    );
-  }
-
-  private async validateEnvironment(): Promise<void> {
-    new Notice("Validating environment…");
-    const result = await this.validationService.validateEnvironment();
-    new Notice(
-      result.valid
-        ? "Environment is ready."
-        : `Environment has ${result.issues.length} issue(s): ${result.issues
-            .map((issue) => issue.message)
-            .join("; ")}`,
-      result.valid ? undefined : 10000,
-    );
-  }
-
-  private async repairInstallation(): Promise<void> {
-    new Notice("Repairing runner installation…");
-    const result = await this.maintenanceService.repair();
-    if (result.ok) {
-      new Notice(`Runner repaired: ${result.value.repairedFiles.length} file(s) re-synced.`);
-    } else {
-      new Notice(`Repair failed: ${result.error.message}`, 10000);
-    }
-  }
-
-  // EPIC-010 CI/CD (US-040, UC-019): write the GitHub Actions workflow into the
-  // user's repo. UI is thin — the generate/overwrite policy lives in the service.
-  private async generateCiWorkflow(overwriteExisting = false): Promise<void> {
-    new Notice(overwriteExisting ? "Overwriting CI workflow…" : "Generating CI workflow…");
-    const result = await this.pipelineService.generate({
-      provider: this.hubSettings.ci.provider,
-      settings: this.hubSettings,
-      overwriteExisting,
-    });
-    if (result.ok) {
-      new Notice(`CI workflow written to ${result.value.path}.`);
-    } else if (!overwriteExisting && result.error.details?.path) {
-      // The file exists; make the documented overwrite flow reachable (UC-019).
-      new Notice(`${result.error.message} Use "Overwrite CI Workflow" to replace it.`, 10000);
-    } else {
-      new Notice(`Could not generate CI workflow: ${result.error.message}`, 10000);
-    }
-  }
-
-  // US-041 / UC-020: report whether the repo is ready for CI.
-  private async checkCiReadiness(): Promise<void> {
-    new Notice("Checking CI readiness…");
-    const result = await this.validationService.validateCiReadiness(this.hubSettings);
-    // Spell out the warnings (e.g. which repository secrets to create), not just
-    // a count — this Notice is the only UI surface for the readiness result.
-    const warnings = result.warnings.length > 0 ? `\nWarnings: ${result.warnings.join("; ")}` : "";
-    if (result.ready) {
-      new Notice(`CI is ready.${warnings}`, warnings ? 10000 : undefined);
-    } else {
-      new Notice(`CI not ready — missing: ${result.missingItems.join("; ")}${warnings}`, 10000);
-    }
-  }
-
-  // EPIC-011 FEAT-024 (US-043/044/045, UC-021/022/023): write the document set
-  // into the vault's documentation folder and emit `documentation.generated`.
-  private async generateDocumentation(): Promise<void> {
-    new Notice("Generating Test Hub documentation…");
-    const result = await this.documentationService.generate();
-    if (result.ok) {
-      new Notice(`Documentation generated (${result.value.documents.length} note(s)).`);
-    } else {
-      new Notice(`Could not generate documentation: ${result.error.message}`, 10000);
-    }
   }
 
   // EPIC-011 FEAT-025 (US-046, UC-021/022/023): open the documentation index
@@ -894,6 +605,53 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     const opened = await this.documentationService.open(documentType);
     if (!opened.ok) {
       new Notice(`Could not open documentation: ${opened.error.message}`, 10000);
+    }
+  }
+
+  // Wave C §1: the dashboard hub's "Generate documentation" quick action.
+  // Opens a linked Evidence note from the console/dashboard. An evidence note
+  // can be deleted after its link was rendered (entry-point review) — a silent
+  // no-op there left the user clicking a dead button, so surface the failure.
+  private async openEvidenceNote(path: VaultPath): Promise<void> {
+    const opened = await this.workspaceAdapter.openFile(path);
+    if (!opened.ok) {
+      new Notice(
+        `Could not open the evidence note "${path}". It may have been moved or deleted.`,
+        10000,
+      );
+    }
+  }
+
+  // Reuses the documentation service the command palette uses; the UI is thin.
+  private async generateDocumentation(): Promise<void> {
+    new Notice("Generating Test Hub documentation…");
+    const result = await this.documentationService.generate();
+    if (result.ok) {
+      new Notice(`Documentation generated (${result.value.documents.length} note(s)).`);
+    } else {
+      new Notice(`Could not generate documentation: ${result.error.message}`, 10000);
+    }
+  }
+
+  // Wave C §2: switch the active environment from the dashboard top bar. The
+  // composition root owns the settings save path (updateSettings persists +
+  // emits settings.updated, which the dashboard subscribes to for its refresh),
+  // so the view passes a name and never writes settings itself.
+  private async switchEnvironment(name: string): Promise<void> {
+    if (!(name in this.hubSettings.sut.environments)) {
+      new Notice(`Unknown environment: ${name}`, 10000);
+      return;
+    }
+    if (name === this.hubSettings.sut.active) return;
+    const next: TestHubSettings = {
+      ...this.hubSettings,
+      sut: { ...this.hubSettings.sut, active: name },
+    };
+    const result = await this.updateSettings(next);
+    if (result.ok) {
+      new Notice(`Active environment: ${name}.`);
+    } else {
+      new Notice(`Could not switch environment: ${result.error.message}`, 10000);
     }
   }
 
@@ -921,21 +679,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // The active-run refusal and the run/maintenance mutual exclusion are
     // enforced SYNCHRONOUSLY inside MaintenanceService.reset() via the shared
     // maintenance lock (security L1 TOCTOU close), so the run can't reserve a
-    // slot in a check-then-act gap here.
-    //
-    // Evidence I/O outlives the active run slot (the coordinator writes Use Case
-    // frontmatter after the slot frees), so drain it first — but only when no run
-    // is active, so we never block while a live run is in flight (the reset would
-    // be refused anyway). This wait happens BEFORE acquiring the lock; a run
-    // racing in afterwards is rejected by the lock, with nothing yet mutated.
-    if (this.testExecutionService.activeRunId() === null) {
-      await this.postRunCoordinator.whenSettled();
-    }
+    // slot in a check-then-act gap here. Evidence I/O outlives the active run
+    // slot (the coordinator writes Use Case frontmatter after the slot frees);
+    // reset() drains it via the injected whenPostRunSettled hook AFTER the lock
+    // is acquired, so no pre-await is needed — or safe — here.
     const result = await this.maintenanceService.reset();
     if (!result.ok) {
       new Notice(
         result.error.code === "RUN_IN_PROGRESS"
-          ? "A test run is in progress; cancel it before resetting."
+          ? "A Test Run is in progress; cancel it before resetting."
           : `Reset failed: ${result.error.message}`,
         10000,
       );

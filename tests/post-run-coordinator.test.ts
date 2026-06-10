@@ -19,6 +19,7 @@ import { createEvent } from "../src/shared/event-bus/create-event";
 import { appError } from "../src/shared/errors/errors";
 import { err, ok, type Result } from "../src/shared/result/result";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
+import type { Logger } from "../src/shared/logging/logger";
 import { recordingEventBus, silentLogger } from "./fakes";
 
 const run = (overrides: Partial<TestRun> = {}): TestRun => ({
@@ -441,6 +442,84 @@ describe("PostRunCoordinator", () => {
 
       expect(outcome.ok).toBe(true);
       if (outcome.ok) expect(outcome.value.kind).toBe("recorded");
+    });
+  });
+
+  describe("fire-and-forget rejection backstop", () => {
+    it("logs a rejected task, keeps the chain intact, and still runs the next enqueue", async () => {
+      // runImportAndGenerate never rejects today; simulate a future edit that
+      // lets a rejection through and assert it is logged (not an unhandled
+      // rejection) and that the serialized chain keeps working afterwards.
+      const errors: string[] = [];
+      const logger: Logger = {
+        ...silentLogger,
+        error: (message) => {
+          errors.push(message);
+        },
+      };
+      const env = build({ logger });
+      env.coordinator.start();
+      env.setLastRun(run({ status: "passed" }));
+
+      const internals = env.coordinator as unknown as {
+        runImportAndGenerate: (r: TestRun) => Promise<unknown>;
+      };
+      const original = internals.runImportAndGenerate.bind(env.coordinator);
+      let rejectOnce = true;
+      internals.runImportAndGenerate = (r) => {
+        if (rejectOnce) {
+          rejectOnce = false;
+          return Promise.reject(new Error("future bug"));
+        }
+        return original(r);
+      };
+
+      await publishTerminal(env.bus, "testrun.completed");
+      await env.coordinator.whenSettled();
+      // The .catch backstop is chained off the task, not the chain — give its
+      // microtask a turn before asserting.
+      await Promise.resolve();
+
+      expect(errors).toContain("Post-run task rejected unexpectedly");
+      expect(env.reportImport.calls).toHaveLength(0); // the rejected task imported nothing
+
+      // The chain is not broken: a subsequent terminal event still imports.
+      await publishTerminal(env.bus, "testrun.completed");
+      await env.coordinator.whenSettled();
+      expect(env.reportImport.calls).toHaveLength(1);
+      expect(env.evidenceGen.calls).toHaveLength(1);
+    });
+  });
+
+  describe("lastEvidence probe (Wave G §1)", () => {
+    it("is null before any evidence has been generated", () => {
+      const env = build();
+      expect(env.coordinator.lastEvidence()).toBeNull();
+    });
+
+    it("records the last generated evidence note (runId + path) after a run imports", async () => {
+      const env = build();
+      env.coordinator.start();
+      env.setLastRun(run({ status: "passed" }));
+
+      await publishTerminal(env.bus, "testrun.completed");
+      await env.coordinator.whenSettled();
+
+      expect(env.coordinator.lastEvidence()).toEqual({
+        runId: "RUN-2026-05-31-100000",
+        evidencePath: vp("Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md"),
+      });
+    });
+
+    it("records nothing when evidence Markdown is disabled (no note exists to open)", async () => {
+      const env = build();
+      env.setMarkdownEnabled(false);
+      env.setLastRun(run({ status: "passed" }));
+
+      const outcome = await env.coordinator.importLastRun();
+
+      expect(outcome.ok).toBe(true);
+      expect(env.coordinator.lastEvidence()).toBeNull();
     });
   });
 

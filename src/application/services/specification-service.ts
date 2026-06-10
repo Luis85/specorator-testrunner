@@ -26,6 +26,14 @@ export interface SpecificationValidationResult {
   errors: SpecificationValidationError[];
 }
 
+/** A discovered `.feature` file, shaped for the run-scoping picker (UC-013). */
+export interface FeatureFileEntry {
+  /** Vault path of the `.feature` file (the run target). */
+  path: VaultPath;
+  /** Path relative to the feature-files folder (the human-readable label). */
+  label: string;
+}
+
 export interface MissingStepResult {
   featurePath: VaultPath;
   missingSteps: string[];
@@ -51,6 +59,22 @@ export interface SpecificationService {
   update(specification: FeatureSpecification): Promise<Result<void>>;
   validate(featurePath: VaultPath): Promise<Result<SpecificationValidationResult>>;
   detectMissingSteps(featurePath: VaultPath): Promise<Result<MissingStepResult>>;
+  /**
+   * Enumerates every `.feature` file under the configured feature-files folder
+   * for run-scoping pickers (US-029, UC-013). Preserves the discovery semantics
+   * that previously lived in `main.ts`:
+   *
+   * - the listing is RECURSIVE (features in nested subfolders are included,
+   *   matching the runner's feature glob);
+   * - only paths ending in `.feature` are returned;
+   * - `label` is the path relative to the feature-files folder — the folder
+   *   prefix plus its trailing `/` stripped via `path.slice(folder.length + 1)`
+   *   (vault paths are `/`-separated and the port returns descendants of the
+   *   folder, so the prefix is always present);
+   * - the port's listing order is preserved (no sorting) and no events are
+   *   published (discovery is a read-only query).
+   */
+  listFeatures(): Promise<Result<FeatureFileEntry[]>>;
 }
 
 /** Serialises a {@link FeatureSpecification} back to plain Gherkin (no YAML). */
@@ -235,6 +259,19 @@ export class DefaultSpecificationService implements SpecificationService {
       missing: missingSteps.length,
     });
     return ok({ featurePath, missingSteps, detectionEventId: detectionEvent.id });
+  }
+
+  /** UC-013: discover the runnable `.feature` files (see the interface doc). */
+  async listFeatures(): Promise<Result<FeatureFileEntry[]>> {
+    const settings = await this.settingsService.load();
+    const folder = settings.paths.featureFilesPath;
+    const listed = await this.fs.listFilesRecursive(folder);
+    if (!listed.ok) return err(listed.error);
+    return ok(
+      listed.value
+        .filter((path) => path.endsWith(".feature"))
+        .map((path) => ({ path, label: path.slice(folder.length + 1) })),
+    );
   }
 
   /**

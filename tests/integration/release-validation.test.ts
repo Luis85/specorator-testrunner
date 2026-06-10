@@ -64,8 +64,13 @@ describe("release validation: build artifact", () => {
 });
 
 describe("release validation: registered command surface", () => {
-  const mainSource = readFileSync(join(repoRoot, "src", "main.ts"), "utf8");
-  const commandIds = [...mainSource.matchAll(/addCommand\(\{[\s\S]*?id:\s*"([^"]+)"/g)].map(
+  // Command registration lives in presentation/commands (P2-7); main.ts is the
+  // composition root that calls registerCommands. Scan both so the gate keeps
+  // working wherever a command is registered.
+  const commandSource =
+    readFileSync(join(repoRoot, "src", "main.ts"), "utf8") +
+    readFileSync(join(repoRoot, "src", "presentation", "commands", "register-commands.ts"), "utf8");
+  const commandIds = [...commandSource.matchAll(/addCommand\(\{[\s\S]*?id:\s*"([^"]+)"/g)].map(
     (m) => m[1],
   );
 

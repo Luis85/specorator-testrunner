@@ -20,13 +20,18 @@ export class ObsidianWorkspaceAdapter implements WorkspacePort {
     return ok(undefined);
   }
 
-  async openView(viewType: string): Promise<Result<void>> {
+  async openView(viewType: string, location: "main" | "sidebar" = "main"): Promise<Result<void>> {
     const { workspace } = this.app;
     let leaf = workspace.getLeavesOfType(viewType)[0];
     if (!leaf) {
-      const right = workspace.getRightLeaf(false);
-      if (!right) return err(appError("INIT_FAILED", "No workspace leaf is available."));
-      leaf = right;
+      // Work surfaces (dashboard, explorers, detail) open as a MAIN tab; only
+      // the Test Console — a monitoring companion — defaults to the sidebar.
+      // If the user has since dragged a leaf elsewhere, the reuse branch above
+      // respects their placement.
+      const target =
+        location === "sidebar" ? workspace.getRightLeaf(false) : workspace.getLeaf("tab");
+      if (!target) return err(appError("INIT_FAILED", "No workspace leaf is available."));
+      leaf = target;
       await leaf.setViewState({ type: viewType, active: true });
     }
     // revealLeaf may return a promise in some Obsidian versions; we do not

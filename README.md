@@ -18,6 +18,30 @@ single Markdown-native, local-first workflow.
 > listing ID/Title/Status/Automation Status. Specification management
 > (EPIC-005) is next.
 
+## Working from the UI
+
+The Test Hub is designed so a non-technical user can run the whole
+requirements-to-evidence loop without the command palette. Power users keep
+every command, but each one is also reachable through a view:
+
+- **Dashboard (home/hub).** Lands on a quick-action bar (New Use Case / New Test
+  Suite, Run all / Run demo, Generate documentation, and Open the explorers),
+  an active-environment badge with a one-click switcher, KPI tiles, and recent
+  runs that link straight to their Evidence note. Before the vault is
+  initialized it shows a single prominent **Initialize Test Hub** call to
+  action.
+- **Use Case detail.** Opening a Use Case shows its Feature Specifications with
+  per-Feature **Open / Run / Validate / Detect missing steps / Generate step
+  definitions** actions (results render inline), a **Generate Feature** button,
+  and **Run Use Case** — the full spec-to-run authoring workflow in one place.
+- **Test Console.** A toolbar with **Cancel run** (enabled only while a run is
+  active), **Re-run**, and **Clear**, plus a live elapsed timer and the run's
+  scope, over the streaming output.
+- **Settings.** A **System under test** section to add/remove environments and
+  edit their base URL and credential variables (validation errors shown
+  inline), plus **Validate environment**, **Repair installation**, **Generate CI
+  workflow**, and **Check CI readiness** with inline result checklists.
+
 ## Vision
 
 Enable teams to transform requirements into executable specifications and

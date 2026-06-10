@@ -24,13 +24,23 @@ export class CreateUseCaseModal extends Modal {
     const { contentEl } = this;
     contentEl.createEl("h2", { text: "Create Use Case" });
 
-    new Setting(contentEl)
-      .setName("Title")
-      .addText((text) =>
-        text
-          .setPlaceholder("e.g. Checkout with a saved card")
-          .onChange((value) => (this.useCaseTitle = value)),
-      );
+    new Setting(contentEl).setName("Title").addText((text) => {
+      text
+        .setPlaceholder("e.g. Checkout with a saved card")
+        .onChange((value) => (this.useCaseTitle = value));
+      // Enter submits (mirrors AddEnvironmentModal) so the keyboard flow
+      // doesn't force a mouse trip; the description textarea keeps Enter for
+      // newlines and is deliberately NOT wired this way.
+      text.inputEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void this.submit();
+        }
+      });
+      // Autofocus the first input so the user can start typing immediately
+      // instead of tabbing/clicking into the field first.
+      text.inputEl.focus();
+    });
     new Setting(contentEl)
       .setName("Description")
       .addTextArea((area) =>

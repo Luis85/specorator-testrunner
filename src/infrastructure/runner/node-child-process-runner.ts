@@ -18,17 +18,29 @@ export const quoteForCmd = (token: string): string => `"${token.replace(/"/g, '"
 
 /**
  * Composes the single command-line string passed to `cmd.exe /d /s /c` for the
- * `.cmd` shim path. Each token is quoted via {@link quoteForCmd}, then the whole
- * joined line is wrapped in ONE extra outer quote pair: `cmd /s /c` strips the
- * first and last quote of the command string, so without the wrapper the
- * per-token quotes would be mangled. After `/s` strips the outer pair, the inner
- * `"npm" "run" …` boundaries survive (the documented `cmd /s /c ""x" "y""` form).
+ * `.cmd` shim path. ARGUMENTS are always quoted via {@link quoteForCmd}; the
+ * PROGRAM token is quoted ONLY when it needs it (spaces/quotes — e.g. a full
+ * path under `C:\Program Files`). A bare program name must stay UNQUOTED:
+ * invoking a batch file as a quoted bare name (`"npm" install`) makes cmd keep
+ * `%0` as the literal `"npm"`, so `%~dp0` inside `npm.cmd` resolves against
+ * the CURRENT DIRECTORY instead of npm's install dir — npm then dies with
+ * `Cannot find module '<cwd>\node_modules\npm\bin\npm-prefix.js'` (exit 1, the
+ * v1 testvault install failure). Unquoted, cmd resolves the name via PATH and
+ * rewrites `%0` to the full script path, so `%~dp0` is correct; a quoted FULL
+ * path is also fine (`%0` carries the directory either way).
+ *
+ * The joined line is then wrapped in ONE outer quote pair: `cmd /s /c` strips
+ * the first and last quote of the command string, so without the wrapper the
+ * inner quotes would be mangled (the documented `cmd /s /c "x "y""` form).
  *
  * Pure (no spawning) so the Windows command-line composition is unit-testable on
  * any OS without launching a real `cmd.exe`.
  */
-export const buildCmdShimCommandLine = (args: readonly string[]): string =>
-  `"${args.map(quoteForCmd).join(" ")}"`;
+export const buildCmdShimCommandLine = (args: readonly string[]): string => {
+  const [program, ...rest] = args;
+  const programToken = /[\s"]/.test(program) ? quoteForCmd(program) : program;
+  return `"${[programToken, ...rest.map(quoteForCmd)].join(" ")}"`;
+};
 
 /** Subset of `child_process.spawn` the runner depends on — injectable as a seam. */
 export type SpawnFn = typeof spawn;

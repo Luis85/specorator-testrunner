@@ -39,6 +39,19 @@
   color: var(--text-muted);
 }
 
+/* Colour-blind-safe accents for the outcome tiles only: the border POSITION
+ * carries the signal alongside the colour, and the text label always remains,
+ * so status is never colour-only. `data-status` is the lowercased KPI label
+ * set by DashboardView; neutral tiles (total/specified/automated) match no
+ * rule and keep the plain border. */
+.e2e-test-hub-kpi-tile[data-status="passing"] {
+  border-left: 3px solid var(--text-success);
+}
+
+.e2e-test-hub-kpi-tile[data-status="failing"] {
+  border-left: 3px solid var(--text-error);
+}
+
 /* ── Tables (dashboard recent runs, suites, use cases) ────────────────────── */
 
 .e2e-test-hub-runs-table,
@@ -67,6 +80,23 @@
   border-bottom: 1px solid var(--background-modifier-border);
   color: var(--text-normal);
   vertical-align: top;
+}
+
+/* Recent-runs status cell (DashboardView, US-038). `data-status` mirrors the
+ * raw TestRunStatus union (same convention as the console banner below); the
+ * cell text spells out the status, so colour is reinforcement, not the only
+ * channel. queued/running fall through to the default cell colour. */
+.e2e-test-hub-run-status[data-status="passed"] {
+  color: var(--text-success);
+}
+
+.e2e-test-hub-run-status[data-status="failed"],
+.e2e-test-hub-run-status[data-status="errored"] {
+  color: var(--text-error);
+}
+
+.e2e-test-hub-run-status[data-status="cancelled"] {
+  color: var(--text-muted);
 }
 
 .e2e-test-hub-runs-table tbody tr:hover,
@@ -123,6 +153,14 @@
   cursor: pointer;
 }
 
+/* Keyboard focus ring matching .e2e-test-hub-link-button:focus-visible, so
+ * tabbing through the documentation actions is visibly tracked. */
+.e2e-test-hub-doc-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
 /* ── Test Console (TestConsoleView, US-030 / UC-015) ──────────────────────── */
 
 .e2e-test-hub-console-banner {
@@ -150,11 +188,24 @@
   color: var(--text-success);
 }
 
+/* NOT --background-modifier-error: that's a saturated red, and --text-error on
+ * it is red-on-red — the failed-run banner rendered as an unreadable solid
+ * block (testvault demo run). Same fix as .e2e-test-hub-error. */
 .e2e-test-hub-console-banner[data-status="failed"],
 .e2e-test-hub-console-banner[data-status="errored"] {
-  background-color: var(--background-modifier-error);
+  background-color: var(--background-secondary);
   border-left-color: var(--text-error);
   color: var(--text-error);
+}
+
+/* Actionable guidance under the terminal banner headline (e.g. undefined
+ * steps -> generate step definitions). Normal text colour: it's advice, not
+ * part of the red/green status signal. */
+.e2e-test-hub-console-banner-hint {
+  margin-top: var(--size-4-1, 4px);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 0.875rem);
+  font-weight: var(--font-normal, 400);
 }
 
 .e2e-test-hub-console-banner[data-status="cancelled"] {
@@ -184,10 +235,11 @@
   margin-bottom: var(--size-4-1, 4px);
 }
 
-/* stderr lines are emphasised so failures stand out in the stream. */
+/* stderr lines are emphasised so failures stand out in the stream. Text colour
+ * + the "[stderr]" prefix carry the signal — a --background-modifier-error fill
+ * would render red-on-red (same bug as the failed banner). */
 .e2e-test-hub-console-stderr {
   color: var(--text-error);
-  background-color: var(--background-modifier-error);
 }
 
 /* ── Initialization wizard progress / error (initialization-wizard-modal) ─── */
@@ -209,11 +261,562 @@
   color: var(--text-muted);
 }
 
+/* NOT --background-modifier-error: that's a saturated red, and --text-error on
+ * it is red-on-red — the wizard's failure box rendered as an unreadable solid
+ * block (testvault bug report). Subtle background + error border + error text
+ * stays readable in light and dark themes. */
 .e2e-test-hub-error {
   margin: var(--size-4-3, 12px) 0;
   padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
   border-left: 4px solid var(--text-error);
   border-radius: var(--radius-s, 4px);
-  background-color: var(--background-modifier-error);
+  background-color: var(--background-secondary);
+  color: var(--text-error);
+}
+
+/* The failing child process's stderr tail inside the wizard failure box: the
+ * actual reason (npm/network/loader errors) without opening the dev console. */
+.e2e-test-hub-error-output {
+  margin: var(--size-4-2, 8px) 0 0;
+  padding: var(--size-4-2, 8px);
+  max-height: 14em;
+  overflow: auto;
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-primary-alt);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller, 0.8125rem);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Settings (TestHubSettingTab — SUT environments, maintenance, CI) ─────── */
+
+/* One bordered block per SUT environment (ADR-0013): name + remove button,
+ * base URL, and the auth env-var editor. */
+.e2e-test-hub-env-block {
+  margin: var(--size-4-2, 8px) 0 var(--size-4-4, 16px);
+  padding: 0 var(--size-4-3, 12px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background-color: var(--background-secondary);
+}
+
+/* Auth env-var rows are KEY + VALUE inputs + a remove button; the Setting's
+ * (empty) info column is hidden so the inputs get the full row width. */
+.e2e-test-hub-env-var-row .setting-item-info {
+  display: none;
+}
+
+.e2e-test-hub-env-var-row .setting-item-control {
+  justify-content: flex-start;
+}
+
+.e2e-test-hub-env-var-row input {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+/* Inline save-blocking validation errors (SettingsService SETTINGS_INVALID),
+ * rendered near the section the rejected fields belong to. Hidden while empty
+ * so the section doesn't carry a permanent red box. */
+.e2e-test-hub-settings-errors {
+  margin: var(--size-4-2, 8px) 0;
+  padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+  border-left: 4px solid var(--text-error);
+  border-radius: var(--radius-s, 4px);
+  /* Same red-on-red fix as .e2e-test-hub-error: --background-modifier-error
+   * makes --text-error unreadable. */
+  background-color: var(--background-secondary);
+  color: var(--text-error);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-settings-errors:empty {
+  display: none;
+}
+
+.e2e-test-hub-settings-error-row {
+  padding: var(--size-4-1, 4px) 0;
+}
+
+/* Inline operation results (validate / repair / generate / readiness). The
+ * rows reuse the wizard's `data-status` convention: the icon + text carry the
+ * signal, colour is reinforcement only. Hidden while empty. */
+.e2e-test-hub-settings-result {
+  margin: 0 0 var(--size-4-3, 12px);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-settings-result:empty {
+  display: none;
+}
+
+.e2e-test-hub-settings-check-row {
+  padding: var(--size-4-1, 4px) 0;
+  color: var(--text-muted);
+}
+
+.e2e-test-hub-settings-check-row[data-status="ok"] {
+  color: var(--text-success);
+}
+
+.e2e-test-hub-settings-check-row[data-status="error"] {
+  color: var(--text-error);
+}
+
+.e2e-test-hub-settings-check-row[data-status="warning"] {
+  color: var(--text-warning, var(--text-muted));
+}
+
+/* info / pending rows fall through to the muted default. */
+
+/* Inline action button rendered inside a result area (e.g. "Overwrite
+ * workflow" after an already-exists conflict). */
+.e2e-test-hub-settings-inline-button {
+  cursor: pointer;
+  margin-top: var(--size-4-1, 4px);
+}
+
+/* Keyboard focus ring matching .e2e-test-hub-link-button:focus-visible, so the
+ * settings actions keep :focus-visible parity with the other plugin buttons. */
+.e2e-test-hub-settings-inline-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* ── Test Console toolbar / run controls (Wave B, US-030 / UC-015) ─────────────
+ * A header toolbar above the output lets a normal user start, watch, and cancel
+ * a Test Run without leaving the panel for the command palette. Buttons reuse
+ * the Obsidian button defaults; this section only adds layout, the disabled +
+ * :focus-visible parity the rest of the plugin uses, the metadata line, and the
+ * per-row Run buttons in the Test Suites / Use Cases explorers. Status colours
+ * reuse the existing [data-status] convention (raw TestRunStatus). */
+
+.e2e-test-hub-console-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+  align-items: center;
+  margin: var(--size-4-2, 8px) 0;
+}
+
+.e2e-test-hub-console-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-1, 4px);
+  cursor: pointer;
+}
+
+/* Disabled state: dimmed and non-interactive (e.g. Cancel while idle, Re-run
+ * with no last run). Status is never colour-only — the button keeps its label
+ * and an explanatory aria-label set by refreshControls(). */
+.e2e-test-hub-console-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Inline icon glyph sized to the button text. */
+.e2e-test-hub-console-action-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.e2e-test-hub-console-action-icon svg {
+  width: var(--icon-s, 16px);
+  height: var(--icon-s, 16px);
+}
+
+/* Keyboard focus ring matching .e2e-test-hub-link-button:focus-visible, so the
+ * console actions keep :focus-visible parity with the other plugin buttons. */
+.e2e-test-hub-console-action:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* Run metadata line: scope/target + live elapsed timer while active, last
+ * run's outcome when idle, empty-state copy before the first run. Muted by
+ * default; [data-status] tints it to mirror the banner's TestRunStatus. */
+.e2e-test-hub-console-meta {
+  margin: var(--size-4-1, 4px) 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 0.8rem);
+}
+
+.e2e-test-hub-console-meta[data-status="running"],
+.e2e-test-hub-console-meta[data-status="queued"] {
+  color: var(--text-normal);
+}
+
+.e2e-test-hub-console-meta[data-status="passed"] {
+  color: var(--text-success);
+}
+
+.e2e-test-hub-console-meta[data-status="failed"],
+.e2e-test-hub-console-meta[data-status="errored"] {
+  color: var(--text-error);
+}
+
+.e2e-test-hub-console-meta[data-status="cancelled"] {
+  color: var(--text-warning, var(--text-muted));
+}
+
+/* Per-row Run button in the Test Suites / Use Cases explorer tables. Sits in
+ * its own "Run" column next to the Name/ID link; compact so it doesn't crowd
+ * the row. */
+.e2e-test-hub-run-button {
+  cursor: pointer;
+  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-run-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* ── Dashboard hub (DashboardView, Wave C) ────────────────────────────────────
+ * The Dashboard is the home/hub a user lands on: a quick-action bar, an active-
+ * environment badge + switcher, navigable KPI tiles, and clickable recent-run
+ * rows. Reuses the Obsidian vars + the existing [data-status]/kpi conventions
+ * above so it adapts to themes and stays colour-blind-safe (status text always
+ * present; colour is reinforcement only). */
+
+/* Initialize CTA shown when the hub isn't set up yet (snapshot fails). */
+.e2e-test-hub-init-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--size-4-3, 12px);
+  padding: var(--size-4-4, 16px);
+  margin: var(--size-4-4, 16px) 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background-color: var(--background-secondary);
+}
+
+.e2e-test-hub-init-cta-text {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* Top bar: active-environment badge (Wave C §2). */
+.e2e-test-hub-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  margin: var(--size-4-2, 8px) 0;
+}
+
+.e2e-test-hub-env-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+/* When 2+ environments exist the badge is a button — give it the affordance. */
+.e2e-test-hub-env-badge.is-switchable {
+  cursor: pointer;
+}
+
+.e2e-test-hub-env-badge.is-switchable:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.e2e-test-hub-env-badge.is-switchable:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Quick-action bar (Wave C §1): Create / Run / Open groups, scannable. */
+.e2e-test-hub-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-4, 16px);
+  margin: var(--size-4-3, 12px) 0;
+}
+
+.e2e-test-hub-quick-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-1, 4px);
+}
+
+.e2e-test-hub-quick-group-label {
+  font-size: var(--font-ui-smaller, 0.8rem);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.e2e-test-hub-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-quick-button {
+  cursor: pointer;
+}
+
+.e2e-test-hub-quick-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* KPI tiles are <button>s in the hub (Wave C §4): reset button chrome but keep
+ * the tile look from the .e2e-test-hub-kpi-tile rules above, and add a clear
+ * keyboard-focus affordance since they navigate to the Use Cases explorer. */
+.e2e-test-hub-kpi-tile {
+  cursor: pointer;
+  width: 100%;
+  font: inherit;
+}
+
+.e2e-test-hub-kpi-tile:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.e2e-test-hub-kpi-tile:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Clickable recent-run rows (Wave C §3): rows that link to an Evidence note get
+ * a pointer + focus ring (they are role=link, tabindex=0). Rows without evidence
+ * keep the default cursor and carry an explanatory tooltip via `title`. */
+.e2e-test-hub-run-row.is-navigable {
+  cursor: pointer;
+}
+
+/* Deliberate INSET focus ring (negative offset), unlike the buttons' +2px:
+ * the row is a full-width table row, so a positive offset would draw the ring
+ * outside its box and overlap the adjacent rows. Insetting keeps the ring
+ * fully inside the focused row — the right shape for row-shaped targets. */
+.e2e-test-hub-run-row.is-navigable:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+/* ── Onboarding (Wave G §2) ────────────────────────────────────────────────────
+ * "Get started" panel on the dashboard hub, shown only when the Test Hub IS
+ * initialized but the vault has zero Use Cases (a first-time user right after
+ * the wizard). Three numbered steps as real buttons — create a Use Case, run
+ * the shipped demo, open the Getting Started guide — each with a one-line
+ * explanation. Reuses the Obsidian vars + the :focus-visible parity the rest
+ * of the plugin's buttons keep; it disappears once a Use Case exists. */
+.e2e-test-hub-onboarding {
+  padding: var(--size-4-4, 16px);
+  margin: var(--size-4-3, 12px) 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background-color: var(--background-secondary);
+}
+
+.e2e-test-hub-onboarding h3 {
+  margin: 0 0 var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-onboarding-intro {
+  margin: 0 0 var(--size-4-3, 12px);
+  color: var(--text-muted);
+}
+
+/* A semantic <ol>: the browser numbering IS the step number (1–3). */
+.e2e-test-hub-onboarding-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3, 12px);
+  margin: 0;
+  padding-left: var(--size-4-5, 20px);
+}
+
+.e2e-test-hub-onboarding-button {
+  cursor: pointer;
+}
+
+.e2e-test-hub-onboarding-button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* One-line explanation under each step button. */
+.e2e-test-hub-onboarding-desc {
+  margin-top: var(--size-4-1, 4px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 0.8rem);
+}
+
+/* ── Use Case detail (Wave D, UI-driven authoring & testing) ───────────────────
+ * The detail view turns one Use Case into an executable, traceable surface: a
+ * header (status + automation status), Open note / Run Use Case / Generate
+ * Feature actions, and a list of Feature Specifications whose per-row actions
+ * (Validate / Detect missing steps / Generate step definitions) render their
+ * result inline. Status pills + inline rows reuse the existing Obsidian vars and
+ * the [data-status] convention; the inline result rows share the settings/wizard
+ * `.e2e-test-hub-settings-check-row` styles, so colour is reinforcement only and
+ * the ✓/✗/! icon carries the signal. */
+.e2e-test-hub-uc-detail {
+  padding: var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-uc-detail-header {
+  margin-bottom: var(--size-4-4, 16px);
+}
+
+.e2e-test-hub-uc-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+  margin-bottom: var(--size-4-2, 8px);
+}
+
+/* Status / automation-status pills. Default to muted; [data-status] tints them
+ * with the same vocabulary the dashboard KPI tiles + run cells use. */
+.e2e-test-hub-uc-detail-status {
+  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-uc-detail-status[data-status="passing"],
+.e2e-test-hub-uc-detail-status[data-status="verified"],
+.e2e-test-hub-uc-detail-status[data-status="automated"] {
+  color: var(--text-success);
+}
+
+.e2e-test-hub-uc-detail-status[data-status="failing"] {
+  color: var(--text-error);
+}
+
+.e2e-test-hub-uc-detail-status[data-status="missing-steps"] {
+  color: var(--text-warning, var(--text-muted));
+}
+
+.e2e-test-hub-uc-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-uc-detail-features {
+  margin-top: var(--size-4-4, 16px);
+}
+
+.e2e-test-hub-uc-detail-empty {
+  color: var(--text-muted);
+}
+
+/* One Feature Specification card: name + actions on top, the inline result area
+ * (validate / detect / generate) below. */
+.e2e-test-hub-uc-detail-feature {
+  padding: var(--size-4-2, 8px) 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.e2e-test-hub-uc-detail-feature-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-2, 8px);
+}
+
+/* Long vault paths truncate with an ellipsis instead of wrapping/overflowing;
+ * the view sets `title` with the full path so hover reveals it. */
+.e2e-test-hub-uc-detail-feature-name {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small, 0.875rem);
+  max-width: 28em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.e2e-test-hub-uc-detail-feature-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1, 4px);
+}
+
+/* Hidden until an action runs (mirrors the settings result area). */
+.e2e-test-hub-uc-detail-feature-result {
+  margin-top: var(--size-4-1, 4px);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-uc-detail-feature-result:empty {
+  display: none;
+}
+
+/* ── Wave F insight (counts, health, Tag Expression preview) ───────────────────
+ * Read-only insight surfaces: the suites explorer "Scenarios" column, the Use
+ * Cases explorer "Features" column, the per-Feature health line in the Use Case
+ * detail view, and the live Tag Expression preview in CreateSuiteModal. Zero
+ * counts reuse the existing [data-status] vocabulary (warning = amber nudge);
+ * colour is reinforcement only — the tooltip / aria-label carries the message. */
+
+/* Zero-count accents: a suite whose Tag Expression matches no scenarios, or a
+ * Use Case with no Feature Specifications yet. */
+.e2e-test-hub-suite-scenarios[data-status="warning"],
+.e2e-test-hub-uc-features[data-status="warning"] {
+  color: var(--text-warning, var(--text-muted));
+  font-weight: var(--font-semibold, 600);
+}
+
+/* Muted per-Feature health line in the Use Case detail view:
+ * "N scenarios (M @wip)" plus the feature-level @wip badge. Hidden while the
+ * (fire-and-forget) insight read is still in flight or failed. */
+.e2e-test-hub-uc-detail-feature-health {
+  margin-top: var(--size-4-1, 4px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-uc-detail-feature-health:empty {
+  display: none;
+}
+
+/* Feature-level @wip badge: the Feature is excluded from the KPI roll-up per
+ * ADR-0017 (the tooltip says so). */
+.e2e-test-hub-wip-badge {
+  margin-left: var(--size-4-1, 4px);
+  padding: 0 var(--size-4-1, 4px);
+  border-radius: var(--radius-s, 4px);
+  background-color: var(--background-secondary);
+  color: var(--text-warning, var(--text-muted));
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller, 0.75rem);
+}
+
+/* CreateSuiteModal: the debounced "Matches N scenarios" preview under the
+ * tag-expression field. Muted by default; [data-status] tints the 0-match
+ * warning and the parse-error message. Hidden while empty. */
+.e2e-test-hub-suite-tag-preview {
+  margin-top: var(--size-4-1, 4px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small, 0.875rem);
+}
+
+.e2e-test-hub-suite-tag-preview:empty {
+  display: none;
+}
+
+.e2e-test-hub-suite-tag-preview[data-status="warning"] {
+  color: var(--text-warning, var(--text-muted));
+}
+
+.e2e-test-hub-suite-tag-preview[data-status="error"] {
   color: var(--text-error);
 }

@@ -205,6 +205,66 @@ describe("DefaultSpecificationService.validate", () => {
   });
 });
 
+describe("DefaultSpecificationService.listFeatures", () => {
+  it("lists only .feature files under the feature-files folder, recursively", async () => {
+    const { service, fs } = build();
+    fs.files.set("Specifications/features/UC-001-happy-path.feature", "Feature: A\n");
+    fs.files.set("Specifications/features/auth/UC-002-login.feature", "Feature: B\n");
+    fs.files.set("Specifications/features/notes.md", "not a feature");
+    fs.files.set("Use Cases/UC-001 Something.md", "outside the folder");
+
+    const result = await service.listFeatures();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual([
+      {
+        path: "Specifications/features/UC-001-happy-path.feature",
+        label: "UC-001-happy-path.feature",
+      },
+      {
+        path: "Specifications/features/auth/UC-002-login.feature",
+        label: "auth/UC-002-login.feature",
+      },
+    ]);
+  });
+
+  it("labels strip exactly the folder prefix and keep the port's order (no sorting)", async () => {
+    const { service, fs } = build();
+    // Seed deliberately out of lexicographic order; the fake lists in insertion
+    // order and listFeatures must preserve it.
+    fs.files.set("Specifications/features/z-last.feature", "Feature: Z\n");
+    fs.files.set("Specifications/features/a-first.feature", "Feature: A\n");
+
+    const result = await service.listFeatures();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.map((f) => f.label)).toEqual(["z-last.feature", "a-first.feature"]);
+  });
+
+  it("returns an empty list when no Feature files exist", async () => {
+    const { service } = build();
+    const result = await service.listFeatures();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual([]);
+  });
+
+  it("propagates a listing failure from the vault port", async () => {
+    const { service, fs } = build();
+    fs.listFilesRecursive = async () => ({
+      ok: false,
+      error: { code: "INIT_FAILED", message: "vault unavailable" },
+    });
+
+    const result = await service.listFeatures();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toBe("vault unavailable");
+  });
+});
+
 describe("DefaultSpecificationService.detectMissingSteps", () => {
   it("reports steps not matched by any step definition", async () => {
     const { service, fs, types } = build();

@@ -1,0 +1,203 @@
+import { describe, expect, it } from "vitest";
+import type {
+  FeatureFileEntry,
+  MissingStepResult,
+  SpecificationValidationResult,
+} from "../src/application/services/specification-service";
+import type { GenerateStepDefinitionsResult } from "../src/application/services/step-definition-service";
+import type { UseCase } from "../src/domain/entities/use-case";
+import {
+  featureHealthLine,
+  featureValidationRows,
+  missingStepsRows,
+  projectFeatureRows,
+  projectUseCaseHeader,
+  stepGenerationRows,
+} from "../src/presentation/views/use-case-detail-rows";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
+
+const useCase = (over: Partial<UseCase> = {}): UseCase => ({
+  id: "UC-001",
+  title: "Open Example",
+  status: "specified",
+  automationStatus: "implemented",
+  featureFiles: [],
+  suites: [],
+  evidence: [],
+  path: vp("Use Cases/UC-001 Open Example.md"),
+  ...over,
+});
+
+const entry = (path: string): FeatureFileEntry => ({
+  path: vp(path),
+  label: path.replace(/^Features\//, ""),
+});
+
+describe("projectUseCaseHeader", () => {
+  it("projects the header fields the detail view renders", () => {
+    expect(projectUseCaseHeader(useCase())).toEqual({
+      id: "UC-001",
+      title: "Open Example",
+      status: "specified",
+      automationStatus: "implemented",
+      path: vp("Use Cases/UC-001 Open Example.md"),
+    });
+  });
+});
+
+describe("projectFeatureRows", () => {
+  it("keeps only the Features whose filename back-references this Use Case", () => {
+    const rows = projectFeatureRows("UC-001", [
+      entry("Features/UC-001-happy-path.feature"),
+      entry("Features/UC-002-happy-path.feature"),
+      entry("Features/UC-001-edge-cases.feature"),
+    ]);
+    expect(rows.map((r) => r.label)).toEqual([
+      "UC-001-happy-path.feature",
+      "UC-001-edge-cases.feature",
+    ]);
+  });
+
+  it("excludes orphan files with no UC-NNN- prefix", () => {
+    const rows = projectFeatureRows("UC-001", [entry("Features/archive-old.feature")]);
+    expect(rows).toEqual([]);
+  });
+
+  it("matches the Use Case id case-insensitively via the filename prefix", () => {
+    const rows = projectFeatureRows("UC-001", [entry("Features/uc-001-happy-path.feature")]);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("preserves the service's listing order", () => {
+    const rows = projectFeatureRows("UC-001", [
+      entry("Features/UC-001-b.feature"),
+      entry("Features/UC-001-a.feature"),
+    ]);
+    expect(rows.map((r) => r.label)).toEqual(["UC-001-b.feature", "UC-001-a.feature"]);
+  });
+});
+
+describe("featureHealthLine (Wave F)", () => {
+  const health = (over: Partial<Parameters<typeof featureHealthLine>[0]> = {}) => ({
+    path: vp("Features/UC-001-happy-path.feature"),
+    scenarioCount: 3,
+    wipScenarioCount: 0,
+    featureIsWip: false,
+    ...over,
+  });
+
+  it("phrases the scenario count, singular and plural", () => {
+    expect(featureHealthLine(health()).text).toBe("3 scenarios");
+    expect(featureHealthLine(health({ scenarioCount: 1 })).text).toBe("1 scenario");
+    expect(featureHealthLine(health({ scenarioCount: 0 })).text).toBe("0 scenarios");
+  });
+
+  it("appends the @wip count only when scenario-level @wip work exists", () => {
+    expect(featureHealthLine(health({ wipScenarioCount: 2 })).text).toBe("3 scenarios (2 @wip)");
+    expect(featureHealthLine(health({ wipScenarioCount: 0 })).text).toBe("3 scenarios");
+  });
+
+  it("renders the feature-level @wip badge with the ADR-0017 exclusion tooltip", () => {
+    const line = featureHealthLine(health({ featureIsWip: true }));
+    expect(line.wipBadge).toBe(true);
+    expect(line.wipTooltip).toContain("excluded from the KPI roll-up");
+    expect(line.wipTooltip).toContain("ADR-0017");
+    expect(featureHealthLine(health()).wipBadge).toBe(false);
+  });
+});
+
+describe("featureValidationRows", () => {
+  it("renders a single ok row when the Feature is valid", () => {
+    const result: SpecificationValidationResult = { valid: true, errors: [] };
+    expect(featureValidationRows(result)).toEqual([
+      { status: "ok", icon: "✓", text: "Feature Specification is valid." },
+    ]);
+  });
+
+  it("renders one error row per structural error", () => {
+    const result: SpecificationValidationResult = {
+      valid: false,
+      errors: [{ message: "Feature has no scenarios." }, { message: "Feature has no name." }],
+    };
+    const rows = featureValidationRows(result);
+    expect(rows.map((r) => r.status)).toEqual(["error", "error"]);
+    expect(rows.map((r) => r.text)).toEqual(["Feature has no scenarios.", "Feature has no name."]);
+  });
+
+  it("renders a generic error row when not valid but no errors are listed", () => {
+    const rows = featureValidationRows({ valid: false, errors: [] });
+    expect(rows).toEqual([
+      { status: "error", icon: "✗", text: "Feature Specification is not valid." },
+    ]);
+  });
+});
+
+describe("missingStepsRows", () => {
+  it("renders an ok row when every step is defined", () => {
+    const result: MissingStepResult = {
+      featurePath: vp("Features/UC-001-happy-path.feature"),
+      missingSteps: [],
+      detectionEventId: "evt-1",
+    };
+    expect(missingStepsRows(result)).toEqual([
+      { status: "ok", icon: "✓", text: "All steps are defined." },
+    ]);
+  });
+
+  it("summarises the undefined steps and lists each one", () => {
+    const result: MissingStepResult = {
+      featurePath: vp("Features/UC-001-happy-path.feature"),
+      missingSteps: ["the user clicks save", "the page reloads"],
+      detectionEventId: "evt-1",
+    };
+    const rows = missingStepsRows(result);
+    expect(rows[0]).toEqual({ status: "warning", icon: "!", text: "2 steps need a definition:" });
+    expect(rows.slice(1).map((r) => r.text)).toEqual(["the user clicks save", "the page reloads"]);
+  });
+
+  it("uses the singular phrasing for a single missing step", () => {
+    const result: MissingStepResult = {
+      featurePath: vp("Features/UC-001-happy-path.feature"),
+      missingSteps: ["the user clicks save"],
+      detectionEventId: "evt-1",
+    };
+    expect(missingStepsRows(result)[0].text).toBe("1 step needs a definition:");
+  });
+});
+
+describe("stepGenerationRows", () => {
+  it("reports nothing to generate when no steps were stubbed", () => {
+    const result: GenerateStepDefinitionsResult = {
+      generatedSteps: [],
+      stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
+      appended: false,
+    };
+    expect(stepGenerationRows(result)).toEqual([
+      { status: "ok", icon: "✓", text: "No missing steps — nothing to generate." },
+    ]);
+  });
+
+  it("reports the count and target file for generated stubs", () => {
+    const result: GenerateStepDefinitionsResult = {
+      generatedSteps: ["a", "b"],
+      stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
+      appended: true,
+    };
+    expect(stepGenerationRows(result)).toEqual([
+      {
+        status: "ok",
+        icon: "✓",
+        text: "Generated 2 step stubs in .testrunner/src/steps/UC-001-happy-path.steps.ts.",
+      },
+    ]);
+  });
+
+  it("uses the singular noun for a single generated stub", () => {
+    const result: GenerateStepDefinitionsResult = {
+      generatedSteps: ["a"],
+      stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
+      appended: false,
+    };
+    expect(stepGenerationRows(result)[0].text).toContain("1 step stub in");
+  });
+});

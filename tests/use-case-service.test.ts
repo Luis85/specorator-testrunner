@@ -3,7 +3,7 @@ import { DefaultSettingsService } from "../src/application/services/settings-ser
 import { DefaultUseCaseService, nextUseCaseId } from "../src/application/services/use-case-service";
 import { buildDemoUseCaseNote } from "../src/application/content/demo-content";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
-import type { UseCase } from "../src/domain/entities/use-case";
+import type { UseCase, UseCaseStatus } from "../src/domain/entities/use-case";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
@@ -256,5 +256,144 @@ describe("DefaultUseCaseService", () => {
     expect(note).toContain("Hand-written analysis that must not be deleted.");
     expect(note).toContain("owner: qa-team"); // unknown field preserved
     expect(types()).toContain("usecase.updated");
+  });
+
+  describe("updateMetadata (Wave G §3, UC-005)", () => {
+    it("edits title and status, rewrites the H1 like create(), and emits both events", async () => {
+      const { service, fs, events } = build();
+      const created = await service.create({ title: "Old Title" });
+      if (!created.ok) throw new Error("expected create to succeed");
+      const path = created.value.path;
+
+      const result = await service.updateMetadata("UC-001", {
+        title: "New Title",
+        status: "specified",
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // The updated entity is returned (path/id untouched — no rename).
+      expect(result.value.title).toBe("New Title");
+      expect(result.value.status).toBe("specified");
+      expect(result.value.path).toBe(path);
+
+      const note = fs.files.get(path) ?? "";
+      expect(note).toContain("title: New Title");
+      expect(note).toContain("status: specified");
+      // The body H1 mirrors create()'s `# <id> <title>` format.
+      expect(note).toContain("# UC-001 New Title");
+      expect(note).not.toContain("Old Title");
+
+      // Event Catalog §4 payloads, correlationId = useCaseId (§19).
+      const updated = events.find((e) => e.type === "usecase.updated");
+      expect(updated?.payload).toEqual({
+        useCaseId: "UC-001",
+        path,
+        changedFields: ["title", "status"],
+      });
+      expect(updated?.correlationId).toBe("UC-001");
+      const statusChanged = events.find((e) => e.type === "usecase.status.changed");
+      expect(statusChanged?.payload).toEqual({
+        useCaseId: "UC-001",
+        previousStatus: "draft",
+        nextStatus: "specified",
+      });
+      expect(statusChanged?.correlationId).toBe("UC-001");
+    });
+
+    it("emits no usecase.status.changed for a title-only edit", async () => {
+      const { service, types } = build();
+      await service.create({ title: "Original" });
+
+      const result = await service.updateMetadata("UC-001", { title: "Renamed" });
+
+      expect(result.ok).toBe(true);
+      expect(types()).toContain("usecase.updated");
+      expect(types()).not.toContain("usecase.status.changed");
+    });
+
+    it("preserves the hand-written body and unknown frontmatter on retitle", async () => {
+      const { service, fs } = build();
+      const path = "Use Cases/UC-003 Old.md";
+      fs.files.set(
+        path,
+        buildNote(
+          { type: "use-case", id: "UC-003", title: "Old", status: "draft", owner: "po-team" },
+          "# UC-003 Old\n\n## Notes\n\nHand-written analysis that must survive.",
+        ),
+      );
+
+      const result = await service.updateMetadata("UC-003", { title: "Renamed" });
+
+      expect(result.ok).toBe(true);
+      const note = fs.files.get(path) ?? "";
+      expect(note).toContain("# UC-003 Renamed"); // only the create-format H1 moved
+      expect(note).toContain("Hand-written analysis that must survive.");
+      expect(note).toContain("owner: po-team");
+    });
+
+    it("inserts a title containing $-substitution patterns literally into the H1", async () => {
+      const { service, fs } = build();
+      const path = "Use Cases/UC-003 Old.md";
+      fs.files.set(
+        path,
+        buildNote(
+          { type: "use-case", id: "UC-003", title: "Old", status: "draft" },
+          "# UC-003 Old",
+        ),
+      );
+
+      // `$&` / `$$` / `$1` are String.replace substitution tokens — a string
+      // replacement would expand them (`$&` re-inserts the whole old heading,
+      // corrupting the note). The function replacement must keep them literal.
+      const result = await service.updateMetadata("UC-003", { title: "Cost: $& or $$5 ($1)" });
+
+      expect(result.ok).toBe(true);
+      const note = fs.files.get(path) ?? "";
+      expect(note).toContain("# UC-003 Cost: $& or $$5 ($1)");
+      expect(note).not.toContain("# UC-003 Cost: # UC-003"); // the $& corruption shape
+    });
+
+    it("is a no-op (no write, no events) when nothing actually changed", async () => {
+      const { service, fs, events } = build();
+      const created = await service.create({ title: "Same" });
+      if (!created.ok) throw new Error("expected create to succeed");
+      const before = fs.files.get(created.value.path);
+      const eventCountBefore = events.length;
+
+      const result = await service.updateMetadata("UC-001", { title: "Same", status: "draft" });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value.title).toBe("Same");
+      expect(fs.files.get(created.value.path)).toBe(before);
+      expect(events.length).toBe(eventCountBefore); // no phantom-edit events
+    });
+
+    it("rejects an unknown id", async () => {
+      const { service } = build();
+      const result = await service.updateMetadata("UC-999", { title: "Anything" });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    });
+
+    it("rejects an empty title", async () => {
+      const { service } = build();
+      await service.create({ title: "Kept" });
+      const result = await service.updateMetadata("UC-001", { title: "   " });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    });
+
+    it("rejects a status outside the UseCaseStatus union (runtime gate)", async () => {
+      const { service, types } = build();
+      await service.create({ title: "Kept" });
+      const result = await service.updateMetadata("UC-001", {
+        // UI input can't be trusted to the compile-time union alone.
+        status: "shipped" as UseCaseStatus,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+      expect(types()).not.toContain("usecase.updated");
+    });
   });
 });
