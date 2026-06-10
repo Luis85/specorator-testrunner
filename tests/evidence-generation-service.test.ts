@@ -284,6 +284,21 @@ describe("DefaultEvidenceGenerationService", () => {
     expect(types()).not.toContain("evidence.linkedToUseCase");
   });
 
+  it("records the run scope and target in evidence frontmatter", async () => {
+    const { service, fs } = build();
+    seedUseCase(fs);
+
+    const result = await service.generate({
+      run: run({ scope: "suite", target: "smoke" }),
+      report: report(),
+    });
+
+    expect(result.ok).toBe(true);
+    const frontmatter = parseFrontmatter(fs.files.get(EVIDENCE_PATH) ?? "");
+    expect(frontmatter.scope).toBe("suite");
+    expect(frontmatter.target).toBe("smoke");
+  });
+
   it("returns EVIDENCE_WRITE_FAILED when the note cannot be written", async () => {
     const { service, fs } = build();
     seedUseCase(fs);
