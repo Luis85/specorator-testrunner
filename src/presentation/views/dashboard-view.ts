@@ -221,14 +221,15 @@ export class DashboardView extends ItemView {
     // Recent runs (US-038).
     container.createEl("h3", { text: "Recent Runs" });
     if (view.recentRuns.length === 0) {
-      container.createEl("p", { text: "No test runs yet. Run a Test Suite to see results here." });
+      container.createEl("p", { text: "No Test Runs yet. Run a Test Suite to see results here." });
       return;
     }
 
     const table = container.createEl("table", { cls: "e2e-test-hub-runs-table" });
     const headRow = table.createEl("thead").createEl("tr");
     for (const label of ["Run", "Status", "Date"]) {
-      headRow.createEl("th", { text: label });
+      // scope="col" ties each header to its column for screen-reader tables.
+      headRow.createEl("th", { text: label, attr: { scope: "col" } });
     }
     const body = table.createEl("tbody");
     for (const run of view.recentRuns) {

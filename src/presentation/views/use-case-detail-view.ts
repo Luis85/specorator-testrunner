@@ -61,9 +61,9 @@ export interface UseCaseDetailDeps {
   stepDefinitionService: Pick<StepDefinitionService, "generate">;
   workspace: WorkspacePort;
   eventBus: EventBus;
-  // Shared run-launch surface (Wave B): the "Run Use Case" / per-feature "Run
-  // feature" buttons start a scoped run through the same launcher the command
-  // palette and explorers use.
+  // Shared run-launch surface (Wave B): the "Run Use Case" / per-feature "Run"
+  // buttons start a scoped run through the same launcher the command palette
+  // and explorers use.
   runLauncher: Pick<RunLauncher, "launch">;
   // Opens the slug-prompt generate-Feature flow scoped to ONE Use Case, reusing
   // the command palette's logic (no generation logic is duplicated here). The
@@ -76,7 +76,7 @@ export interface UseCaseDetailDeps {
  * one Use Case. It shows the Use Case header (status + automation status), an
  * "Open note" / "Run Use Case" affordance, and the Feature Specifications that
  * belong to the Use Case (by the ADR-0012 `<UC-id>-<slug>.feature` filename
- * back-reference). Each Feature row drives Open / Run feature / Validate /
+ * back-reference). Each Feature row drives Open / Run / Validate /
  * Detect missing steps / Generate step definitions, rendering the validate /
  * detect / generate result INLINE with the wizard's ✓/✗/! checklist vocabulary
  * — so a user gets from a Use Case to executable, traceable Features without the
@@ -233,13 +233,22 @@ export class UseCaseDetailView extends ItemView {
     const featureEl = container.createDiv({ cls: "e2e-test-hub-uc-detail-feature" });
 
     const head = featureEl.createDiv({ cls: "e2e-test-hub-uc-detail-feature-head" });
-    head.createSpan({ cls: "e2e-test-hub-uc-detail-feature-name", text: row.label });
+    // `title` carries the full vault path so a label truncated by the CSS
+    // ellipsis (long paths) is still recoverable on hover.
+    head.createSpan({
+      cls: "e2e-test-hub-uc-detail-feature-name",
+      text: row.label,
+      attr: { title: row.path },
+    });
 
     const actions = head.createDiv({ cls: "e2e-test-hub-uc-detail-feature-actions" });
     // A per-feature result area below the action buttons: validate / detect /
     // generate render their outcome here INLINE (not just a Notice), reusing the
     // wizard's ✓/✗/! checklist vocabulary so every inline surface reads alike.
-    const resultEl = featureEl.createDiv({ cls: "e2e-test-hub-uc-detail-feature-result" });
+    const resultEl = featureEl.createDiv({
+      cls: "e2e-test-hub-uc-detail-feature-result",
+      attr: { "aria-live": "polite" },
+    });
 
     const button = (text: string, ariaLabel: string, cls?: string): HTMLButtonElement => {
       const el = actions.createEl("button", {
@@ -254,7 +263,9 @@ export class UseCaseDetailView extends ItemView {
       "click",
       () => void this.deps.workspace.openFile(row.path),
     );
-    button("Run feature", `Run ${row.label}`).addEventListener(
+    // Visible label matches the explorers' per-row "Run"; the aria-label keeps
+    // the full "Run <feature label>" so assistive tech still hears the target.
+    button("Run", `Run ${row.label}`).addEventListener(
       "click",
       () => void this.deps.runLauncher.launch({ scope: "feature", target: row.path }),
     );

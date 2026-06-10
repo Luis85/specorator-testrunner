@@ -165,7 +165,10 @@ export class TestHubSettingTab extends PluginSettingTab {
     // Save-blocking validation errors (SETTINGS_INVALID) for any field in this
     // section land here, near the inputs they describe — each message already
     // names its environment/key, so the user can fix it without data.json.
-    this.sutErrorsEl = containerEl.createDiv({ cls: "e2e-test-hub-settings-errors" });
+    this.sutErrorsEl = containerEl.createDiv({
+      cls: "e2e-test-hub-settings-errors",
+      attr: { "aria-live": "polite" },
+    });
 
     const environmentNames = Object.keys(settings.sut.environments);
     new Setting(containerEl)
@@ -291,8 +294,11 @@ export class TestHubSettingTab extends PluginSettingTab {
       });
       text.inputEl.addEventListener("blur", persistNow);
     });
-    row.addExtraButton((button) =>
-      button
+    row.addExtraButton((button) => {
+      // Icon-only button: the tooltip is visual-only, so assistive tech needs
+      // an explicit accessible name on the underlying element.
+      button.extraSettingsEl.setAttribute("aria-label", "Remove variable");
+      return button
         .setIcon("x")
         .setTooltip("Remove variable")
         .onClick(() => {
@@ -301,8 +307,8 @@ export class TestHubSettingTab extends PluginSettingTab {
           if (index >= 0) rows.splice(index, 1);
           row.settingEl.remove();
           void this.persistAuthVars(envName, rows);
-        }),
-    );
+        });
+    });
   }
 
   private wireRemoveEnvironmentButton(
@@ -467,7 +473,10 @@ export class TestHubSettingTab extends PluginSettingTab {
           .setButtonText("Validate")
           .onClick(() => void this.runValidateEnvironment(button, validateResultEl)),
       );
-    const validateResultEl = containerEl.createDiv({ cls: "e2e-test-hub-settings-result" });
+    const validateResultEl = containerEl.createDiv({
+      cls: "e2e-test-hub-settings-result",
+      attr: { "aria-live": "polite" },
+    });
 
     new Setting(containerEl)
       .setName("Repair installation")
@@ -477,7 +486,10 @@ export class TestHubSettingTab extends PluginSettingTab {
       .addButton((button) =>
         button.setButtonText("Repair").onClick(() => void this.runRepair(button, repairResultEl)),
       );
-    const repairResultEl = containerEl.createDiv({ cls: "e2e-test-hub-settings-result" });
+    const repairResultEl = containerEl.createDiv({
+      cls: "e2e-test-hub-settings-result",
+      attr: { "aria-live": "polite" },
+    });
 
     new Setting(containerEl)
       .setName("Reset Test Hub")
@@ -547,7 +559,10 @@ export class TestHubSettingTab extends PluginSettingTab {
           .setButtonText("Generate")
           .onClick(() => void this.runGenerateWorkflow(button, generateResultEl, false)),
       );
-    const generateResultEl = containerEl.createDiv({ cls: "e2e-test-hub-settings-result" });
+    const generateResultEl = containerEl.createDiv({
+      cls: "e2e-test-hub-settings-result",
+      attr: { "aria-live": "polite" },
+    });
 
     new Setting(containerEl)
       .setName("Check CI readiness")
@@ -559,7 +574,10 @@ export class TestHubSettingTab extends PluginSettingTab {
           .setButtonText("Check")
           .onClick(() => void this.runCiReadiness(button, readinessResultEl)),
       );
-    const readinessResultEl = containerEl.createDiv({ cls: "e2e-test-hub-settings-result" });
+    const readinessResultEl = containerEl.createDiv({
+      cls: "e2e-test-hub-settings-result",
+      attr: { "aria-live": "polite" },
+    });
   }
 
   private async runGenerateWorkflow(

@@ -561,6 +561,10 @@
   cursor: pointer;
 }
 
+/* Deliberate INSET focus ring (negative offset), unlike the buttons' +2px:
+ * the row is a full-width table row, so a positive offset would draw the ring
+ * outside its box and overlap the adjacent rows. Insetting keeps the ring
+ * fully inside the focused row — the right shape for row-shaped targets. */
 .e2e-test-hub-run-row.is-navigable:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
@@ -643,9 +647,15 @@
   gap: var(--size-4-2, 8px);
 }
 
+/* Long vault paths truncate with an ellipsis instead of wrapping/overflowing;
+ * the view sets `title` with the full path so hover reveals it. */
 .e2e-test-hub-uc-detail-feature-name {
   font-family: var(--font-monospace);
   font-size: var(--font-ui-small, 0.875rem);
+  max-width: 28em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .e2e-test-hub-uc-detail-feature-actions {

@@ -101,7 +101,8 @@ export class UseCaseDashboardView extends ItemView {
     const table = container.createEl("table", { cls: "e2e-test-hub-uc-table" });
     const headRow = table.createEl("thead").createEl("tr");
     for (const label of ["ID", "Title", "Status", "Automation", "Note", "Run"]) {
-      headRow.createEl("th", { text: label });
+      // scope="col" ties each header to its column for screen-reader tables.
+      headRow.createEl("th", { text: label, attr: { scope: "col" } });
     }
 
     const body = table.createEl("tbody");

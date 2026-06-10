@@ -30,8 +30,21 @@ export class CreateSuiteModal extends Modal {
     const { contentEl } = this;
     contentEl.createEl("h2", { text: "Create Test Suite" });
 
+    // Enter submits in the single-line text inputs (mirrors
+    // AddEnvironmentModal) so the keyboard flow doesn't force a mouse trip; the
+    // description textarea keeps Enter for newlines and is NOT wired this way.
+    const submitOnEnter = (input: HTMLInputElement): void => {
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void this.submit();
+        }
+      });
+    };
+
     new Setting(contentEl).setName("Name").addText((text) => {
       text.setPlaceholder("e.g. Checkout Smoke").onChange((value) => (this.suiteName = value));
+      submitOnEnter(text.inputEl);
       // Autofocus the first input so the user can start typing immediately
       // instead of tabbing/clicking into the field first.
       text.inputEl.focus();
@@ -44,11 +57,12 @@ export class CreateSuiteModal extends Modal {
     new Setting(contentEl)
       .setName("Tag expression")
       .setDesc("Cucumber tag expression deciding membership (AD-4).")
-      .addText((text) =>
+      .addText((text) => {
         text
           .setPlaceholder("@smoke and not @wip")
-          .onChange((value) => (this.tagExpression = value)),
-      );
+          .onChange((value) => (this.tagExpression = value));
+        submitOnEnter(text.inputEl);
+      });
 
     new Setting(contentEl).addButton((button) =>
       button

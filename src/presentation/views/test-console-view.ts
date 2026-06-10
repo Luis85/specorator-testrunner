@@ -116,9 +116,23 @@ export class TestConsoleView extends ItemView {
     container.createEl("h2", { text: "Test Console" });
 
     this.renderToolbar(container);
-    this.meta = container.createEl("div", { cls: "e2e-test-hub-console-meta" });
-    this.banner = container.createEl("div", { cls: "e2e-test-hub-console-banner" });
-    this.output = container.createEl("pre", { cls: "e2e-test-hub-console-output" });
+    // aria-live="polite": the metadata line and status banner change at run
+    // boundaries (low frequency), so screen readers should announce them.
+    this.meta = container.createEl("div", {
+      cls: "e2e-test-hub-console-meta",
+      attr: { "aria-live": "polite" },
+    });
+    this.banner = container.createEl("div", {
+      cls: "e2e-test-hub-console-banner",
+      attr: { "aria-live": "polite" },
+    });
+    // role="log" (NOT aria-live): a log implies polite, additions-only live
+    // semantics — an explicit aria-live on this high-frequency stream would
+    // spam screen readers with every output line.
+    this.output = container.createEl("pre", {
+      cls: "e2e-test-hub-console-output",
+      attr: { role: "log" },
+    });
 
     this.subscriptions.push(
       this.deps.eventBus.subscribe<RequestedPayload>("testrun.requested", (event) =>

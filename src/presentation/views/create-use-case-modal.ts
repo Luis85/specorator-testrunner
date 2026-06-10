@@ -28,6 +28,15 @@ export class CreateUseCaseModal extends Modal {
       text
         .setPlaceholder("e.g. Checkout with a saved card")
         .onChange((value) => (this.useCaseTitle = value));
+      // Enter submits (mirrors AddEnvironmentModal) so the keyboard flow
+      // doesn't force a mouse trip; the description textarea keeps Enter for
+      // newlines and is deliberately NOT wired this way.
+      text.inputEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void this.submit();
+        }
+      });
       // Autofocus the first input so the user can start typing immediately
       // instead of tabbing/clicking into the field first.
       text.inputEl.focus();
