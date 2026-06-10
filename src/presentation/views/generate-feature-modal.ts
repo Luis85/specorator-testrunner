@@ -76,6 +76,9 @@ export const generateFeatureForUseCase = (
 /** Prompts for the slug of an additional Feature on an existing Use Case. */
 class SlugPromptModal extends Modal {
   private slug = "";
+  // Double-submit guard (entry-point review): a rapid double-click would call
+  // onSubmit twice and create duplicate Feature files for the same slug.
+  private submitting = false;
 
   constructor(
     app: App,
@@ -102,11 +105,13 @@ class SlugPromptModal extends Modal {
         .setButtonText("Create Feature")
         .setCta()
         .onClick(() => {
+          if (this.submitting) return;
           const slug = this.slug.trim();
           if (slug === "") {
             new Notice("Please enter a slug for the new Feature.");
             return;
           }
+          this.submitting = true; // never reset: the modal closes here
           this.close();
           this.onSubmit(slug);
         }),

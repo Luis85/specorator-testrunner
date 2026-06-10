@@ -68,6 +68,15 @@ export type InitializationStep =
   | "validate";
 
 export class DefaultInitializationService implements InitializationService {
+  /**
+   * Re-entrancy guard (entry-point review): two wizards (ribbon + palette) or a
+   * double Retry must not run two init flows concurrently — both would rewrite
+   * `.testrunner` templates and run `npm install` in the same directory.
+   * Synchronous flag, set before the first await, so there is no check-then-act
+   * window.
+   */
+  private initializing = false;
+
   constructor(
     private readonly settingsService: SettingsService,
     private readonly fs: VaultFileSystem,
@@ -79,9 +88,49 @@ export class DefaultInitializationService implements InitializationService {
     private readonly pathSafety: PathSafetyPolicy,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
+    /**
+     * Probe for the single active Test Run (ADR-0018), wired in main.ts to
+     * `testExecutionService.activeRunId`. Initialization rewrites the
+     * `.testrunner` files an in-flight run is READING, so it must refuse while
+     * a run is active — the same exclusion repair()/reset() already enforce via
+     * the maintenance lock. Optional (defaults to "no run") so the
+     * MaintenanceService.reset() nested call — which already holds the
+     * run/maintenance lock — and existing tests need no extra wiring.
+     */
+    private readonly activeRunId: () => string | null = () => null,
   ) {}
 
   async initialize(
+    request: InitializeTestHubRequest,
+    onProgress: ProgressReporter = () => {},
+    suppliedCorrelationId?: string,
+  ): Promise<Result<InitializeTestHubResult>> {
+    if (this.initializing) {
+      return err(
+        appError(
+          "INIT_FAILED",
+          "Initialization is already in progress. Wait for it to finish before starting another.",
+        ),
+      );
+    }
+    const activeRun = this.activeRunId();
+    if (activeRun !== null) {
+      return err(
+        appError(
+          "RUN_IN_PROGRESS",
+          `Cannot initialize while Test Run ${activeRun} is active. Cancel it first.`,
+        ),
+      );
+    }
+    this.initializing = true;
+    try {
+      return await this.runInitialization(request, onProgress, suppliedCorrelationId);
+    } finally {
+      this.initializing = false;
+    }
+  }
+
+  private async runInitialization(
     request: InitializeTestHubRequest,
     onProgress: ProgressReporter = () => {},
     suppliedCorrelationId?: string,

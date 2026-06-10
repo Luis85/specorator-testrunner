@@ -370,8 +370,8 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     if (scenarios.length === 0) return ["_No scenarios reported._"];
     return scenarios.map((scenario) => {
       const duration = scenario.durationMs !== undefined ? ` (${scenario.durationMs} ms)` : "";
-      const name = scenario.scenario || "(unnamed scenario)";
-      const where = scenario.feature ? ` — ${scenario.feature}` : "";
+      const name = inlineMarkdownText(scenario.scenario || "(unnamed scenario)");
+      const where = scenario.feature ? ` — ${inlineMarkdownText(scenario.feature)}` : "";
       return `- \`${scenario.status}\` ${name}${where}${duration}`;
     });
   }
@@ -380,8 +380,32 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     if (artifacts.length === 0) return ["_No artifacts captured._"];
     // Links into .testrunner/reports — references only, never copies (ADR-0016).
     return artifacts.map((artifact) => {
-      const label = artifact.label ?? artifact.type;
+      const label = wikilinkAlias(artifact.label ?? artifact.type);
       return `- ${artifact.type}: [[${artifact.path}|${label}]]`;
     });
   }
 }
+
+/**
+ * Neutralizes report-controlled text for ONE Markdown list line (data-flow
+ * review): scenario/feature names come from the cucumber report — a
+ * tampered/odd report must not be able to inject extra lines (headings, list
+ * items) via newlines, break in/out of code spans via backticks, or form
+ * wikilinks/embeds via brackets. Newlines collapse to spaces; the Markdown
+ * metacharacters are backslash-escaped, so the original characters still
+ * READ correctly in the rendered note. Pure: exported for tests.
+ */
+export const inlineMarkdownText = (raw: string): string =>
+  raw.replace(/[\r\n\u2028\u2029]+/g, " ").replace(/([[\]`!])/g, "\\$1");
+
+/**
+ * Sanitizes report-controlled text used as a `[[target|alias]]` alias: `|`
+ * would split the alias into a fake extra segment and `]]`/newlines would
+ * terminate the link early, letting a crafted MIME string corrupt the
+ * artifact list (data-flow review). Pure: exported for tests.
+ */
+export const wikilinkAlias = (raw: string): string =>
+  raw
+    .replace(/[\r\n\u2028\u2029]+/g, " ")
+    .replace(/\|/g, "/")
+    .replace(/\]/g, ")");

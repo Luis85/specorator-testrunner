@@ -62,6 +62,7 @@ import {
 } from "./application/services/use-case-service";
 import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
+import type { VaultPath } from "./domain/value-objects/identifiers";
 import {
   collectCredentialValues,
   DEFAULT_SETTINGS,
@@ -217,6 +218,12 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       pathSafety,
       eventBus,
       this.logger,
+      // Init rewrites the `.testrunner` files an in-flight run reads, so it
+      // refuses while a run is active (entry-point review). The execution
+      // service is built further down — probe lazily through `this`. During a
+      // reset's nested re-init the maintenance lock already blocks new runs,
+      // so this probe reads null there (no deadlock).
+      () => this.testExecutionService?.activeRunId() ?? null,
     );
     // Maintenance (repair/reset). The execution service — which owns the
     // synchronous maintenance lock that closes the reset/run TOCTOU (security
@@ -409,7 +416,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           // for "the last generated evidence note" when the console opens after
           // `evidence.generated` already fired (the bus does not replay).
           lastEvidence: () => this.postRunCoordinator.lastEvidence(),
-          openEvidence: (path) => void this.workspaceAdapter.openFile(path),
+          openEvidence: (path) => this.openEvidenceNote(path),
         }),
     );
     this.registerView(
@@ -436,7 +443,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           navigate: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
           openSuites: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
           openConsole: () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE),
-          openEvidence: (path) => void this.workspaceAdapter.openFile(path),
+          openEvidence: (path) => this.openEvidenceNote(path),
           getEnvironments: () => ({
             active: this.hubSettings.sut.active,
             names: Object.keys(this.hubSettings.sut.environments),
@@ -602,6 +609,19 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   }
 
   // Wave C §1: the dashboard hub's "Generate documentation" quick action.
+  // Opens a linked Evidence note from the console/dashboard. An evidence note
+  // can be deleted after its link was rendered (entry-point review) — a silent
+  // no-op there left the user clicking a dead button, so surface the failure.
+  private async openEvidenceNote(path: VaultPath): Promise<void> {
+    const opened = await this.workspaceAdapter.openFile(path);
+    if (!opened.ok) {
+      new Notice(
+        `Could not open the evidence note "${path}". It may have been moved or deleted.`,
+        10000,
+      );
+    }
+  }
+
   // Reuses the documentation service the command palette uses; the UI is thin.
   private async generateDocumentation(): Promise<void> {
     new Notice("Generating Test Hub documentation…");

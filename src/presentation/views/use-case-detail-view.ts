@@ -12,6 +12,7 @@ import { type ChecklistRow } from "../settings/settings-rows";
 import type { RunLauncher } from "../run/run-launcher";
 import { EditUseCaseModal } from "./edit-use-case-modal";
 import { RenderScheduler } from "./render-scheduler";
+import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
 import {
   featureHealthLine,
   featureValidationRows,
@@ -123,7 +124,12 @@ export class UseCaseDetailView extends ItemView {
     const next = (state as UseCaseDetailState | null)?.useCaseId;
     if (typeof next === "string" && next !== this.useCaseId) {
       this.useCaseId = next;
-      await this.scheduler.schedule();
+      // On a workspace RESTORE, Obsidian calls setState() BEFORE onOpen() — the
+      // bus subscriptions don't exist yet, so a render here could show data an
+      // event in that gap already invalidated. Let onOpen() do the first render
+      // (after subscribing); only re-render here when the view is already open
+      // (the leaf-reuse path in main.ts openUseCaseDetail).
+      if (this.subscriptions.length > 0) await this.scheduler.schedule();
     }
     await super.setState(state, result);
   }
@@ -159,7 +165,19 @@ export class UseCaseDetailView extends ItemView {
       return;
     }
     if (found.value === null) {
-      container.createEl("p", { text: `Use Case ${this.useCaseId} was not found.` });
+      // Recoverable dead-end (entry-point review): the persisted leaf id can
+      // outlive its Use Case (deleted note + workspace restore). Say what
+      // happened and offer the explorer instead of a bare terminal message.
+      container.createEl("p", {
+        text: `Use Case ${this.useCaseId} was not found. It may have been renamed or deleted.`,
+      });
+      container
+        .createEl("button", {
+          text: "Open Use Cases",
+          cls: "mod-cta",
+          attr: { "aria-label": "Open the Use Cases explorer" },
+        })
+        .addEventListener("click", () => void this.deps.workspace.openView(USE_CASE_VIEW_TYPE));
       return;
     }
     const useCase = found.value;

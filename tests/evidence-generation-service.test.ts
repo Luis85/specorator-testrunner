@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DefaultEvidenceGenerationService } from "../src/application/services/evidence-generation-service";
+import {
+  DefaultEvidenceGenerationService,
+  inlineMarkdownText,
+  wikilinkAlias,
+} from "../src/application/services/evidence-generation-service";
 import type { ImportedReport } from "../src/application/services/report-import-service";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
@@ -73,6 +77,46 @@ const build = () => {
   );
   return { service, fs, events, types };
 };
+
+describe("evidence Markdown sanitizers (data-flow review)", () => {
+  it("inlineMarkdownText collapses newlines and escapes list-breaking metacharacters", () => {
+    // A tampered report's scenario name must stay ONE list item and must not
+    // open/close code spans, wikilinks, or embeds.
+    expect(inlineMarkdownText("a\r\nb\nc")).toBe("a b c");
+    expect(inlineMarkdownText("break `out` [[Link]] ![[Embed]]")).toBe(
+      "break \\`out\\` \\[\\[Link\\]\\] \\!\\[\\[Embed\\]\\]",
+    );
+  });
+
+  it("wikilinkAlias strips alias separators and link terminators", () => {
+    expect(wikilinkAlias("image/png|evil]]injected")).toBe("image/png/evil))injected");
+    expect(wikilinkAlias("two\nlines")).toBe("two lines");
+  });
+
+  it("a report-controlled scenario name cannot inject Markdown into the note", async () => {
+    const { service, fs } = build();
+    seedUseCase(fs);
+    const result = await service.generate({
+      run: run(),
+      report: report({
+        scenarioResults: [
+          {
+            feature: "Checkout",
+            scenario: "Pays\n## Injected heading\n[[Evil]]",
+            status: "passed",
+            durationMs: 5,
+          },
+        ],
+      }),
+    });
+    expect(result.ok).toBe(true);
+    const note = fs.files.get(EVIDENCE_PATH) ?? "";
+    // The injected line break is collapsed; the heading/wikilink stay inert text.
+    expect(note).not.toContain("\n## Injected heading");
+    expect(note).not.toContain("[[Evil]]");
+    expect(note).toContain("Pays ## Injected heading");
+  });
+});
 
 describe("DefaultEvidenceGenerationService", () => {
   it("writes the partitioned Test Evidence/YYYY/MM/<runId>/summary.md note", async () => {
