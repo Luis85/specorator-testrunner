@@ -611,7 +611,7 @@ DevOps remains reserved)*.
 
 ---
 
-## 7. New use cases (UC-025…036)
+## 7. New use cases (UC-025…037)
 
 One line each; full notes to be authored on acceptance, in the UC-001 format.
 
