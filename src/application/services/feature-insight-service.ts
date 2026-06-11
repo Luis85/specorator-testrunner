@@ -39,9 +39,11 @@ export interface FeatureHealth {
   /** Number of scenarios the Feature declares. */
   scenarioCount: number;
   /**
-   * Scenarios carrying a SCENARIO-LEVEL `@wip` tag. Feature-level `@wip` is
-   * reported separately via {@link featureIsWip} (its own badge), so it is NOT
-   * folded in here — that would always read "N scenarios (N @wip)".
+   * Scenarios carrying a SCENARIO-LEVEL `@wip` tag, or a `@wip` on a runnable
+   * Examples block — the same per-block scope `countMatchingScenariosInFeature`
+   * matches against, so the health line and suite counts agree. Feature-level
+   * `@wip` is reported separately via {@link featureIsWip} (its own badge), so
+   * it is NOT folded in here — that would always read "N scenarios (N @wip)".
    */
   wipScenarioCount: number;
   /** The Feature itself is tagged `@wip` — excluded from KPIs per ADR-0017. */
@@ -56,6 +58,16 @@ const WIP_TAG = "@wip";
 const hasWipTag = (tags: string[]): boolean => tags.some((tag) => tag.toLowerCase() === WIP_TAG);
 
 /**
+ * Scenario-level `@wip`, or `@wip` on a runnable Examples block — the same
+ * per-block scope `countMatchingScenariosInFeature` matches against, so the
+ * health line and suite counts agree. Feature-level `@wip` stays out: it is
+ * reported separately via `featureIsWip`.
+ */
+const scenarioHasWip = (scenario: ScenarioSpecification): boolean =>
+  hasWipTag(scenario.tags) ||
+  (scenario.examples ?? []).some((block) => block.rows.length > 0 && hasWipTag(block.tags));
+
+/**
  * A scenario's EFFECTIVE tags: feature-level tags inherit to every scenario
  * per Gherkin semantics (Cucumber evaluates `--tags` against this union).
  */
@@ -64,24 +76,44 @@ export const effectiveScenarioTags = (
   scenario: ScenarioSpecification,
 ): string[] => [...feature.tags, ...scenario.tags];
 
+/**
+ * The tag sets Cucumber evaluates for a scenario. A plain scenario
+ * contributes its single inherited set. An Outline expands once per Examples
+ * ROW, so only blocks that HAVE rows contribute (feature + scenario + block
+ * tags) — a rowless block, or an Outline with no usable Examples at all,
+ * executes nothing and must not match any expression.
+ */
+export const effectiveScenarioTagSets = (
+  feature: FeatureSpecification,
+  scenario: ScenarioSpecification,
+): string[][] => {
+  const base = effectiveScenarioTags(feature, scenario);
+  const isOutline = scenario.keyword === "Scenario Outline" || scenario.examples !== undefined;
+  if (!isOutline) return [base];
+  const runnable = (scenario.examples ?? []).filter((block) => block.rows.length > 0);
+  return runnable.map((block) => [...base, ...block.tags]);
+};
+
 /** Pure projection of one parsed Feature to its {@link FeatureHealth}. */
 export const projectFeatureHealth = (feature: FeatureSpecification): FeatureHealth => ({
   path: feature.path,
   scenarioCount: feature.scenarios.length,
-  wipScenarioCount: feature.scenarios.filter((scenario) => hasWipTag(scenario.tags)).length,
+  wipScenarioCount: feature.scenarios.filter(scenarioHasWip).length,
   featureIsWip: hasWipTag(feature.tags),
 });
 
 /**
  * Counts the scenarios in ONE parsed Feature that a parsed Tag Expression
- * matches, evaluating against each scenario's effective (inherited) tags.
+ * matches. An outline still counts as ONE scenario (matching scenarioCount
+ * semantics), but it matches when any of its Examples blocks' effective tag
+ * sets match — mirroring how Cucumber selects tagged Examples rows.
  */
 export const countMatchingScenariosInFeature = (
   expression: TagExpression,
   feature: FeatureSpecification,
 ): number =>
   feature.scenarios.filter((scenario) =>
-    matchesTags(expression, effectiveScenarioTags(feature, scenario)),
+    effectiveScenarioTagSets(feature, scenario).some((tags) => matchesTags(expression, tags)),
   ).length;
 
 /**
@@ -114,6 +146,13 @@ export interface FeatureInsightService {
   scenarioCounter(): Promise<Result<ScenarioCounter>>;
   /** Reads + parses one Feature file and projects its {@link FeatureHealth}. */
   healthFor(featurePath: VaultPath): Promise<Result<FeatureHealth>>;
+  /**
+   * Union of every feature-, scenario- and Examples-level tag across the
+   * Feature corpus, seeded with the `@smoke`/`@wip` conventions and sorted.
+   * Best-effort like the other corpus queries (unreadable or unparseable
+   * files are skipped); feeds the Feature Editor's tag picker.
+   */
+  listKnownTags(): Promise<Result<string[]>>;
 }
 
 export class DefaultFeatureInsightService implements FeatureInsightService {
@@ -163,5 +202,26 @@ export class DefaultFeatureInsightService implements FeatureInsightService {
       return err(appError("VALIDATION_FAILED", `"${featurePath}" is not a valid Feature.`));
     }
     return ok(projectFeatureHealth(feature));
+  }
+
+  async listKnownTags(): Promise<Result<string[]>> {
+    const listed = await this.specifications.listFeatures();
+    if (!listed.ok) return err(listed.error);
+
+    const tags = new Set<string>(["@smoke", "@wip"]);
+    for (const entry of listed.value) {
+      const read = await this.fs.readFile(entry.path);
+      if (!read.ok) continue; // best-effort: skip unreadable files
+      const feature = parseFeature(read.value, entry.path);
+      if (feature === null) continue; // not valid Gherkin — skip
+      for (const tag of feature.tags) tags.add(tag);
+      for (const scenario of feature.scenarios) {
+        for (const tag of scenario.tags) tags.add(tag);
+        for (const block of scenario.examples ?? []) {
+          for (const tag of block.tags) tags.add(tag);
+        }
+      }
+    }
+    return ok([...tags].sort());
   }
 }
