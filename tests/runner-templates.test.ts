@@ -35,6 +35,16 @@ describe("buildRunnerTemplates", () => {
     expect(byPath.has("playwright.config.ts")).toBe(false);
   });
 
+  it("fixture page carries the Guided Tour greeting form", () => {
+    const fixture = byPath.get("src/fixtures/example.html");
+    expect(fixture).toBeDefined();
+    // overwrite: true — the greeting form reaches existing installs via repair.
+    expect(fixture?.overwrite).toBe(true);
+    for (const marker of ['id="name"', 'id="greet"', 'id="greeting"', "Hello, "]) {
+      expect(fixture?.content).toContain(marker);
+    }
+  });
+
   it("ships a serial cucumber config without the deprecated loader hook (AD-6, AD-7)", () => {
     const cucumber = byPath.get("cucumber.mjs");
     expect(cucumber?.content).toContain("parallel: 0");
