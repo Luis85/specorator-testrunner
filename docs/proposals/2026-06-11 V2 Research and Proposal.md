@@ -191,6 +191,7 @@ verification system of record for AI-built software.*
 - **No cloud service, no telemetry, no hosted dashboard** (P2 Local First is the moat).
 - **No in-plugin AI features** — no chat UI, no bundled or BYO-API-key model calls, no AI-generated content produced by the plugin itself. All AI work happens through the user's own agents via the opt-in local MCP server (EPIC-016, the last roadmap item). Runtime-AI test steps (Momentic-style runtime interpretation) stay out of scope too: they trade away determinism, our strength.
 - **No custom Bases views** — the Test Hub's dashboards stay custom plugin views; the Bases view environment is too restrictive for our dashboard needs. We keep metadata Bases-queryable (US-076) and may revisit `registerBasesView` integration later.
+- **No Obsidian community marketplace submission** — deferred indefinitely. The plugin stays in this repository; distribution is GitHub releases installed via the BRAT plugin (see §9 Phase 0.1). We keep the codebase marketplace-clean so the option remains open.
 - **No mobile-device (Appium) or API-first testing epics** (Playwright's `request` fixture becomes available for API-setup steps via EPIC-013 — evidence says API data setup makes suites 3–4x faster — but device labs and standalone API testing are out of scope).
 - **No Jira/Azure-DevOps two-way sync in V2.0** (importers only, → EPIC-019; full sync is V2.x+ pending demand).
 
@@ -652,7 +653,7 @@ they are sequenced here because V2 builds directly on top of them.
 
 | # | Item | Why before V2 |
 | --- | --- | --- |
-| 0.1 | Tag and release V1; submit to the Obsidian community plugin store (both reviews judged it store-ready; includes the ribbon-trim product call from review §4) | Establishes the baseline users will migrate *from*; V2's `.testrunner` migration path needs a defined V1 to upgrade |
+| 0.1 | Tag and release V1 from this GitHub repository and document installation via the **BRAT** plugin (beta auto-update) as the official distribution channel; includes the ribbon-trim product call from review §4. **Obsidian community marketplace submission is deferred indefinitely** — the plugin stays where it is. | Establishes the baseline users will migrate *from*; V2's `.testrunner` migration path needs a defined V1 to upgrade; BRAT gives early adopters auto-updating installs without a marketplace review cycle |
 | 0.2 | Make the opt-in `e2e-smoke` workflow a reliable pre-release gate: add the per-OS Playwright browser caching (review §4) and run it on demand for runner-template changes | This workflow is the safety net the runner swap will be validated against — it must be trustworthy first |
 | 0.3 | Pin `release.yml` actions to SHAs (review §4; `contents: write`) | Lock down the release path before V2 increases release cadence |
 
@@ -666,7 +667,7 @@ they are sequenced here because V2 builds directly on top of them.
 | 1.4 | Settings scalar repair extended to `ci.*` / `automation.*` (review §4) | V2 adds settings (workers, browsers, retention, MCP toggle); the repair posture must be in place before the surface grows |
 | 1.5 | Path plumbing hardening: normalize the vault-base trailing separator once in `NodeAbsoluteFileSystem.getVaultBasePath()`; assert no `..` / leading `/` inside `joinVaultPath` (review §4) | The migration and MCP server (later) both mint paths; close the gaps before new callers appear |
 | 1.6 | Extract `LiveRefresh` from the five views (review §4) | V2 adds new views (triage, readiness, step library); copy six instead of refactoring eight |
-| 1.7 | `register-commands` smoke test + migrate `vault.adapter.exists` to the Vault API (review §4; community-review bots flag adapter usage) | Store submission (0.1) review feedback and V2's new commands both touch this surface |
+| 1.7 | `register-commands` smoke test + migrate `vault.adapter.exists` to the Vault API (review §4; community-review bots flag adapter usage) | V2's new commands touch this surface, and staying marketplace-clean keeps the (indefinitely deferred) submission option open at zero extra cost |
 
 ### Phase 2 — Foundations the V2 epics assume
 
