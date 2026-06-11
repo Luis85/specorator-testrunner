@@ -7,7 +7,6 @@ import {
   serialiseFeature,
   useCaseIdFromPath,
 } from "../src/application/content/gherkin";
-import type { FeatureSpecification } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const RICH = `@uc-001
@@ -266,8 +265,10 @@ describe("serialiseFeature / roundTripsLosslessly", () => {
     expect(first).not.toBeNull();
     if (!first) return;
     const text = serialiseFeature(first);
-    expect(parseFeature(text, path)).toEqual(first);
-    expect(serialiseFeature(parseFeature(text, path) as FeatureSpecification)).toBe(text);
+    const reparsed = parseFeature(text, path);
+    expect(reparsed).toEqual(first);
+    if (!reparsed) return;
+    expect(serialiseFeature(reparsed)).toBe(text);
   });
 
   it("is insensitive to table-cell padding", () => {

@@ -184,7 +184,7 @@ export class PostRunCoordinator {
     // fault-isolated (runImportAndGenerate never rejects today). The catch is a
     // backstop so a future edit that lets a rejection slip through becomes a
     // logged error instead of an unhandled promise rejection.
-    this.enqueue(() => this.runImportAndGenerate(run)).catch((error) =>
+    this.enqueue(() => this.runImportAndGenerate(run)).catch((error: unknown) =>
       this.logger.error("Post-run task rejected unexpectedly", error as Error),
     );
   }

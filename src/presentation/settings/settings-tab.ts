@@ -5,6 +5,8 @@ import {
   type Plugin,
   PluginSettingTab,
   Setting,
+  type SettingDefinitionItem,
+  type SettingGroupItem,
   type TextComponent,
   debounce,
 } from "obsidian";
@@ -94,7 +96,7 @@ export class TestHubSettingTab extends PluginSettingTab {
   /**
    * Pending `window.setTimeout` handles (e.g. the remove-environment two-click
    * disarm), cleared on re-render / close so an orphaned timeout can't fire into
-   * a button that a later display() already rebuilt.
+   * a button that a later refreshTab() already rebuilt.
    */
   private readonly pendingTimeouts: number[] = [];
 
@@ -120,7 +122,7 @@ export class TestHubSettingTab extends PluginSettingTab {
   hide(): void {
     // Closing the dialog must NOT cancel a save still inside the 600ms persist
     // window — that would silently lose the last edit. Flush (run) pending
-    // debouncers instead; the display() re-render path keeps cancelling via
+    // debouncers instead; the refreshTab() re-render path keeps cancelling via
     // cancelPendingFlushes, since its inputs are rebuilt from persisted state.
     for (const flush of this.pendingFlushes) flush.run();
     this.pendingFlushes.length = 0;
@@ -128,20 +130,48 @@ export class TestHubSettingTab extends PluginSettingTab {
     this.pendingTimeouts.length = 0;
   }
 
-  display(): void {
-    const { containerEl } = this;
+  /**
+   * Re-renders the open tab from persisted state (the declarative-API
+   * replacement for the deprecated imperative `display()` re-render): pending
+   * debouncers are cancelled first because every input is rebuilt from what
+   * was actually saved (PRES-L2).
+   */
+  private refreshTab(): void {
     this.cancelPendingFlushes();
-    containerEl.empty();
-    const settings = this.host.getSettings();
+    this.update();
+  }
 
-    // No top-level title element: the Obsidian guidelines own the tab heading.
-    new Setting(containerEl).setName("Folders").setHeading();
-    for (const field of PATH_FIELDS) {
-      new Setting(containerEl)
-        .setName(field.name)
-        .setDesc(field.desc)
-        .addText((text) => {
-          text.setPlaceholder(field.key).setValue(settings.paths[field.key]);
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    const settings = this.host.getSettings();
+    const environmentNames = Object.keys(settings.sut.environments);
+    return [
+      // No top-level title element: the Obsidian guidelines own the tab heading.
+      { type: "group", heading: "Folders", items: PATH_FIELDS.map((field) => this.pathRow(field)) },
+      // ── System under test (ADR-0013 environments, ADR-0014 auth) ──────────
+      { type: "group", heading: "System under test", items: [this.activeEnvironmentRow()] },
+      ...environmentNames.map((name) => this.environmentGroup(name, settings.sut.active === name)),
+      this.addEnvironmentRow(),
+      {
+        type: "group",
+        heading: "Maintenance",
+        items: [this.validateRow(), this.repairRow(), this.resetRow()],
+      },
+      // ── Continuous integration (UC-019/UC-020) ───────────────────────────
+      {
+        type: "group",
+        heading: "Continuous integration",
+        items: [this.generateWorkflowRow(), this.ciReadinessRow()],
+      },
+    ];
+  }
+
+  private pathRow(field: PathFieldSpec): SettingGroupItem {
+    return {
+      name: field.name,
+      desc: field.desc,
+      render: (setting) => {
+        setting.addText((text) => {
+          text.setPlaceholder(field.key).setValue(this.host.getSettings().paths[field.key]);
           // Persisting on every keystroke spams the service (and "Invalid
           // setting" Notices) with intermediate, half-typed paths. Debounce so
           // we only validate-then-save once typing settles (PRES-M1).
@@ -159,107 +189,124 @@ export class TestHubSettingTab extends PluginSettingTab {
             void this.persistPath(field.key, text.getValue().trim(), text);
           });
         });
-    }
-
-    this.renderSutSection(containerEl, settings);
-    this.renderMaintenanceSection(containerEl);
-    this.renderCiSection(containerEl);
+      },
+    };
   }
 
-  // ── System under test (ADR-0013 environments, ADR-0014 auth) ─────────────
-
-  private renderSutSection(containerEl: HTMLElement, settings: TestHubSettings): void {
-    new Setting(containerEl).setName("System under test").setHeading();
-
-    // Save-blocking validation errors (SETTINGS_INVALID) for any field in this
-    // section land here, near the inputs they describe — each message already
-    // names its environment/key, so the user can fix it without data.json.
-    this.sutErrorsEl = containerEl.createDiv({
-      cls: "e2e-test-hub-settings-errors",
-      attr: { "aria-live": "polite" },
-    });
-
-    const environmentNames = Object.keys(settings.sut.environments);
-    new Setting(containerEl)
-      .setName("Active environment")
-      .setDesc(
-        "Test runs execute against this environment. Switching is a single action — never edit a URL inline.",
-      )
-      .addDropdown((dropdown) => {
-        for (const name of environmentNames) dropdown.addOption(name, name);
-        // A hand-edited data.json can leave `active` dangling; surface it as a
-        // selectable-but-marked option so the dropdown reflects real state and
-        // switching to a defined environment repairs it.
-        if (!environmentNames.includes(settings.sut.active)) {
-          dropdown.addOption(settings.sut.active, `${settings.sut.active} (missing)`);
-        }
-        dropdown.setValue(settings.sut.active);
-        dropdown.onChange((value) => void this.persistActiveEnvironment(value, dropdown));
-      });
-
-    for (const name of environmentNames) this.renderEnvironmentBlock(containerEl, name, settings);
-
-    new Setting(containerEl)
-      .setName("Add environment")
-      .setDesc('Create a new named environment (e.g. "staging") with an empty base URL.')
-      .addButton((button) =>
-        button.setButtonText("Add environment").onClick(() => this.openAddEnvironment()),
-      );
-  }
-
-  private renderEnvironmentBlock(
-    containerEl: HTMLElement,
-    name: string,
-    settings: TestHubSettings,
-  ): void {
-    const env = settings.sut.environments[name];
-    const isActive = settings.sut.active === name;
-    const block = containerEl.createDiv({ cls: "e2e-test-hub-env-block" });
-
-    const header = new Setting(block).setName(isActive ? `${name} (active)` : name);
-    if (isActive) header.setDesc("Runs currently execute against this environment.");
-    header.addButton((button) => this.wireRemoveEnvironmentButton(button, name, isActive));
-
-    new Setting(block)
-      .setName("Base URL")
-      .setDesc("Injected into test runs as BASE_URL (http, https, or file).")
-      .addText((text) => {
-        text.setPlaceholder("https://staging.example.com").setValue(env.baseUrl);
-        const flush = debounce(
-          (value: string) => void this.persistBaseUrl(name, value.trim(), text),
-          PERSIST_DEBOUNCE_MS,
-          true,
-        );
-        this.pendingFlushes.push(flush);
-        text.onChange((value) => flush(value));
-        text.inputEl.addEventListener("blur", () => {
-          flush.cancel();
-          void this.persistBaseUrl(name, text.getValue().trim(), text);
+  private activeEnvironmentRow(): SettingGroupItem {
+    return {
+      name: "Active environment",
+      desc: "Test Runs execute against this environment. Switching is a single action — never edit a URL inline.",
+      render: (setting, group) => {
+        // Save-blocking validation errors (SETTINGS_INVALID) for any field in
+        // this section land directly above this row — each message already
+        // names its environment/key, so the user can fix it without data.json.
+        const errorsEl = group.listEl.createDiv({
+          cls: "e2e-test-hub-settings-errors",
+          attr: { "aria-live": "polite" },
         });
-      });
+        setting.settingEl.insertAdjacentElement("beforebegin", errorsEl);
+        this.sutErrorsEl = errorsEl;
 
-    // The rows array is the single source the persist rebuilds `auth.env`
-    // from; each rendered row mutates its own pair in place.
-    const rows: AuthVarPair[] = Object.entries(env.auth?.env ?? {}).map(([key, value]) => ({
-      key,
-      value,
-    }));
-    new Setting(block)
-      .setName("Authentication variables")
-      .setDesc(
-        'Credential env vars injected verbatim into the runner (and referenced as CI secrets). Keys: letters, digits and "_" only.',
-      )
-      .addButton((button) =>
-        button.setButtonText("Add variable").onClick(() => {
-          // A new row is UI staging until a key is typed (buildAuthEnv drops
-          // empty keys), so nothing persists yet — no full re-render needed.
-          const pair: AuthVarPair = { key: "", value: "" };
-          rows.push(pair);
-          this.renderAuthVarRow(varsEl, name, rows, pair, true);
-        }),
-      );
-    const varsEl = block.createDiv({ cls: "e2e-test-hub-env-vars" });
-    for (const pair of rows) this.renderAuthVarRow(varsEl, name, rows, pair, false);
+        const settings = this.host.getSettings();
+        const environmentNames = Object.keys(settings.sut.environments);
+        setting.addDropdown((dropdown) => {
+          for (const name of environmentNames) dropdown.addOption(name, name);
+          // A hand-edited data.json can leave `active` dangling; surface it as
+          // a selectable-but-marked option so the dropdown reflects real state
+          // and switching to a defined environment repairs it.
+          if (!environmentNames.includes(settings.sut.active)) {
+            dropdown.addOption(settings.sut.active, `${settings.sut.active} (missing)`);
+          }
+          dropdown.setValue(settings.sut.active);
+          dropdown.onChange((value) => void this.persistActiveEnvironment(value, dropdown));
+        });
+
+        return () => {
+          errorsEl.remove();
+          if (this.sutErrorsEl === errorsEl) this.sutErrorsEl = null;
+        };
+      },
+    };
+  }
+
+  private environmentGroup(name: string, isActive: boolean): SettingDefinitionItem {
+    return {
+      type: "group",
+      heading: isActive ? `${name} (active)` : name,
+      cls: "e2e-test-hub-env-block",
+      items: [
+        {
+          name: "Base URL",
+          desc: "Injected into Test Runs as BASE_URL (http, https, or file).",
+          render: (setting) => {
+            setting.addText((text) => {
+              text
+                .setPlaceholder("https://staging.example.com")
+                .setValue(this.host.getSettings().sut.environments[name]?.baseUrl ?? "");
+              const flush = debounce(
+                (value: string) => void this.persistBaseUrl(name, value.trim(), text),
+                PERSIST_DEBOUNCE_MS,
+                true,
+              );
+              this.pendingFlushes.push(flush);
+              text.onChange((value) => flush(value));
+              text.inputEl.addEventListener("blur", () => {
+                flush.cancel();
+                void this.persistBaseUrl(name, text.getValue().trim(), text);
+              });
+            });
+          },
+        },
+        {
+          name: "Authentication variables",
+          desc: 'Credential env vars injected verbatim into the runner (and referenced as CI secrets). Keys: letters, digits and "_" only.',
+          render: (setting, group) => {
+            const env = this.host.getSettings().sut.environments[name];
+            // The rows array is the single source the persist rebuilds
+            // `auth.env` from; each rendered row mutates its own pair in place.
+            const rows: AuthVarPair[] = Object.entries(env?.auth?.env ?? {}).map(
+              ([key, value]) => ({ key, value }),
+            );
+            const varsEl = group.listEl.createDiv({ cls: "e2e-test-hub-env-vars" });
+            setting.settingEl.insertAdjacentElement("afterend", varsEl);
+            setting.addButton((button) =>
+              button.setButtonText("Add variable").onClick(() => {
+                // A new row is UI staging until a key is typed (buildAuthEnv
+                // drops empty keys), so nothing persists yet — no re-render
+                // needed.
+                const pair: AuthVarPair = { key: "", value: "" };
+                rows.push(pair);
+                this.renderAuthVarRow(varsEl, name, rows, pair, true);
+              }),
+            );
+            for (const pair of rows) this.renderAuthVarRow(varsEl, name, rows, pair, false);
+            return () => varsEl.remove();
+          },
+        },
+        {
+          name: "Remove environment",
+          desc: isActive
+            ? ACTIVE_ENV_REMOVE_BLOCKED
+            : "Forget this environment and its credentials.",
+          render: (setting) => {
+            setting.addButton((button) => this.wireRemoveEnvironmentButton(button, name, isActive));
+          },
+        },
+      ],
+    };
+  }
+
+  private addEnvironmentRow(): SettingDefinitionItem {
+    return {
+      name: "Add environment",
+      desc: 'Create a new named environment (e.g. "staging") with an empty base URL.',
+      render: (setting) => {
+        setting.addButton((button) =>
+          button.setButtonText("Add environment").onClick(() => this.openAddEnvironment()),
+        );
+      },
+    };
   }
 
   private renderAuthVarRow(
@@ -343,7 +390,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     button.onClick(() => {
       if (!armed) {
         armed = true;
-        button.setWarning().setButtonText("Remove — click again to confirm");
+        button.setDestructive().setButtonText("Remove — click again to confirm");
         window.clearTimeout(disarmTimer);
         disarmTimer = window.setTimeout(() => {
           armed = false;
@@ -365,13 +412,12 @@ export class TestHubSettingTab extends PluginSettingTab {
       // Re-check against fresh state: the disabled state was computed at render
       // time and the active environment may have changed since.
       new Notice(ACTIVE_ENV_REMOVE_BLOCKED);
-      this.display();
+      this.refreshTab();
       return;
     }
-    const environments = { ...current.sut.environments };
-    delete environments[name];
+    const { [name]: _removed, ...environments } = current.sut.environments;
     const saved = await this.persistSut({ ...current.sut, environments });
-    if (saved) this.display();
+    if (saved) this.refreshTab();
   }
 
   private openAddEnvironment(): void {
@@ -389,7 +435,7 @@ export class TestHubSettingTab extends PluginSettingTab {
       ...current.sut,
       environments: { ...current.sut.environments, [name]: { baseUrl: "" } },
     });
-    if (saved) this.display();
+    if (saved) this.refreshTab();
   }
 
   private async persistActiveEnvironment(name: string, dropdown: DropdownComponent): Promise<void> {
@@ -398,7 +444,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     const saved = await this.persistSut({ ...current.sut, active: name });
     // Re-render on success so the per-environment "(active)" marker and the
     // disabled remove button follow the switch.
-    if (saved) this.display();
+    if (saved) this.refreshTab();
     else dropdown.setValue(this.host.getSettings().sut.active);
   }
 
@@ -462,7 +508,7 @@ export class TestHubSettingTab extends PluginSettingTab {
 
   private renderSutErrors(messages: string[]): void {
     const target = this.sutErrorsEl;
-    if (!target || !target.isConnected) return;
+    if (!target?.isConnected) return;
     target.empty();
     for (const message of messages) {
       target.createDiv({ cls: "e2e-test-hub-settings-error-row", text: `✗ ${message}` });
@@ -471,41 +517,60 @@ export class TestHubSettingTab extends PluginSettingTab {
 
   // ── Maintenance ───────────────────────────────────────────────────────────
 
-  private renderMaintenanceSection(containerEl: HTMLElement): void {
-    new Setting(containerEl).setName("Maintenance").setHeading();
+  /**
+   * Builds a button row whose async action reports into a checklist container
+   * rendered directly below the row (shared shape of the validate / repair /
+   * CI rows).
+   */
+  private actionWithResultRow(
+    name: string,
+    desc: string,
+    buttonText: string,
+    run: (button: ButtonComponent, resultEl: HTMLElement) => Promise<void>,
+  ): SettingGroupItem {
+    return {
+      name,
+      desc,
+      render: (setting, group) => {
+        const resultEl = group.listEl.createDiv({
+          cls: "e2e-test-hub-settings-result",
+          attr: { "aria-live": "polite" },
+        });
+        setting.settingEl.insertAdjacentElement("afterend", resultEl);
+        setting.addButton((button) =>
+          button.setButtonText(buttonText).onClick(() => void run(button, resultEl)),
+        );
+        return () => resultEl.remove();
+      },
+    };
+  }
 
-    new Setting(containerEl)
-      .setName("Validate environment")
-      .setDesc("Check Node.js, npm, the .testrunner files, dependencies, and the Chromium browser.")
-      .addButton((button) =>
-        button
-          .setButtonText("Validate")
-          .onClick(() => void this.runValidateEnvironment(button, validateResultEl)),
-      );
-    const validateResultEl = containerEl.createDiv({
-      cls: "e2e-test-hub-settings-result",
-      attr: { "aria-live": "polite" },
-    });
+  private validateRow(): SettingGroupItem {
+    return this.actionWithResultRow(
+      "Validate environment",
+      "Check Node.js, npm, the .testrunner files, dependencies, and the Chromium browser.",
+      "Validate",
+      (button, resultEl) => this.runValidateEnvironment(button, resultEl),
+    );
+  }
 
-    new Setting(containerEl)
-      .setName("Repair installation")
-      .setDesc(
-        "Re-sync the managed .testrunner files and reinstall anything missing. User-authored steps and pages are preserved.",
-      )
-      .addButton((button) =>
-        button.setButtonText("Repair").onClick(() => void this.runRepair(button, repairResultEl)),
-      );
-    const repairResultEl = containerEl.createDiv({
-      cls: "e2e-test-hub-settings-result",
-      attr: { "aria-live": "polite" },
-    });
+  private repairRow(): SettingGroupItem {
+    return this.actionWithResultRow(
+      "Repair installation",
+      "Re-sync the managed .testrunner files and reinstall anything missing. User-authored steps and pages are preserved.",
+      "Repair",
+      (button, resultEl) => this.runRepair(button, resultEl),
+    );
+  }
 
-    new Setting(containerEl)
-      .setName("Reset Test Hub")
-      .setDesc(
-        "Restore a clean install: remove the regenerable .testrunner runtime, restore default settings, and re-initialize. Your Use Cases, Specifications, Features, Suites and Evidence are preserved.",
-      )
-      .addButton((button) => this.wireResetButton(button));
+  private resetRow(): SettingGroupItem {
+    return {
+      name: "Reset Test Hub",
+      desc: "Restore a clean install: remove the regenerable .testrunner runtime, restore default settings, and re-initialize. Your Use Cases, Feature Specifications, Test Suites and Test Evidence are preserved.",
+      render: (setting) => {
+        setting.addButton((button) => this.wireResetButton(button));
+      },
+    };
   }
 
   /**
@@ -516,7 +581,7 @@ export class TestHubSettingTab extends PluginSettingTab {
    * is warning-styled from the start — reset is always destructive.
    */
   private wireResetButton(button: ButtonComponent): void {
-    button.setButtonText("Reset").setWarning();
+    button.setButtonText("Reset").setDestructive();
     let armed = false;
     let disarmTimer = 0;
     button.onClick(() => {
@@ -542,7 +607,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     try {
       // The Notice + re-init outcome is owned by resetSettings() (UC-024).
       await this.host.resetSettings();
-      this.display();
+      this.refreshTab();
     } catch (error) {
       new Notice(`Reset failed: ${errorText(error)}`);
     } finally {
@@ -588,38 +653,22 @@ export class TestHubSettingTab extends PluginSettingTab {
 
   // ── Continuous integration (UC-019/UC-020) ───────────────────────────────
 
-  private renderCiSection(containerEl: HTMLElement): void {
-    new Setting(containerEl).setName("Continuous integration").setHeading();
+  private generateWorkflowRow(): SettingGroupItem {
+    return this.actionWithResultRow(
+      "Generate workflow",
+      "Write a GitHub Actions workflow to `.github/workflows/`. An existing workflow is never overwritten without explicit confirmation.",
+      "Generate",
+      (button, resultEl) => this.runGenerateWorkflow(button, resultEl, false),
+    );
+  }
 
-    new Setting(containerEl)
-      .setName("Generate workflow")
-      .setDesc(
-        "Write a GitHub Actions workflow to `.github/workflows/`. An existing workflow is never overwritten without explicit confirmation.",
-      )
-      .addButton((button) =>
-        button
-          .setButtonText("Generate")
-          .onClick(() => void this.runGenerateWorkflow(button, generateResultEl, false)),
-      );
-    const generateResultEl = containerEl.createDiv({
-      cls: "e2e-test-hub-settings-result",
-      attr: { "aria-live": "polite" },
-    });
-
-    new Setting(containerEl)
-      .setName("Check CI readiness")
-      .setDesc(
-        "Verify the repository holds everything a CI checkout needs to install and run the tests.",
-      )
-      .addButton((button) =>
-        button
-          .setButtonText("Check")
-          .onClick(() => void this.runCiReadiness(button, readinessResultEl)),
-      );
-    const readinessResultEl = containerEl.createDiv({
-      cls: "e2e-test-hub-settings-result",
-      attr: { "aria-live": "polite" },
-    });
+  private ciReadinessRow(): SettingGroupItem {
+    return this.actionWithResultRow(
+      "Check CI readiness",
+      "Verify the repository holds everything a CI checkout needs to install and run the tests.",
+      "Check",
+      (button, resultEl) => this.runCiReadiness(button, resultEl),
+    );
   }
 
   private async runGenerateWorkflow(

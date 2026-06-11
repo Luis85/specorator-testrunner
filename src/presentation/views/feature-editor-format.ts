@@ -109,7 +109,7 @@ export const newExamplesBlock = (): ExamplesBlock => ({
 });
 
 /** Moves `array[index]` one slot up/down; returns false when it cannot move. */
-export const moveItem = <T>(array: T[], index: number, delta: -1 | 1): boolean => {
+export const moveItem = (array: unknown[], index: number, delta: -1 | 1): boolean => {
   const target = index + delta;
   if (index < 0 || index >= array.length || target < 0 || target >= array.length) return false;
   const [item] = array.splice(index, 1);

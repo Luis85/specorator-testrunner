@@ -49,7 +49,7 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async createFolder(path: VaultPath): Promise<Result<void>> {
-    if (this.failOn && this.failOn.path === path) {
+    if (this.failOn?.path === path) {
       return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
     }
     this.folders.add(path);
@@ -57,7 +57,7 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async createFile(path: VaultPath, content: string): Promise<Result<void>> {
-    if (this.failOn && this.failOn.path === path) {
+    if (this.failOn?.path === path) {
       return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
     }
     this.files.set(path, content);
@@ -65,7 +65,7 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async writeFile(path: VaultPath, content: string): Promise<Result<void>> {
-    if (this.failOn && this.failOn.path === path) {
+    if (this.failOn?.path === path) {
       return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
     }
     this.files.set(path, content);
@@ -101,7 +101,7 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async deleteFolder(path: VaultPath): Promise<Result<void>> {
-    if (this.failOn && this.failOn.path === path) {
+    if (this.failOn?.path === path) {
       return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
     }
     // Remove the folder itself and every file/folder nested under it.
@@ -119,7 +119,7 @@ export class FakeVaultFileSystem implements VaultFileSystem {
 
 /** In-memory {@link DataStore}. */
 export class FakeDataStore implements DataStore {
-  constructor(private data: unknown = undefined) {}
+  constructor(private data?: unknown) {}
 
   async load(): Promise<unknown> {
     return this.data;

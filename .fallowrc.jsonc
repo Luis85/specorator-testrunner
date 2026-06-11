@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  // scripts/e2e-smoke.mjs esbuild-bundles this entry at runtime, which the
+  // package.json-based auto-detection cannot see.
+  "entry": ["scripts/e2e-smoke-entry.ts"],
+  "rules": {
+    // Obsidian calls lifecycle/SuggestModal overrides (onChooseItem, getItems,
+    // hide, getState, …) itself, so "unused" is structurally unreliable for
+    // class members in this plugin. Keep the findings visible, never
+    // verdict-driving.
+    "unused-class-members": "warn",
+  },
+}

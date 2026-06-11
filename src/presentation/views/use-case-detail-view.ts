@@ -253,7 +253,7 @@ export class UseCaseDetailView extends ItemView {
       );
     actions
       .createEl("button", {
-        text: "Generate Feature",
+        text: "Generate feature",
         attr: { "aria-label": `Generate a Feature Specification for ${header.id}` },
       })
       .addEventListener("click", () =>

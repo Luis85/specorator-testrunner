@@ -29,7 +29,7 @@ export class CreateUseCaseModal extends Modal {
 
     new Setting(contentEl).setName("Title").addText((text) => {
       text
-        .setPlaceholder("e.g. Checkout with a saved card")
+        .setPlaceholder("E.g. Checkout with a saved card")
         .onChange((value) => (this.useCaseTitle = value));
       // Enter submits (shared helper); the description textarea keeps Enter
       // for newlines and is deliberately NOT wired this way.

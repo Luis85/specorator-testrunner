@@ -83,6 +83,9 @@ export class DefaultUseCaseService implements UseCaseService {
     const path = joinVaultPath(settings.paths.useCasesPath, useCaseFileName(id, title));
     // Frontmatter `description` is a single-line scalar; collapse any newlines
     // from the textarea so they can't break the YAML or be truncated on read.
+    // `||` (not `??`) is deliberate: a whitespace-only textarea collapses to ""
+    // and must become undefined so no empty `description:` scalar is emitted.
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
     const description = request.description?.replace(/\s+/g, " ").trim() || undefined;
     const useCase: UseCase = {
       id,
@@ -209,9 +212,7 @@ export class DefaultUseCaseService implements UseCaseService {
     // The status arrives from UI input; TypeScript can't protect a cast value,
     // so reject anything outside the UseCaseStatus union at runtime too.
     if (changes.status !== undefined && !USE_CASE_STATUSES.includes(changes.status)) {
-      return err(
-        appError("VALIDATION_FAILED", `Invalid Use Case status: ${String(changes.status)}.`),
-      );
+      return err(appError("VALIDATION_FAILED", `Invalid Use Case status: ${changes.status}.`));
     }
 
     const found = await this.findById(id);

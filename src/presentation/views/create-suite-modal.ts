@@ -30,7 +30,7 @@ export class CreateSuiteModal extends Modal {
   // Debounce timer + monotonic token for the Tag Expression preview: the token
   // discards a slow count that resolves after the user has typed further, so a
   // stale result can never overwrite a newer preview.
-  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+  private previewTimer: number | null = null;
   private previewToken = 0;
 
   constructor(
@@ -52,7 +52,7 @@ export class CreateSuiteModal extends Modal {
     const submit = (): void => void this.submit();
 
     new Setting(contentEl).setName("Name").addText((text) => {
-      text.setPlaceholder("e.g. Checkout Smoke").onChange((value) => (this.suiteName = value));
+      text.setPlaceholder("E.g. Checkout smoke").onChange((value) => (this.suiteName = value));
       submitOnEnter(text.inputEl, submit);
       // Autofocus the first input so the user can start typing immediately
       // instead of tabbing/clicking into the field first.
@@ -64,8 +64,8 @@ export class CreateSuiteModal extends Modal {
         area.setPlaceholder("Optional summary").onChange((value) => (this.description = value)),
       );
     new Setting(contentEl)
-      .setName("Tag expression")
-      .setDesc("Cucumber tag expression deciding membership.")
+      .setName("Tag Expression")
+      .setDesc("Cucumber Tag Expression deciding membership.")
       .addText((text) => {
         text.setPlaceholder("@smoke and not @wip").onChange((value) => {
           this.tagExpression = value;
@@ -91,7 +91,7 @@ export class CreateSuiteModal extends Modal {
   }
 
   onClose(): void {
-    if (this.previewTimer !== null) clearTimeout(this.previewTimer);
+    if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
     this.previewTimer = null;
     // Invalidate any in-flight count so it can't write into the emptied modal.
     this.previewToken += 1;
@@ -104,9 +104,9 @@ export class CreateSuiteModal extends Modal {
    * Renders via the pure {@link tagExpressionPreview} projection.
    */
   private schedulePreview(previewEl: HTMLElement): void {
-    if (this.previewTimer !== null) clearTimeout(this.previewTimer);
+    if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
     const token = ++this.previewToken;
-    this.previewTimer = setTimeout(() => {
+    this.previewTimer = window.setTimeout(() => {
       this.previewTimer = null;
       const expression = this.tagExpression.trim();
       if (expression === "") {
@@ -137,7 +137,7 @@ export class CreateSuiteModal extends Modal {
       return;
     }
     if (tagExpression === "") {
-      new Notice("Please enter a tag expression for the Test Suite.");
+      new Notice("Please enter a Tag Expression for the Test Suite.");
       return;
     }
 

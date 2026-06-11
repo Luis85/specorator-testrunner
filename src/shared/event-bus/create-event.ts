@@ -7,6 +7,10 @@ import type {
 
 /** Generates a unique id for an event envelope or a flow correlation id. */
 export const newId = (): string => {
+  // `globalThis` is deliberate: src/shared is environment-agnostic (no
+  // Obsidian/window dependency, runs under vitest's Node environment), and
+  // Web Crypto is not tied to any popout window's lifetime.
+  // eslint-disable-next-line obsidianmd/no-global-this
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   if (c?.randomUUID) return c.randomUUID();
   // Fallback for environments without the Web Crypto API.

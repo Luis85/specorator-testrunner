@@ -457,7 +457,7 @@ export class TestConsoleView extends ItemView {
       return;
     }
     this.meta.setText(
-      "No Test Run yet. Start one from a Test Suite, Use Case, or the Run commands.",
+      "No Test Run yet. Start one from a Test Suite, Use Case, or the run commands.",
     );
     delete this.meta.dataset.status;
   }

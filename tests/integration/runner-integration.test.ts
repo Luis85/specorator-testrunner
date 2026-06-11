@@ -88,8 +88,8 @@ describe("US-048 runner integration: scripts the executor invokes exist", () => 
     const { packageJson } = templatesFor();
     // The scripts invoke `node --import tsx node_modules/@cucumber/cucumber/...`.
     expect(packageJson.devDependencies["@cucumber/cucumber"]).toBeTruthy();
-    expect(packageJson.devDependencies["tsx"]).toBeTruthy();
-    expect(packageJson.devDependencies["playwright"]).toBeTruthy();
+    expect(packageJson.devDependencies.tsx).toBeTruthy();
+    expect(packageJson.devDependencies.playwright).toBeTruthy();
   });
 
   it("cucumber.mjs feature glob points at the configured feature folder", () => {

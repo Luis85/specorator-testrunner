@@ -373,7 +373,12 @@ export class FeatureEditorView extends TextFileView {
   }
 
   /** The ↑/↓ pair used by scenario heads and step rows alike. */
-  private appendMoveButtons<T>(parent: HTMLElement, noun: string, array: T[], index: number): void {
+  private appendMoveButtons(
+    parent: HTMLElement,
+    noun: string,
+    array: unknown[],
+    index: number,
+  ): void {
     const up = parent.createEl("button", { text: "↑", attr: { "aria-label": `Move ${noun} up` } });
     up.addEventListener("click", () => {
       if (moveItem(array, index, -1)) this.commit(true);
@@ -452,7 +457,7 @@ export class FeatureEditorView extends TextFileView {
     const list = parent.createDiv({ cls: "e2e-test-hub-feature-editor-steps" });
     steps.forEach((step, index) => this.renderStepRow(list, steps, step, index, onRemoved));
     const add = list.createEl("button", {
-      text: "+ Step",
+      text: "+ step",
       cls: "e2e-test-hub-feature-editor-add",
     });
     add.addEventListener("click", () => {
@@ -484,7 +489,7 @@ export class FeatureEditorView extends TextFileView {
       type: "text",
       value: step.text,
       cls: "e2e-test-hub-feature-editor-step-text",
-      attr: { placeholder: "step text", list: STEP_DATALIST_ID, "aria-label": "Step text" },
+      attr: { placeholder: "Step text", list: STEP_DATALIST_ID, "aria-label": "Step text" },
     });
     const flag = row.createSpan({ cls: "e2e-test-hub-feature-editor-step-flag" });
     const refreshFlag = (): void => {
@@ -534,12 +539,12 @@ export class FeatureEditorView extends TextFileView {
           });
         });
       });
-      const addRow = extras.createEl("button", { text: "+ Row" });
+      const addRow = extras.createEl("button", { text: "+ row" });
       addRow.addEventListener("click", () => {
         table.push((table[0] ?? [""]).map(() => ""));
         this.commit(true);
       });
-      const addColumn = extras.createEl("button", { text: "+ Column" });
+      const addColumn = extras.createEl("button", { text: "+ column" });
       addColumn.addEventListener("click", () => {
         for (const cells of table) cells.push("");
         this.commit(true);
@@ -553,7 +558,7 @@ export class FeatureEditorView extends TextFileView {
       // only while the step has neither, so the editor cannot produce a
       // table + doc string combination Cucumber would refuse to parse.
     } else if (!step.docString) {
-      const addTable = extras.createEl("button", { text: "+ Data table" });
+      const addTable = extras.createEl("button", { text: "+ data table" });
       addTable.addEventListener("click", () => {
         step.dataTable = [["value"]];
         this.commit(true);
@@ -581,7 +586,7 @@ export class FeatureEditorView extends TextFileView {
         this.commit(true);
       });
     } else if (!step.dataTable) {
-      const addDoc = extras.createEl("button", { text: "+ Text block" });
+      const addDoc = extras.createEl("button", { text: "+ text block" });
       addDoc.addEventListener("click", () => {
         step.docString = { fence: '"""', lines: [""] };
         this.commit(true);
@@ -671,12 +676,12 @@ export class FeatureEditorView extends TextFileView {
         this.commit(true);
       });
     });
-    const addRow = wrap.createEl("button", { text: "+ Row" });
+    const addRow = wrap.createEl("button", { text: "+ row" });
     addRow.addEventListener("click", () => {
       addExamplesRow(block);
       this.commit(true);
     });
-    const addColumn = wrap.createEl("button", { text: "+ Column" });
+    const addColumn = wrap.createEl("button", { text: "+ column" });
     addColumn.addEventListener("click", () => {
       addExamplesColumn(block);
       this.commit(true);
