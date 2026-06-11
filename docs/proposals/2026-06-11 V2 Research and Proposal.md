@@ -50,7 +50,9 @@ strong layering, security posture, and test coverage. The research says the
   failure triage, and **MCP integration**. Every commercial AI-testing
   competitor is cloud-dependent and quote-priced. The winning V2 move is to
   be the **spec layer + MCP surface that the user's own agents (Claude Code,
-  Copilot) plug into** — not to embed a cloud AI runtime.
+  Copilot) plug into** — not to embed a cloud AI runtime. V2 ships this as a
+  single **opt-in local MCP server**, deliberately scheduled as the final
+  roadmap item once the V2 feature set it exposes is stable.
 - **The platform moved under us, favorably.** Obsidian Bases shipped a
   documented plugin API (`registerBasesView()`, Oct 2025); the community has
   migrated Dataview→Bases. V2 dashboards should be Bases-native views over
@@ -90,7 +92,7 @@ order and explicit non-goals.
 | One vault = one project | ADR-0015 | **Keep** (revisit only on demand) |
 | Single active run | ADR-0018 | **Keep** (sound; parallelism happens inside the run) |
 | npm only | AD-2 | **Keep default, allow pnpm** (low priority) |
-| Step matching = regex heuristics (no custom parameter types, tables, doc-strings) | step-definitions.ts | **Subsumed by playwright-bdd + AI authoring** (→ EPIC-013/016) |
+| Step matching = regex heuristics (no custom parameter types, tables, doc-strings) | step-definitions.ts | **Subsumed by playwright-bdd diagnostics; agent-assisted via MCP** (→ EPIC-013/016) |
 | Desktop only | manifest | **Keep execution desktop-only; add mobile read-only degradation** (→ EPIC-018) |
 
 ### 2.3 Already-recorded debt (deferred in the 2026-06-11 review §4)
@@ -139,7 +141,7 @@ interop; release-readiness reporting.
 | --- | --- | --- | --- |
 | QA / SDET | Triage CI failures in minutes; detect/quarantine flaky tests with owner + deadline; debug from artifacts (trace/screenshot/video) without re-running; keep feedback <10 min via parallelism/sharding | ~40% of QA time goes to maintenance/flakiness; Google: 84% of pass↔fail transitions are flaky; trace viewer is the de-facto triage tool | EPIC-013 (native runner), EPIC-014 (flakiness, history) |
 | PO / BA | Facilitate Example Mapping; **review, not write**, Gherkin; plain-language "ready to ship?"; defensible sign-off; prove testing to auditors | POs resist authoring Gherkin ("too technical"); stakeholders never read feature files; SOC 2 audits demand 150+ evidence artifacts; UAT sign-off needs named approver + timestamp | EPIC-017 (discovery), EPIC-015 (readiness, sign-off, audit export) |
-| Developer | Run one scenario fast; typed steps with IDE support; no regex glue; debug via Playwright traces; feed specs to AI coding agents | "Regex-based spaghetti" is the canonical complaint; playwright-bdd exists precisely to escape cucumber-js; Spec Kit/Playwright Agents made Markdown specs an AI artifact | EPIC-013 (typed steps, traces), EPIC-016 (MCP, agent skills) |
+| Developer | Run one scenario fast; typed steps with IDE support; no regex glue; debug via Playwright traces; feed specs to AI coding agents | "Regex-based spaghetti" is the canonical complaint; playwright-bdd exists precisely to escape cucumber-js; Spec Kit/Playwright Agents made Markdown specs an AI artifact | EPIC-013 (typed steps, traces), EPIC-016 (opt-in MCP — last roadmap item) |
 | Delivery manager | Defensible GO/NO-GO per release; separate signal from flakiness noise; prove requirement coverage; report upward in non-technical language; survive audits without the screenshot scramble | Manual report assembly goes stale immediately; pass rate alone is a vanity metric; dashboards need ≤5–7 metrics with targets and trends, each drillable | EPIC-015 (readiness, one-pager, audit export), EPIC-014 (flakiness metric) |
 | Obsidian power user | Queryable dashboards over notes; data ownership; no vault pollution; mobile read access | Bases-first migration; vault-pollution complaints; ~30% of plugins desktop-only is tolerated but penalized | EPIC-018 (Bases views, mobile read-only, pollution control) |
 | Solo dev / agency | "Evidence I tested this for my client"; UAT sign-off to unblock invoices; monthly retainer report; checklist-first on-ramp | Client disputes hinge on documentation; white-label QA reports are a $49–399/mo competitor product; solo devs live in Markdown checklists, fear brittle suites | EPIC-015 (client report export, sign-off), EPIC-017 (checklist on-ramp) |
@@ -168,8 +170,10 @@ verification system of record for AI-built software.*
    evidence, release readiness, sign-off, and client reports are jobs people
    demonstrably pay for, that no local-first tool serves, and that our
    Markdown/git substrate is uniquely suited to.
-3. **Bet on being the spec layer for user-owned AI agents** (MCP + agent
-   skills + BYO key), not on embedding a cloud AI runtime.
+3. **Bet on being the spec layer for user-owned AI agents.** The plugin's
+   only AI surface is one opt-in local MCP server the user can activate —
+   no chat, no bundled model calls — and it ships **last**, once the V2
+   feature set it exposes is stable.
 
 ### 5.3 Non-goals for V2 (explicit)
 
@@ -180,7 +184,7 @@ verification system of record for AI-built software.*
 - **No queued/concurrent runs** (ADR-0018 stands; parallelism lives inside a run).
 - **No test recorder / visual test builder** (PRD V3; Playwright codegen exists — NG3/NG4 stand).
 - **No cloud service, no telemetry, no hosted dashboard** (P2 Local First is the moat).
-- **No runtime-AI test steps** (Momentic-style runtime interpretation trades away determinism — our strength; AI operates at authoring/repair time only).
+- **No in-plugin AI features** — no chat UI, no bundled or BYO-API-key model calls, no AI-generated content produced by the plugin itself. All AI work happens through the user's own agents via the opt-in local MCP server (EPIC-016, the last roadmap item). Runtime-AI test steps (Momentic-style runtime interpretation) stay out of scope too: they trade away determinism, our strength.
 - **No mobile-device (Appium) or API-first testing epics** (Playwright's `request` fixture becomes available for API-setup steps via EPIC-013 — evidence says API data setup makes suites 3–4x faster — but device labs and standalone API testing are out of scope).
 - **No Jira/Azure-DevOps two-way sync in V2.0** (importers only, → EPIC-019; full sync is V2.x+ pending demand).
 
@@ -366,55 +370,66 @@ runs stop growing the vault forever.
 reserved `evidence.swept` event; never touches exports or signed-off
 releases.
 
-### EPIC-016 — AI & Agent Integration *(P1–P2)*
+### EPIC-016 — Agent Integration via Local MCP *(opt-in, last on the roadmap)*
 
-> Local-first AI: the plugin exposes the workbench to the user's own agents
-> and offers BYO-key assistance. No bundled cloud runtime; deterministic
-> tests remain the output. New ADR: "AI operates at authoring/repair time;
-> agent access via MCP."
+> The plugin's **only** AI surface: one opt-in, local MCP server the user can
+> activate. No AI chat, no bundled or BYO-API-key model calls, no AI-generated
+> content produced by the plugin itself — all AI work is performed by the
+> user's own agents (Claude Code, Copilot, …) *through* the MCP. Deterministic
+> tests remain the output. Deliberately scheduled **last**, so the MCP exposes
+> a stabilized V2 feature set instead of chasing a moving API. New ADR:
+> "Opt-in local MCP exposure; no in-plugin AI runtime."
 
-**US-067 MCP server for the Test Hub** *(P1 — highest leverage)* —
-As a **Developer**, I want an MCP server exposing the vault's testing surface
-(list use cases/features/suites, read specs, run a scope, fetch failure
-context incl. trace paths, create/update feature drafts), so that Claude
-Code/Copilot can author and verify against the SUT through the hub.
-*AC:* opt-in; stdio-based, generated into `.testrunner` so it also works
-without Obsidian running (CI/agent use); mutations restricted to the
+**US-067 Local MCP server for the Test Hub** —
+As a **Developer**, I want an opt-in local MCP server exposing the plugin's
+most important use cases as tools — list/read Use Cases, Features, and
+Suites; validate a Feature; detect missing steps; run a scope (suite,
+feature, scenario); fetch run results and failure context incl. evidence and
+trace paths; create/update Feature drafts and step-definition files — so
+that my own coding agent can author and verify against the SUT through the
+hub.
+*AC:* **off by default**, activated explicitly in settings; stdio-based and
+local-only (no network listener), generated into `.testrunner` so it also
+works without Obsidian running (CI/agent use); mutations restricted to the
 vault's testing folders (path-safety policy applies); run access respects
-ADR-0018 single-run semantics; ships with a documented agent-skill/prompt
-("plan in Use Cases, formulate in features, verify by running suites").
+ADR-0018 single-run semantics; tool surface is derived from the V1/V2 use
+case catalog (UC-006/007/010/011…014/016) so agents work the same loop a
+human does; ships with a documented agent-skill/prompt ("plan in Use Cases,
+formulate in Features, verify by running Suites").
 
 **US-068 Agent context generation** —
 As a **Developer**, I want generated `AGENTS.md`/`CLAUDE.md` context pointing
-agents at the vault's Use Cases, features, step library, and run commands,
-so that any coding agent picks up the spec layer with zero setup.
-*AC:* generation command + part of init wizard (opt-in); content reflects
-actual vault paths/settings; regeneration idempotent.
+agents at the vault's Use Cases, features, step library, run commands, and —
+when activated — the MCP server, so that any coding agent picks up the spec
+layer with zero setup.
+*AC:* generation command (opt-in); static content only — no model calls;
+content reflects actual vault paths/settings; regeneration idempotent.
 
-**US-069 AI step implementation (BYO key / delegate)** *(P2)* —
-As a **QA Engineer**, I want undefined steps implemented by an AI assist —
-either via my configured API key or by handing a ready-made prompt+context
-to my own agent — so that the glue-code tax disappears.
-*AC:* per-step "Implement with AI" produces a reviewable diff (never
-auto-committed); works in "copy prompt" mode with no key configured; uses
-page context when available.
+**US-069 Step implementation through the MCP** —
+As a **QA Engineer**, I want my agent to implement undefined steps via the
+MCP (fetch missing steps with feature context, write a step-file draft), so
+that the glue-code tax disappears without the plugin embedding any AI.
+*AC:* MCP exposes missing-step detection results and step-file write access
+(testing folders only); drafts land as reviewable changes — never
+auto-committed; the documented agent prompt covers this workflow.
 
-**US-070 AI failure summaries** *(P2)* —
-As a **Delivery Manager**, I want an optional plain-language failure summary
-in the Evidence note (what failed, probable cause class, suggested next
-step), so that non-engineers understand a red run.
-*AC:* BYO key, off by default; summary clearly marked as AI-generated;
-redaction applied to everything sent; works from report+error text alone
-(no artifacts uploaded unless enabled).
+**US-070 Failure triage through the MCP** —
+As a **Delivery Manager**, I want my team's agent to read a run's failure
+context (result counts, error texts, artifact/trace paths) via the MCP and
+append a clearly-marked triage summary to the Evidence note, so that
+non-engineers understand a red run — with the plugin itself never calling a
+model.
+*AC:* MCP provides structured failure context; Evidence notes accept an
+agent-authored, explicitly-labeled summary section; redaction posture
+applies to everything the MCP serves.
 
-**US-071 Repair-time healing flow** *(P3)* —
-As a **QA Engineer**, I want a guided "heal" action for a failing scenario
-that hands my agent the failing spec, step code, error, and trace path, and
-receives a patch proposal, so that selector rot is fixed at repair time —
-never silently at runtime.
-*AC:* integrates with Playwright's healer pattern where available; output is
-a reviewable diff; healing never changes `.feature` business wording without
-explicit confirmation.
+**US-071 Repair-time healing through the MCP** —
+As a **QA Engineer**, I want my agent to pull a failing scenario's spec, step
+code, error, and trace path via the MCP and propose a patch, so that
+selector rot is fixed at repair time — never silently at runtime.
+*AC:* MCP exposes the failing-scenario bundle; output is a reviewable diff;
+healing never changes `.feature` business wording without explicit
+confirmation; compatible with Playwright's healer-agent pattern.
 
 ### EPIC-017 — Discovery & Non-Technical Collaboration *(P2)*
 
@@ -575,22 +590,27 @@ One line each; full notes to be authored on acceptance, in the UC-001 format.
 
 **V2.0 (the headline release):** EPIC-013 complete (US-051…055, US-080) +
 US-056/057 (identity & history, since the runner migration touches the same
-report pipeline) + US-060 (evidence stamps) + US-067/068 (MCP + agent
-context). Rationale: one migration of the `.testrunner` and report pipeline,
-done once; everything else layers on top without breaking changes.
+report pipeline) + US-060 (evidence stamps). Rationale: one migration of the
+`.testrunner` and report pipeline, done once; everything else layers on top
+without breaking changes.
 
 **V2.1:** flakiness & triage (US-058/059), readiness/sign-off/exports
 (US-061…065), retention sweep (US-066), Step Library (US-081), Bases views
 (US-076), chrome hygiene (US-078), credential keychain, storageState,
 sharded CI, Messages/Allure.
 
-**V2.x:** discovery suite (EPIC-017), AI assists beyond MCP (US-069…071),
-mobile read-only, importers, headless CLI, multi-env matrix, GitLab CI.
+**V2.x:** discovery suite (EPIC-017), mobile read-only, importers, headless
+CLI, multi-env matrix, GitLab CI.
+
+**V2 final (last roadmap item):** EPIC-016 — the opt-in local MCP server and
+agent workflows (US-067…071). Deliberately last so the MCP exposes a
+stabilized feature set covering the plugin's most important use cases,
+rather than chasing a moving internal API.
 
 **Required new ADRs:** playwright-bdd adoption (supersedes parts of
-ADR-0004/AD-6/AD-7); scenario identity & history store; MCP exposure &
-AI-at-authoring-time policy; credential storage (supersedes AD-9); browser
-matrix default (supersedes AD-5).
+ADR-0004/AD-6/AD-7); scenario identity & history store; opt-in local MCP
+exposure with no in-plugin AI runtime; credential storage (supersedes AD-9);
+browser matrix default (supersedes AD-5).
 
 **Migration risks to carry into planning:**
 playwright-bdd is a single-maintainer (very active) community project —
