@@ -617,7 +617,10 @@ export class FeatureEditorView extends TextFileView {
         attr: { "aria-label": `Column ${columnIndex + 1} name` },
       });
       input.addEventListener("change", () => {
-        block.header[columnIndex] = sanitizeCell(input.value) || column;
+        // Fall back to the CURRENT model value, not the render-time capture,
+        // so clearing the input cannot revert an earlier rename.
+        block.header[columnIndex] = sanitizeCell(input.value) || block.header[columnIndex];
+        input.value = block.header[columnIndex];
         this.commit(false);
       });
       const removeColumn = th.createEl("button", {

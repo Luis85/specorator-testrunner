@@ -158,8 +158,13 @@ describe("sanitizers", () => {
   it("asDescriptionLines keeps only plain description lines", () => {
     expect(asDescriptionLines("keep me\n@tag\nScenario: nope\n\nGiven x\nalso keep")).toEqual([
       "keep me",
+      "",
       "also keep",
     ]);
+  });
+
+  it("asDescriptionLines preserves interior paragraph breaks, trims boundary blanks", () => {
+    expect(asDescriptionLines("\npara1\n\npara2\n\n")).toEqual(["para1", "", "para2"]);
   });
 
   it("sanitizeDocStringLines escapes body lines that would close the chosen fence", () => {

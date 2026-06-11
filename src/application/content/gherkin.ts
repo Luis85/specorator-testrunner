@@ -58,8 +58,10 @@ const parseStep = (line: string): GherkinStep | null => {
   const trimmed = line.trim();
   for (const keyword of STEP_KEYWORDS) {
     if (keyword === "*") {
-      if (trimmed.startsWith("* ")) {
-        return { keyword: "*", text: trimmed.slice(2).trim() };
+      // `*` accepts empty text like every other keyword (`Given` alone parses);
+      // a lone `*` is a zero-text step, not description text.
+      if (trimmed === "*" || trimmed.startsWith("* ")) {
+        return { keyword: "*", text: trimmed.slice(1).trim() };
       }
       continue;
     }
@@ -85,6 +87,15 @@ const parseTableRow = (line: string): string[] =>
     .replace(/\|$/, "")
     .split("|")
     .map((cell) => cell.trim());
+
+/** Drops leading/trailing blank entries; interior blanks are paragraph breaks. */
+const trimBlankEdges = (lines: string[]): string[] => {
+  const start = lines.findIndex((line) => line !== "");
+  if (start === -1) return [];
+  let end = lines.length - 1;
+  while (lines[end] === "") end -= 1;
+  return lines.slice(start, end + 1);
+};
 
 /**
  * Parses Gherkin `content` into a {@link FeatureSpecification}. Returns `null`
@@ -144,7 +155,13 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
       continue;
     }
 
-    if (line === "" || line.startsWith("#")) continue;
+    if (line === "") {
+      // A blank line inside a description block is a paragraph break the
+      // serializer must reproduce; boundary blanks are trimmed after the loop.
+      if (descriptionTarget !== null) descriptionTarget.push("");
+      continue;
+    }
+    if (line.startsWith("#")) continue;
 
     if (line.startsWith("@")) {
       pendingTags.push(...parseTagLine(line));
@@ -256,12 +273,20 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
 
   if (featureName === null) return null;
 
+  for (const scenario of scenarios) {
+    if (!scenario.description) continue;
+    const trimmedDescription = trimBlankEdges(scenario.description);
+    if (trimmedDescription.length === 0) delete scenario.description;
+    else scenario.description = trimmedDescription;
+  }
+  const description = trimBlankEdges(featureDescription);
+
   return {
     path,
     useCaseId: useCaseIdFromPath(path) ?? "",
     featureName,
     tags: featureTags,
-    ...(featureDescription.length > 0 ? { description: featureDescription } : {}),
+    ...(description.length > 0 ? { description } : {}),
     ...(background.length > 0 ? { background } : {}),
     scenarios,
   };
@@ -310,7 +335,9 @@ export const serialiseFeature = (specification: FeatureSpecification): string =>
   const lines: string[] = [];
   if (specification.tags.length > 0) lines.push(specification.tags.join(" "));
   lines.push(`Feature: ${specification.featureName}`);
-  for (const text of specification.description ?? []) lines.push(`  ${text}`);
+  for (const text of specification.description ?? []) {
+    lines.push(text === "" ? "" : `  ${text}`);
+  }
   if (specification.background && specification.background.length > 0) {
     lines.push("");
     lines.push("  Background:");
@@ -320,7 +347,9 @@ export const serialiseFeature = (specification: FeatureSpecification): string =>
     lines.push("");
     if (scenario.tags.length > 0) lines.push(`  ${scenario.tags.join(" ")}`);
     lines.push(`  ${scenario.keyword ?? "Scenario"}: ${scenario.name}`.trimEnd());
-    for (const text of scenario.description ?? []) lines.push(`    ${text}`);
+    for (const text of scenario.description ?? []) {
+      lines.push(text === "" ? "" : `    ${text}`);
+    }
     for (const step of scenario.steps) pushStep(lines, step, "    ");
     for (const block of scenario.examples ?? []) {
       lines.push("");
@@ -359,7 +388,9 @@ const significantLines = (text: string): string[] => {
         result.push(trimmed);
         continue;
       }
-      if (trimmed.length === 0) continue; // blank body lines round-trip as-is
+      // Compared even when blank: a whitespace-only body line the parser
+      // stores as "" must FAIL the guard (its spaces are unrepresentable),
+      // while truly-blank lines compare "" === "" and still round-trip.
       result.push(raw.startsWith(fenceIndent) ? raw.slice(fenceIndent.length) : raw);
       continue;
     }

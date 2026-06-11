@@ -59,6 +59,25 @@ describe("projectFeatureHealth", () => {
       featureIsWip: true,
     });
   });
+
+  it("counts @wip carried only on a runnable Examples block", () => {
+    const f = parseFeature(
+      `Feature: F
+
+  Scenario Outline: O
+    Given x
+
+    @wip
+    Examples:
+      | a |
+      | 1 |
+`,
+      vp("Specifications/features/UC-009-wip-block.feature"),
+    );
+    expect(f).not.toBeNull();
+    if (!f) return;
+    expect(projectFeatureHealth(f).wipScenarioCount).toBe(1);
+  });
 });
 
 describe("countMatchingScenariosInFeature", () => {

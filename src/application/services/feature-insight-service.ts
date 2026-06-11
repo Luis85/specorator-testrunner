@@ -39,9 +39,11 @@ export interface FeatureHealth {
   /** Number of scenarios the Feature declares. */
   scenarioCount: number;
   /**
-   * Scenarios carrying a SCENARIO-LEVEL `@wip` tag. Feature-level `@wip` is
-   * reported separately via {@link featureIsWip} (its own badge), so it is NOT
-   * folded in here — that would always read "N scenarios (N @wip)".
+   * Scenarios carrying a SCENARIO-LEVEL `@wip` tag, or a `@wip` on a runnable
+   * Examples block — the same per-block scope `countMatchingScenariosInFeature`
+   * matches against, so the health line and suite counts agree. Feature-level
+   * `@wip` is reported separately via {@link featureIsWip} (its own badge), so
+   * it is NOT folded in here — that would always read "N scenarios (N @wip)".
    */
   wipScenarioCount: number;
   /** The Feature itself is tagged `@wip` — excluded from KPIs per ADR-0017. */
@@ -54,6 +56,16 @@ export interface FeatureHealth {
  */
 const WIP_TAG = "@wip";
 const hasWipTag = (tags: string[]): boolean => tags.some((tag) => tag.toLowerCase() === WIP_TAG);
+
+/**
+ * Scenario-level `@wip`, or `@wip` on a runnable Examples block — the same
+ * per-block scope `countMatchingScenariosInFeature` matches against, so the
+ * health line and suite counts agree. Feature-level `@wip` stays out: it is
+ * reported separately via `featureIsWip`.
+ */
+const scenarioHasWip = (scenario: ScenarioSpecification): boolean =>
+  hasWipTag(scenario.tags) ||
+  (scenario.examples ?? []).some((block) => block.rows.length > 0 && hasWipTag(block.tags));
 
 /**
  * A scenario's EFFECTIVE tags: feature-level tags inherit to every scenario
@@ -86,7 +98,7 @@ export const effectiveScenarioTagSets = (
 export const projectFeatureHealth = (feature: FeatureSpecification): FeatureHealth => ({
   path: feature.path,
   scenarioCount: feature.scenarios.length,
-  wipScenarioCount: feature.scenarios.filter((scenario) => hasWipTag(scenario.tags)).length,
+  wipScenarioCount: feature.scenarios.filter(scenarioHasWip).length,
   featureIsWip: hasWipTag(feature.tags),
 });
 

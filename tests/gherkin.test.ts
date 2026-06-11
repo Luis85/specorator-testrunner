@@ -243,6 +243,12 @@ describe("parseFeature (extended Gherkin)", () => {
       { keyword: "Then", text: "the result is <sum>" },
     ]);
   });
+
+  it("parses a bare * as a zero-text step (not description text)", () => {
+    const f = parseFeature("Feature: F\n\n  Scenario: S\n    *\n", vp("Specifications/features/UC-001-star.feature"));
+    expect(f?.scenarios[0].steps).toEqual([{ keyword: "*", text: "" }]);
+    expect(f?.scenarios[0].description).toBeUndefined();
+  });
 });
 
 describe("serialiseFeature / roundTripsLosslessly", () => {
@@ -308,6 +314,30 @@ describe("serialiseFeature / roundTripsLosslessly", () => {
     expect(roundTripsLosslessly(escaped, path)).toBe(false);
   });
 
+  it("preserves blank paragraph breaks inside descriptions", () => {
+    const feature = "Feature: F\n  para1\n\n  para2\n\n  Scenario: S\n    Given x\n";
+    expect(roundTripsLosslessly(feature, path)).toBe(true);
+    const parsed = parseFeature(feature, path);
+    expect(parsed?.description).toEqual(["para1", "", "para2"]);
+    if (!parsed) return;
+    expect(serialiseFeature(parsed)).toContain("  para1\n\n  para2");
+  });
+
+  it("round-trips interior blank doc-string body lines", () => {
+    const feature = `Feature: F\n\n  Scenario: S\n    Given a payload:\n      """\n      first\n\n      last\n      """\n`;
+    expect(roundTripsLosslessly(feature, path)).toBe(true);
+    expect(parseFeature(feature, path)?.scenarios[0].steps[0].docString?.lines).toEqual([
+      "first",
+      "",
+      "last",
+    ]);
+  });
+
+  it("fails the guard for a whitespace-only doc-string body line it cannot represent", () => {
+    const feature = `Feature: F\n\n  Scenario: S\n    Given a payload:\n      """\n      first\n   \n      last\n      """\n`;
+    expect(roundTripsLosslessly(feature, path)).toBe(false);
+  });
+
   it("sanitises literal pipes in model cells (table shape is the invariant)", () => {
     const spec = parseFeature(RICH, path);
     expect(spec).not.toBeNull();
@@ -341,6 +371,7 @@ describe("isPlainDescriptionLine", () => {
     "",
     "   ",
     "Rule: extra",
+    "*",
   ])("rejects %j", (line) => {
     expect(isPlainDescriptionLine(line)).toBe(false);
   });
