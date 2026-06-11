@@ -1,5 +1,10 @@
 import { buildStarterFeature, featureFileName, nextFeatureSlug } from "../content/feature-content";
-import { collectStepTexts, parseFeature, serialiseFeature, useCaseIdFromPath } from "../content/gherkin";
+import {
+  collectStepTexts,
+  parseFeature,
+  serialiseFeature,
+  useCaseIdFromPath,
+} from "../content/gherkin";
 import { findMissingSteps, parseStepDefinitions } from "../content/step-definitions";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";

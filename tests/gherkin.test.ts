@@ -283,6 +283,30 @@ describe("serialiseFeature / roundTripsLosslessly", () => {
   it("fails the guard for unparseable content", () => {
     expect(roundTripsLosslessly("not gherkin", path)).toBe(false);
   });
+
+  it("fails the guard for a Rule: line directly under Feature:", () => {
+    const ruleAsDescription = `Feature: F\n  Rule: my rule\n\n  Scenario: S\n    Given x\n`;
+    expect(roundTripsLosslessly(ruleAsDescription, path)).toBe(false);
+  });
+
+  it("preserves trailing whitespace in doc-string bodies (round-trips)", () => {
+    const feature = `Feature: F\n\n  Scenario: S\n    Given a payload:\n      """\n      line with trailing spaces   \n      """\n`;
+    expect(roundTripsLosslessly(feature, path)).toBe(true);
+    const parsed = parseFeature(feature, path);
+    expect(parsed?.scenarios[0].steps[0].docString?.lines).toEqual([
+      "line with trailing spaces   ",
+    ]);
+  });
+
+  it("fails the guard for a doc-string body line shallower than its fence", () => {
+    const feature = `Feature: F\n\n  Scenario: S\n    Given a payload:\n      """\n   outdented beyond the fence\n      """\n`;
+    expect(roundTripsLosslessly(feature, path)).toBe(false);
+  });
+
+  it("fails the guard for escaped-pipe table cells (not modelled)", () => {
+    const escaped = RICH.replace("| a    | 1     |", String.raw`| a\|b | 1     |`);
+    expect(roundTripsLosslessly(escaped, path)).toBe(false);
+  });
 });
 
 describe("isPlainDescriptionLine", () => {
@@ -304,6 +328,7 @@ describe("isPlainDescriptionLine", () => {
     "Given a step",
     "",
     "   ",
+    "Rule: extra",
   ])("rejects %j", (line) => {
     expect(isPlainDescriptionLine(line)).toBe(false);
   });

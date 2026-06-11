@@ -74,6 +74,9 @@ const FEATURE_RE = /^Feature:\s*(.*)$/;
 const SCENARIO_RE = /^Scenario(\s+Outline)?:\s*(.*)$/;
 const BACKGROUND_RE = /^Background:/;
 const EXAMPLES_RE = /^Examples:\s*(.*)$/;
+// `Rule:` blocks are NOT modelled (see the module doc); the regex exists so a
+// Rule line is never mistaken for description text — it must fail the guard.
+const RULE_RE = /^Rule:/;
 
 /** Splits a `| a | b |` row into trimmed cells (escaped `\|` not supported). */
 const parseTableRow = (line: string): string[] =>
@@ -120,10 +123,13 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
         openDocString = null;
         continue;
       }
-      // Dedent by the opening fence's indentation (Gherkin doc-string rule);
-      // shallower lines are kept trimmed rather than dropped.
+      // Dedent by the opening fence's indentation (Gherkin doc-string rule),
+      // otherwise VERBATIM — doc strings can be whitespace-significant, and the
+      // guard's doc-aware comparison must see exactly what is stored. A line
+      // shallower than the fence keeps only its trimmed text; the guard then
+      // fails (the model cannot represent negative relative indentation).
       openDocString.lines.push(
-        (raw.startsWith(docStringIndent) ? raw.slice(docStringIndent.length) : line).trimEnd(),
+        raw.startsWith(docStringIndent) ? raw.slice(docStringIndent.length) : line,
       );
       continue;
     }
@@ -232,7 +238,7 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
       }
     }
 
-    if (step === null && descriptionTarget !== null) {
+    if (step === null && descriptionTarget !== null && !RULE_RE.test(line)) {
       descriptionTarget.push(line);
       // A scenario's description array is attached on its first line so empty
       // descriptions never appear in the model (keeps round trips stable).
@@ -277,7 +283,11 @@ const pushStep = (lines: string[], step: GherkinStep, indent: string): void => {
   if (step.dataTable && step.dataTable.length > 0) pushTable(lines, step.dataTable, inner);
   if (step.docString) {
     lines.push(`${inner}${step.docString.fence}${step.docString.mediaType ?? ""}`);
-    for (const bodyLine of step.docString.lines) lines.push(`${inner}${bodyLine}`.trimEnd());
+    // Body lines are emitted verbatim at the fence indent (no trimEnd): the
+    // stored content is whitespace-faithful and must stay that way on disk.
+    for (const bodyLine of step.docString.lines) {
+      lines.push(bodyLine.length > 0 ? `${inner}${bodyLine}` : "");
+    }
     lines.push(`${inner}${step.docString.fence}`);
   }
 };
@@ -318,18 +328,47 @@ export const serialiseFeature = (specification: FeatureSpecification): string =>
 };
 
 /**
- * Trimmed, non-blank lines with canonical table-row and tag-line spacing —
- * the comparison basis for {@link roundTripsLosslessly}. Indentation and
- * blank-line placement are serializer-owned; cell padding and tag spacing
- * are cosmetic.
+ * Normalised comparison lines for {@link roundTripsLosslessly}. Outside doc
+ * strings: trimmed, blank lines dropped, canonical `|`-row and `@`-tag
+ * spacing (indentation and blank-line placement are serializer-owned; cell
+ * padding and tag spacing are cosmetic). INSIDE doc strings the body is
+ * compared dedented-but-verbatim, so whitespace the parser cannot represent
+ * fails the guard instead of being trimmed out of sight. A table row
+ * containing a backslash is compared verbatim too: it may carry a `\|` escape
+ * the cell model does not represent, and canonicalizing it would hide the
+ * corruption.
  */
-const significantLines = (text: string): string[] =>
-  text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => (line.startsWith("|") ? `| ${parseTableRow(line).join(" | ")} |` : line))
-    .map((line) => (line.startsWith("@") ? line.split(/\s+/).join(" ") : line));
+const significantLines = (text: string): string[] => {
+  const result: string[] = [];
+  let fence: string | null = null;
+  let fenceIndent = "";
+  for (const raw of text.split(/\r?\n/)) {
+    const trimmed = raw.trim();
+    if (fence !== null) {
+      if (trimmed === fence) {
+        fence = null;
+        result.push(trimmed);
+        continue;
+      }
+      if (trimmed.length === 0) continue; // blank body lines round-trip as-is
+      result.push(raw.startsWith(fenceIndent) ? raw.slice(fenceIndent.length) : raw);
+      continue;
+    }
+    if (trimmed.length === 0) continue;
+    if (trimmed.startsWith('"""') || trimmed.startsWith("```")) {
+      fence = trimmed.slice(0, 3);
+      fenceIndent = raw.slice(0, raw.length - raw.trimStart().length);
+      result.push(trimmed);
+      continue;
+    }
+    if (trimmed.startsWith("|")) {
+      result.push(trimmed.includes("\\") ? trimmed : `| ${parseTableRow(trimmed).join(" | ")} |`);
+      continue;
+    }
+    result.push(trimmed.startsWith("@") ? trimmed.split(/\s+/).join(" ") : trimmed);
+  }
+  return result;
+};
 
 /**
  * True when the parsed model reproduces every significant line of `content`.
@@ -363,7 +402,8 @@ export const isPlainDescriptionLine = (line: string): boolean => {
     FEATURE_RE.test(trimmed) ||
     SCENARIO_RE.test(trimmed) ||
     BACKGROUND_RE.test(trimmed) ||
-    EXAMPLES_RE.test(trimmed)
+    EXAMPLES_RE.test(trimmed) ||
+    RULE_RE.test(trimmed)
   ) {
     return false;
   }
