@@ -17,7 +17,12 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "quality": "fallow",
+    "quality:health": "fallow health --score",
+    "quality:dead-code": "fallow dead-code",
+    "quality:dupes": "fallow dupes",
+    "quality:audit": "fallow audit"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
@@ -26,6 +31,7 @@
     "builtin-modules": "^3.3.0",
     "esbuild": "^0.24.0",
     "eslint": "^9.39.0",
+    "fallow": "^2.93.0",
     "obsidian": "^1.13.1",
     "prettier": "^3.8.3",
     "typescript": "^5.6.3",
