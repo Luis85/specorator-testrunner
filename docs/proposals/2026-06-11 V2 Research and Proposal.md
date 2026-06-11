@@ -53,13 +53,17 @@ strong layering, security posture, and test coverage. The research says the
   Copilot) plug into** — not to embed a cloud AI runtime. V2 ships this as a
   single **opt-in local MCP server**, deliberately scheduled as the final
   roadmap item once the V2 feature set it exposes is stable.
-- **The platform moved under us, favorably.** Obsidian Bases shipped a
-  documented plugin API (`registerBasesView()`, Oct 2025); the community has
-  migrated Dataview→Bases. We deliberately do **not** build our dashboards on
-  Bases — its view environment is too restrictive for what the Test Hub needs
-  — and custom Bases views are out of scope for now (revisit later). What V2
-  does take from this: all run/spec metadata lives in clean YAML properties,
-  so the vault stays fully queryable with core Bases for users who want it.
+- **The platform moved under us, favorably.** Obsidian Bases shipped as a
+  core plugin (plus a `registerBasesView()` API, Oct 2025); the community has
+  migrated Dataview→Bases. Bases creates database-like views of notes from
+  YAML-configured `.base` files whose filters, formulas, and views operate on
+  **note properties** (frontmatter). We deliberately do **not** build our
+  dashboards on Bases — its view environment is too restrictive for what the
+  Test Hub needs — and custom Bases views are out of scope for now (revisit
+  later). What V2 does take from this: every run/spec/use-case fact lives in
+  typed, documented frontmatter properties — exactly the surface Bases
+  filters and formulas read — so users can define their own `.base` views
+  over Test Hub data without any plugin support.
 
 The proposal below defines **eight V2 epics (EPIC-013…020), 38 user stories
 (US-051…088), and 13 use cases (UC-025…037)**, with a recommended priority
@@ -127,7 +131,7 @@ additionally picks up the product-facing ones (ribbon trim, vault pollution).
 | Playwright ecosystem | playwright-bdd (v9, 2026-06), Playwright UI mode/trace viewer/codegen, Playwright Test Agents, Checkly ($24+/mo), Currents ($49+/mo), Argos/Percy (visual), Allure 3 (real-time, quality gates), ReportPortal | One runner rules: everything plugs into `@playwright/test` as reporter or codegen, never as a replacement runner. Trace.zip is the universal artifact. cucumber-js-as-runner is documented as the legacy path. |
 | AI-assisted testing | QA Wolf (~$90k/yr service), mabl ($499+/mo), testRigor, Octomind (MCP server, exportable Playwright), Momentic ($250+/mo, runtime AI), Stagehand (OSS, dropped Playwright in v3) | Table stakes 2026: NL test generation, repair-time healing, AI failure triage, MCP server. All competitors are cloud-bound; none serves local-first/privacy-sensitive users (finance: 54.9% blocked by compliance concerns on cloud AI). |
 | Docs-as-code / traceability | Sphinx-Needs, StrictDoc, OpenFastTrace, testomat.io (~$27–30/user/mo), Testspace, Doc Detective | Borrow: typed directional links (`covers:`) with requirement revisions, CI-failable coverage-chain linting, interchange export, scenario-ID write-back into generated code. **Markdown with Gherkin (`.feature.md`)** is an official Cucumber spec. |
-| Obsidian ecosystem | 4,658 plugins, zero QA/testing/traceability plugins; Bases API shipped; Dataview effectively unmaintained | First-in-category position. Keep all metadata in Bases-queryable YAML properties (custom Bases views judged too restrictive for our dashboards — parked for later), avoid vault pollution, degrade gracefully on mobile. |
+| Obsidian ecosystem | 4,658 plugins, zero QA/testing/traceability plugins; Bases (core plugin: YAML-configured `.base` views querying note properties) shipped; Dataview effectively unmaintained | First-in-category position. Keep all metadata in frontmatter properties — the surface Bases filters/formulas query (custom Bases views judged too restrictive for our dashboards — parked for later), avoid vault pollution, degrade gracefully on mobile. |
 
 ### 3.2 Differentiators we uniquely have
 
@@ -545,13 +549,18 @@ practitioners already use Obsidian by hand.
 
 **US-076 Bases-friendly metadata** —
 As an **Obsidian power user**, I want all Use Case, run, and traceability
-metadata kept in clean YAML frontmatter properties, so that I can build my
-own queries and views with core Bases (or Dataview) without the plugin
-needing to provide them.
-*AC:* run/scenario/use-case metadata lives in YAML properties (no inline
-metadata, no plugin-proprietary formats); property names are documented and
-stable across releases; the plugin's own views read the same properties (one
-source of truth); no dependency on Bases or Dataview.
+metadata kept in clean frontmatter properties, so that I can query and
+display it with my own Bases — `.base` files whose YAML-configured filters,
+formulas, and views operate on exactly those note properties — without the
+plugin needing to provide any views.
+*AC:* run/scenario/use-case metadata lives in frontmatter properties (no
+inline metadata, no plugin-proprietary formats, property types chosen so
+Bases filters/formulas and summaries work on them — dates as dates, counts
+as numbers, links as links); property names are documented and stable across
+releases; the documentation includes example `.base` snippets (filters and
+formulas over the documented properties) that users can paste — the plugin
+itself ships and registers no Bases views; the plugin's own views read the
+same properties (one source of truth); no dependency on Bases or Dataview.
 
 **US-077 Mobile read-only degradation** —
 As a **Delivery Manager**, I want dashboards, evidence, and specs readable on
