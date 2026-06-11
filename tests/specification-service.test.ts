@@ -265,6 +265,52 @@ describe("DefaultSpecificationService.listFeatures", () => {
   });
 });
 
+describe("DefaultSpecificationService.announceUpdated", () => {
+  it("publishes specification.updated without writing any file", async () => {
+    const { service, fs, events, types } = build();
+    const spec = parseFeature(
+      "Feature: F\n\n  Scenario: S\n    Given x\n",
+      vp("Specifications/features/UC-001-x.feature"),
+    );
+    expect(spec).not.toBeNull();
+    if (!spec) return;
+
+    await service.announceUpdated(spec);
+
+    expect(fs.files.size).toBe(0);
+    expect(types()).toEqual(["specification.updated"]);
+    expect(events[0].payload).toEqual({
+      featurePath: "Specifications/features/UC-001-x.feature",
+      scenarioCount: 1,
+      tags: [],
+    });
+  });
+});
+
+describe("DefaultSpecificationService.listStepPatterns", () => {
+  it("scrapes patterns from .testrunner/src/steps/**/*.ts", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      ".testrunner/src/steps/demo.steps.ts",
+      'import { Given } from "@cucumber/cucumber";\nGiven("I open the local example page", async function () {});\n',
+    );
+    fs.files.set(".testrunner/src/steps/readme.md", 'Given("not scraped — not a .ts file")');
+
+    const result = await service.listStepPatterns();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual([{ kind: "expression", source: "I open the local example page" }]);
+  });
+
+  it("returns an empty list when the steps folder does not exist", async () => {
+    const { service } = build();
+    const result = await service.listStepPatterns();
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toEqual([]);
+  });
+});
+
 describe("DefaultSpecificationService.detectMissingSteps", () => {
   it("reports steps not matched by any step definition", async () => {
     const { service, fs, types } = build();

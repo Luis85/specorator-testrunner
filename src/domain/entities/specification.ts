@@ -4,15 +4,43 @@ import { err, ok, type Result } from "../../shared/result/result";
 
 /** Feature Specification domain types (TIS §6.4–§6.6). */
 
+/** A step's doc-string argument (TIS §6.4; Gherkin `"""` / ``` fences). */
+export interface DocString {
+  fence: '"""' | "```";
+  /** Optional content type after the opening fence, e.g. `"""json`. */
+  mediaType?: string;
+  /** Body lines, dedented by the opening fence's indentation. */
+  lines: string[];
+}
+
+/** One `Examples:` table under a Scenario Outline. */
+export interface ExamplesBlock {
+  tags: string[];
+  name?: string;
+  /** Column names (the first `|` row). */
+  header: string[];
+  rows: string[][];
+}
+
 export interface GherkinStep {
   keyword: "Given" | "When" | "Then" | "And" | "But" | "*";
   text: string;
+  /** Optional `|`-table argument attached to the step. */
+  dataTable?: string[][];
+  /** Optional doc-string argument attached to the step. */
+  docString?: DocString;
 }
 
 export interface ScenarioSpecification {
+  /** Absent means a plain `Scenario` (backward compatible with V1 literals). */
+  keyword?: "Scenario" | "Scenario Outline";
   name: string;
   tags: string[];
+  /** Free-text lines under the `Scenario:` line, before the first step. */
+  description?: string[];
   steps: GherkinStep[];
+  /** `Examples:` blocks (Scenario Outline only). */
+  examples?: ExamplesBlock[];
 }
 
 export interface FeatureSpecification {
@@ -20,6 +48,8 @@ export interface FeatureSpecification {
   useCaseId: UseCaseId; // required per ADR-0012; orphan features are a validation error
   featureName: string;
   tags: string[];
+  /** Free-text lines under the `Feature:` line. */
+  description?: string[];
   background?: GherkinStep[]; // Background steps; run before every scenario
   scenarios: ScenarioSpecification[];
 }
@@ -44,6 +74,7 @@ export const createFeatureSpecification = (params: {
   useCaseId: UseCaseId;
   featureName: string;
   tags?: string[];
+  description?: string[];
   background?: GherkinStep[];
   scenarios?: ScenarioSpecification[];
 }): Result<FeatureSpecification> => {
@@ -60,6 +91,9 @@ export const createFeatureSpecification = (params: {
     useCaseId: params.useCaseId,
     featureName: params.featureName,
     tags: params.tags ?? [],
+    ...(params.description && params.description.length > 0
+      ? { description: params.description }
+      : {}),
     ...(params.background && params.background.length > 0 ? { background: params.background } : {}),
     scenarios: params.scenarios ?? [],
   });

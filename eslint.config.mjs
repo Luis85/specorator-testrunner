@@ -84,8 +84,14 @@ export default tseslint.config(
             "Node.js",
           ],
           acronyms: ["E2E", "CI", "KPI", "SUT", "URL", "ID", "MB"],
-          // Environment-variable names quoted verbatim in copy.
-          ignoreRegex: ["\\bBASE_URL\\b"],
+          // Environment-variable names quoted verbatim in copy, and Feature
+          // Editor labels naming Gherkin keywords (Background:, Scenario:,
+          // Examples:) — syntax tokens that are always capitalized.
+          ignoreRegex: [
+            "\\bBASE_URL\\b",
+            "^\\+ (Background|Scenario|Examples block)$",
+            "^Delete Examples block$",
+          ],
         },
       ],
     },
