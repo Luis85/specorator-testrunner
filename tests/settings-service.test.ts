@@ -774,6 +774,7 @@ describe("onboarding settings", () => {
       tourId: null,
       completedSteps: [],
       skippedSteps: [],
+      sequenceProgress: {},
       dismissed: false,
     });
   });
@@ -801,6 +802,29 @@ describe("onboarding settings", () => {
     expect(settings.onboarding.completedSteps).toEqual([]);
     // Non-string entries are dropped; string entries survive structurally.
     expect(settings.onboarding.skippedSteps).toEqual(["x"]);
+    expect(settings.onboarding.sequenceProgress).toEqual({});
     expect(settings.onboarding.dismissed).toBe(false);
+  });
+
+  it("repairs malformed sequence-progress entries, keeping well-formed ones", async () => {
+    const settings = await makeService({
+      onboarding: {
+        tourId: "abc",
+        completedSteps: [],
+        skippedSteps: [],
+        dismissed: false,
+        sequenceProgress: {
+          "run-own-test": { index: 1, captured: "tour" },
+          "implement-steps": { index: 1, captured: 7 }, // non-string capture dropped from entry
+          "bad-index": { index: -1 },
+          "not-an-object": "nope",
+          fraction: { index: 0.5 },
+        },
+      },
+    }).load();
+    expect(settings.onboarding.sequenceProgress).toEqual({
+      "run-own-test": { index: 1, captured: "tour" },
+      "implement-steps": { index: 1 },
+    });
   });
 });

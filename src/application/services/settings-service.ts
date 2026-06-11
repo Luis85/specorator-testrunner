@@ -4,6 +4,7 @@ import type { PathSafetyPolicy } from "../../domain/policies/path-safety-policy"
 import {
   authEnvKeyProblem,
   DEFAULT_SETTINGS,
+  type OnboardingSequenceProgress,
   type OnboardingSettings,
   type SutEnvironment,
   type TestHubPathSettings,
@@ -761,15 +762,34 @@ const stringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 
 /**
+ * Keeps only well-formed `{ index, captured? }` sequence-progress entries of a
+ * possibly-tampered map: index must be a non-negative integer; a non-string
+ * captured is dropped from the entry; anything else drops the entry.
+ */
+const sequenceProgressMap = (value: unknown): Record<string, OnboardingSequenceProgress> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const repaired: Record<string, OnboardingSequenceProgress> = {};
+  for (const [stepId, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
+    const { index, captured } = entry as { index?: unknown; captured?: unknown };
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) continue;
+    repaired[stepId] = typeof captured === "string" ? { index, captured } : { index };
+  }
+  return repaired;
+};
+
+/**
  * Structural repair for the persisted `onboarding` section (same log-free,
  * never-break-startup posture as the other load screens — this section is
  * self-healing state, not user configuration, so silent fallback is fine):
  * non-string tourId → null; non-array step lists → []; non-string entries
- * dropped; non-boolean dismissed → false. Pure: no I/O.
+ * dropped; malformed sequence-progress entries dropped; non-boolean
+ * dismissed → false. Pure: no I/O.
  */
 const repairOnboardingShape = (raw: OnboardingSettings): OnboardingSettings => ({
   tourId: typeof raw.tourId === "string" ? raw.tourId : null,
   completedSteps: stringArray(raw.completedSteps),
   skippedSteps: stringArray(raw.skippedSteps),
+  sequenceProgress: sequenceProgressMap(raw.sequenceProgress),
   dismissed: raw.dismissed === true,
 });

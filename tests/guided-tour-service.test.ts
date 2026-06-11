@@ -262,4 +262,47 @@ describe("DefaultGuidedTourService", () => {
     expect(status(service, "create-use-case")).toBe("done");
     expect(service.getState().steps).toHaveLength(10);
   });
+
+  it("persists a sequence advance so a reload cannot dead-end the step", async () => {
+    // Session 1: the @tour suite is created (suite.created cannot re-fire —
+    // duplicate suite ids are rejected), advancing run-own-test to rule 2.
+    const { bus, current } = harness();
+    await bus.publish(
+      createEvent("suite.created", {
+        suiteId: "tour",
+        name: "Tour",
+        path: "t.md",
+        tagExpression: "@tour",
+      }),
+    );
+    expect(current().onboarding.sequenceProgress["run-own-test"]).toEqual({
+      index: 1,
+      captured: "tour",
+    });
+
+    // Session 2: a fresh service seeded from the persisted settings — running
+    // the existing Tour suite must still complete the step.
+    const { bus: bus2, events: events2 } = recordingEventBus();
+    const persisted = current();
+    const service2 = new DefaultGuidedTourService(
+      { getSettings: () => persisted, updateSettings: async () => ok(undefined) },
+      bus2,
+      silentLogger,
+      ctx,
+    );
+    service2.start();
+    await bus2.publish(createEvent("suite.executed", { suiteId: "tour", runId: "RUN-2" }));
+    await bus2.publish(
+      createEvent("testrun.completed", {
+        runId: "RUN-2",
+        status: "passed",
+        durationMs: 1,
+        passed: 1,
+        failed: 0,
+        skipped: 0,
+      }),
+    );
+    expect(status(service2, "run-own-test")).toBe("done");
+    expect(events2.some((event) => event.type === "tour.step.completed")).toBe(true);
+  });
 });

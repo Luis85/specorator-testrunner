@@ -8,7 +8,7 @@ import {
   type TourStepId,
 } from "../../domain/onboarding/tour-steps";
 import type { DomainEvent } from "../../domain/events/domain-event";
-import type { TestHubSettings } from "../../domain/settings/settings";
+import type { OnboardingSequenceProgress, TestHubSettings } from "../../domain/settings/settings";
 import { appError } from "../../shared/errors/errors";
 import { createEvent, newId } from "../../shared/event-bus/create-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
@@ -191,6 +191,15 @@ export class DefaultGuidedTourService implements GuidedTourService {
     // the settings service already guaranteed these are string arrays.
     for (const id of onboarding.completedSteps) if (isTourStepId(id)) this.completed.add(id);
     for (const id of onboarding.skippedSteps) if (isTourStepId(id)) this.skipped.add(id);
+    // Sequence progress must survive reloads: the events that START a sequence
+    // (suite.created, stepdefinition.generated) cannot re-fire once their
+    // artifact exists, so losing the index/capture would dead-end the step
+    // (PR #31 Codex review).
+    for (const [id, progress] of Object.entries(onboarding.sequenceProgress)) {
+      if (!isTourStepId(id) || this.isSettled(id)) continue;
+      this.sequenceIndex.set(id, progress.index);
+      this.capturedValue.set(id, progress.captured);
+    }
     this.tourCompletedPublished = this.allSettled();
   }
 
@@ -240,6 +249,9 @@ export class DefaultGuidedTourService implements GuidedTourService {
           await this.completeStep(definition, "event", event);
         } else {
           this.sequenceIndex.set(definition.id, index + 1);
+          // Persist the advance: the matched event cannot re-fire (its
+          // artifact now exists), so this progress must survive a reload.
+          await this.persist();
         }
       }
     }
@@ -293,12 +305,21 @@ export class DefaultGuidedTourService implements GuidedTourService {
    */
   private async persist(): Promise<void> {
     const current = this.settings.getSettings();
+    // Only unsettled steps keep sequence progress; a completed step's entry
+    // would be dead weight that seedFromSettings skips anyway.
+    const sequenceProgress: Record<string, OnboardingSequenceProgress> = {};
+    for (const [id, index] of this.sequenceIndex) {
+      if (this.isSettled(id)) continue;
+      const captured = this.capturedValue.get(id);
+      sequenceProgress[id] = captured === undefined ? { index } : { index, captured };
+    }
     const next: TestHubSettings = {
       ...current,
       onboarding: {
         tourId: this.tourId,
         completedSteps: [...this.completed],
         skippedSteps: [...this.skipped],
+        sequenceProgress,
         dismissed: this.dismissed,
       },
     };

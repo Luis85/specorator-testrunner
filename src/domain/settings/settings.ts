@@ -67,6 +67,16 @@ export interface LoggingSettings {
 }
 
 /**
+ * Mid-flight progress of one tour step's event-sequence: the index of the rule
+ * it is waiting for next, and the value the previously matched rule captured
+ * (a suiteId / runId / feature path the next rule correlates on).
+ */
+export interface OnboardingSequenceProgress {
+  index: number;
+  captured?: string;
+}
+
+/**
  * Guided Tour progress (spec 2026-06-11). Persisted with the settings so a
  * UC-024 reset clears it together with everything else. Step ids are stored as
  * plain strings here; the GuidedTourService (which owns the step table)
@@ -77,6 +87,13 @@ export interface OnboardingSettings {
   tourId: string | null;
   completedSteps: string[];
   skippedSteps: string[];
+  /**
+   * Event-sequence progress per step id. Persisted because the events that
+   * START a sequence (suite.created, stepdefinition.generated) cannot re-fire
+   * once their artifact exists — losing this across a reload would dead-end
+   * the tour (PR #31 Codex review).
+   */
+  sequenceProgress: Record<string, OnboardingSequenceProgress>;
   /** Hides the dashboard CTA only; the Open Guided Tour command always reopens. */
   dismissed: boolean;
 }
@@ -231,6 +248,7 @@ export const DEFAULT_SETTINGS: TestHubSettings = {
     tourId: null,
     completedSteps: [],
     skippedSteps: [],
+    sequenceProgress: {},
     dismissed: false,
   },
 };
