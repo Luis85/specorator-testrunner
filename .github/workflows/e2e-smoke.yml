@@ -36,7 +36,7 @@ jobs:
         # install paths) were Windows-specific.
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Node 22
         uses: actions/setup-node@v4
