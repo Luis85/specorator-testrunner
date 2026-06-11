@@ -2,6 +2,7 @@ import { type App, Modal, Notice, Setting } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SuiteService } from "../../application/services/suite-service";
+import { openOrNotice, submitOnEnter } from "./modal-helpers";
 import { tagExpressionPreview } from "./suite-rows";
 
 /** Debounce for the live Tag Expression preview (Wave F). */
@@ -41,23 +42,18 @@ export class CreateSuiteModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
-    contentEl.createEl("h2", { text: "Create Test Suite" });
+    // "New …" is the creation verb everywhere (dashboard quick actions,
+    // explorer headers, command palette); only the CTA button says "Create".
+    contentEl.createEl("h2", { text: "New Test Suite" });
 
-    // Enter submits in the single-line text inputs (mirrors
-    // AddEnvironmentModal) so the keyboard flow doesn't force a mouse trip; the
-    // description textarea keeps Enter for newlines and is NOT wired this way.
-    const submitOnEnter = (input: HTMLInputElement): void => {
-      input.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          void this.submit();
-        }
-      });
-    };
+    // Enter submits in the single-line text inputs (shared helper) so the
+    // keyboard flow doesn't force a mouse trip; the description textarea keeps
+    // Enter for newlines and is NOT wired this way.
+    const submit = (): void => void this.submit();
 
     new Setting(contentEl).setName("Name").addText((text) => {
       text.setPlaceholder("e.g. Checkout Smoke").onChange((value) => (this.suiteName = value));
-      submitOnEnter(text.inputEl);
+      submitOnEnter(text.inputEl, submit);
       // Autofocus the first input so the user can start typing immediately
       // instead of tabbing/clicking into the field first.
       text.inputEl.focus();
@@ -69,13 +65,13 @@ export class CreateSuiteModal extends Modal {
       );
     new Setting(contentEl)
       .setName("Tag expression")
-      .setDesc("Cucumber tag expression deciding membership (AD-4).")
+      .setDesc("Cucumber tag expression deciding membership.")
       .addText((text) => {
         text.setPlaceholder("@smoke and not @wip").onChange((value) => {
           this.tagExpression = value;
           this.schedulePreview(previewEl);
         });
-        submitOnEnter(text.inputEl);
+        submitOnEnter(text.inputEl, submit);
       });
 
     // Wave F insight: a live, debounced "Matches N scenarios" preview under the
@@ -159,6 +155,6 @@ export class CreateSuiteModal extends Modal {
     }
     new Notice(`Created ${result.value.name}.`);
     this.close();
-    await this.deps.workspace.openFile(result.value.path);
+    await openOrNotice(this.deps.workspace, result.value.path);
   }
 }

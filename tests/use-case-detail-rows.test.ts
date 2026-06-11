@@ -97,11 +97,12 @@ describe("featureHealthLine (Wave F)", () => {
     expect(featureHealthLine(health({ wipScenarioCount: 0 })).text).toBe("3 scenarios");
   });
 
-  it("renders the feature-level @wip badge with the ADR-0017 exclusion tooltip", () => {
+  it("renders the feature-level @wip badge with the KPI exclusion tooltip", () => {
     const line = featureHealthLine(health({ featureIsWip: true }));
     expect(line.wipBadge).toBe(true);
     expect(line.wipTooltip).toContain("excluded from the KPI roll-up");
-    expect(line.wipTooltip).toContain("ADR-0017");
+    // Internal decision ids (ADR-NNNN) stay out of user copy.
+    expect(line.wipTooltip).not.toContain("ADR-0017");
     expect(featureHealthLine(health()).wipBadge).toBe(false);
   });
 });

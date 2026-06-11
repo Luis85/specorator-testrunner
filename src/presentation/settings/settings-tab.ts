@@ -63,7 +63,11 @@ const PATH_FIELDS: PathFieldSpec[] = [
   { key: "featureFilesPath", name: "Feature files folder", desc: "Gherkin `.feature` files." },
   { key: "testSuitesPath", name: "Test Suites folder", desc: "Tag-driven suite notes." },
   { key: "evidencePath", name: "Test Evidence folder", desc: "Audit trail for each run." },
-  { key: "testRunnerPath", name: "Runner folder", desc: "The self-contained `.testrunner`." },
+  {
+    key: "testRunnerPath",
+    name: ".testrunner folder",
+    desc: "The self-contained Node test project.",
+  },
 ];
 
 /** How long to wait after the last keystroke before persisting (PRES-M1). */
@@ -84,8 +88,8 @@ const errorText = (error: unknown): string =>
  * actions with inline results, validate, reset (US-003, BBV §4 `SettingsTab`).
  */
 export class TestHubSettingTab extends PluginSettingTab {
-  /** Pending per-field persist debouncers, cancelled on re-render / close. */
-  private readonly pendingFlushes: { cancel(): void }[] = [];
+  /** Pending per-field persist debouncers, flushed on close / cancelled on re-render. */
+  private readonly pendingFlushes: { cancel(): void; run(): void }[] = [];
 
   /**
    * Pending `window.setTimeout` handles (e.g. the remove-environment two-click
@@ -114,7 +118,14 @@ export class TestHubSettingTab extends PluginSettingTab {
   }
 
   hide(): void {
-    this.cancelPendingFlushes();
+    // Closing the dialog must NOT cancel a save still inside the 600ms persist
+    // window — that would silently lose the last edit. Flush (run) pending
+    // debouncers instead; the display() re-render path keeps cancelling via
+    // cancelPendingFlushes, since its inputs are rebuilt from persisted state.
+    for (const flush of this.pendingFlushes) flush.run();
+    this.pendingFlushes.length = 0;
+    for (const handle of this.pendingTimeouts) window.clearTimeout(handle);
+    this.pendingTimeouts.length = 0;
   }
 
   display(): void {
@@ -123,9 +134,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     containerEl.empty();
     const settings = this.host.getSettings();
 
-    // Glossary term is "Test Hub" (CONTEXT.md) — not "E2E Test Hub"/"test hub".
-    containerEl.createEl("h2", { text: "Test Hub" });
-
+    // No top-level title element: the Obsidian guidelines own the tab heading.
     new Setting(containerEl).setName("Folders").setHeading();
     for (const field of PATH_FIELDS) {
       new Setting(containerEl)
@@ -467,7 +476,7 @@ export class TestHubSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Validate environment")
-      .setDesc("Check Node.js, npm, the runner files, dependencies, and the Chromium browser.")
+      .setDesc("Check Node.js, npm, the .testrunner files, dependencies, and the Chromium browser.")
       .addButton((button) =>
         button
           .setButtonText("Validate")
@@ -481,7 +490,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Repair installation")
       .setDesc(
-        "Re-sync the managed runner files and reinstall anything missing. User-authored steps and pages are preserved.",
+        "Re-sync the managed .testrunner files and reinstall anything missing. User-authored steps and pages are preserved.",
       )
       .addButton((button) =>
         button.setButtonText("Repair").onClick(() => void this.runRepair(button, repairResultEl)),
@@ -496,16 +505,49 @@ export class TestHubSettingTab extends PluginSettingTab {
       .setDesc(
         "Restore a clean install: remove the regenerable .testrunner runtime, restore default settings, and re-initialize. Your Use Cases, Specifications, Features, Suites and Evidence are preserved.",
       )
-      .addButton((button) =>
-        button
-          .setButtonText("Reset")
-          .setWarning()
-          .onClick(async () => {
-            // The Notice + re-init outcome is owned by resetSettings() (UC-024).
-            await this.host.resetSettings();
-            this.display();
-          }),
-      );
+      .addButton((button) => this.wireResetButton(button));
+  }
+
+  /**
+   * Two-click confirm for the destructive reset, mirroring
+   * {@link wireRemoveEnvironmentButton}: the first click arms the button (new
+   * label), the second within CONFIRM_DISARM_MS resets; the armed state
+   * auto-disarms so a stray click can't linger as a hidden footgun. The button
+   * is warning-styled from the start — reset is always destructive.
+   */
+  private wireResetButton(button: ButtonComponent): void {
+    button.setButtonText("Reset").setWarning();
+    let armed = false;
+    let disarmTimer = 0;
+    button.onClick(() => {
+      if (!armed) {
+        armed = true;
+        button.setButtonText("Reset — click again to confirm");
+        window.clearTimeout(disarmTimer);
+        disarmTimer = window.setTimeout(() => {
+          armed = false;
+          button.setButtonText("Reset");
+        }, CONFIRM_DISARM_MS);
+        // Track it so a re-render / tab close clears it (no orphaned fire).
+        this.pendingTimeouts.push(disarmTimer);
+        return;
+      }
+      window.clearTimeout(disarmTimer);
+      void this.runReset(button);
+    });
+  }
+
+  private async runReset(button: ButtonComponent): Promise<void> {
+    button.setDisabled(true);
+    try {
+      // The Notice + re-init outcome is owned by resetSettings() (UC-024).
+      await this.host.resetSettings();
+      this.display();
+    } catch (error) {
+      new Notice(`Reset failed: ${errorText(error)}`);
+    } finally {
+      button.setDisabled(false);
+    }
   }
 
   private async runValidateEnvironment(
@@ -552,7 +594,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Generate workflow")
       .setDesc(
-        "Write the CI workflow for the configured provider. An existing workflow is never overwritten without explicit confirmation.",
+        "Write a GitHub Actions workflow to `.github/workflows/`. An existing workflow is never overwritten without explicit confirmation.",
       )
       .addButton((button) =>
         button

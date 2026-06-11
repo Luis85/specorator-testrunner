@@ -5,6 +5,7 @@ import type { SuiteService } from "../../application/services/suite-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
+import { openOrNotice } from "./modal-helpers";
 import { RenderScheduler } from "./render-scheduler";
 import { projectSuiteRows, scenarioCountCell } from "./suite-rows";
 
@@ -94,7 +95,15 @@ export class SuiteDashboardView extends ItemView {
 
     const result = await this.deps.suiteService.findAll();
     if (!result.ok) {
+      // Recoverable dead-end: offer a retry instead of a bare terminal message.
       container.createEl("p", { text: `Could not load Test Suites: ${result.error.message}` });
+      container
+        .createEl("button", {
+          text: "Retry",
+          cls: "mod-cta",
+          attr: { "aria-label": "Retry loading the Test Suites" },
+        })
+        .addEventListener("click", () => void this.scheduler.schedule());
       return;
     }
 
@@ -127,7 +136,7 @@ export class SuiteDashboardView extends ItemView {
         attr: { "aria-label": `Open Test Suite ${row.name}` },
       });
       open.addEventListener("click", () => {
-        void this.deps.workspace.openFile(row.path);
+        void openOrNotice(this.deps.workspace, row.path);
       });
       tr.createEl("td", { text: row.id });
       tr.createEl("td", { text: row.tagExpression });
@@ -147,7 +156,7 @@ export class SuiteDashboardView extends ItemView {
       const run = tr.createEl("td").createEl("button", {
         text: "Run",
         cls: "e2e-test-hub-run-button",
-        attr: { "aria-label": `Run suite ${row.name}` },
+        attr: { "aria-label": `Run Test Suite ${row.name}` },
       });
       run.addEventListener("click", () => {
         void this.deps.runLauncher.launch({ scope: "suite", target: row.id });

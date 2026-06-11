@@ -273,10 +273,12 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   };
 
   const repairInstallation = async (): Promise<void> => {
-    new Notice("Repairing runner installation…");
+    new Notice("Repairing .testrunner installation…");
     const result = await deps.maintenanceService.repair();
     if (result.ok) {
-      new Notice(`Runner repaired: ${result.value.repairedFiles.length} file(s) re-synced.`);
+      new Notice(
+        `Repaired the .testrunner: ${result.value.repairedFiles.length} file(s) re-synced.`,
+      );
     } else {
       new Notice(`Repair failed: ${result.error.message}`, 10000);
     }
@@ -296,7 +298,7 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
       new Notice(`CI workflow written to ${result.value.path}.`);
     } else if (!overwriteExisting && result.error.details?.path) {
       // The file exists; make the documented overwrite flow reachable (UC-019).
-      new Notice(`${result.error.message} Use "Overwrite CI Workflow" to replace it.`, 10000);
+      new Notice(`${result.error.message} Use "Overwrite CI workflow" to replace it.`, 10000);
     } else {
       new Notice(`Could not generate CI workflow: ${result.error.message}`, 10000);
     }
@@ -333,34 +335,38 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
     name: "Initialize Test Hub",
     callback: () => deps.openWizard(),
   });
+  // Command names follow Obsidian sentence-case; only glossary proper nouns
+  // (Test Hub, Use Case, Test Suite, Test Run, Demo Test, …) and acronyms keep
+  // their capitals.
   plugin.addCommand({
     id: "validate-environment",
-    name: "Validate Environment",
+    name: "Validate environment",
     callback: () => void validateEnvironment(),
   });
   plugin.addCommand({
     id: "repair-installation",
-    name: "Repair Installation",
+    name: "Repair installation",
     callback: () => void repairInstallation(),
   });
   plugin.addCommand({
     id: "generate-ci-workflow",
-    name: "Generate CI Workflow",
+    name: "Generate CI workflow",
     callback: () => void generateCiWorkflow(),
   });
   plugin.addCommand({
     id: "overwrite-ci-workflow",
-    name: "Overwrite CI Workflow",
+    name: "Overwrite CI workflow",
     callback: () => void generateCiWorkflow(true),
   });
   plugin.addCommand({
     id: "check-ci-readiness",
-    name: "Check CI Readiness",
+    name: "Check CI readiness",
     callback: () => void checkCiReadiness(),
   });
+  // "New …" matches the dashboard quick actions and explorer header buttons.
   plugin.addCommand({
     id: "create-use-case",
-    name: "Create Use Case",
+    name: "New Use Case",
     callback: () => deps.openCreateUseCase(),
   });
   plugin.addCommand({
@@ -370,7 +376,7 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   });
   plugin.addCommand({
     id: "create-test-suite",
-    name: "Create Test Suite",
+    name: "New Test Suite",
     callback: () => deps.openCreateSuite(),
   });
   plugin.addCommand({
@@ -395,14 +401,14 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   });
   plugin.addCommand({
     id: "detect-missing-steps",
-    name: "Detect Missing Steps",
+    name: "Detect missing steps",
     callback: () => void detectMissingSteps(),
   });
   // UC-010 / RV-4: explicit user command (NOT auto-on-edit) — detect the
   // active feature's missing steps, then generate non-destructive stubs.
   plugin.addCommand({
     id: "generate-step-definitions",
-    name: "Generate Step Definitions",
+    name: "Generate step definitions",
     callback: () => void generateStepDefinitions(),
   });
 
@@ -414,12 +420,12 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   });
   plugin.addCommand({
     id: "run-all-tests",
-    name: "Run All Tests",
+    name: "Run all tests",
     callback: () => void deps.runLauncher.launch({ scope: "all", target: "all" }),
   });
   plugin.addCommand({
     id: "run-suite",
-    name: "Run Suite…",
+    name: "Run Test Suite…",
     callback: () => void runSuite(),
   });
   plugin.addCommand({
@@ -446,26 +452,26 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   // EPIC-008 (US-032 / UC-016): re-run report import + evidence for the last run.
   plugin.addCommand({
     id: "import-report-last-run",
-    name: "Import Report for Last Run",
+    name: "Import report for last run",
     callback: () => void importLastRun(),
   });
 
   // EPIC-009 Dashboard (UC-018).
   plugin.addCommand({
     id: "open-dashboard",
-    name: "Open Dashboard",
+    name: "Open dashboard",
     callback: () => void deps.workspace.openView(DASHBOARD_VIEW_TYPE),
   });
 
   // EPIC-011 Documentation (FEAT-024 US-043/044/045, FEAT-025 US-046).
   plugin.addCommand({
     id: "generate-documentation",
-    name: "Generate Documentation",
+    name: "Generate documentation",
     callback: () => void generateDocumentation(),
   });
   plugin.addCommand({
     id: "open-documentation",
-    name: "Open Documentation",
+    name: "Open documentation",
     callback: () => void deps.openDocumentation(),
   });
   plugin.addCommand({

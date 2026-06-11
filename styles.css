@@ -591,19 +591,12 @@
 }
 
 /* Clickable recent-run rows (Wave C §3): rows that link to an Evidence note get
- * a pointer + focus ring (they are role=link, tabindex=0). Rows without evidence
- * keep the default cursor and carry an explanatory tooltip via `title`. */
+ * a pointer as a sighted-user convenience. The accessible target is the Run ID
+ * cell's link-button (keyboard focus + aria-label live there, keeping the row's
+ * table semantics intact). Rows without evidence keep the default cursor and
+ * carry an explanatory tooltip via `title`. */
 .e2e-test-hub-run-row.is-navigable {
   cursor: pointer;
-}
-
-/* Deliberate INSET focus ring (negative offset), unlike the buttons' +2px:
- * the row is a full-width table row, so a positive offset would draw the ring
- * outside its box and overlap the adjacent rows. Insetting keeps the ring
- * fully inside the focused row — the right shape for row-shaped targets. */
-.e2e-test-hub-run-row.is-navigable:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: -2px;
 }
 
 /* ── Onboarding (Wave G §2) ────────────────────────────────────────────────────

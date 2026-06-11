@@ -5,6 +5,7 @@ import {
   type UseCase,
   type UseCaseStatus,
 } from "../../domain/entities/use-case";
+import { submitOnEnter } from "./modal-helpers";
 
 export interface EditUseCaseDeps {
   useCaseService: Pick<UseCaseService, "updateMetadata">;
@@ -48,14 +49,9 @@ export class EditUseCaseModal extends Modal {
 
     new Setting(contentEl).setName("Title").addText((text) => {
       text.setValue(this.useCaseTitle).onChange((value) => (this.useCaseTitle = value));
-      // Enter submits (mirrors AddEnvironmentModal / CreateUseCaseModal) so the
-      // keyboard flow doesn't force a mouse trip.
-      text.inputEl.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          void this.submit();
-        }
-      });
+      // Enter submits (shared helper) so the keyboard flow doesn't force a
+      // mouse trip.
+      submitOnEnter(text.inputEl, () => void this.submit());
       // Autofocus the title so the user can start editing immediately.
       text.inputEl.focus();
     });

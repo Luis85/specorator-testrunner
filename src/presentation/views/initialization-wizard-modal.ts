@@ -1,4 +1,4 @@
-import { type App, Modal, Notice, Setting } from "obsidian";
+import { type App, Modal, Notice, Setting, type ToggleComponent } from "obsidian";
 import type {
   InitializationProgress,
   InitializationService,
@@ -10,6 +10,7 @@ import type { TestHubSettings } from "../../domain/settings/settings";
 import type { AppError } from "../../shared/errors/errors";
 import { joinVaultPath } from "../../shared/utils/vault-path";
 import { failureOutputTail } from "./initialization-wizard-format";
+import { openOrNotice } from "./modal-helpers";
 
 export interface InitializationWizardDeps {
   initialization: InitializationService;
@@ -56,13 +57,26 @@ export class InitializationWizardModal extends Modal {
         "automatically.",
     });
 
+    // Captured so the dependencies toggle below can drive it: the browser
+    // download REQUIRES dependencies, and a toggle that silently does nothing
+    // (checked but ignored) would misstate what the wizard is about to do.
+    let browserToggle: ToggleComponent | null = null;
+
     new Setting(contentEl)
       .setName("Install dependencies")
       .setDesc("Run npm install in the .testrunner project.")
       .addToggle((toggle) =>
         toggle.setValue(this.installDependencies).onChange((value) => {
           this.installDependencies = value;
-          if (!value) this.installBrowsers = false;
+          if (!value) {
+            this.installBrowsers = false;
+            // Reflect the dependency in the UI: cleared + disabled while off.
+            browserToggle?.setValue(false).setDisabled(true);
+          } else {
+            this.installBrowsers = true;
+            // Re-enable and restore the default (on) when dependencies return.
+            browserToggle?.setDisabled(false).setValue(true);
+          }
         }),
       );
 
@@ -73,11 +87,15 @@ export class InitializationWizardModal extends Modal {
         // packages npm install pulls alongside it.
         "Download Chromium for Playwright (~150 MB browser + npm packages). Requires dependencies.",
       )
-      .addToggle((toggle) =>
-        toggle.setValue(this.installBrowsers).onChange((value) => {
-          this.installBrowsers = value;
-        }),
-      );
+      .addToggle((toggle) => {
+        browserToggle = toggle;
+        toggle
+          .setValue(this.installBrowsers)
+          .setDisabled(!this.installDependencies)
+          .onChange((value) => {
+            this.installBrowsers = value;
+          });
+      });
 
     new Setting(contentEl).addButton((button) =>
       button
@@ -159,7 +177,7 @@ export class InitializationWizardModal extends Modal {
           .setButtonText("Open Getting Started")
           .setCta()
           .onClick(async () => {
-            await this.deps.workspace.openFile(gettingStarted);
+            await openOrNotice(this.deps.workspace, gettingStarted);
             this.close();
           }),
       );
@@ -169,6 +187,9 @@ export class InitializationWizardModal extends Modal {
 
   private renderFailure(failure: AppError): void {
     const { contentEl } = this;
+    // Mirror the success-path Notice: the user may have closed the modal while
+    // the install ran, and a closed modal must not mean a silent failure.
+    new Notice(`Initialization failed: ${failure.message}`, 10000);
     const error = contentEl.createDiv({ cls: "e2e-test-hub-error" });
     error.createEl("p", { text: `Initialization failed: ${failure.message}` });
     // A failed install/validation step carries the child's stderr in
@@ -183,7 +204,7 @@ export class InitializationWizardModal extends Modal {
     // stack/output, and the validate command diagnoses environment problems.
     error.createEl("p", {
       text:
-        "Check the developer console for details, or run the 'Validate Environment' " +
+        "Check the developer console for details, or run the 'Validate environment' " +
         "command to diagnose.",
     });
     new Setting(contentEl)

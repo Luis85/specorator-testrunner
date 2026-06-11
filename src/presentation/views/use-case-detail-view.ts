@@ -11,6 +11,7 @@ import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import { type ChecklistRow } from "../settings/settings-rows";
 import type { RunLauncher } from "../run/run-launcher";
 import { EditUseCaseModal } from "./edit-use-case-modal";
+import { openOrNotice } from "./modal-helpers";
 import { RenderScheduler } from "./render-scheduler";
 import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
 import {
@@ -161,7 +162,15 @@ export class UseCaseDetailView extends ItemView {
 
     const found = await this.deps.useCaseService.findById(this.useCaseId);
     if (!found.ok) {
+      // Recoverable dead-end: offer a retry instead of a bare terminal message.
       container.createEl("p", { text: `Could not load Use Case: ${found.error.message}` });
+      container
+        .createEl("button", {
+          text: "Retry",
+          cls: "mod-cta",
+          attr: { "aria-label": "Retry loading the Use Case" },
+        })
+        .addEventListener("click", () => void this.scheduler.schedule());
       return;
     }
     if (found.value === null) {
@@ -190,6 +199,15 @@ export class UseCaseDetailView extends ItemView {
     const header = projectUseCaseHeader(useCase);
 
     const headerEl = container.createDiv({ cls: "e2e-test-hub-uc-detail-header" });
+    // Breadcrumb back to the explorer (entry-point review): the healthy detail
+    // view shouldn't be a dead-end either — same call as the not-found branch.
+    headerEl
+      .createEl("button", {
+        text: "All Use Cases",
+        cls: "e2e-test-hub-link-button",
+        attr: { "aria-label": "Open the Use Cases explorer" },
+      })
+      .addEventListener("click", () => void this.deps.workspace.openView(USE_CASE_VIEW_TYPE));
     headerEl.createEl("h2", { text: `${header.id} — ${header.title}` });
 
     const meta = headerEl.createDiv({ cls: "e2e-test-hub-uc-detail-meta" });
@@ -210,7 +228,7 @@ export class UseCaseDetailView extends ItemView {
         text: "Open note",
         attr: { "aria-label": `Open the ${header.id} note` },
       })
-      .addEventListener("click", () => void this.deps.workspace.openFile(header.path));
+      .addEventListener("click", () => void openOrNotice(this.deps.workspace, header.path));
     // Wave G §3: quick-edit title/status without hand-editing YAML frontmatter.
     // The view refreshes via its existing `usecase.updated` subscription once
     // the service publishes, so the modal needs no callback.
@@ -251,9 +269,17 @@ export class UseCaseDetailView extends ItemView {
 
     const listed = await this.deps.specificationService.listFeatures();
     if (!listed.ok) {
+      // Recoverable dead-end: offer a retry instead of a bare terminal message.
       section.createEl("p", {
         text: `Could not load Feature Specifications: ${listed.error.message}`,
       });
+      section
+        .createEl("button", {
+          text: "Retry",
+          cls: "mod-cta",
+          attr: { "aria-label": "Retry loading the Feature Specifications" },
+        })
+        .addEventListener("click", () => void this.scheduler.schedule());
       return;
     }
 
@@ -306,7 +332,7 @@ export class UseCaseDetailView extends ItemView {
 
     button("Open", `Open ${row.label}`).addEventListener(
       "click",
-      () => void this.deps.workspace.openFile(row.path),
+      () => void openOrNotice(this.deps.workspace, row.path),
     );
     // Visible label matches the explorers' per-row "Run"; the aria-label keeps
     // the full "Run <feature label>" so assistive tech still hears the target.
