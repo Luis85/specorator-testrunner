@@ -321,4 +321,43 @@ describe("Examples-level tag matching (Cucumber per-row semantics)", () => {
     if (!expression.ok) return;
     expect(countMatchingScenariosInFeature(expression.value, feature)).toBe(0);
   });
+
+  it("ignores Examples blocks without rows (nothing would execute)", () => {
+    const rowless = parseFeature(
+      `Feature: F
+
+  Scenario Outline: O
+    Given x
+
+    @slow
+    Examples: empty
+      | a |
+`,
+      vp("Specifications/features/UC-002-rowless.feature"),
+    );
+    expect(rowless).not.toBeNull();
+    if (!rowless) return;
+    const expression = parseTagExpression("@slow");
+    expect(expression.ok).toBe(true);
+    if (!expression.ok) return;
+    expect(countMatchingScenariosInFeature(expression.value, rowless)).toBe(0);
+  });
+
+  it("an Outline with no Examples matches nothing, even feature-level tags", () => {
+    const bare = parseFeature(
+      `@tagged
+Feature: F
+
+  Scenario Outline: O
+    Given x
+`,
+      vp("Specifications/features/UC-003-bare.feature"),
+    );
+    expect(bare).not.toBeNull();
+    if (!bare) return;
+    const expression = parseTagExpression("@tagged");
+    expect(expression.ok).toBe(true);
+    if (!expression.ok) return;
+    expect(countMatchingScenariosInFeature(expression.value, bare)).toBe(0);
+  });
 });

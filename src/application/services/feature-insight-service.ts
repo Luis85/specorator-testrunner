@@ -65,19 +65,21 @@ export const effectiveScenarioTags = (
 ): string[] => [...feature.tags, ...scenario.tags];
 
 /**
- * The tag sets Cucumber evaluates for a scenario, one per Examples block:
- * each Examples row inherits feature + scenario + ITS block's tags, so an
- * outline is selected when ANY block's union matches. A plain scenario (or an
- * outline with no Examples) contributes its single inherited set.
+ * The tag sets Cucumber evaluates for a scenario. A plain scenario
+ * contributes its single inherited set. An Outline expands once per Examples
+ * ROW, so only blocks that HAVE rows contribute (feature + scenario + block
+ * tags) — a rowless block, or an Outline with no usable Examples at all,
+ * executes nothing and must not match any expression.
  */
 export const effectiveScenarioTagSets = (
   feature: FeatureSpecification,
   scenario: ScenarioSpecification,
 ): string[][] => {
   const base = effectiveScenarioTags(feature, scenario);
-  const blocks = scenario.examples ?? [];
-  if (blocks.length === 0) return [base];
-  return blocks.map((block) => [...base, ...block.tags]);
+  const isOutline = scenario.keyword === "Scenario Outline" || scenario.examples !== undefined;
+  if (!isOutline) return [base];
+  const runnable = (scenario.examples ?? []).filter((block) => block.rows.length > 0);
+  return runnable.map((block) => [...base, ...block.tags]);
 };
 
 /** Pure projection of one parsed Feature to its {@link FeatureHealth}. */
