@@ -573,10 +573,12 @@ execution affordances hidden.
 **US-078 Vault & chrome hygiene** —
 As an **Obsidian power user**, I want evidence artifacts contained and plugin
 chrome minimal, so that search, graph, and sidebar stay clean.
-*AC:* ribbon icons trimmed to Dashboard + Test Console by default (others
-opt-in — closes the review's product call); all artifacts stay under the
-configured evidence/`.testrunner` folders; documented `.gitignore` /
-Obsidian-exclude guidance; no stray files at vault root.
+*AC:* the ribbon trim itself lands pre-V2 with the V1 release (§9 Phase 0.1
+— not re-planned here); this story covers the remaining hygiene: all
+artifacts stay under the configured evidence/`.testrunner` folders;
+documented `.gitignore` / Obsidian-exclude guidance; no stray files at vault
+root; new V2 views (triage, readiness, step library, …) register without
+adding default ribbon icons.
 
 ### EPIC-019 — Interop & Open Formats *(P2–P3)*
 
