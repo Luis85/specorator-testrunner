@@ -93,7 +93,23 @@ The codebase remains healthy: layering is lint-enforced, all 673 tests pass, lin
 | F7 | Dead code removed: `isOk`/`isErr` (result.ts), `RUN_TIMEOUT`/`SUT_ENV_NOT_FOUND` error codes, the unused `Id` type; `isValidAuthEnvKey`/`isReservedEnvKey` made module-private. |
 | F8 | `PathSafetyPolicy.validate` takes a plain `string` (its job is screening unbranded input), removing the brand-inverting `as VaultPath` cast in the smart constructor. |
 
-## 3. Reviewed and deliberately deferred
+## 3. Post-implementation review & polishing pass
+
+After the sections above landed, a second multi-angle review (line-by-line diff scan, removed-behavior audit, cross-file trace, reuse/efficiency sweep) was run over the full PR diff. Confirmed findings, fixed in the polishing pass:
+
+| ID | Finding → fix |
+| --- | --- |
+| R1 | The SIGTERM→SIGKILL escalation gated on the wrapper's `exitCode`, which (a) never reflects signal-terminated children and (b) skips escalation exactly when the wrapper died but a SIGTERM-ignoring grandchild holds the stdio pipes — the very A3 stuck-slot scenario. Fixed: the timer always force-kills the group (ESRCH = already gone) and is cancelled by the `close` event in the normal case. |
+| R2 | `execute()`'s new catch could fabricate a terminal `testrun.failed` for a setup throw before `testrun.started` (console flips to "Run failed" for a run it never displayed) and could relabel an already-terminated run's state. Fixed: the terminal route is taken only when `started && !terminated`. |
+| R3 | The new cancel race-guard's benign "finished while cancelling" error reached the user as a red "Could not cancel run" Notice. Fixed: `RunLauncher.cancel` reports it as "The Test Run already finished". |
+| R4 | `updateSettings` assigned `hubSettings` only after the awaited save — so the `settings.updated`-driven render painted stale state, and two debounced field-saves could build from a stale base and silently revert each other (the caller-side half of F2). Fixed: optimistic swap before the save with a superseded-aware rollback. |
+| R5 | Prototype-chain traps: `validate()`/`runEnv()`/`switchEnvironment` used truthy indexing or `in` on the environments record, so `sut.active: "toString"` slipped every guard. Fixed with `Object.hasOwn` (matching `repairSutShape`). |
+| R6 | `logging.level` was consumed by `setMinLevel` without load-time repair — a tampered value silently disabled the level filter; and a reset never re-applied the level. Both fixed. |
+| R7 | `redactValue` skipped `Error` instances (a nested `details.cause` error could carry a credential through the scrub), null-prototype records, and had no cycle guard. Fixed (flatten + scrub errors, `WeakSet` cycle guard). |
+| R8 | cmd-shim program token: quote on cmd metacharacters (`& \| < > ^ ( )`) too, not only whitespace/quotes — defense in depth behind CommandSafetyPolicy. |
+| R9 | Cleanup: the six copy-pasted error-with-Retry blocks → shared `renderLoadError`; `main.openEvidenceNote` → shared `openOrNotice` (with options); the Test Console tick/meta duplication → one `renderRunningMeta`; tests added for the new `modal-helpers`/`keyboard-activation` modules. |
+
+## 4. Reviewed and deliberately deferred
 
 These were found, judged real, but deferred as too invasive for a polish pass; they are recorded here so they aren't lost:
 
@@ -108,4 +124,6 @@ These were found, judged real, but deferred as too invasive for a polish pass; t
 - **Six ribbon icons by default** — heavy default chrome; consider trimming to Dashboard + Console before store submission (product call).
 - **Vault-base trailing-separator strip duplicated six times** — normalize once in `NodeAbsoluteFileSystem.getVaultBasePath()`, document the port as "no trailing separator", drop the inline `replace(/[/\\]$/, "")` calls.
 - **`joinVaultPath` hardening** — assert no `..` segments / leading `/` inside the helper so an unsanitized future caller cannot mint a vault-escaping `VaultPath`.
-- **Settings scalar repair** (also listed above) — extend `repairSutShape`'s posture to `ci.*`/`logging`/`automation.*`.
+- **Settings scalar repair** (also listed above) — `logging.level` is now repaired (R6); extend the posture to `ci.*`/`automation.*`.
+- **Shared serial queue** — `SettingsService.serialize()` and `PostRunCoordinator.enqueue()` are near-identical hand-rolled promise chains; extract `src/shared/async/serial-queue.ts` when a third user appears. Note the documented constraint either way: a bus subscriber that AWAITS `save()`/`reset()` from inside a `settings.*` handler would deadlock the chain (none does today).
+- **`save()` re-loads to diff** — each serialized save does a full load+sanitize pass just to compute `changedFields`; cache the last-persisted snapshot inside the chain if settings editing ever feels slow.

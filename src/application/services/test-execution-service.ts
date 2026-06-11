@@ -322,6 +322,9 @@ export class DefaultTestExecutionService implements TestExecutionService {
       settle,
     };
     this.active = activeRun;
+    // True once `testrun.started` has been published — the catch below must
+    // know whether the UI ever saw this run begin (see the catch comment).
+    let started = false;
 
     try {
       const settings = await this.settingsService.load();
@@ -370,6 +373,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
         command: run.command,
         workingDirectory: run.workingDirectory,
       });
+      started = true;
       this.logger.info("Test run started", { runId: run.id, scope: run.scope });
 
       // Awaiting the requested/started publishes yields the event loop, so a
@@ -448,12 +452,19 @@ export class DefaultTestExecutionService implements TestExecutionService {
       // `testrun.started` would otherwise emit NO terminal event — the console
       // would show "running" forever with Cancel armed, and the rejection would
       // surface as an unhandled promise in the launching click handler (A2).
-      // Route it through the EN-2 terminal guard as an errored run; the guard
-      // keeps this from double-emitting if a cancel won the race.
+      // Route it through the EN-2 terminal guard as an errored run — but ONLY
+      // when the UI actually saw the run start AND no terminal event has been
+      // published yet: a setup throw before `testrun.started` must surface as a
+      // plain error Result (fabricating a terminal lifecycle for a run the
+      // console never displayed would flip its banner to "Run failed" out of
+      // nowhere), and a run already terminated by a racing cancel() must not
+      // have its state relabelled "errored" after the bus reported it terminal.
       const message = cause instanceof Error ? cause.message : String(cause);
-      run.status = "errored";
-      this.finish(run, startedAt);
-      await this.terminal(activeRun, "testrun.failed", { runId: run.id, reason: message });
+      if (started && !activeRun.terminated) {
+        run.status = "errored";
+        this.finish(run, startedAt);
+        await this.terminal(activeRun, "testrun.failed", { runId: run.id, reason: message });
+      }
       this.logger.error("Test run threw unexpectedly", cause instanceof Error ? cause : undefined, {
         runId: run.id,
       });
@@ -555,8 +566,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
   }
 
   private runEnv(settings: TestHubSettings): Record<string, string> {
+    // Object.hasOwn, not a truthy index: an active named "toString"/
+    // "constructor" with no such environment defined would otherwise resolve a
+    // prototype member (truthy) and build the env from `undefined` fields.
+    if (!Object.hasOwn(settings.sut.environments, settings.sut.active)) return {};
     const active = settings.sut.environments[settings.sut.active];
-    if (!active) return {};
     return { BASE_URL: active.baseUrl, ...(active.auth?.env ?? {}) };
   }
 

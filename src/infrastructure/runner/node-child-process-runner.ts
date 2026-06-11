@@ -38,7 +38,12 @@ export const quoteForCmd = (token: string): string => `"${token.replace(/"/g, '"
  */
 export const buildCmdShimCommandLine = (args: readonly string[]): string => {
   const [program, ...rest] = args;
-  const programToken = /[\s"]/.test(program) ? quoteForCmd(program) : program;
+  // Quote the program token whenever it carries whitespace, quotes, OR any cmd
+  // metacharacter (& | < > ^ ( )) — a path like `C:\dev&evil\npm.cmd` must not
+  // let cmd split the line (defense in depth; CommandSafetyPolicy already
+  // rejects path-form npm upstream). Only a plain bare name (e.g. `npm`) stays
+  // unquoted, which is the one case the %~dp0 resolution rule needs.
+  const programToken = /[\s"&|<>^()]/.test(program) ? quoteForCmd(program) : program;
   return `"${[programToken, ...rest.map(quoteForCmd)].join(" ")}"`;
 };
 
@@ -133,18 +138,25 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       try {
         process.kill(-pid, "SIGTERM");
         const escalation = setTimeout(() => {
-          // Still alive after the grace period — force it. `exitCode`/`killed`
-          // on the wrapper plus a throwing group-kill cover "already gone".
-          if (child.exitCode === null) {
-            try {
-              process.kill(-pid, "SIGKILL");
-            } catch {
-              // Group already gone — nothing to escalate.
-            }
+          // Grace period over — force the GROUP. Deliberately not gated on the
+          // wrapper's exitCode: the wrapper (npm) can die on SIGTERM while a
+          // SIGTERM-ignoring grandchild keeps the group (and the inherited
+          // stdio pipes) alive — exactly the A3 stuck-slot scenario. A fully
+          // dead group makes the kill throw ESRCH, which is the "already gone"
+          // signal; the `close` listener below cancels the timer in the normal
+          // case before it ever fires.
+          try {
+            process.kill(-pid, "SIGKILL");
+          } catch {
+            // Group already gone — nothing to escalate.
           }
         }, NodeChildProcessRunner.KILL_ESCALATION_MS);
         // Never keep the process (or test runner) alive just for the escalation.
         escalation.unref?.();
+        // `close` fires once the process exited AND the stdio pipes drained —
+        // i.e. the whole tree is done writing. Cancelling then both avoids a
+        // pointless late SIGKILL and shrinks the pid-reuse window to ~0.
+        child.once("close", () => clearTimeout(escalation));
         return;
       } catch {
         // Group gone / unsupported — fall through to a direct kill.

@@ -156,18 +156,33 @@ describe("RunLauncher.cancel", () => {
     await new RunLauncher(exec.service, makeConsole(), notify).cancel();
 
     expect(exec.cancel).toHaveBeenCalledWith("RUN-2026-06-09-100000");
-    expect(notify).toHaveBeenCalledWith("Test Run cancelled.", undefined);
+    expect(notify).toHaveBeenCalledWith("Test Run cancelled.");
   });
 
-  it("reports a cancel failure", async () => {
+  it("reports an already-finished run as benign, not as an error", async () => {
+    // The cancel race-guard returns RUN_CANCELLED when the run reached its real
+    // terminal state during the cancel round-trip — the user must not see a red
+    // "Could not cancel" for a run that finished normally.
     const exec = makeExec({
       activeRunId: vi.fn(() => "RUN-2026-06-09-100000"),
-      cancel: vi.fn(async () => err(appError("RUN_CANCELLED", "already finished"))),
+      cancel: vi.fn(async () => err(appError("RUN_CANCELLED", "finished while cancelling"))),
     });
     const notify = vi.fn();
 
     await new RunLauncher(exec.service, makeConsole(), notify).cancel();
 
-    expect(notify).toHaveBeenCalledWith("Could not cancel run: already finished", 10000);
+    expect(notify).toHaveBeenCalledWith("The Test Run already finished; nothing to cancel.");
+  });
+
+  it("reports a cancel failure", async () => {
+    const exec = makeExec({
+      activeRunId: vi.fn(() => "RUN-2026-06-09-100000"),
+      cancel: vi.fn(async () => err(appError("INIT_FAILED", "kill failed"))),
+    });
+    const notify = vi.fn();
+
+    await new RunLauncher(exec.service, makeConsole(), notify).cancel();
+
+    expect(notify).toHaveBeenCalledWith("Could not cancel run: kill failed", 10000);
   });
 });

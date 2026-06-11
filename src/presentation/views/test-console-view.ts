@@ -445,10 +445,7 @@ export class TestConsoleView extends ItemView {
    */
   private renderMeta(active: boolean, last: TestRun | null): void {
     if (active) {
-      const label = this.activeScopeLabel ?? "Test Run";
-      const elapsed = formatElapsed(Date.now() - (this.runStartMs ?? Date.now()));
-      this.meta.setText(`Running ${label} · ${elapsed}`);
-      this.meta.dataset.status = "running";
+      this.renderRunningMeta();
       return;
     }
     if (last !== null) {
@@ -485,8 +482,17 @@ export class TestConsoleView extends ItemView {
   /** One timer tick: refresh just the elapsed portion of the metadata line. */
   private tickTimer(): void {
     if (this.runStartMs === null) return;
+    this.renderRunningMeta();
+  }
+
+  /**
+   * The active-run metadata line, shared by the full render and the per-second
+   * tick so the format cannot drift between them.
+   */
+  private renderRunningMeta(): void {
     const label = this.activeScopeLabel ?? "Test Run";
-    this.meta.setText(`Running ${label} · ${formatElapsed(Date.now() - this.runStartMs)}`);
+    const elapsed = formatElapsed(Date.now() - (this.runStartMs ?? Date.now()));
+    this.meta.setText(`Running ${label} · ${elapsed}`);
     this.meta.dataset.status = "running";
   }
 }

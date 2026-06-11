@@ -91,6 +91,7 @@ import {
   UseCaseDetailView,
 } from "./presentation/views/use-case-detail-view";
 import { generateFeatureForUseCase } from "./presentation/views/generate-feature-modal";
+import { openOrNotice } from "./presentation/views/modal-helpers";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
 import {
   DefaultRunHistoryService,
@@ -656,18 +657,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     }
   }
 
-  // Wave C §1: the dashboard hub's "Generate documentation" quick action.
   // Opens a linked Evidence note from the console/dashboard. An evidence note
   // can be deleted after its link was rendered (entry-point review) — a silent
-  // no-op there left the user clicking a dead button, so surface the failure.
+  // no-op there left the user clicking a dead button, so surface the failure
+  // (via the same openOrNotice helper the views use, with a specific message).
   private async openEvidenceNote(path: VaultPath): Promise<void> {
-    const opened = await this.workspaceAdapter.openFile(path);
-    if (!opened.ok) {
-      new Notice(
-        `Could not open the evidence note "${path}". It may have been moved or deleted.`,
-        10000,
-      );
-    }
+    await openOrNotice(this.workspaceAdapter, path, {
+      message: `Could not open the evidence note "${path}". It may have been moved or deleted.`,
+      timeout: 10000,
+    });
   }
 
   // Reuses the documentation service the command palette uses; the UI is thin.
@@ -686,7 +684,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // emits settings.updated, which the dashboard subscribes to for its refresh),
   // so the view passes a name and never writes settings itself.
   private async switchEnvironment(name: string): Promise<void> {
-    if (!(name in this.hubSettings.sut.environments)) {
+    // Object.hasOwn, not `in`: a name like "toString" would hit the prototype
+    // chain with `in` and pass the guard without a real environment.
+    if (!Object.hasOwn(this.hubSettings.sut.environments, name)) {
       new Notice(`Unknown environment: ${name}`, 10000);
       return;
     }
@@ -710,14 +710,29 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   }
 
   async updateSettings(next: TestHubSettings): Promise<Result<void>> {
+    // Optimistic in-memory swap BEFORE the awaited save, for two reasons:
+    // (1) save() publishes `settings.updated` while it is awaited, and the
+    //     bus synchronously drives the dashboard re-render — which reads
+    //     getSettings(); assigning afterwards made that one render (the one
+    //     meant to show the change) paint the STALE settings.
+    // (2) the settings tab debounces saves PER FIELD and each handler builds
+    //     `next` from getSettings(); assigning afterwards let a second field's
+    //     handler snapshot a base that missed the first field's edit, silently
+    //     reverting it (the F2 lost-update, on the caller side).
+    const previous = this.hubSettings;
+    this.hubSettings = next;
+    this.refreshLoggerSecrets();
     const result = await this.hubSettingsService.save(next);
-    if (result.ok) {
-      this.hubSettings = next;
-      // New/changed SUT credentials must start being scrubbed immediately
-      // (ADR-0019 value-based redaction, P0-2 / T3).
-      this.refreshLoggerSecrets();
-      this.logger.info("Settings updated");
+    if (!result.ok) {
+      // Roll back — but only if no newer update superseded this one while the
+      // save was in flight (their optimistic state must not be clobbered).
+      if (this.hubSettings === next) {
+        this.hubSettings = previous;
+        this.refreshLoggerSecrets();
+      }
+      return result;
     }
+    this.logger.info("Settings updated");
     return result;
   }
 
@@ -741,10 +756,12 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       );
       return;
     }
-    // Re-load the now-default settings so the in-memory copy + redaction set
-    // match the persisted reset.
+    // Re-load the now-default settings so the in-memory copy, redaction set,
+    // AND the logger's level filter match the persisted reset (the in-place
+    // setMinLevel exists precisely so this stays one logger instance, F3).
     this.hubSettings = await this.hubSettingsService.load();
     this.refreshLoggerSecrets();
+    this.logger.setMinLevel(this.hubSettings.logging.level);
     new Notice("Test Hub reset to a clean state.");
   }
 

@@ -60,6 +60,9 @@ export interface SettingsValidationMessage {
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** Runtime mirror of LoggingSettings["level"] for tamper repair on load. */
+const LOG_LEVELS: ReadonlySet<string> = new Set(["debug", "info", "warn", "error"]);
+
 /** Shallow-by-section merge of persisted data over defaults. */
 const mergeWithDefaults = (raw: unknown): TestHubSettings => {
   const data = (raw ?? {}) as Partial<TestHubSettings>;
@@ -138,6 +141,21 @@ export class DefaultSettingsService implements SettingsService {
         paths[field] = DEFAULT_SETTINGS.paths[field];
       }
     }
+    // logging.level is consumed directly by the composition root's
+    // setMinLevel; an out-of-union value (tampered/synced data.json) would
+    // make LEVEL_ORDER[level] undefined and silently DISABLE the level filter
+    // for the whole session — repair it with the same log-and-fallback
+    // posture as the path screens.
+    let level = settings.logging.level;
+    if (!LOG_LEVELS.has(level)) {
+      this.logger.error(
+        `Configured "logging.level" is not a valid level; falling back to the default.`,
+        undefined,
+        { value: level, fallback: DEFAULT_SETTINGS.logging.level },
+      );
+      level = DEFAULT_SETTINGS.logging.level;
+    }
+
     const loggingPath = vaultPath(settings.logging.path, this.pathSafety);
     if (!loggingPath.ok) {
       this.logger.error(
@@ -148,13 +166,13 @@ export class DefaultSettingsService implements SettingsService {
       return {
         ...settings,
         paths,
-        logging: { ...settings.logging, path: DEFAULT_SETTINGS.logging.path },
+        logging: { ...settings.logging, level, path: DEFAULT_SETTINGS.logging.path },
       };
     }
     return {
       ...settings,
       paths,
-      logging: { ...settings.logging, path: loggingPath.value },
+      logging: { ...settings.logging, level, path: loggingPath.value },
     };
   }
 
@@ -428,7 +446,11 @@ export class DefaultSettingsService implements SettingsService {
     // map must validate as "active not defined" rather than crash.
     const environments = isPlainRecord(settings.sut.environments) ? settings.sut.environments : {};
 
-    if (!environments[settings.sut.active]) {
+    // Object.hasOwn (not a truthy index) for the same prototype-chain trap
+    // repairSutShape documents: an active named "toString"/"constructor" with
+    // no real environment would otherwise resolve a prototype member (truthy)
+    // and slip past this error into the runner env builder.
+    if (!Object.hasOwn(environments, settings.sut.active)) {
       errors.push({
         field: "sut.active",
         message: `Active environment "${settings.sut.active}" is not defined.`,

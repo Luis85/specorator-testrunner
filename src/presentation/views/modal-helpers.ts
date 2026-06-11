@@ -24,14 +24,43 @@ export const submitOnEnter = (input: HTMLInputElement, submit: () => void): void
 };
 
 /**
+ * Recoverable load-error state for the live views: the failure message plus a
+ * Retry button driving the view's RenderScheduler. Extracted because every
+ * explorer/dashboard repeated this block (a bare "Could not load …" used to be
+ * a dead end until an unrelated event re-rendered the view).
+ */
+export const renderLoadError = (
+  container: HTMLElement,
+  message: string,
+  retryAriaLabel: string,
+  retry: () => void,
+): void => {
+  container.createEl("p", { text: message });
+  container
+    .createEl("button", {
+      text: "Retry",
+      cls: "mod-cta",
+      attr: { "aria-label": retryAriaLabel },
+    })
+    .addEventListener("click", retry);
+};
+
+/**
  * Opens a file through the workspace port and surfaces a FAILED open as a
  * Notice instead of dropping the Result silently — a button that does nothing
  * (e.g. the note was moved or deleted underneath the view) must say why.
+ * Callers with a more specific story pass their own `message`/`timeout`.
  */
 export const openOrNotice = async (
   workspace: Pick<WorkspacePort, "openFile">,
   path: VaultPath,
+  options: { message?: string; timeout?: number } = {},
 ): Promise<void> => {
   const result = await workspace.openFile(path);
-  if (!result.ok) new Notice(`Could not open ${path}: ${result.error.message}`);
+  if (!result.ok) {
+    new Notice(
+      options.message ?? `Could not open ${path}: ${result.error.message}`,
+      options.timeout,
+    );
+  }
 };

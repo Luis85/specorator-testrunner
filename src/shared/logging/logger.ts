@@ -37,6 +37,7 @@ const REDACTED = "***";
 export const redactFields = (
   fields: Record<string, unknown> | undefined,
   secrets: ReadonlySet<string> = new Set(),
+  seen: WeakSet<object> = new WeakSet(),
 ): Record<string, unknown> | undefined => {
   if (!fields) return fields;
   const out: Record<string, unknown> = {};
@@ -44,17 +45,39 @@ export const redactFields = (
     if (SENSITIVE_KEY.test(key)) {
       out[key] = REDACTED;
     } else {
-      out[key] = redactValue(value, secrets);
+      out[key] = redactValue(value, secrets, seen);
     }
   }
   return out;
 };
 
-const redactValue = (value: unknown, secrets: ReadonlySet<string>): unknown => {
+const redactValue = (
+  value: unknown,
+  secrets: ReadonlySet<string>,
+  seen: WeakSet<object>,
+): unknown => {
   if (typeof value === "string") return redactSecrets(value, secrets);
-  if (Array.isArray(value)) return value.map((item) => redactValue(item, secrets));
-  if (value !== null && typeof value === "object" && value.constructor === Object) {
-    return redactFields(value as Record<string, unknown>, secrets);
+  if (value === null || typeof value !== "object") return value;
+  // A circular graph must not recurse forever — the logger crashing inside an
+  // error-handling path would be worse than the redaction it provides.
+  if (seen.has(value)) return "[circular]";
+  seen.add(value);
+  // An Error nested in fields (e.g. an AppError's details.cause) carries the
+  // leak surface in message/stack; flatten it so the scrub reaches them.
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: redactSecrets(value.message, secrets),
+      stack: value.stack === undefined ? undefined : redactSecrets(value.stack, secrets),
+    };
+  }
+  if (Array.isArray(value)) return value.map((item) => redactValue(item, secrets, seen));
+  // Plain records only (incl. Object.create(null)); class instances (Map,
+  // TFile, …) are passed through — stringifying them here would lose more
+  // diagnostics than it protects, and call sites don't log credentials there.
+  const proto: unknown = Object.getPrototypeOf(value);
+  if (proto === Object.prototype || proto === null) {
+    return redactFields(value as Record<string, unknown>, secrets, seen);
   }
   return value;
 };

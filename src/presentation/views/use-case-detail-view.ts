@@ -11,7 +11,7 @@ import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import { type ChecklistRow } from "../settings/settings-rows";
 import type { RunLauncher } from "../run/run-launcher";
 import { EditUseCaseModal } from "./edit-use-case-modal";
-import { openOrNotice } from "./modal-helpers";
+import { openOrNotice, renderLoadError } from "./modal-helpers";
 import { RenderScheduler } from "./render-scheduler";
 import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
 import {
@@ -163,14 +163,12 @@ export class UseCaseDetailView extends ItemView {
     const found = await this.deps.useCaseService.findById(this.useCaseId);
     if (!found.ok) {
       // Recoverable dead-end: offer a retry instead of a bare terminal message.
-      container.createEl("p", { text: `Could not load Use Case: ${found.error.message}` });
-      container
-        .createEl("button", {
-          text: "Retry",
-          cls: "mod-cta",
-          attr: { "aria-label": "Retry loading the Use Case" },
-        })
-        .addEventListener("click", () => void this.scheduler.schedule());
+      renderLoadError(
+        container,
+        `Could not load Use Case: ${found.error.message}`,
+        "Retry loading the Use Case",
+        () => void this.scheduler.schedule(),
+      );
       return;
     }
     if (found.value === null) {
@@ -270,16 +268,12 @@ export class UseCaseDetailView extends ItemView {
     const listed = await this.deps.specificationService.listFeatures();
     if (!listed.ok) {
       // Recoverable dead-end: offer a retry instead of a bare terminal message.
-      section.createEl("p", {
-        text: `Could not load Feature Specifications: ${listed.error.message}`,
-      });
-      section
-        .createEl("button", {
-          text: "Retry",
-          cls: "mod-cta",
-          attr: { "aria-label": "Retry loading the Feature Specifications" },
-        })
-        .addEventListener("click", () => void this.scheduler.schedule());
+      renderLoadError(
+        section,
+        `Could not load Feature Specifications: ${listed.error.message}`,
+        "Retry loading the Feature Specifications",
+        () => void this.scheduler.schedule(),
+      );
       return;
     }
 

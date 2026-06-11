@@ -5,7 +5,7 @@ import type { UseCaseService } from "../../application/services/use-case-service
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
-import { openOrNotice } from "./modal-helpers";
+import { openOrNotice, renderLoadError } from "./modal-helpers";
 import { RenderScheduler } from "./render-scheduler";
 import { featureCountCell, projectUseCaseRows } from "./use-case-rows";
 
@@ -99,14 +99,12 @@ export class UseCaseDashboardView extends ItemView {
     ]);
     if (!result.ok) {
       // Recoverable dead-end: offer a retry instead of a bare terminal message.
-      container.createEl("p", { text: `Could not load Use Cases: ${result.error.message}` });
-      container
-        .createEl("button", {
-          text: "Retry",
-          cls: "mod-cta",
-          attr: { "aria-label": "Retry loading the Use Cases" },
-        })
-        .addEventListener("click", () => void this.scheduler.schedule());
+      renderLoadError(
+        container,
+        `Could not load Use Cases: ${result.error.message}`,
+        "Retry loading the Use Cases",
+        () => void this.scheduler.schedule(),
+      );
       return;
     }
 

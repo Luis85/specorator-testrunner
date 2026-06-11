@@ -697,9 +697,28 @@ describe("DefaultTestExecutionService", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("data store exploded");
-    expect(types()).toContain("testrun.failed");
+    // The throw happened BEFORE testrun.started: the console never saw this
+    // run, so no terminal lifecycle is fabricated — the error Result is the
+    // whole story (and lastRun() must not report a phantom run).
+    expect(types()).not.toContain("testrun.failed");
+    expect(broken.lastRun()).toBeNull();
     // The slot is freed, so the service is not wedged for the session.
     expect(broken.activeRunId()).toBeNull();
-    expect(broken.lastRun()?.status).toBe("errored");
+  });
+
+  it("a non-Result throw AFTER testrun.started publishes a terminal testrun.failed (A2)", async () => {
+    const { service, childProcess, types } = build();
+    // runStreaming throwing (not returning err) models an adapter bug mid-run.
+    childProcess.runStreaming = () => {
+      throw new Error("adapter exploded mid-run");
+    };
+
+    const result = await service.execute({ scope: "demo", target: "demo" });
+
+    expect(result.ok).toBe(false);
+    expect(types()).toContain("testrun.started");
+    expect(types()).toContain("testrun.failed");
+    expect(service.lastRun()?.status).toBe("errored");
+    expect(service.activeRunId()).toBeNull();
   });
 });

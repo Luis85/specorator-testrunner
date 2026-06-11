@@ -5,7 +5,7 @@ import type { SuiteService } from "../../application/services/suite-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
-import { openOrNotice } from "./modal-helpers";
+import { openOrNotice, renderLoadError } from "./modal-helpers";
 import { RenderScheduler } from "./render-scheduler";
 import { projectSuiteRows, scenarioCountCell } from "./suite-rows";
 
@@ -96,14 +96,12 @@ export class SuiteDashboardView extends ItemView {
     const result = await this.deps.suiteService.findAll();
     if (!result.ok) {
       // Recoverable dead-end: offer a retry instead of a bare terminal message.
-      container.createEl("p", { text: `Could not load Test Suites: ${result.error.message}` });
-      container
-        .createEl("button", {
-          text: "Retry",
-          cls: "mod-cta",
-          attr: { "aria-label": "Retry loading the Test Suites" },
-        })
-        .addEventListener("click", () => void this.scheduler.schedule());
+      renderLoadError(
+        container,
+        `Could not load Test Suites: ${result.error.message}`,
+        "Retry loading the Test Suites",
+        () => void this.scheduler.schedule(),
+      );
       return;
     }
 

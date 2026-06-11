@@ -18,6 +18,7 @@ import {
 } from "./dashboard-rows";
 import { activateOnEnterOrSpace } from "./keyboard-activation";
 import { RenderScheduler } from "./render-scheduler";
+import { renderLoadError } from "./modal-helpers";
 
 export const DASHBOARD_VIEW_TYPE = "e2e-test-hub-dashboard";
 
@@ -189,14 +190,12 @@ export class DashboardView extends ItemView {
       // Initialized but the snapshot failed (a real I/O error, not a fresh
       // vault) — surface it rather than masquerading as "not initialized",
       // and offer a retry instead of a bare terminal message.
-      container.createEl("p", { text: `Could not load dashboard: ${result.error.message}` });
-      container
-        .createEl("button", {
-          text: "Retry",
-          cls: "mod-cta",
-          attr: { "aria-label": "Retry loading the dashboard" },
-        })
-        .addEventListener("click", () => void this.scheduler.schedule());
+      renderLoadError(
+        container,
+        `Could not load dashboard: ${result.error.message}`,
+        "Retry loading the dashboard",
+        () => void this.scheduler.schedule(),
+      );
       return;
     }
 

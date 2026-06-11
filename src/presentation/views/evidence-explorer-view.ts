@@ -12,6 +12,7 @@ import {
 } from "./evidence-explorer-rows";
 import { activateOnEnterOrSpace } from "./keyboard-activation";
 import { RenderScheduler } from "./render-scheduler";
+import { renderLoadError } from "./modal-helpers";
 
 export const EVIDENCE_EXPLORER_VIEW_TYPE = "e2e-test-hub-evidence";
 
@@ -82,14 +83,12 @@ export class EvidenceExplorerView extends ItemView {
     const result = await this.deps.runHistory.list({ offset: 0, limit: this.visibleLimit });
     if (!result.ok) {
       // Recoverable dead-end: offer a retry instead of a bare terminal message.
-      container.createEl("p", { text: `Could not load run history: ${result.error.message}` });
-      container
-        .createEl("button", {
-          text: "Retry",
-          cls: "mod-cta",
-          attr: { "aria-label": "Retry loading the run history" },
-        })
-        .addEventListener("click", () => void this.scheduler.schedule());
+      renderLoadError(
+        container,
+        `Could not load run history: ${result.error.message}`,
+        "Retry loading the run history",
+        () => void this.scheduler.schedule(),
+      );
       return;
     }
     const { entries, hasMore } = result.value;
