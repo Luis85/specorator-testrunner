@@ -151,8 +151,9 @@ to latest".
 
 - **minAppVersion 1.8.0 → 1.13.0** (latest available; manifest + versions.json
   + release-validation agreement), unlocking `setDestructive()`. The
-  `display()` → `getSettingDefinitions()` declarative settings rewrite remains
-  the one warn-level deferral.
+  `display()` → `getSettingDefinitions()` declarative settings migration was
+  initially deferred warn-level, then completed in the same session (see
+  Addendum 3) — lint now passes with zero warnings.
 - **All devDependencies to latest**: TypeScript 6.0, vitest 4.1 (+ coverage),
   esbuild 0.28, @types/node 25, prettier, builtin-modules 5. `npm audit`: 0
   findings (was 2 critical + 4 moderate). One vitest-4 fallout fix (mock
@@ -179,6 +180,25 @@ to latest".
   flat config (they expect a TS/JS AST; even the raw preset reports
   manifest.json/LICENSE as ignored) — manifest integrity stays covered by the
   release-validation suite and `no-unsupported-api`.
+
+## Addendum 3 (2026-06-11): declarative settings tab (zero lint warnings)
+
+`TestHubSettingTab` migrated from the deprecated imperative `display()`
+override to the Obsidian 1.13 declarative API: `getSettingDefinitions()`
+returns the tab structure (groups for Folders / System under test / per
+environment / Maintenance / Continuous integration), and every interactive
+row uses the API's `render` escape hatch so the tested behavior is preserved
+verbatim — debounced persists with blur flush (PRES-M1), the save-blocking
+inline error surface, the dangling-active-environment dropdown repair,
+two-click destructive confirms, and the async checklist results.
+`this.display()` re-renders became `refreshTab()` (= cancel pending
+debouncers + `this.update()`); render callbacks return cleanups for the DOM
+they add beside their row. The per-row imperative wiring was deliberately NOT
+converted to declarative `control` bindings: the framework's
+validate/persist semantics differ from the repo's authoritative
+SettingsService validation contract, and behavior parity wins. The
+`@typescript-eslint/no-deprecated` warn override for the file is removed —
+the lint gate is now 0 errors, 0 warnings.
 
 ## Acceptance
 

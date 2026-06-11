@@ -35,6 +35,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - Requires Obsidian 1.13+ (`minAppVersion` 1.8.0 → 1.13.0); destructive
   buttons use the 1.13 `setDestructive()` API.
+- The settings tab is built on the Obsidian 1.13 declarative
+  `getSettingDefinitions()` API (settings become searchable in Obsidian's
+  settings search); all behavior — debounced saves, inline errors, two-click
+  confirms — is unchanged.
 - All devDependencies upgraded to latest (TypeScript 6, vitest 4, esbuild
   0.28, ESLint 10); `npm audit` is clean.
 - Background note writes go through the atomic `Vault.process` instead of

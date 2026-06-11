@@ -91,16 +91,6 @@ export default tseslint.config(
     },
   },
   {
-    // PluginSettingTab.display() is deprecated since Obsidian 1.13 in favor of
-    // the declarative getSettingDefinitions() API; that migration is a
-    // settings-tab rewrite tracked as a follow-up (minAppVersion is already
-    // 1.13.0). Keep the signal visible without failing lint.
-    files: ["src/presentation/settings/settings-tab.ts"],
-    rules: {
-      "@typescript-eslint/no-deprecated": "warn",
-    },
-  },
-  {
     files: ["**/*.ts"],
     languageOptions: {
       parserOptions: {
