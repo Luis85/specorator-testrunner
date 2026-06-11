@@ -18,7 +18,7 @@ export const TEST_CONSOLE_VIEW_TYPE = "e2e-test-hub-console";
 
 /** Subset of the `testrun.requested` payload — carries the scope/target label. */
 interface RequestedPayload {
-  scope: "use-case" | "feature" | "suite" | "all";
+  scope: "use-case" | "feature" | "suite" | "all" | "demo";
   target: string;
 }
 

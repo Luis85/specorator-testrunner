@@ -822,6 +822,51 @@
   margin-top: var(--size-4-3, 12px);
 }
 
+/* Guided Tour (spec 2026-06-11) */
+.e2e-test-hub-tour-progress {
+  color: var(--text-muted);
+  margin-bottom: var(--size-4-2, 8px);
+}
+.e2e-test-hub-tour-step {
+  padding: var(--size-4-2, 8px);
+  border-left: 2px solid var(--background-modifier-border);
+  margin-bottom: var(--size-4-1, 4px);
+}
+.e2e-test-hub-tour-step[data-status="active"] {
+  border-left-color: var(--interactive-accent);
+  background: var(--background-secondary);
+}
+.e2e-test-hub-tour-step[data-status="done"] {
+  opacity: 0.7;
+}
+.e2e-test-hub-tour-step[data-status="skipped"] {
+  opacity: 0.5;
+}
+.e2e-test-hub-tour-step-title {
+  font-weight: 600;
+}
+.e2e-test-hub-tour-teach {
+  margin: var(--size-4-1, 4px) 0;
+}
+.e2e-test-hub-tour-snippet pre {
+  overflow-x: auto;
+  padding: var(--size-4-2, 8px);
+  background: var(--background-primary-alt);
+  user-select: text;
+}
+.e2e-test-hub-tour-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+}
+.e2e-test-hub-tour-actions {
+  display: flex;
+  gap: var(--size-4-2, 8px);
+  margin-top: var(--size-4-1, 4px);
+}
+.e2e-test-hub-tour-cta {
+  margin: var(--size-4-2, 8px) 0;
+}
+
 /* --- Feature Editor (.feature file handler) ------------------------------ */
 
 .e2e-test-hub-feature-editor-toolbar {

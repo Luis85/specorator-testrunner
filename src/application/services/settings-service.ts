@@ -4,6 +4,8 @@ import type { PathSafetyPolicy } from "../../domain/policies/path-safety-policy"
 import {
   authEnvKeyProblem,
   DEFAULT_SETTINGS,
+  type OnboardingSequenceProgress,
+  type OnboardingSettings,
   type SutEnvironment,
   type TestHubPathSettings,
   type TestHubSettings,
@@ -73,6 +75,7 @@ const mergeWithDefaults = (raw: unknown): TestHubSettings => {
     ci: { ...DEFAULT_SETTINGS.ci, ...data.ci },
     sut: { ...DEFAULT_SETTINGS.sut, ...data.sut },
     logging: { ...DEFAULT_SETTINGS.logging, ...data.logging },
+    onboarding: { ...DEFAULT_SETTINGS.onboarding, ...data.onboarding },
   };
 };
 
@@ -109,9 +112,10 @@ export class DefaultSettingsService implements SettingsService {
   }
 
   async load(): Promise<TestHubSettings> {
-    return this.sanitizeRunnerEnvInputs(
+    const settings = this.sanitizeRunnerEnvInputs(
       this.sanitizePaths(mergeWithDefaults(await this.store.load())),
     );
+    return { ...settings, onboarding: repairOnboardingShape(settings.onboarding) };
   }
 
   /**
@@ -752,3 +756,49 @@ const diffSettings = (before: TestHubSettings, after: TestHubSettings): string[]
   }
   return changed;
 };
+
+/** Keeps only the string entries of a possibly-tampered array value. */
+const stringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+
+/**
+ * Keeps only well-formed `{ index, captured? }` sequence-progress entries of a
+ * possibly-tampered map: index must be a non-negative integer; a non-string
+ * captured is dropped from the entry; anything else drops the entry.
+ */
+const sequenceProgressMap = (value: unknown): Record<string, OnboardingSequenceProgress> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const repaired: Record<string, OnboardingSequenceProgress> = {};
+  for (const [stepId, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
+    const { index, captures } = entry as { index?: unknown; captures?: unknown };
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) continue;
+    if (!Array.isArray(captures)) continue;
+    // A non-string capture degrades to null ("no capture"): correlation rules
+    // then stall rather than widen, which is the safe failure mode.
+    repaired[stepId] = {
+      index,
+      captures: captures.map((capture) => (typeof capture === "string" ? capture : null)),
+    };
+  }
+  return repaired;
+};
+
+/**
+ * Structural repair for the persisted `onboarding` section (same log-free,
+ * never-break-startup posture as the other load screens — this section is
+ * self-healing state, not user configuration, so silent fallback is fine):
+ * non-string tourId → null; non-array step lists → []; non-string entries
+ * dropped; malformed sequence-progress entries dropped; non-boolean
+ * dismissed → false. Pure: no I/O.
+ */
+const repairOnboardingShape = (raw: OnboardingSettings): OnboardingSettings => ({
+  tourId: typeof raw.tourId === "string" ? raw.tourId : null,
+  completedSteps: stringArray(raw.completedSteps),
+  skippedSteps: stringArray(raw.skippedSteps),
+  sequenceProgress: sequenceProgressMap(raw.sequenceProgress),
+  // typeof guard (not a `=== true` literal compare, which the lint forbids):
+  // the field is TYPED boolean but a tampered/synced data.json can carry any
+  // JSON value here, and a truthy string must still repair to false.
+  dismissed: typeof raw.dismissed === "boolean" && raw.dismissed,
+});

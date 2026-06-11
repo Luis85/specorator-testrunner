@@ -76,7 +76,12 @@ export type DomainEventType =
   // settings
   | "settings.updated"
   | "settings.validated"
-  | "settings.reset";
+  | "settings.reset"
+  // guided tour
+  | "tour.started"
+  | "tour.step.completed"
+  | "tour.step.skipped"
+  | "tour.completed";
 
 /**
  * Compile-time payload contract for every {@link DomainEventType}, sourced
@@ -111,7 +116,14 @@ export interface EventPayloads {
   "specification.created": { useCaseId: string; featurePath: string };
   "specification.updated": { featurePath: string; scenarioCount: number; tags: string[] };
   "specification.linkedToUseCase": { useCaseId: string; featurePath: string };
-  "specification.validation.completed": { featurePath: string; valid: boolean; errors: string[] };
+  "specification.validation.completed": {
+    featurePath: string;
+    valid: boolean;
+    errors: string[];
+    /** The Feature's tags when parseable (empty otherwise), so observers —
+     * e.g. the Guided Tour's authoring step — can react to tagging. */
+    tags: string[];
+  };
   "specification.missingSteps.detected": { featurePath: string; missingSteps: string[] };
   "stepdefinition.generated": {
     featurePath: string;
@@ -126,7 +138,13 @@ export interface EventPayloads {
   "suite.executed": { suiteId: string; runId: string };
 
   // test execution (§7)
-  "testrun.requested": { scope: "use-case" | "feature" | "suite" | "all"; target: string };
+  "testrun.requested": {
+    /** "demo" identifies the shipped Demo Test launch — a user suite whose id
+     * slugifies to "demo" still publishes scope "suite", so the two are
+     * distinguishable on the bus (PR #31 Codex review). */
+    scope: "use-case" | "feature" | "suite" | "all" | "demo";
+    target: string;
+  };
   "testrun.started": { runId: string; command: string; workingDirectory: string };
   "testrun.output.received": { runId: string; stream: "stdout" | "stderr"; line: string };
   "testrun.completed": {
@@ -177,4 +195,10 @@ export interface EventPayloads {
   "settings.updated": { changedFields: string[] };
   "settings.reset": { profile: "default" };
   "settings.validated": { valid: boolean; warnings: string[] };
+
+  // guided tour (Event Catalog "Tour Events")
+  "tour.started": { tourId: string };
+  "tour.step.completed": { tourId: string; stepId: string; via: "event" | "manual" };
+  "tour.step.skipped": { tourId: string; stepId: string };
+  "tour.completed": { tourId: string };
 }

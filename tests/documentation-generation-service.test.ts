@@ -224,4 +224,12 @@ describe("documentation content builders (US-043/044/045)", () => {
     expect(documentationFileName(DEFAULT_SETTINGS, "manual")).toBe("User Manual.md");
     expect(documentationFileName(DEFAULT_SETTINGS, "troubleshooting")).toBe("Troubleshooting.md");
   });
+
+  it("Getting Started and the index point at the Guided Tour", () => {
+    const docs = buildDocumentation(DEFAULT_SETTINGS);
+    const gettingStarted = docs.find((doc) => doc.type === "getting-started");
+    const index = docs.find((doc) => doc.type === "index");
+    expect(gettingStarted?.content).toContain("Open guided tour");
+    expect(index?.content).toContain("Open guided tour");
+  });
 });
