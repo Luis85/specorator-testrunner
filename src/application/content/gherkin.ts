@@ -1,4 +1,6 @@
 import type {
+  DocString,
+  ExamplesBlock,
   FeatureSpecification,
   GherkinStep,
   ScenarioSpecification,
@@ -6,14 +8,16 @@ import type {
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 
 /**
- * Minimal, I/O-free Gherkin parser for V1 (UC-006/UC-007, TIS §6.4–§6.6).
+ * I/O-free Gherkin parser + serializer (UC-006/UC-007, TIS §6.4–§6.6).
  *
- * It is not a full Gherkin engine: it recognises `Feature:`,
- * `Scenario:`/`Scenario Outline:`, tag lines (`@a @b`), and the step keywords
- * (Given/When/Then/And/But/*). Description lines, `Background`, `Examples`
- * tables, doc-strings and data tables are tolerated but not modelled — they are
- * simply skipped so a feature still parses. `useCaseId` is derived from the
- * filename prefix `UC-\d+` per ADR-0012, not from the file body.
+ * The parser models executable Gherkin: `Feature:`, `Background:`,
+ * `Scenario:`/`Scenario Outline:` (with `Examples:` tables), tag lines, the
+ * step keywords (Given/When/Then/And/But/*), per-step data tables and doc
+ * strings, and free-text descriptions. NOT modelled: comments (`#`) and
+ * `Rule:` blocks — {@link roundTripsLosslessly} exists so the Feature Editor
+ * falls back to raw-text editing for files carrying constructs the model
+ * would silently drop. `useCaseId` is derived from the filename prefix
+ * `UC-\d+` per ADR-0012, not from the file body.
  */
 
 const STEP_KEYWORDS: ReadonlyArray<GherkinStep["keyword"]> = [
@@ -67,8 +71,17 @@ const parseStep = (line: string): GherkinStep | null => {
 };
 
 const FEATURE_RE = /^Feature:\s*(.*)$/;
-const SCENARIO_RE = /^Scenario(?:\s+Outline)?:\s*(.*)$/;
+const SCENARIO_RE = /^Scenario(\s+Outline)?:\s*(.*)$/;
 const BACKGROUND_RE = /^Background:/;
+const EXAMPLES_RE = /^Examples:\s*(.*)$/;
+
+/** Splits a `| a | b |` row into trimmed cells (escaped `\|` not supported). */
+const parseTableRow = (line: string): string[] =>
+  line
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
 
 /**
  * Parses Gherkin `content` into a {@link FeatureSpecification}. Returns `null`
@@ -81,26 +94,47 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
 
   let featureName: string | null = null;
   const featureTags: string[] = [];
+  const featureDescription: string[] = [];
   const scenarios: ScenarioSpecification[] = [];
   const background: GherkinStep[] = [];
 
-  // Tags accumulate on the line(s) directly above a Feature/Scenario keyword.
+  // Tags accumulate on the line(s) directly above a Feature/Scenario/Examples keyword.
   let pendingTags: string[] = [];
-  // Steps flow into the current scenario, or the Background collector.
   let current: ScenarioSpecification | null = null;
   let inBackground = false;
-  // Inside a `"""` / ``` ``` ``` doc string, lines are a step argument, not steps.
-  let docStringFence: string | null = null;
+  // Free-text lines flow here until the block's first step/table/keyword line.
+  let descriptionTarget: string[] | null = null;
+  // The step a `|` table row or doc string attaches to (the most recent step).
+  let lastStep: GherkinStep | null = null;
+  // The Examples block currently collecting `|` rows (header row first).
+  let currentExamples: ExamplesBlock | null = null;
+  // An open doc string collects dedented body lines until its closing fence.
+  let openDocString: DocString | null = null;
+  let docStringIndent = "";
 
   for (const raw of lines) {
     const line = raw.trim();
 
-    if (docStringFence !== null) {
-      if (line === docStringFence) docStringFence = null; // closing fence
-      continue; // doc-string body is an argument, never a step
+    if (openDocString !== null) {
+      if (line === openDocString.fence) {
+        openDocString = null;
+        continue;
+      }
+      // Dedent by the opening fence's indentation (Gherkin doc-string rule);
+      // shallower lines are kept trimmed rather than dropped.
+      openDocString.lines.push(
+        (raw.startsWith(docStringIndent) ? raw.slice(docStringIndent.length) : line).trimEnd(),
+      );
+      continue;
     }
-    if (line === '"""' || line === "```") {
-      docStringFence = line;
+    if (line.startsWith('"""') || line.startsWith("```")) {
+      const fence: DocString["fence"] = line.startsWith('"""') ? '"""' : "```";
+      const mediaType = line.slice(3).trim();
+      openDocString = { fence, ...(mediaType ? { mediaType } : {}), lines: [] };
+      docStringIndent = raw.slice(0, raw.length - raw.trimStart().length);
+      // Without a preceding step the body is still consumed (it is an argument,
+      // never steps) but cannot be attached — roundTripsLosslessly catches it.
+      if (lastStep) lastStep.docString = openDocString;
       continue;
     }
 
@@ -108,6 +142,7 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
 
     if (line.startsWith("@")) {
       pendingTags.push(...parseTagLine(line));
+      descriptionTarget = null; // a tag line ends a description block
       continue;
     }
 
@@ -118,6 +153,9 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
       pendingTags = [];
       current = null;
       inBackground = false;
+      descriptionTarget = featureDescription;
+      lastStep = null;
+      currentExamples = null;
       continue;
     }
 
@@ -127,36 +165,86 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
       current = null;
       inBackground = true;
       pendingTags = [];
+      descriptionTarget = null;
+      lastStep = null;
+      currentExamples = null;
       continue;
     }
 
     const scenarioMatch = SCENARIO_RE.exec(line);
     if (scenarioMatch) {
       current = {
-        name: scenarioMatch[1].trim(),
+        ...(scenarioMatch[1] ? { keyword: "Scenario Outline" as const } : {}),
+        name: scenarioMatch[2].trim(),
         tags: pendingTags,
         steps: [],
       };
       scenarios.push(current);
       pendingTags = [];
       inBackground = false;
+      descriptionTarget = [];
+      lastStep = null;
+      currentExamples = null;
+      continue;
+    }
+
+    const examplesMatch = EXAMPLES_RE.exec(line);
+    if (examplesMatch && current) {
+      const name = examplesMatch[1].trim();
+      currentExamples = {
+        tags: pendingTags,
+        ...(name ? { name } : {}),
+        header: [],
+        rows: [],
+      };
+      (current.examples ??= []).push(currentExamples);
+      pendingTags = [];
+      descriptionTarget = null;
+      lastStep = null;
+      continue;
+    }
+
+    if (line.startsWith("|")) {
+      const cells = parseTableRow(line);
+      if (currentExamples) {
+        if (currentExamples.header.length === 0) currentExamples.header = cells;
+        else currentExamples.rows.push(cells);
+      } else if (lastStep) {
+        (lastStep.dataTable ??= []).push(cells);
+      }
+      descriptionTarget = null;
       continue;
     }
 
     const step = parseStep(line);
     if (step) {
+      descriptionTarget = null;
+      currentExamples = null;
       if (inBackground) {
         background.push(step);
+        lastStep = step;
         continue;
       }
       if (current) {
         current.steps.push(step);
+        lastStep = step;
         continue;
       }
     }
 
-    // Anything else (descriptions, Examples, tables) is ignored, but a stray tag
-    // block that did not attach to a keyword is discarded.
+    if (step === null && descriptionTarget !== null) {
+      descriptionTarget.push(line);
+      // A scenario's description array is attached on its first line so empty
+      // descriptions never appear in the model (keeps round trips stable).
+      if (current && !current.description && descriptionTarget !== featureDescription) {
+        current.description = descriptionTarget;
+      }
+      continue;
+    }
+
+    // Anything else (Rule:, free text after steps) is ignored, and a stray tag
+    // block that did not attach to a keyword is discarded — both make
+    // roundTripsLosslessly fail, so the Feature Editor falls back to raw text.
     pendingTags = [];
   }
 
@@ -167,9 +255,119 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
     useCaseId: useCaseIdFromPath(path) ?? "",
     featureName,
     tags: featureTags,
+    ...(featureDescription.length > 0 ? { description: featureDescription } : {}),
     ...(background.length > 0 ? { background } : {}),
     scenarios,
   };
+};
+
+/** Appends `| a | b |` rows at `indent`. */
+const pushTable = (
+  lines: string[],
+  rows: ReadonlyArray<readonly string[]>,
+  indent: string,
+): void => {
+  for (const row of rows) lines.push(`${indent}| ${row.join(" | ")} |`);
+};
+
+/** Appends one step line plus its data-table / doc-string arguments. */
+const pushStep = (lines: string[], step: GherkinStep, indent: string): void => {
+  lines.push(`${indent}${step.keyword} ${step.text}`.trimEnd());
+  const inner = `${indent}  `;
+  if (step.dataTable && step.dataTable.length > 0) pushTable(lines, step.dataTable, inner);
+  if (step.docString) {
+    lines.push(`${inner}${step.docString.fence}${step.docString.mediaType ?? ""}`);
+    for (const bodyLine of step.docString.lines) lines.push(`${inner}${bodyLine}`.trimEnd());
+    lines.push(`${inner}${step.docString.fence}`);
+  }
+};
+
+/**
+ * Serialises a {@link FeatureSpecification} back to plain Gherkin (no YAML).
+ * Lives next to {@link parseFeature} because the two form the load-bearing
+ * round-trip invariant the Feature Editor's structured mode depends on.
+ */
+export const serialiseFeature = (specification: FeatureSpecification): string => {
+  const lines: string[] = [];
+  if (specification.tags.length > 0) lines.push(specification.tags.join(" "));
+  lines.push(`Feature: ${specification.featureName}`);
+  for (const text of specification.description ?? []) lines.push(`  ${text}`);
+  if (specification.background && specification.background.length > 0) {
+    lines.push("");
+    lines.push("  Background:");
+    for (const step of specification.background) pushStep(lines, step, "    ");
+  }
+  for (const scenario of specification.scenarios) {
+    lines.push("");
+    if (scenario.tags.length > 0) lines.push(`  ${scenario.tags.join(" ")}`);
+    lines.push(`  ${scenario.keyword ?? "Scenario"}: ${scenario.name}`.trimEnd());
+    for (const text of scenario.description ?? []) lines.push(`    ${text}`);
+    for (const step of scenario.steps) pushStep(lines, step, "    ");
+    for (const block of scenario.examples ?? []) {
+      lines.push("");
+      if (block.tags.length > 0) lines.push(`    ${block.tags.join(" ")}`);
+      lines.push(`    Examples:${block.name ? ` ${block.name}` : ""}`);
+      pushTable(
+        lines,
+        [block.header, ...block.rows].filter((row) => row.length > 0),
+        "      ",
+      );
+    }
+  }
+  return `${lines.join("\n")}\n`;
+};
+
+/**
+ * Trimmed, non-blank lines with canonical table-row and tag-line spacing —
+ * the comparison basis for {@link roundTripsLosslessly}. Indentation and
+ * blank-line placement are serializer-owned; cell padding and tag spacing
+ * are cosmetic.
+ */
+const significantLines = (text: string): string[] =>
+  text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => (line.startsWith("|") ? `| ${parseTableRow(line).join(" | ")} |` : line))
+    .map((line) => (line.startsWith("@") ? line.split(/\s+/).join(" ") : line));
+
+/**
+ * True when the parsed model reproduces every significant line of `content`.
+ * The Feature Editor offers structured mode only then, so constructs the model
+ * does not represent (comments, `Rule:` blocks, stray text) can never be
+ * silently destroyed by a structured edit.
+ */
+export const roundTripsLosslessly = (content: string, path: VaultPath): boolean => {
+  const parsed = parseFeature(content, path);
+  if (parsed === null) return false;
+  const original = significantLines(content);
+  const reserialised = significantLines(serialiseFeature(parsed));
+  return (
+    original.length === reserialised.length &&
+    original.every((line, index) => line === reserialised[index])
+  );
+};
+
+/**
+ * True when `line` survives a parse→serialize round trip as free description
+ * text — i.e. it is not a tag/comment/table/fence/keyword/step line. The
+ * Feature Editor filters description input through this so a typed
+ * "Scenario: x" cannot silently restructure the file on the next parse.
+ */
+export const isPlainDescriptionLine = (line: string): boolean => {
+  const trimmed = line.trim();
+  if (trimmed === "") return false;
+  if (/^[@#|]/.test(trimmed)) return false;
+  if (trimmed.startsWith('"""') || trimmed.startsWith("```")) return false;
+  if (
+    FEATURE_RE.test(trimmed) ||
+    SCENARIO_RE.test(trimmed) ||
+    BACKGROUND_RE.test(trimmed) ||
+    EXAMPLES_RE.test(trimmed)
+  ) {
+    return false;
+  }
+  return parseStep(trimmed) === null;
 };
 
 /** Flattens every step text across a feature's Background + scenarios. */

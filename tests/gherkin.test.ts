@@ -6,6 +6,38 @@ import {
 } from "../src/application/content/gherkin";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
+const RICH = `@uc-001
+Feature: Rich
+  A description line.
+
+  Background:
+    Given a base state
+
+  Scenario: With table and doc string
+    Given a payload:
+      """json
+      {
+        "a": 1
+      }
+      """
+    When I submit:
+      | name | value |
+      | a    | 1     |
+    Then it works
+
+  @outline
+  Scenario Outline: Math
+    Some scenario context.
+    Given <a> plus <b>
+    Then the result is <sum>
+
+    @set-1
+    Examples: small numbers
+      | a | b | sum |
+      | 1 | 2 | 3   |
+      | 2 | 3 | 5   |
+`;
+
 const FEATURE = `@demo @smoke
 Feature: Open Example Page
   As a new user
@@ -156,5 +188,55 @@ describe("parseFeature", () => {
     expect(feature).not.toBeNull();
     if (!feature) return;
     expect(collectStepTexts(feature)).toEqual(["a payload:", "it is accepted"]);
+  });
+});
+
+describe("parseFeature (extended Gherkin)", () => {
+  const feature = parseFeature(RICH, vp("Specifications/features/UC-001-rich.feature"));
+
+  it("captures feature and scenario descriptions", () => {
+    expect(feature?.description).toEqual(["A description line."]);
+    expect(feature?.scenarios[1].description).toEqual(["Some scenario context."]);
+    expect(feature?.scenarios[0].description).toBeUndefined();
+  });
+
+  it("captures the Scenario Outline keyword and its Examples blocks", () => {
+    expect(feature?.scenarios[0].keyword).toBeUndefined();
+    expect(feature?.scenarios[1].keyword).toBe("Scenario Outline");
+    expect(feature?.scenarios[1].examples).toEqual([
+      {
+        tags: ["@set-1"],
+        name: "small numbers",
+        header: ["a", "b", "sum"],
+        rows: [
+          ["1", "2", "3"],
+          ["2", "3", "5"],
+        ],
+      },
+    ]);
+  });
+
+  it("attaches a data table to the preceding step", () => {
+    const when = feature?.scenarios[0].steps[1];
+    expect(when?.dataTable).toEqual([
+      ["name", "value"],
+      ["a", "1"],
+    ]);
+  });
+
+  it("attaches a doc string (with media type, dedented) to the preceding step", () => {
+    const given = feature?.scenarios[0].steps[0];
+    expect(given?.docString).toEqual({
+      fence: '"""',
+      mediaType: "json",
+      lines: ["{", '  "a": 1', "}"],
+    });
+  });
+
+  it("keeps Examples rows out of the scenario steps", () => {
+    expect(feature?.scenarios[1].steps).toEqual([
+      { keyword: "Given", text: "<a> plus <b>" },
+      { keyword: "Then", text: "the result is <sum>" },
+    ]);
   });
 });
