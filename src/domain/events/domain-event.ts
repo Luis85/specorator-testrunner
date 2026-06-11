@@ -138,7 +138,13 @@ export interface EventPayloads {
   "suite.executed": { suiteId: string; runId: string };
 
   // test execution (§7)
-  "testrun.requested": { scope: "use-case" | "feature" | "suite" | "all"; target: string };
+  "testrun.requested": {
+    /** "demo" identifies the shipped Demo Test launch — a user suite whose id
+     * slugifies to "demo" still publishes scope "suite", so the two are
+     * distinguishable on the bus (PR #31 Codex review). */
+    scope: "use-case" | "feature" | "suite" | "all" | "demo";
+    target: string;
+  };
   "testrun.started": { runId: string; command: string; workingDirectory: string };
   "testrun.output.received": { runId: string; stream: "stdout" | "stderr"; line: string };
   "testrun.completed": {

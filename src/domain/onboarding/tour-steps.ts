@@ -248,7 +248,9 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       rules: [
         {
           type: "testrun.requested",
-          matches: (payload) => record(payload)?.target === "demo",
+          // scope (not target) is the discriminator: a user suite whose id
+          // slugifies to "demo" publishes scope "suite" (PR #31 Codex review).
+          matches: (payload) => record(payload)?.scope === "demo",
         },
         {
           type: "testrun.started",

@@ -76,8 +76,10 @@ describe("completion predicates", () => {
   it("run-demo sequence: demo requested, run started, THAT run passes", () => {
     const [requested, started, passed] = sequenceRules("run-demo");
     // Only the demo request anchors the sequence — an arbitrary green run
-    // must not settle the step (PR #31 Codex review).
-    expect(requested.matches({ scope: "suite", target: "demo" }, ctx)).toBe(true);
+    // must not settle the step, and a user suite whose id slugifies to "demo"
+    // publishes scope "suite", not "demo" (PR #31 Codex review).
+    expect(requested.matches({ scope: "demo", target: "demo" }, ctx)).toBe(true);
+    expect(requested.matches({ scope: "suite", target: "demo" }, ctx)).toBe(false);
     expect(requested.matches({ scope: "suite", target: "smoke" }, ctx)).toBe(false);
     expect(requested.matches({ scope: "all", target: "all" }, ctx)).toBe(false);
     expect(started.matches({ runId: "RUN-1", command: "npm run test" }, ctx)).toBe(true);

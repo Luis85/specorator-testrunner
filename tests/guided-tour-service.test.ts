@@ -280,8 +280,12 @@ describe("DefaultGuidedTourService", () => {
       }),
     );
     expect(status(service, "run-demo")).not.toBe("done");
-    // The demo flow: requested(target demo) → started → THAT run passes.
+    // The demo flow: requested(scope demo) → started → THAT run passes. A
+    // user suite that slugified to "demo" publishes scope "suite" instead and
+    // must not anchor the sequence.
     await bus.publish(createEvent("testrun.requested", { scope: "suite", target: "demo" }));
+    expect(status(service, "run-demo")).not.toBe("done");
+    await bus.publish(createEvent("testrun.requested", { scope: "demo", target: "demo" }));
     await bus.publish(
       createEvent("testrun.started", {
         runId: "RUN-DEMO",

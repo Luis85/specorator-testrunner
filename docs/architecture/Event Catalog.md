@@ -273,10 +273,15 @@ Emitted only at the end of a `Run Suite` (UC-013) flow, after the runner exits. 
 
 ```ts
 {
-  scope: "use-case" | "feature" | "suite" | "all";
+  scope: "use-case" | "feature" | "suite" | "all" | "demo";
   target: string;                          // id or path of the scoped entity
 }
 ```
+
+`scope: "demo"` identifies the shipped Demo Test launch (the smoke run over
+demo content). It is published verbatim — a user Test Suite whose id happens
+to slugify to `demo` still publishes `scope: "suite"`, so the two remain
+distinguishable on the bus (the Guided Tour's first step depends on this).
 
 ### `testrun.started`
 
