@@ -113,6 +113,41 @@ const isTourSuiteCreation = (payload: unknown, ctx: TourEventContext): boolean =
 };
 
 /**
+ * A successful validation of the authored Feature: valid, non-demo, tagged
+ * @tour. Requiring @tour (not just valid) closes the loophole Codex flagged
+ * on PR #31 — the generated scaffold validates clean, but only the AUTHORED
+ * scenario carries the tag this step teaches.
+ */
+const isTourFeatureValidation = (payload: unknown, ctx: TourEventContext): boolean => {
+  const p = record(payload);
+  return (
+    p?.valid === true &&
+    typeof p.featurePath === "string" &&
+    !p.featurePath.endsWith(ctx.demoFeatureFileName) &&
+    Array.isArray(p.tags) &&
+    p.tags.includes("@tour")
+  );
+};
+
+/** Captures a payload's featurePath (the correlation key of steps 4–6). */
+const captureFeaturePath = (payload: unknown): string | undefined => {
+  const value = record(payload)?.featurePath;
+  return typeof value === "string" ? value : undefined;
+};
+
+/**
+ * Anchor rule of the feature-scoped sequences (steps 5 and 6): the @tour
+ * Feature's validation, capturing its path so later detection/generation
+ * events for OTHER feature files cannot advance the tour (PR #31 Codex
+ * review). Shared, pure, stateless — safe to reference from several steps.
+ */
+const tourFeatureValidated: TourEventRule = {
+  type: "specification.validation.completed",
+  matches: isTourFeatureValidation,
+  capture: captureFeaturePath,
+};
+
+/**
  * The scenario the user authors in step 4. The three greeting steps are NEW —
  * they deliberately do not collide with the shipped `example.steps.ts`
  * patterns (that file is user-owned, `overwrite: false`, and duplicate
@@ -222,19 +257,7 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       kind: "event",
       rule: {
         type: "specification.validation.completed",
-        // Requiring @tour (not just valid) closes the loophole Codex flagged
-        // on PR #31: the generated scaffold validates clean, but only the
-        // AUTHORED scenario carries the @tour tag this step teaches.
-        matches: (payload, ctx) => {
-          const p = record(payload);
-          return (
-            p?.valid === true &&
-            typeof p.featurePath === "string" &&
-            !p.featurePath.endsWith(ctx.demoFeatureFileName) &&
-            Array.isArray(p.tags) &&
-            p.tags.includes("@tour")
-          );
-        },
+        matches: isTourFeatureValidation,
       },
     },
     skippable: false,
@@ -254,14 +277,25 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       "so it should find them.",
     action: { id: "open-use-cases", label: "Open Use Cases" },
     completion: {
-      kind: "event",
-      rule: {
-        type: "specification.missingSteps.detected",
-        matches: (payload) => {
-          const p = record(payload);
-          return Array.isArray(p?.missingSteps) && p.missingSteps.length > 0;
+      // Anchored on the @tour Feature's validation (PR #31 Codex review):
+      // detecting missing steps on some OTHER feature file must not advance
+      // the tour past the step it teaches.
+      kind: "event-sequence",
+      rules: [
+        tourFeatureValidated,
+        {
+          type: "specification.missingSteps.detected",
+          matches: (payload, _ctx, captured) => {
+            const p = record(payload);
+            return (
+              Array.isArray(p?.missingSteps) &&
+              p.missingSteps.length > 0 &&
+              captured !== undefined &&
+              p.featurePath === captured
+            );
+          },
         },
-      },
+      ],
     },
     skippable: true,
   },
@@ -276,19 +310,28 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
     action: { id: "open-use-cases", label: "Open Use Cases" },
     snippets: [{ title: "Step implementation", language: "typescript", code: TOUR_STEPS_SNIPPET }],
     completion: {
+      // Anchored on the @tour Feature's validation, then ITS stub generation,
+      // then ITS zero-missing detection — generation/detection on another
+      // feature file cannot advance the tour (PR #31 Codex review).
       kind: "event-sequence",
       rules: [
+        tourFeatureValidated,
         {
           type: "stepdefinition.generated",
-          matches: (payload) => typeof record(payload)?.featurePath === "string",
-          capture: (payload) => {
-            const value = record(payload)?.featurePath;
-            return typeof value === "string" ? value : undefined;
+          matches: (payload, _ctx, captured) => {
+            const p = record(payload);
+            return (
+              typeof p?.featurePath === "string" &&
+              captured !== undefined &&
+              p.featurePath === captured
+            );
           },
+          // Re-capture the same path so the final rule keys on it too.
+          capture: captureFeaturePath,
         },
         {
           type: "specification.missingSteps.detected",
-          // No captured-undefined wildcard: the previous rule guarantees the
+          // No captured-undefined wildcard: the previous rules guarantee the
           // featurePath capture, so the zero-missing detection must be for
           // exactly the feature whose steps were generated.
           matches: (payload, _ctx, captured) => {

@@ -135,15 +135,46 @@ describe("completion predicates", () => {
     ).toBe(false);
   });
 
-  it("detect-missing-steps wants at least one missing step", () => {
-    const rule = eventRule("detect-missing-steps");
-    expect(rule.matches({ missingSteps: ["When I submit the greeting"] }, ctx)).toBe(true);
-    expect(rule.matches({ missingSteps: [] }, ctx)).toBe(false);
+  it("detect-missing-steps sequence: the @tour feature validated, then ITS missing steps", () => {
+    const [validated, missing] = sequenceRules("detect-missing-steps");
+    expect(validated.matches({ featurePath: "f.feature", valid: true, tags: ["@tour"] }, ctx)).toBe(
+      true,
+    );
+    expect(validated.capture?.({ featurePath: "f.feature" })).toBe("f.feature");
+    expect(
+      missing.matches(
+        { featurePath: "f.feature", missingSteps: ["When I submit the greeting"] },
+        ctx,
+        "f.feature",
+      ),
+    ).toBe(true);
+    expect(missing.matches({ featurePath: "f.feature", missingSteps: [] }, ctx, "f.feature")).toBe(
+      false,
+    );
+    // A detection on some OTHER feature file must not advance the tour
+    // (PR #31 Codex review), and a missing capture must stall, never widen.
+    expect(
+      missing.matches({ featurePath: "other.feature", missingSteps: ["x"] }, ctx, "f.feature"),
+    ).toBe(false);
+    expect(missing.matches({ featurePath: "f.feature", missingSteps: ["x"] }, ctx, undefined)).toBe(
+      false,
+    );
   });
 
-  it("implement-steps sequence: generated, then zero missing on the same feature", () => {
-    const [generated, zero] = sequenceRules("implement-steps");
-    expect(generated.matches({ featurePath: "f.feature", stepFile: "s.ts" }, ctx)).toBe(true);
+  it("implement-steps sequence: @tour validated, ITS stubs generated, then ITS zero missing", () => {
+    const [validated, generated, zero] = sequenceRules("implement-steps");
+    expect(validated.matches({ featurePath: "f.feature", valid: true, tags: ["@tour"] }, ctx)).toBe(
+      true,
+    );
+    expect(
+      generated.matches({ featurePath: "f.feature", stepFile: "s.ts" }, ctx, "f.feature"),
+    ).toBe(true);
+    expect(
+      generated.matches({ featurePath: "other.feature", stepFile: "s.ts" }, ctx, "f.feature"),
+    ).toBe(false);
+    expect(generated.matches({ featurePath: "f.feature", stepFile: "s.ts" }, ctx, undefined)).toBe(
+      false,
+    );
     expect(generated.capture?.({ featurePath: "f.feature" })).toBe("f.feature");
     expect(zero.matches({ featurePath: "f.feature", missingSteps: [] }, ctx, "f.feature")).toBe(
       true,

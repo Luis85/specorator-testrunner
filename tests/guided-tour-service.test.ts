@@ -74,11 +74,35 @@ describe("DefaultGuidedTourService", () => {
     expect(status(service, "create-suite")).toBe("pending");
   });
 
-  it("completes implement-steps only after generated THEN zero-missing", async () => {
+  it("completes implement-steps only after @tour-validated THEN generated THEN zero-missing", async () => {
     const { bus, service } = harness();
     await bus.publish(
       createEvent("specification.missingSteps.detected", {
         featurePath: "f.feature",
+        missingSteps: [],
+      }),
+    );
+    expect(status(service, "implement-steps")).not.toBe("done");
+    // Anchor: the @tour Feature's validation (completes author-gherkin too).
+    await bus.publish(
+      createEvent("specification.validation.completed", {
+        featurePath: "f.feature",
+        valid: true,
+        errors: [],
+        tags: ["@tour"],
+      }),
+    );
+    // Generation/detection on ANOTHER feature file must not advance the tour.
+    await bus.publish(
+      createEvent("stepdefinition.generated", {
+        featurePath: "other.feature",
+        stepFile: "o.ts",
+        generatedSteps: ["x"],
+      }),
+    );
+    await bus.publish(
+      createEvent("specification.missingSteps.detected", {
+        featurePath: "other.feature",
         missingSteps: [],
       }),
     );
