@@ -343,7 +343,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     button.onClick(() => {
       if (!armed) {
         armed = true;
-        button.setWarning().setButtonText("Remove — click again to confirm");
+        button.setDestructive().setButtonText("Remove — click again to confirm");
         window.clearTimeout(disarmTimer);
         disarmTimer = window.setTimeout(() => {
           armed = false;
@@ -516,7 +516,7 @@ export class TestHubSettingTab extends PluginSettingTab {
    * is warning-styled from the start — reset is always destructive.
    */
   private wireResetButton(button: ButtonComponent): void {
-    button.setButtonText("Reset").setWarning();
+    button.setButtonText("Reset").setDestructive();
     let armed = false;
     let disarmTimer = 0;
     button.onClick(() => {

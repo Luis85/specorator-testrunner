@@ -2,7 +2,7 @@
   "id": "e2e-test-hub",
   "name": "E2E Test Hub",
   "version": "0.0.1",
-  "minAppVersion": "1.8.0",
+  "minAppVersion": "1.13.0",
   "description": "Define, manage, execute, and document end-to-end tests directly inside your vault.",
   "author": "Luis85",
   "authorUrl": "https://github.com/Luis85",
