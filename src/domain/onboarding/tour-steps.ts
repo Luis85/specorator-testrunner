@@ -195,17 +195,23 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       kind: "event",
       rule: {
         type: "specification.validation.completed",
+        // Requiring @tour (not just valid) closes the loophole Codex flagged
+        // on PR #31: the generated scaffold validates clean, but only the
+        // AUTHORED scenario carries the @tour tag this step teaches.
         matches: (payload, ctx) => {
           const p = record(payload);
           return (
             p?.valid === true &&
             typeof p.featurePath === "string" &&
-            !p.featurePath.endsWith(ctx.demoFeatureFileName)
+            !p.featurePath.endsWith(ctx.demoFeatureFileName) &&
+            Array.isArray(p.tags) &&
+            p.tags.includes("@tour")
           );
         },
       },
     },
     skippable: false,
+    hint: "This step completes when validation sees a valid Feature tagged @tour.",
   },
   {
     id: "detect-missing-steps",
@@ -233,7 +239,8 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
     teach:
       "Generate Step Definitions writes a TypeScript scaffold for the missing steps into the " +
       "runner's src/steps/ folder. Open that file, replace the stubs with the implementation " +
-      "below, then run Detect Missing Steps again — zero missing completes this step.",
+      "below, then run Detect Missing Steps again. Zero missing completes this step — that " +
+      "means every step is now defined; your run in the later step proves the implementation.",
     action: { id: "open-use-cases", label: "Open Use Cases" },
     snippets: [{ title: "Step implementation", language: "typescript", code: TOUR_STEPS_SNIPPET }],
     completion: {
@@ -331,7 +338,9 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
     },
     skippable: false,
     requiresCompleted: ["create-suite"],
-    hint: "If the run fails with undefined steps, finish the step-definition step above first.",
+    hint:
+      "If the run fails with pending or undefined steps, finish the step-definition step " +
+      "above — generated stubs stay 'Pending' until you paste the implementation.",
   },
   {
     id: "review-evidence",

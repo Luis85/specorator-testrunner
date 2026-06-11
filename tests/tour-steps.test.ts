@@ -87,23 +87,49 @@ describe("completion predicates", () => {
     expect(rule.matches({}, ctx)).toBe(false);
   });
 
-  it("author-gherkin requires a valid, non-demo feature", () => {
+  it("author-gherkin requires a valid, non-demo feature tagged @tour", () => {
     const rule = eventRule("author-gherkin");
     expect(
       rule.matches(
-        { featurePath: "Specifications/features/UC-002-greet.feature", valid: true },
+        {
+          featurePath: "Specifications/features/UC-002-greet.feature",
+          valid: true,
+          tags: ["@tour"],
+        },
         ctx,
       ),
     ).toBe(true);
     expect(
       rule.matches(
-        { featurePath: "Specifications/features/UC-001-open-example-page.feature", valid: true },
+        {
+          featurePath: "Specifications/features/UC-001-open-example-page.feature",
+          valid: true,
+          tags: ["@tour"],
+        },
         ctx,
       ),
     ).toBe(false);
     expect(
       rule.matches(
-        { featurePath: "Specifications/features/UC-002-greet.feature", valid: false },
+        {
+          featurePath: "Specifications/features/UC-002-greet.feature",
+          valid: false,
+          tags: ["@tour"],
+        },
+        ctx,
+      ),
+    ).toBe(false);
+    // The unedited scaffold validates clean but carries no @tour tag — it must
+    // NOT complete the authoring step (PR #31 Codex review).
+    expect(
+      rule.matches(
+        { featurePath: "Specifications/features/UC-002-greet.feature", valid: true, tags: [] },
+        ctx,
+      ),
+    ).toBe(false);
+    expect(
+      rule.matches(
+        { featurePath: "Specifications/features/UC-002-greet.feature", valid: true },
         ctx,
       ),
     ).toBe(false);

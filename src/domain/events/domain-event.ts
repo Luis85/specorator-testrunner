@@ -116,7 +116,14 @@ export interface EventPayloads {
   "specification.created": { useCaseId: string; featurePath: string };
   "specification.updated": { featurePath: string; scenarioCount: number; tags: string[] };
   "specification.linkedToUseCase": { useCaseId: string; featurePath: string };
-  "specification.validation.completed": { featurePath: string; valid: boolean; errors: string[] };
+  "specification.validation.completed": {
+    featurePath: string;
+    valid: boolean;
+    errors: string[];
+    /** The Feature's tags when parseable (empty otherwise), so observers —
+     * e.g. the Guided Tour's authoring step — can react to tagging. */
+    tags: string[];
+  };
   "specification.missingSteps.detected": { featurePath: string; missingSteps: string[] };
   "stepdefinition.generated": {
     featurePath: string;

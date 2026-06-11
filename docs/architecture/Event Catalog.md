@@ -190,8 +190,13 @@ export interface DomainEvent<TPayload = unknown> {
   featurePath: string;
   valid: boolean;
   errors: string[];
+  tags: string[]; // the Feature's tags when parseable (empty otherwise)
 }
 ```
+
+`tags` lets observers react to tagging without re-reading the file — e.g. the
+Guided Tour's authoring step requires `@tour` so the unedited scaffold (valid
+but untagged) does not complete it.
 
 ### `specification.missingSteps.detected`
 
