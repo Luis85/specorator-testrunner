@@ -42,6 +42,15 @@ export const projectValidation = (specification: FeatureSpecification): Validati
   if (specification.scenarios.length === 0) {
     items.push({ level: "error", message: "Feature has no scenarios." });
   }
+  for (const step of specification.background ?? []) {
+    if (step.dataTable && step.docString) {
+      items.push({
+        level: "error",
+        message:
+          'A step in "Background" has both a data table and a text block (Gherkin allows one argument).',
+      });
+    }
+  }
   for (const scenario of specification.scenarios) {
     const label = scenario.name.trim() === "" ? "(unnamed)" : scenario.name;
     if (scenario.name.trim() === "") {
@@ -56,6 +65,14 @@ export const projectValidation = (specification: FeatureSpecification): Validati
         items.push({
           level: "warning",
           message: `Scenario Outline "${label}" has no Examples rows.`,
+        });
+      }
+    }
+    for (const step of scenario.steps) {
+      if (step.dataTable && step.docString) {
+        items.push({
+          level: "error",
+          message: `A step in "${label}" has both a data table and a text block (Gherkin allows one argument).`,
         });
       }
     }

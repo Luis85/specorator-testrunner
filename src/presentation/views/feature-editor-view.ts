@@ -536,7 +536,10 @@ export class FeatureEditorView extends TextFileView {
         delete step.dataTable;
         this.commit(true);
       });
-    } else {
+      // A Gherkin step carries at most ONE argument: each add button renders
+      // only while the step has neither, so the editor cannot produce a
+      // table + doc string combination Cucumber would refuse to parse.
+    } else if (!step.docString) {
       const addTable = extras.createEl("button", { text: "+ Data table" });
       addTable.addEventListener("click", () => {
         step.dataTable = [["value"]];
@@ -564,7 +567,7 @@ export class FeatureEditorView extends TextFileView {
         delete step.docString;
         this.commit(true);
       });
-    } else {
+    } else if (!step.dataTable) {
       const addDoc = extras.createEl("button", { text: "+ Text block" });
       addDoc.addEventListener("click", () => {
         step.docString = { fence: '"""', lines: [""] };

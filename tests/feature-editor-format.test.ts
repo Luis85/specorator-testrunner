@@ -55,6 +55,36 @@ describe("projectValidation", () => {
       'warning:Scenario Outline "O" has no Examples rows.',
     ]);
   });
+
+  it("flags a step carrying both a data table and a text block", () => {
+    const items = projectValidation({
+      path: vp("Specifications/features/UC-001-both.feature"),
+      useCaseId: "UC-001",
+      featureName: "F",
+      tags: [],
+      scenarios: [
+        {
+          name: "S",
+          tags: [],
+          steps: [
+            {
+              keyword: "Given",
+              text: "x",
+              dataTable: [["a"]],
+              docString: { fence: '"""', lines: ["body"] },
+            },
+          ],
+        },
+      ],
+    });
+    expect(items).toEqual([
+      {
+        level: "error",
+        message:
+          'A step in "S" has both a data table and a text block (Gherkin allows one argument).',
+      },
+    ]);
+  });
 });
 
 describe("guided keyword flow", () => {
