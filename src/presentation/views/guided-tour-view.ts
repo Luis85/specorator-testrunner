@@ -128,8 +128,11 @@ export class GuidedTourView extends ItemView {
         attr: { "aria-label": `Copy the ${snippet.title} snippet` },
       });
       copy.addEventListener("click", () => {
-        void navigator.clipboard
-          .writeText(snippet.code)
+        // Promise.resolve().then keeps a synchronously-missing clipboard API
+        // (no navigator.clipboard) on the SAME failure path as a rejected
+        // write, so the user always gets the manual-selection fallback notice.
+        void Promise.resolve()
+          .then(() => navigator.clipboard.writeText(snippet.code))
           .then(() => new Notice("Copied to clipboard."))
           .catch(() => new Notice("Could not copy — select the snippet text manually.", 10000));
       });
