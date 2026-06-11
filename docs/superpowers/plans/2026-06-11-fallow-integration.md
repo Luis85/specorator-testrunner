@@ -37,4 +37,4 @@
 ### Task 4: ship
 
 - [x] `npm run lint && npm run format:check && npm run typecheck && npm test` + `npm run quality:audit`
-- [ ] Push `claude/fallow-agentic-integration-tqux2g`, open PR
+- [x] Push `claude/fallow-agentic-integration-tqux2g`, open PR — https://github.com/Luis85/specorator-testrunner/pull/32
