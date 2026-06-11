@@ -49,6 +49,9 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async createFolder(path: VaultPath): Promise<Result<void>> {
+    if (this.failOn && this.failOn.path === path) {
+      return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
+    }
     this.folders.add(path);
     return ok(undefined);
   }
@@ -75,16 +78,6 @@ export class FakeVaultFileSystem implements VaultFileSystem {
       return { ok: false, error: { code: "RUNNER_MISSING_FILE", message: `missing ${path}` } };
     }
     return ok(content);
-  }
-
-  async listFiles(path: VaultPath): Promise<Result<VaultPath[]>> {
-    // Immediate children only, mirroring the Obsidian adapter (non-recursive).
-    const prefix = `${path}/`;
-    return ok(
-      [...this.files.keys()]
-        .filter((p) => p.startsWith(prefix) && !p.slice(prefix.length).includes("/"))
-        .map(unsafeVaultPath),
-    );
   }
 
   async listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>> {
@@ -132,8 +125,9 @@ export class FakeDataStore implements DataStore {
     return this.data;
   }
 
-  async save(data: unknown): Promise<void> {
+  async save(data: unknown): Promise<Result<void>> {
     this.data = data;
+    return ok(undefined);
   }
 }
 

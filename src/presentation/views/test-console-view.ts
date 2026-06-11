@@ -11,7 +11,6 @@ import {
   formatElapsed,
   formatOutputLine,
   formatStatusBanner,
-  statusModifier,
   summaryHint,
 } from "./test-console-format";
 
@@ -62,6 +61,12 @@ export interface TestConsoleDeps {
   eventBus: EventBus;
   runLauncher: Pick<RunLauncher, "launch" | "cancel">;
   activeRunId(): RunId | null;
+  /**
+   * ISO start time of the active run (null when idle), so a console opened
+   * MID-run seeds its elapsed timer from the real start, not from the moment
+   * the view opened (C6).
+   */
+  activeRunStartedAt(): string | null;
   lastRun(): TestRun | null;
   // Wave G §1: synchronous probe for the last generated evidence note (wired in
   // main.ts to PostRunCoordinator.lastEvidence). The bus does not replay, so a
@@ -192,9 +197,14 @@ export class TestConsoleView extends ItemView {
 
     // A run may already be in flight when the console is opened from the
     // palette/ribbon mid-run: reflect that immediately rather than waiting for
-    // the next event (which already fired and the bus does not replay).
+    // the next event (which already fired and the bus does not replay). The
+    // elapsed timer seeds from the run's REAL start time, and the banner shows
+    // "running" — `testrun.started` fired before this view existed (C6/UX7).
     if (this.deps.activeRunId() !== null) {
-      this.runStartMs ??= Date.now();
+      const startedAt = this.deps.activeRunStartedAt();
+      const startedMs = startedAt !== null ? new Date(startedAt).getTime() : NaN;
+      this.runStartMs ??= Number.isNaN(startedMs) ? Date.now() : startedMs;
+      this.setBanner("running");
       this.startTimer();
     }
     this.refreshControls();
@@ -373,7 +383,7 @@ export class TestConsoleView extends ItemView {
     if (hint !== null) {
       this.banner.createDiv({ cls: "e2e-test-hub-console-banner-hint", text: hint });
     }
-    this.banner.dataset.status = statusModifier(status);
+    this.banner.dataset.status = status;
   }
 
   /**
@@ -389,14 +399,14 @@ export class TestConsoleView extends ItemView {
     const last = this.deps.lastRun();
 
     this.cancelButton.disabled = !active;
-    this.cancelButton.setAttr(
-      "aria-label",
+    this.labelControl(
+      this.cancelButton,
       active ? "Cancel the active Test Run" : "No Test Run is in progress to cancel",
     );
 
     this.rerunButton.disabled = active || last === null;
-    this.rerunButton.setAttr(
-      "aria-label",
+    this.labelControl(
+      this.rerunButton,
       active
         ? "A Test Run is in progress; re-run is available once it finishes"
         : last === null
@@ -408,14 +418,24 @@ export class TestConsoleView extends ItemView {
     // note exists. The disabled reason stays spoken via the aria-label.
     const hasEvidence = this.evidencePathForLastRun !== null;
     this.evidenceButton.disabled = !hasEvidence;
-    this.evidenceButton.setAttr(
-      "aria-label",
+    this.labelControl(
+      this.evidenceButton,
       hasEvidence
         ? "Open the evidence note for the last Test Run"
         : "No evidence for the last run yet",
     );
 
     this.renderMeta(active, last);
+  }
+
+  /**
+   * Sets a control's reason text as BOTH aria-label and visible tooltip — a
+   * disabled button whose explanation lives only in the aria-label tells
+   * sighted users nothing (C13).
+   */
+  private labelControl(button: HTMLButtonElement, label: string): void {
+    button.setAttr("aria-label", label);
+    button.setAttr("title", label);
   }
 
   /**
@@ -436,7 +456,7 @@ export class TestConsoleView extends ItemView {
       this.meta.setText(
         `Last run: ${scopeLabel(last.scope, last.target)} — ${last.status} (${formatWhen(when)})`,
       );
-      this.meta.dataset.status = statusModifier(last.status);
+      this.meta.dataset.status = last.status;
       return;
     }
     this.meta.setText(

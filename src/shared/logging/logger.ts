@@ -29,7 +29,10 @@ const REDACTED = "***";
 /**
  * Replaces values whose key looks sensitive, or that match a known secret. The
  * value-based scrubbing shares {@link redactSecrets} with the live console
- * stream so both enforce identical ADR-0019 semantics.
+ * stream so both enforce identical ADR-0019 semantics. Recurses into plain
+ * objects and arrays so a secret nested in `Error.message`/`stack` or
+ * `AppError.details` (the `error` field built by {@link ConsoleLogger.error})
+ * cannot bypass the scrub.
  */
 export const redactFields = (
   fields: Record<string, unknown> | undefined,
@@ -40,13 +43,20 @@ export const redactFields = (
   for (const [key, value] of Object.entries(fields)) {
     if (SENSITIVE_KEY.test(key)) {
       out[key] = REDACTED;
-    } else if (typeof value === "string") {
-      out[key] = redactSecrets(value, secrets);
     } else {
-      out[key] = value;
+      out[key] = redactValue(value, secrets);
     }
   }
   return out;
+};
+
+const redactValue = (value: unknown, secrets: ReadonlySet<string>): unknown => {
+  if (typeof value === "string") return redactSecrets(value, secrets);
+  if (Array.isArray(value)) return value.map((item) => redactValue(item, secrets));
+  if (value !== null && typeof value === "object" && value.constructor === Object) {
+    return redactFields(value as Record<string, unknown>, secrets);
+  }
+  return value;
 };
 
 /**
@@ -56,13 +66,25 @@ export const redactFields = (
  */
 export class ConsoleLogger implements Logger {
   private secrets: ReadonlySet<string>;
+  private minLevel: LogLevel;
 
   constructor(
-    private readonly minLevel: LogLevel = "info",
+    minLevel: LogLevel = "info",
     secrets: ReadonlySet<string> = new Set(),
     private readonly prefix = "[e2e-test-hub]",
   ) {
+    this.minLevel = minLevel;
     this.secrets = secrets;
+  }
+
+  /**
+   * Adjusts the level filter in place. Exists so the composition root can keep
+   * ONE logger instance for every service — rebuilding the logger after
+   * settings load would strand earlier-constructed services on a stale
+   * instance that never receives {@link setSecrets} refreshes (F3).
+   */
+  setMinLevel(level: LogLevel): void {
+    this.minLevel = level;
   }
 
   /**
@@ -88,7 +110,7 @@ export class ConsoleLogger implements Logger {
   }
 
   error(msg: string, error?: Error | AppError, fields?: Record<string, unknown>): void {
-    this.emit("error", msg, { ...fields, error: this.describeError(error) });
+    this.emit("error", msg, error ? { ...fields, error: this.describeError(error) } : fields);
   }
 
   private describeError(error?: Error | AppError): unknown {
@@ -100,7 +122,9 @@ export class ConsoleLogger implements Logger {
   private emit(level: LogLevel, msg: string, fields?: Record<string, unknown>): void {
     if (LEVEL_ORDER[level] < LEVEL_ORDER[this.minLevel]) return;
     const redacted = redactFields(fields, this.secrets);
-    const line = `${this.prefix} ${msg}`;
+    // The message is scrubbed too — call sites interpolate config values
+    // (e.g. a baseUrl that can embed `user:pass@host`) into message text.
+    const line = `${this.prefix} ${redactSecrets(msg, this.secrets)}`;
     const sink = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
     if (redacted && Object.keys(redacted).length > 0) sink(line, redacted);
     else sink(line);

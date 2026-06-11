@@ -505,7 +505,7 @@ describe("DefaultTestExecutionService", () => {
           ...current.sut.environments,
           demo: {
             ...current.sut.environments.demo,
-            auth: { kind: "env", env: { E2E_TOKEN: "super-secret-token" } },
+            auth: { env: { E2E_TOKEN: "super-secret-token" } },
           },
         },
       },
@@ -635,5 +635,71 @@ describe("DefaultTestExecutionService", () => {
     const { service } = build();
     const result = await service.execute({ scope: "suite", target: "missing" });
     expect(result.ok).toBe(false);
+  });
+
+  it("a cancel that loses the race to completion does not relabel the finished run (A1)", async () => {
+    const { service, childProcess, types } = build();
+    childProcess.pending = true;
+
+    const running = service.execute({ scope: "demo", target: "demo" });
+    await waitForActive(service);
+
+    // Simulate the SIGTERM arriving as the child closes on its own: the
+    // adapter cancel releases the gate and only RETURNS once execute() has
+    // fully settled — so the run completed inside cancel's await window.
+    const adapterCancel = childProcess.cancel.bind(childProcess);
+    childProcess.cancel = async (processId: string) => {
+      const result = await adapterCancel(processId);
+      await running;
+      return result;
+    };
+
+    const cancelled = await service.cancel("RUN-2026-06-01-100000");
+
+    // The run finished first: cancel reports "nothing to cancel" instead of
+    // mutating the completed run, and the bus saw exactly one terminal event.
+    expect(cancelled.ok).toBe(false);
+    expect(service.lastRun()?.status).toBe("passed");
+    const terminals = types().filter((t) =>
+      ["testrun.completed", "testrun.failed", "testrun.cancelled"].includes(t),
+    );
+    expect(terminals).toEqual(["testrun.completed"]);
+  });
+
+  it("a non-Result throw mid-run still publishes a terminal testrun.failed (A2)", async () => {
+    // A settings dependency whose load() REJECTS — the class of fault
+    // (adapter bug, corrupted store) that previously escaped the try/finally
+    // with no terminal event, leaving the console "running" forever.
+    const fs = new FakeVaultFileSystem();
+    const { bus, types } = recordingEventBus();
+    const settings = new DefaultSettingsService(
+      new FakeDataStore(),
+      new DefaultPathSafetyPolicy(),
+      bus,
+    );
+    const brokenSettings = {
+      ...settings,
+      load: () => Promise.reject(new Error("data store exploded")),
+    } as unknown as DefaultSettingsService;
+    const broken = new DefaultTestExecutionService(
+      brokenSettings,
+      new DefaultSuiteService(settings, fs, bus),
+      new DefaultUseCaseService(settings, fs, bus, silentLogger),
+      new FakeChildProcessRunner(),
+      new FakeAbsoluteFileSystem(),
+      new DefaultCommandSafetyPolicy(),
+      bus,
+      silentLogger,
+      () => FIXED_NOW,
+    );
+
+    const result = await broken.execute({ scope: "all", target: "all" });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("data store exploded");
+    expect(types()).toContain("testrun.failed");
+    // The slot is freed, so the service is not wedged for the session.
+    expect(broken.activeRunId()).toBeNull();
+    expect(broken.lastRun()?.status).toBe("errored");
   });
 });

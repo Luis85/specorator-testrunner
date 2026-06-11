@@ -142,21 +142,29 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // state, the run-status eligibility rule, and the serializing evidence chain
   // that used to live here.
   private postRunCoordinator!: PostRunCoordinator;
+  // Every NodeChildProcessRunner built by this composition root, so onunload
+  // can issue best-effort kill signals to ANY still-running child — including
+  // an in-flight `npm install` on the shared runner, which no command path can
+  // reach once the plugin is gone (A6).
+  private readonly processRunners: NodeChildProcessRunner[] = [];
 
   async onload(): Promise<void> {
     const eventBus = new InMemoryEventBus((error) =>
       this.logger?.error("Event handler failed", error as Error),
     );
     const pathSafety = new DefaultPathSafetyPolicy();
-    const dataStore = new ObsidianDataStore(this);
 
     // The logger is built first so SettingsService.load() can report a tampered
     // path (P0-1) and so it exists before any settings/secrets are known. Its
     // value-based redaction set (ADR-0019) is populated from the loaded SUT
     // credentials immediately after load and refreshed on every settings change
-    // (P0-2). Reconstructed once the persisted log level is known.
+    // (P0-2). The SAME instance is kept for the plugin's lifetime — services
+    // constructed before settings load (e.g. SettingsService) would otherwise
+    // hold a stale logger that never receives setSecrets refreshes or the
+    // persisted log level (F3); only the level filter is adjusted in place.
     const consoleLogger = new ConsoleLogger("info");
     this.logger = consoleLogger;
+    const dataStore = new ObsidianDataStore(this, this.logger);
     const vault = new ObsidianVaultAdapter(this.app);
     // The vault is passed so validate() can run the ADR-0015 one-project-per-vault
     // sibling Test Hub check.
@@ -168,7 +176,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       vault,
     );
     this.hubSettings = await this.hubSettingsService.load();
-    this.logger = new ConsoleLogger(this.hubSettings.logging.level);
+    consoleLogger.setMinLevel(this.hubSettings.logging.level);
     this.refreshLoggerSecrets();
 
     this.workspaceAdapter = new ObsidianWorkspaceAdapter(this.app);
@@ -188,6 +196,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
 
     const absoluteFs = new NodeAbsoluteFileSystem(this.app);
     const childProcess = new NodeChildProcessRunner();
+    this.processRunners.push(childProcess);
     const templateWriter = new RunnerTemplateWriter(absoluteFs);
     const commandSafety = new DefaultCommandSafetyPolicy();
 
@@ -290,11 +299,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // A dedicated runner instance for test execution: cancel() kills only the
     // (single, ADR-0018) active test process, never a concurrent validation,
     // repair, or install spawned on the shared `childProcess`.
+    const runProcessRunner = new NodeChildProcessRunner();
+    this.processRunners.push(runProcessRunner);
     this.testExecutionService = new DefaultTestExecutionService(
       this.hubSettingsService,
       this.suiteService,
       this.useCaseService,
-      new NodeChildProcessRunner(),
+      runProcessRunner,
       absoluteFs,
       commandSafety,
       eventBus,
@@ -424,6 +435,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           // Narrow read-only slice: the toolbar checks for an active run on open
           // and reads the last run's scope to power Re-run.
           activeRunId: () => this.testExecutionService.activeRunId(),
+          activeRunStartedAt: () => this.testExecutionService.activeRunStartedAt(),
           lastRun: () => this.testExecutionService.lastRun(),
           // Wave G §1: the "Open evidence" button. The coordinator already owns
           // the post-run evidence flow, so it is the cleanest synchronous source
@@ -579,6 +591,12 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // synchronous per PRES-H1, and the per-run snapshot already protects
     // attribution, so we do not block teardown on whenSettled() here.
     this.postRunCoordinator?.stop();
+    // Best-effort kill signal to ANY child still tracked by either runner —
+    // notably an in-flight `npm install`/`playwright install` on the shared
+    // runner, which would otherwise survive unload with no way to stop it (A6).
+    // Idempotent with the cancel() above (an already-signalled child is gone
+    // from the tracking map or tolerates a second signal).
+    for (const runner of this.processRunners) runner.disposeAll();
     // registerView + each view's onClose already tear the views down on unload;
     // detachLeavesOfType is explicitly discouraged (it destroys the user's saved
     // workspace layout across reloads/updates), so it is intentionally NOT called

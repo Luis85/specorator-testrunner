@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import type {
   ChildProcessRunner,
   RunCommandRequest,
@@ -93,26 +93,58 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
   }
 
   /**
+   * Best-effort kill of every still-tracked child. For plugin unload (A6): the
+   * shared install/validation runner can have an in-flight `npm install` that
+   * no command path can reach once the plugin is gone. Synchronous signal
+   * dispatch only — unload cannot await.
+   */
+  disposeAll(): void {
+    for (const child of this.active.values()) this.killTree(child);
+  }
+
+  /** SIGTERM → SIGKILL escalation delay (A3). */
+  private static readonly KILL_ESCALATION_MS = 5000;
+
+  /**
    * Terminates a child and the whole process tree it launched. On Windows the
    * tracked child is the `cmd.exe` shim wrapper (`.cmd` shims need a shell), and
    * `child.kill()` only stops that wrapper — leaving the npm/node/Cucumber tree
    * running and still writing the shared reports directory. `taskkill /T` kills
-   * the wrapper and its descendants; `/F` forces it. POSIX has no shim wrapper,
-   * so a direct kill suffices.
+   * the wrapper and its descendants; `/F` forces it (asynchronously — a
+   * synchronous spawn would freeze Obsidian's renderer thread for taskkill's
+   * whole duration, A4; the `close` handler finalizes state either way). POSIX
+   * sends SIGTERM to the process group, then escalates to SIGKILL after a grace
+   * period: a child that ignores SIGTERM would otherwise never close, the
+   * execute() finally would never run, and the ADR-0018 run slot would stay
+   * occupied until Obsidian restarts (A3).
    */
   private killTree(child: ChildProcess): void {
     if (this.platform === "win32" && child.pid !== undefined) {
-      const killed = spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
+      const killer = this.spawnFn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {});
       // Fall back to a direct kill if taskkill is unavailable for any reason.
-      if (killed.error) child.kill();
+      killer.on("error", () => child.kill());
       return;
     }
     // POSIX: the child was spawned `detached`, so it leads its own process
     // group. Signal the whole group (negative pid) to terminate npm AND the
     // Cucumber/node process it launched, not just the wrapper.
     if (child.pid !== undefined) {
+      const pid = child.pid;
       try {
-        process.kill(-child.pid, "SIGTERM");
+        process.kill(-pid, "SIGTERM");
+        const escalation = setTimeout(() => {
+          // Still alive after the grace period — force it. `exitCode`/`killed`
+          // on the wrapper plus a throwing group-kill cover "already gone".
+          if (child.exitCode === null) {
+            try {
+              process.kill(-pid, "SIGKILL");
+            } catch {
+              // Group already gone — nothing to escalate.
+            }
+          }
+        }, NodeChildProcessRunner.KILL_ESCALATION_MS);
+        // Never keep the process (or test runner) alive just for the escalation.
+        escalation.unref?.();
         return;
       } catch {
         // Group gone / unsupported — fall through to a direct kill.
@@ -201,6 +233,15 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
 
       let stdout = "";
       let stderr = "";
+      // In streaming mode the full output already reaches the caller line by
+      // line, and the aggregate result is only read for exit code / duration /
+      // error context — yet a long Cucumber run can stream tens of thousands of
+      // lines (the console caps its DOM for the same reason). Keep only a
+      // bounded TAIL of each stream so memory stays flat (A5); non-streaming
+      // callers (install/validate) still get the complete output.
+      const maxAggregate = onOutput ? 64 * 1024 : Infinity;
+      const capTail = (text: string) =>
+        text.length > maxAggregate ? text.slice(text.length - maxAggregate) : text;
       // Stream `data` chunks are NOT guaranteed to land on newline boundaries —
       // a Cucumber line can split across two chunks, and a chunk can end mid-line.
       // Buffer each stream's tail and only publish COMPLETE lines, holding the
@@ -209,8 +250,8 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       const tails: { stdout: string; stderr: string } = { stdout: "", stderr: "" };
       const emit = (stream: "stdout" | "stderr", chunk: Buffer) => {
         const text = chunk.toString();
-        if (stream === "stdout") stdout += text;
-        else stderr += text;
+        if (stream === "stdout") stdout = capTail(stdout + text);
+        else stderr = capTail(stderr + text);
         if (!onOutput) return;
         const segments = (tails[stream] + text).split(/\r?\n/);
         tails[stream] = segments.pop() ?? ""; // trailing partial — hold for next chunk

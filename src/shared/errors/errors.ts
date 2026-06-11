@@ -7,7 +7,6 @@ export type ErrorCode =
   // execution
   | "RUN_IN_PROGRESS" // ADR-0018
   | "MAINTENANCE_IN_PROGRESS" // reset/repair vs run mutual exclusion (security L1)
-  | "RUN_TIMEOUT"
   | "RUN_CANCELLED"
   // path / command safety
   | "PATH_UNSAFE" // PathSafetyPolicy
@@ -24,8 +23,8 @@ export type ErrorCode =
   | "EVIDENCE_LIST_FAILED"
   // settings / validation
   | "SETTINGS_INVALID"
-  | "VALIDATION_FAILED"
-  | "SUT_ENV_NOT_FOUND";
+  | "SETTINGS_SAVE_FAILED"
+  | "VALIDATION_FAILED";
 
 export interface AppError {
   code: ErrorCode;

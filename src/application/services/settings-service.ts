@@ -87,6 +87,24 @@ export class DefaultSettingsService implements SettingsService {
     private readonly vaultFs?: VaultFileSystem,
   ) {}
 
+  /**
+   * Serializes save()/reset() persistence. The settings tab debounces saves
+   * PER FIELD (P4-9), so two quick edits to different fields produce two
+   * overlapping save() calls; without serialization both would read the same
+   * "previous", interleave their load→save→diff sections, and the last
+   * whole-object write would win — silently dropping the first change (F2).
+   */
+  private persistChain: Promise<unknown> = Promise.resolve();
+
+  /** Queues `task` behind every previously queued persistence task. */
+  private serialize<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.persistChain.then(task);
+    // The chain itself must survive a failed task; the failure still reaches
+    // the caller through `run`.
+    this.persistChain = run.catch(() => undefined);
+    return run;
+  }
+
   async load(): Promise<TestHubSettings> {
     return this.sanitizeRunnerEnvInputs(
       this.sanitizePaths(mergeWithDefaults(await this.store.load())),
@@ -196,9 +214,13 @@ export class DefaultSettingsService implements SettingsService {
             // ADR-0019). Reserved process-control keys (PATH, NODE_OPTIONS, …)
             // are dropped here too, so they can't reach the runner env sink.
             this.logger.error(
+              // Field name `entry`, not `key`: the logger's SENSITIVE_KEY
+              // pattern matches the field NAME "key" and would blank exactly
+              // the diagnostic this log exists to carry (F5). The env-var NAME
+              // is not a credential — only its value is (ADR-0019).
               `Configured auth env key in "sut.environments.${name}" ${problem}; dropping that entry.`,
               undefined,
-              { environment: name, key },
+              { environment: name, entry: key },
             );
           }
         }
@@ -280,11 +302,12 @@ export class DefaultSettingsService implements SettingsService {
             if (typeof value === "string") {
               env[key] = value;
             } else {
-              // KEY only — the value may be a credential (ADR-0019).
+              // KEY only — the value may be a credential (ADR-0019). Field
+              // name `entry`, not `key`, so SENSITIVE_KEY doesn't blank it (F5).
               this.logger.error(
                 `Configured auth env value in "sut.environments.${name}" is not a string; dropping that entry.`,
                 undefined,
-                { environment: name, key },
+                { environment: name, entry: key },
               );
             }
           }
@@ -345,30 +368,36 @@ export class DefaultSettingsService implements SettingsService {
     return { active: sut.active, environments };
   }
 
-  async save(settings: TestHubSettings): Promise<Result<void>> {
-    const validation = await this.validate(settings);
-    if (!validation.valid) {
-      return err(
-        appError("SETTINGS_INVALID", "Settings failed validation.", {
-          details: { errors: validation.errors },
-        }),
-      );
-    }
-    // Diff the persisted settings against the incoming ones so the event
-    // carries the real changed field names (Event Catalog §13: { changedFields }).
-    const previous = await this.load();
-    await this.store.save(settings);
-    const changedFields = diffSettings(previous, settings);
-    await this.eventBus.publish(createEvent("settings.updated", { changedFields }));
-    return ok(undefined);
+  save(settings: TestHubSettings): Promise<Result<void>> {
+    return this.serialize(async () => {
+      const validation = await this.validate(settings);
+      if (!validation.valid) {
+        return err(
+          appError("SETTINGS_INVALID", "Settings failed validation.", {
+            details: { errors: validation.errors },
+          }),
+        );
+      }
+      // Diff the persisted settings against the incoming ones so the event
+      // carries the real changed field names (Event Catalog §13: { changedFields }).
+      const previous = await this.load();
+      const saved = await this.store.save(settings);
+      if (!saved.ok) return saved;
+      const changedFields = diffSettings(previous, settings);
+      await this.eventBus.publish(createEvent("settings.updated", { changedFields }));
+      return ok(undefined);
+    });
   }
 
-  async reset(correlationId?: string): Promise<Result<TestHubSettings>> {
-    await this.store.save(DEFAULT_SETTINGS);
-    await this.eventBus.publish(
-      createEvent("settings.reset", { profile: "default" }, { correlationId }),
-    );
-    return ok(DEFAULT_SETTINGS);
+  reset(correlationId?: string): Promise<Result<TestHubSettings>> {
+    return this.serialize(async () => {
+      const saved = await this.store.save(DEFAULT_SETTINGS);
+      if (!saved.ok) return saved;
+      await this.eventBus.publish(
+        createEvent("settings.reset", { profile: "default" }, { correlationId }),
+      );
+      return ok(DEFAULT_SETTINGS);
+    });
   }
 
   async validate(settings: TestHubSettings): Promise<SettingsValidationResult> {
