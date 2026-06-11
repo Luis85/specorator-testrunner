@@ -12,10 +12,23 @@ on:
 permissions:
   contents: read
 
+# Heavy (Chromium download per OS) — a newer run on the same ref supersedes any
+# in-flight one.
+concurrency:
+  group: e2e-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'e2e-smoke')
+    # Runs on: manual dispatch; adding the `e2e-smoke` label itself (not any
+    # other label landing while it happens to be present); or pushes/reopens on
+    # a PR that already carries the label.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.action == 'labeled' && github.event.label.name == 'e2e-smoke') ||
+      (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'e2e-smoke'))
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

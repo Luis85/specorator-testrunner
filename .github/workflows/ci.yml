@@ -8,9 +8,15 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same ref supersedes any in-flight run; cancel the stale one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
