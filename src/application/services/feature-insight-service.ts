@@ -64,6 +64,22 @@ export const effectiveScenarioTags = (
   scenario: ScenarioSpecification,
 ): string[] => [...feature.tags, ...scenario.tags];
 
+/**
+ * The tag sets Cucumber evaluates for a scenario, one per Examples block:
+ * each Examples row inherits feature + scenario + ITS block's tags, so an
+ * outline is selected when ANY block's union matches. A plain scenario (or an
+ * outline with no Examples) contributes its single inherited set.
+ */
+export const effectiveScenarioTagSets = (
+  feature: FeatureSpecification,
+  scenario: ScenarioSpecification,
+): string[][] => {
+  const base = effectiveScenarioTags(feature, scenario);
+  const blocks = scenario.examples ?? [];
+  if (blocks.length === 0) return [base];
+  return blocks.map((block) => [...base, ...block.tags]);
+};
+
 /** Pure projection of one parsed Feature to its {@link FeatureHealth}. */
 export const projectFeatureHealth = (feature: FeatureSpecification): FeatureHealth => ({
   path: feature.path,
@@ -74,14 +90,16 @@ export const projectFeatureHealth = (feature: FeatureSpecification): FeatureHeal
 
 /**
  * Counts the scenarios in ONE parsed Feature that a parsed Tag Expression
- * matches, evaluating against each scenario's effective (inherited) tags.
+ * matches. An outline still counts as ONE scenario (matching scenarioCount
+ * semantics), but it matches when any of its Examples blocks' effective tag
+ * sets match — mirroring how Cucumber selects tagged Examples rows.
  */
 export const countMatchingScenariosInFeature = (
   expression: TagExpression,
   feature: FeatureSpecification,
 ): number =>
   feature.scenarios.filter((scenario) =>
-    matchesTags(expression, effectiveScenarioTags(feature, scenario)),
+    effectiveScenarioTagSets(feature, scenario).some((tags) => matchesTags(expression, tags)),
   ).length;
 
 /**

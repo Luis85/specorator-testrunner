@@ -5,6 +5,7 @@ import {
   effectiveScenarioTags,
   projectFeatureHealth,
 } from "../src/application/services/feature-insight-service";
+import { parseFeature } from "../src/application/content/gherkin";
 import type { FeatureFileEntry } from "../src/application/services/specification-service";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
 import { parseTagExpression, type TagExpression } from "../src/domain/policies/tag-expression";
@@ -280,5 +281,44 @@ Feature: F
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value).toEqual(["@smoke", "@wip"]);
+  });
+});
+
+describe("Examples-level tag matching (Cucumber per-row semantics)", () => {
+  const feature = parseFeature(
+    `Feature: F
+
+  Scenario Outline: O
+    Given x
+
+    @set-1
+    Examples: first
+      | a |
+      | 1 |
+
+    @set-2
+    Examples: second
+      | a |
+      | 2 |
+`,
+    vp("Specifications/features/UC-001-o.feature"),
+  );
+
+  it("matches a tag that lives only on an Examples block", () => {
+    expect(feature).not.toBeNull();
+    if (!feature) return;
+    const expression = parseTagExpression("@set-1");
+    expect(expression.ok).toBe(true);
+    if (!expression.ok) return;
+    expect(countMatchingScenariosInFeature(expression.value, feature)).toBe(1);
+  });
+
+  it("does not union tags ACROSS blocks (each block is its own set)", () => {
+    expect(feature).not.toBeNull();
+    if (!feature) return;
+    const expression = parseTagExpression("@set-1 and @set-2");
+    expect(expression.ok).toBe(true);
+    if (!expression.ok) return;
+    expect(countMatchingScenariosInFeature(expression.value, feature)).toBe(0);
   });
 });
