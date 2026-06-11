@@ -537,6 +537,40 @@ Reserved for V2 — V1 does not poll CI providers.
 
 ---
 
+## Tour Events
+
+Published by the `GuidedTourService` as the user progresses through the Guided Tour (spec 2026-06-11). `correlationId = tourId` for the whole traversal — minted lazily on the first completed/skipped step (or on restart) — and `causationId` on `tour.step.completed` is the id of the triggering domain event when `via = "event"`.
+
+### `tour.started`
+
+```ts
+{ tourId: string; }
+```
+
+### `tour.step.completed`
+
+```ts
+{
+  tourId: string;
+  stepId: string;       // TourStepId, e.g. "create-use-case"
+  via: "event" | "manual";
+}
+```
+
+### `tour.step.skipped`
+
+```ts
+{ tourId: string; stepId: string; }
+```
+
+### `tour.completed`
+
+```ts
+{ tourId: string; }
+```
+
+---
+
 ## 14. Event-to-Use-Case Mapping
 
 | Use Case | Events |
@@ -604,6 +638,10 @@ Reserved for V2 — V1 does not poll CI providers.
 
 | Event | Used by |
 | --- | --- |
+| `tour.started` | onboarding, supporting |
+| `tour.step.completed` | onboarding, supporting |
+| `tour.step.skipped` | onboarding, supporting |
+| `tour.completed` | onboarding, supporting |
 | `usecase.deleted` | (no UC yet) |
 | `usecase.status.changed` | UC-005 supporting |
 | `specification.updated` | UC-007 |
@@ -684,6 +722,7 @@ It is **not** an event-sourcing system in V1. Aggregates own state; events commu
 | Initialization | `correlationId = initialization invocation id` | All `testhub.initialization.*`, `testrunner.installed`, `documentation.generated` for one wizard run share the id. |
 | Use Case creation | `correlationId = useCaseId` | Single `usecase.created` event; indexing happens synchronously inside the subscriber (see EN-3 — `usecase.indexed` was removed). |
 | Reset | `correlationId = reset invocation id` | `settings.reset` causes the subsequent re-initialization flow. |
+| Guided Tour | `correlationId = tourId` | All `tour.*` events for a single tour traversal share the `tourId`; minted lazily on first activity. |
 
 `causationId` always points to the previous event in the chain; `correlationId` is constant across a logical flow.
 
