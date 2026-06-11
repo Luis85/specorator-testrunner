@@ -238,7 +238,12 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       },
     },
     skippable: false,
-    hint: "This step completes when validation sees a valid Feature tagged @tour.",
+    // Scenario CONTENT is not observable from events (only tags travel on the
+    // validation event), so the hint sets the expectation; the step-8 run is
+    // the honest arbiter that a real scenario was authored (PR #31 review).
+    hint:
+      "This step completes when validation sees a valid Feature tagged @tour. Make sure you " +
+      "replaced the scaffold's scenario — the later steps only go green against a real one.",
   },
   {
     id: "detect-missing-steps",
