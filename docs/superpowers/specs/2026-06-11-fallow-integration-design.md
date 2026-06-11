@@ -142,6 +142,44 @@ add the obsidian linter rules — goal is a stable quality harness."
   as follow-up; `@typescript-eslint/no-deprecated` is `warn` for
   `settings-tab.ts` only.
 
+## Addendum 2 (2026-06-11): platform floor, dependency refresh, strict lint, docs review
+
+Same-session follow-ups: "bump plugins min version to latest avail version",
+"research more useful linter rules for agentic development", "review official
+obsidian developer docs to enforce plugin best practices", "upgrade all deps
+to latest".
+
+- **minAppVersion 1.8.0 → 1.13.0** (latest available; manifest + versions.json
+  + release-validation agreement), unlocking `setDestructive()`. The
+  `display()` → `getSettingDefinitions()` declarative settings rewrite remains
+  the one warn-level deferral.
+- **All devDependencies to latest**: TypeScript 6.0, vitest 4.1 (+ coverage),
+  esbuild 0.28, @types/node 25, prettier, builtin-modules 5. `npm audit`: 0
+  findings (was 2 critical + 4 moderate). One vitest-4 fallout fix (mock
+  signature typing in `run-launcher.test.ts`).
+- **Lint rules for agentic development** (selection driven by an empirical
+  trial against this repo, not blog consensus): typescript-eslint
+  `strictTypeChecked` + `stylisticTypeChecked` adopted with two tuned options
+  and two documented opt-outs (`no-unnecessary-condition` fights the defensive
+  guards while `noUncheckedIndexedAccess` is off — revisit together;
+  `no-empty-function` fights the null-object idiom). `@vitest/eslint-plugin`
+  adopted for tests (focused tests are errors; `valid-expect` allows vitest's
+  `expect(value, message)`; `no-conditional-expect` off for Result narrowing).
+  Rejected: sonarjs/unicorn (complexity + duplication are fallow's job, churn
+  outweighs signal), eslint-plugin-promise (superseded by typed tseslint
+  rules), niche "AI-code" plugins (immature for a stable harness). ~30
+  findings fixed; 3 idioms kept with justified inline disables.
+- **Obsidian developer-docs review** (docs.obsidian.md plugin guidelines, 37
+  practices): the repo passes review-only items (no leaf detaching on unload,
+  no `activeLeaf`, no `localStorage`, `registerInterval`, `plugin.addCommand`
+  with plain `callback` for unconditional commands, `normalizePath`,
+  `getAbstractFileByPath`). One improvement adopted: `Vault.process` over
+  `Vault.modify` for background writes. The plugin's `validate-manifest` /
+  `validate-license` rules are NOT wired: verified non-functional in v0.3.0
+  flat config (they expect a TS/JS AST; even the raw preset reports
+  manifest.json/LICENSE as ignored) — manifest integrity stays covered by the
+  release-validation suite and `no-unsupported-api`.
+
 ## Acceptance
 
 1. `npm run quality` and `npm run quality:audit` run locally; the

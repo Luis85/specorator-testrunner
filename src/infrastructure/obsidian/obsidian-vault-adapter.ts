@@ -52,7 +52,10 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     try {
       const existing = this.app.vault.getAbstractFileByPath(normalized);
       if (existing instanceof TFile) {
-        await this.app.vault.modify(existing, content);
+        // Vault.process, not Vault.modify: background edits go through the
+        // atomic read-modify-write path (plugin guidelines §"Use
+        // Vault.process"); the content is a wholesale replacement.
+        await this.app.vault.process(existing, () => content);
         return ok(undefined);
       }
       return await this.createFile(unsafeVaultPath(normalized), content);

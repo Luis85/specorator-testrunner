@@ -26,6 +26,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
   plugin-guideline rules scoped to `src/`; the sentence-case rule is
   configured with the CONTEXT.md glossary as brand terms so UI copy is
   enforced glossary-consistent in both directions.
+- Quality harness: typescript-eslint `strictTypeChecked` +
+  `stylisticTypeChecked` (tuned to the codebase's defensive-guard and
+  null-object idioms) and `@vitest/eslint-plugin` test hygiene
+  (no-focused-tests as error).
+
+### Changed
+
+- Requires Obsidian 1.13+ (`minAppVersion` 1.8.0 → 1.13.0); destructive
+  buttons use the 1.13 `setDestructive()` API.
+- All devDependencies upgraded to latest (TypeScript 6, vitest 4, esbuild
+  0.28, ESLint 10); `npm audit` is clean.
+- Background note writes go through the atomic `Vault.process` instead of
+  `Vault.modify` (Obsidian plugin guidelines).
 
 ### Fixed
 
