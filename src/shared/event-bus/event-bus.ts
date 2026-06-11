@@ -29,7 +29,13 @@ export class InMemoryEventBus implements EventBus {
       try {
         await handler(event);
       } catch (error) {
-        this.onHandlerError?.(error);
+        // The error callback is itself untrusted: if it throws, the remaining
+        // subscribers must still receive the event.
+        try {
+          this.onHandlerError?.(error);
+        } catch {
+          // Nowhere left to report to without recursing; drop it.
+        }
       }
     }
   }

@@ -25,6 +25,12 @@ export interface TestExecutionService {
   /** Id of the single active run per ADR-0018, or `null` when idle. */
   activeRunId(): RunId | null;
   /**
+   * ISO start time of the active run, or `null` when idle. Lets a Test Console
+   * opened MID-run seed its elapsed timer from the real start instead of the
+   * moment the view opened (C6/CQ10).
+   */
+  activeRunStartedAt(): string | null;
+  /**
    * The most recently finished run this session, or `null` before the first run
    * completes. Lets the {@link PostRunCoordinator} (and the "Import report for
    * last run" command) obtain the just-finished run without reconstructing it.
@@ -255,6 +261,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
     return this.active?.run.id ?? null;
   }
 
+  activeRunStartedAt(): string | null {
+    return this.active?.run.startedAt ?? null;
+  }
+
   lastRun(): TestRun | null {
     return this.lastFinishedRun;
   }
@@ -312,6 +322,9 @@ export class DefaultTestExecutionService implements TestExecutionService {
       settle,
     };
     this.active = activeRun;
+    // True once `testrun.started` has been published — the catch below must
+    // know whether the UI ever saw this run begin (see the catch comment).
+    let started = false;
 
     try {
       const settings = await this.settingsService.load();
@@ -360,6 +373,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
         command: run.command,
         workingDirectory: run.workingDirectory,
       });
+      started = true;
       this.logger.info("Test run started", { runId: run.id, scope: run.scope });
 
       // Awaiting the requested/started publishes yields the event loop, so a
@@ -433,6 +447,28 @@ export class DefaultTestExecutionService implements TestExecutionService {
         skipped: 0,
       });
       return ok(run);
+    } catch (cause) {
+      // A non-Result throw (a rejecting settings load, an adapter bug) after
+      // `testrun.started` would otherwise emit NO terminal event — the console
+      // would show "running" forever with Cancel armed, and the rejection would
+      // surface as an unhandled promise in the launching click handler (A2).
+      // Route it through the EN-2 terminal guard as an errored run — but ONLY
+      // when the UI actually saw the run start AND no terminal event has been
+      // published yet: a setup throw before `testrun.started` must surface as a
+      // plain error Result (fabricating a terminal lifecycle for a run the
+      // console never displayed would flip its banner to "Run failed" out of
+      // nowhere), and a run already terminated by a racing cancel() must not
+      // have its state relabelled "errored" after the bus reported it terminal.
+      const message = cause instanceof Error ? cause.message : String(cause);
+      if (started && !activeRun.terminated) {
+        run.status = "errored";
+        this.finish(run, startedAt);
+        await this.terminal(activeRun, "testrun.failed", { runId: run.id, reason: message });
+      }
+      this.logger.error("Test run threw unexpectedly", cause instanceof Error ? cause : undefined, {
+        runId: run.id,
+      });
+      return err(appError("INIT_FAILED", `Test run failed unexpectedly: ${message}`, { cause }));
     } finally {
       // Single-active model: clear the slot once this run settles, but never
       // stomp a newer run (cancel resolves the slot before runStreaming returns).
@@ -466,6 +502,19 @@ export class DefaultTestExecutionService implements TestExecutionService {
     // Single active process per ADR-0018: the runId is the process handle.
     const cancelled = await this.childProcess.cancel(runId);
     if (!cancelled.ok) return err(cancelled.error);
+
+    // The await above yielded the event loop: the process may have closed and
+    // execute() may have published the run's REAL terminal event in that gap.
+    // Re-check before mutating, or a completed/failed run gets relabelled
+    // "cancelled" in lastRun()/the console meta after the bus already reported
+    // it terminal (A1, EN-2).
+    if (activeRun.processClosed || activeRun.terminated) {
+      return err(
+        appError("RUN_CANCELLED", `Test run "${runId}" finished while cancelling.`, {
+          details: { requestedRunId: runId },
+        }),
+      );
+    }
 
     activeRun.run.status = "cancelled";
     this.finish(activeRun.run, new Date(activeRun.run.startedAt));
@@ -517,8 +566,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
   }
 
   private runEnv(settings: TestHubSettings): Record<string, string> {
+    // Object.hasOwn, not a truthy index: an active named "toString"/
+    // "constructor" with no such environment defined would otherwise resolve a
+    // prototype member (truthy) and build the env from `undefined` fields.
+    if (!Object.hasOwn(settings.sut.environments, settings.sut.active)) return {};
     const active = settings.sut.environments[settings.sut.active];
-    if (!active) return {};
     return { BASE_URL: active.baseUrl, ...(active.auth?.env ?? {}) };
   }
 

@@ -48,7 +48,7 @@ export const vaultPath = (
   if (typeof raw !== "string") {
     return err(appError("PATH_UNSAFE", `Path must be a string (got ${typeof raw}).`));
   }
-  const safe = policy.validate(raw as VaultPath);
+  const safe = policy.validate(raw);
   return safe.ok ? ok(raw as VaultPath) : err(safe.error);
 };
 

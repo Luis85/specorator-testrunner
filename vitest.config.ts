@@ -31,10 +31,20 @@ export default defineConfig({
         // such as RunnerTemplateWriter stay covered.
         "src/main.ts",
         "src/infrastructure/obsidian/**",
-        // node-child-process-runner.ts is now covered by an integration-style
-        // adapter test (tests/node-child-process-runner.test.ts, P4-1).
-        "src/infrastructure/filesystem/node-absolute-file-system.ts",
-        "src/presentation/**",
+        // node-child-process-runner.ts and node-absolute-file-system.ts are
+        // covered by integration-style adapter tests
+        // (tests/node-child-process-runner.test.ts, P4-1;
+        // tests/node-absolute-file-system.test.ts).
+        //
+        // Within presentation, only the Obsidian-runtime-bound surfaces
+        // (ItemView/Modal/PluginSettingTab subclasses, command registration)
+        // stay excluded; pure projection/format/scheduler/launcher modules
+        // count toward coverage.
+        "src/presentation/views/*-view.ts",
+        "src/presentation/views/*-modal.ts",
+        "src/presentation/settings/settings-tab.ts",
+        "src/presentation/settings/add-environment-modal.ts",
+        "src/presentation/commands/register-commands.ts",
       ],
     },
   },

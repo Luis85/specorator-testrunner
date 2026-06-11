@@ -1,13 +1,16 @@
-import type { VaultPath } from "../value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { err, ok, type Result } from "../../shared/result/result";
 
 /**
  * Rejects vault-escaping paths in settings and generated artifacts
  * (TIS §14.1, BBV §6.4). Pure: no I/O, so it is trivially unit-testable.
+ *
+ * Takes a plain `string`: this policy is the screen UNBRANDED input passes
+ * BEFORE it may be branded as a `VaultPath` (the `vaultPath()` smart
+ * constructor, ADR-0008).
  */
 export interface PathSafetyPolicy {
-  validate(path: VaultPath): Result<void>;
+  validate(path: string): Result<void>;
 }
 
 /**
@@ -28,7 +31,7 @@ const UNSAFE_PATH_CHARS = /["'`${}\\]/;
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 
 export class DefaultPathSafetyPolicy implements PathSafetyPolicy {
-  validate(path: VaultPath): Result<void> {
+  validate(path: string): Result<void> {
     // Defensive: callers should pass a string, but untrusted settings/frontmatter
     // can carry a non-string (e.g. a number from a corrupt data.json). Guard the
     // type before any string method so this returns a Result instead of throwing.

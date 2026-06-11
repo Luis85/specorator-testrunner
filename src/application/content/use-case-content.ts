@@ -3,7 +3,7 @@ import type { UseCaseId } from "../../domain/value-objects/identifiers";
 import { buildNote } from "../../shared/utils/frontmatter";
 
 /** Strips characters Obsidian/OSes disallow in filenames, collapsing spaces. */
-const sanitizeTitle = (title: string): string =>
+export const sanitizeTitle = (title: string): string =>
   title
     .replace(/[\\/:*?"<>|#^[\]]/g, " ")
     .replace(/\s+/g, " ")

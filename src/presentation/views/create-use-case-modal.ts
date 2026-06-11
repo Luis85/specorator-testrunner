@@ -1,6 +1,7 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { UseCaseService } from "../../application/services/use-case-service";
+import { openOrNotice, submitOnEnter } from "./modal-helpers";
 
 export interface CreateUseCaseDeps {
   useCaseService: UseCaseService;
@@ -22,21 +23,17 @@ export class CreateUseCaseModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
-    contentEl.createEl("h2", { text: "Create Use Case" });
+    // "New …" is the creation verb everywhere (dashboard quick actions,
+    // explorer headers, command palette); only the CTA button says "Create".
+    contentEl.createEl("h2", { text: "New Use Case" });
 
     new Setting(contentEl).setName("Title").addText((text) => {
       text
         .setPlaceholder("e.g. Checkout with a saved card")
         .onChange((value) => (this.useCaseTitle = value));
-      // Enter submits (mirrors AddEnvironmentModal) so the keyboard flow
-      // doesn't force a mouse trip; the description textarea keeps Enter for
-      // newlines and is deliberately NOT wired this way.
-      text.inputEl.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          void this.submit();
-        }
-      });
+      // Enter submits (shared helper); the description textarea keeps Enter
+      // for newlines and is deliberately NOT wired this way.
+      submitOnEnter(text.inputEl, () => void this.submit());
       // Autofocus the first input so the user can start typing immediately
       // instead of tabbing/clicking into the field first.
       text.inputEl.focus();
@@ -83,6 +80,6 @@ export class CreateUseCaseModal extends Modal {
     }
     new Notice(`Created ${result.value.id}.`);
     this.close();
-    await this.deps.workspace.openFile(result.value.path);
+    await openOrNotice(this.deps.workspace, result.value.path);
   }
 }

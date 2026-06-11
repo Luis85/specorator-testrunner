@@ -1,10 +1,10 @@
 import { buildUseCaseNote, useCaseFileName } from "../content/use-case-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
-import type { ExecutionScope, TestRunStatus } from "../../domain/entities/test-run";
+import { EXECUTION_SCOPES, USE_CASE_RUN_OUTCOMES } from "../../domain/entities/test-run";
 import {
+  AUTOMATION_STATUSES,
   USE_CASE_STATUSES,
-  type AutomationStatus,
   type UseCase,
   type UseCaseStatus,
 } from "../../domain/entities/use-case";
@@ -292,36 +292,44 @@ export class DefaultUseCaseService implements UseCaseService {
       const safe = vaultPath(raw);
       return safe.ok ? safe.value : undefined;
     };
+    // Frontmatter enum fields are hand-editable too, so they can hold anything
+    // (`status: banana`) — validate membership against the domain's runtime
+    // lists rather than casting blindly into the unions.
+    const isOneOf = <T extends string>(values: readonly T[], value: unknown): value is T =>
+      typeof value === "string" && (values as readonly string[]).includes(value);
+
+    // The last-run summary feeds the ADR-0017 KPI roll-up, so it is parsed
+    // strictly: an invalid/missing last_run_status or last_run_scope drops the
+    // whole lastTestRun projection rather than defaulting — a fallback like
+    // "passed" would let a hand-edited note inflate the Passing KPI.
+    const lastTestRun =
+      typeof fm.last_run_id === "string" &&
+      isOneOf(USE_CASE_RUN_OUTCOMES, fm.last_run_status) &&
+      (fm.last_run_scope === undefined || isOneOf(EXECUTION_SCOPES, fm.last_run_scope))
+        ? {
+            runId: fm.last_run_id,
+            status: fm.last_run_status,
+            date: typeof fm.last_run_date === "string" ? fm.last_run_date : "",
+            evidencePath:
+              typeof fm.last_run_evidence === "string"
+                ? toVaultPath(fm.last_run_evidence)
+                : undefined,
+            scope: fm.last_run_scope,
+          }
+        : undefined;
 
     return {
       id: fm.id,
       title: typeof fm.title === "string" ? fm.title : fm.id,
       description: typeof fm.description === "string" ? fm.description : undefined,
-      status: (typeof fm.status === "string" ? fm.status : "draft") as UseCaseStatus,
-      automationStatus: (typeof fm.automation_status === "string"
+      status: isOneOf(USE_CASE_STATUSES, fm.status) ? fm.status : "draft",
+      automationStatus: isOneOf(AUTOMATION_STATUSES, fm.automation_status)
         ? fm.automation_status
-        : "not-planned") as AutomationStatus,
+        : "not-planned",
       featureFiles: [...toVaultPaths(fm.feature_files), ...toVaultPaths(fm.feature_file)],
       suites: toArray(fm.suites),
       evidence: toVaultPaths(fm.evidence),
-      lastTestRun:
-        typeof fm.last_run_id === "string"
-          ? {
-              runId: fm.last_run_id,
-              status: (typeof fm.last_run_status === "string"
-                ? fm.last_run_status
-                : "passed") as TestRunStatus,
-              date: typeof fm.last_run_date === "string" ? fm.last_run_date : "",
-              evidencePath:
-                typeof fm.last_run_evidence === "string"
-                  ? toVaultPath(fm.last_run_evidence)
-                  : undefined,
-              scope:
-                typeof fm.last_run_scope === "string"
-                  ? (fm.last_run_scope as ExecutionScope)
-                  : undefined,
-            }
-          : undefined,
+      lastTestRun,
       path,
     };
   }

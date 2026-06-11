@@ -104,7 +104,7 @@ export const collectCredentialValues = (settings: TestHubSettings): string[] =>
  * `GITHUB_*` env var is legitimate; it only fails as a GitHub repository
  * SECRET name). Pure: no I/O.
  */
-export const isValidAuthEnvKey = (key: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
+const isValidAuthEnvKey = (key: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
 
 /**
  * Env-var names that are NOT credentials but control how the runner PROCESS
@@ -145,7 +145,7 @@ const RESERVED_ENV_PREFIXES = ["LD_", "DYLD_", "NPM_CONFIG_"];
  * case-insensitive (`Path` === `PATH`), so a lower/mixed-case spelling can't
  * dodge the check. Pure: no I/O.
  */
-export const isReservedEnvKey = (key: string): boolean => {
+const isReservedEnvKey = (key: string): boolean => {
   const upper = key.toUpperCase();
   return RESERVED_ENV_KEYS.has(upper) || RESERVED_ENV_PREFIXES.some((p) => upper.startsWith(p));
 };

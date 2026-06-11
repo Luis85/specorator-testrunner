@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Keep pinned action versions current; the workflow surface is small, so
+  # weekly checks are cheap.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # All npm dependencies are devDependencies (the plugin bundles no runtime
+  # deps), so monthly batching is enough.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    allow:
+      - dependency-type: "development"
+    open-pull-requests-limit: 5

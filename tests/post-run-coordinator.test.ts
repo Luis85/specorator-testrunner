@@ -98,6 +98,12 @@ class FakeTraceabilityService implements TraceabilityService {
     return this.result;
   }
 
+  // Non-emitting read used by view renders; the coordinator only PUSHES via
+  // refreshDashboard, so this just satisfies the interface.
+  async snapshot(): Promise<Result<DashboardSnapshot>> {
+    return this.result;
+  }
+
   async linksFor(): Promise<never> {
     throw new Error("not used");
   }

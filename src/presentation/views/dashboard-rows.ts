@@ -133,6 +133,14 @@ export const QUICK_ACTIONS: readonly QuickAction[] = [
     ariaLabel: "Create a new Test Suite",
   },
   {
+    // Filed under Create: it produces artifacts, it doesn't run tests.
+    id: "generate-docs",
+    label: "Generate documentation",
+    group: "create",
+    primary: false,
+    ariaLabel: "Generate Test Hub documentation",
+  },
+  {
     id: "run-all",
     label: "Run all tests",
     group: "run",
@@ -145,13 +153,6 @@ export const QUICK_ACTIONS: readonly QuickAction[] = [
     group: "run",
     primary: false,
     ariaLabel: "Run the demo test",
-  },
-  {
-    id: "generate-docs",
-    label: "Generate documentation",
-    group: "run",
-    primary: false,
-    ariaLabel: "Generate Test Hub documentation",
   },
   {
     id: "open-use-cases",
@@ -234,12 +235,12 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
 
 /**
  * Whether the dashboard shows the "Get started" onboarding panel (Wave G §2):
- * only when the Test Hub IS initialized but the vault has no Use Cases yet.
- * Before initialization the Initialize CTA owns the screen; once the first Use
- * Case exists the panel disappears naturally (the next render drops it).
+ * only when the vault has no Use Cases yet. The view calls this strictly after
+ * its isInitialized() gate — before initialization the Initialize CTA owns the
+ * screen; once the first Use Case exists the panel disappears naturally (the
+ * next render drops it).
  */
-export const shouldShowOnboarding = (initialized: boolean, totalUseCases: number): boolean =>
-  initialized && totalUseCases === 0;
+export const shouldShowOnboarding = (totalUseCases: number): boolean => totalUseCases === 0;
 
 /** The badge model for the active environment top-bar control (Wave C §2). */
 export interface EnvironmentBadge {

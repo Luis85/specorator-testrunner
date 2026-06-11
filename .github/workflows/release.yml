@@ -12,6 +12,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -21,8 +22,29 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Verify tag matches manifest.json version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          MANIFEST_VERSION="$(node -p "require('./manifest.json').version")"
+          if [ "$TAG" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag '$TAG' does not match manifest.json version '$MANIFEST_VERSION'." \
+                 "Bump manifest.json (and versions.json) before tagging, or retag with the manifest version."
+            exit 1
+          fi
+          echo "Tag '$TAG' matches manifest.json version."
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test (with coverage thresholds)
+        run: npm run test:coverage
 
       - name: Build plugin bundle
         run: npm run build

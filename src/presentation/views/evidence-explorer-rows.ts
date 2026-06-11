@@ -15,6 +15,13 @@ export const EVIDENCE_STATUS_FILTERS = [
 ] as const;
 export type EvidenceStatusFilter = (typeof EVIDENCE_STATUS_FILTERS)[number];
 
+/**
+ * Display label for a status filter option: capitalized for the dropdown while
+ * the option VALUE keeps the lowercase filter the projection compares against.
+ */
+export const statusFilterLabel = (filter: EvidenceStatusFilter): string =>
+  filter.charAt(0).toUpperCase() + filter.slice(1);
+
 export interface EvidenceRunRow {
   runId: string;
   status: string;

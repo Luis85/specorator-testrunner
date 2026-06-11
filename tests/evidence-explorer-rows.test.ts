@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { RunHistoryEntry } from "../src/application/services/run-history-service";
 import {
+  EVIDENCE_STATUS_FILTERS,
   projectEvidenceGroups,
   projectEvidenceRow,
+  statusFilterLabel,
 } from "../src/presentation/views/evidence-explorer-rows";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
@@ -93,5 +95,18 @@ describe("projectEvidenceGroups", () => {
     const degraded = entry({ status: undefined });
     expect(projectEvidenceGroups([degraded], "all")).toHaveLength(1);
     expect(projectEvidenceGroups([degraded], "passed")).toHaveLength(0);
+  });
+});
+
+describe("statusFilterLabel", () => {
+  it("capitalizes every filter for display while the value stays lowercase", () => {
+    expect(EVIDENCE_STATUS_FILTERS.map(statusFilterLabel)).toEqual([
+      "All",
+      "Passed",
+      "Failed",
+      "Errored",
+      "Cancelled",
+      "Skipped",
+    ]);
   });
 });

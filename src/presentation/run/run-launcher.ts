@@ -77,10 +77,18 @@ export class RunLauncher {
       return;
     }
     const result = await this.testExecutionService.cancel(active);
-    this.notify(
-      result.ok ? "Test Run cancelled." : `Could not cancel run: ${result.error.message}`,
-      result.ok ? undefined : 10000,
-    );
+    if (result.ok) {
+      this.notify("Test Run cancelled.");
+      return;
+    }
+    // RUN_CANCELLED here means the run reached its real terminal state during
+    // the cancel round-trip ("already finished" / "finished while cancelling")
+    // — a benign outcome for the user, not an error to alarm about.
+    if (result.error.code === "RUN_CANCELLED") {
+      this.notify("The Test Run already finished; nothing to cancel.");
+      return;
+    }
+    this.notify(`Could not cancel run: ${result.error.message}`, 10000);
   }
 }
 

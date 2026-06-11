@@ -47,33 +47,41 @@ export class DefaultDemoContentService implements DemoContentService {
     const useCase = await this.writeIfAbsent(useCasePath, buildDemoUseCaseNote(featurePath));
     if (!useCase.ok) return err(useCase.error);
 
-    await this.eventBus.publish(
-      // §4 payload { useCaseId, title, path }; §19 correlationId = useCaseId.
-      createEvent(
-        "usecase.created",
-        { useCaseId: DEMO_USE_CASE_ID, title: DEMO_USE_CASE_TITLE, path: useCasePath },
-        { correlationId: DEMO_USE_CASE_ID },
-      ),
-    );
-    await this.eventBus.publish(
-      // §5 payload key is `featurePath` (matches specification-service), not `path`.
-      createEvent("specification.created", {
-        useCaseId: DEMO_USE_CASE_ID,
-        featurePath,
-      }),
-    );
-    await this.eventBus.publish(
-      createEvent("specification.linkedToUseCase", {
-        useCaseId: DEMO_USE_CASE_ID,
-        featurePath,
-      }),
-    );
+    // Each creation event is published only when the file was ACTUALLY created
+    // this run: re-running init (or a UC-024 reset over kept content) skips the
+    // existing notes, so it must not replay phantom created events either.
+    if (useCase.value) {
+      await this.eventBus.publish(
+        // §4 payload { useCaseId, title, path }; §19 correlationId = useCaseId.
+        createEvent(
+          "usecase.created",
+          { useCaseId: DEMO_USE_CASE_ID, title: DEMO_USE_CASE_TITLE, path: useCasePath },
+          { correlationId: DEMO_USE_CASE_ID },
+        ),
+      );
+    }
+    if (feature.value) {
+      await this.eventBus.publish(
+        // §5 payload key is `featurePath` (matches specification-service), not `path`.
+        createEvent("specification.created", {
+          useCaseId: DEMO_USE_CASE_ID,
+          featurePath,
+        }),
+      );
+      await this.eventBus.publish(
+        createEvent("specification.linkedToUseCase", {
+          useCaseId: DEMO_USE_CASE_ID,
+          featurePath,
+        }),
+      );
+    }
 
     return ok({ useCasePath, featurePath });
   }
 
-  private async writeIfAbsent(path: VaultPath, content: string): Promise<Result<void>> {
-    if (await this.fs.exists(path)) return ok(undefined);
+  /** Creates the file unless it already exists; resolves to whether it wrote. */
+  private async writeIfAbsent(path: VaultPath, content: string): Promise<Result<boolean>> {
+    if (await this.fs.exists(path)) return ok(false);
     const created = await this.fs.createFile(path, content);
     if (!created.ok) {
       return err(
@@ -82,6 +90,6 @@ export class DefaultDemoContentService implements DemoContentService {
         }),
       );
     }
-    return ok(undefined);
+    return ok(true);
   }
 }

@@ -79,7 +79,7 @@ describe("repairRows", () => {
   });
 
   it("reports the repaired file count (singular)", () => {
-    expect(repairRows(repair({}))[0]).toEqual(checklistRow("ok", "Repaired 1 runner file."));
+    expect(repairRows(repair({}))[0]).toEqual(checklistRow("ok", "Repaired 1 .testrunner file."));
   });
 
   it("reports the repaired file count (plural) and reinstalls", () => {
@@ -91,7 +91,7 @@ describe("repairRows", () => {
       }),
     );
     expect(rows).toEqual([
-      checklistRow("ok", "Repaired 2 runner files."),
+      checklistRow("ok", "Repaired 2 .testrunner files."),
       checklistRow("ok", "Reinstalled npm dependencies."),
       checklistRow("ok", "Verified the Chromium browser installation."),
     ]);

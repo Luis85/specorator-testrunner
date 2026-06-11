@@ -55,7 +55,7 @@ export const runnerValidationRows = (result: RunnerValidationResult): ChecklistR
 export const repairRows = (result: RepairResult): ChecklistRow[] => [
   checklistRow(
     "ok",
-    `Repaired ${result.repairedFiles.length} runner ${
+    `Repaired ${result.repairedFiles.length} .testrunner ${
       result.repairedFiles.length === 1 ? "file" : "files"
     }.`,
   ),

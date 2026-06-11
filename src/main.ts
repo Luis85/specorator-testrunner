@@ -91,6 +91,7 @@ import {
   UseCaseDetailView,
 } from "./presentation/views/use-case-detail-view";
 import { generateFeatureForUseCase } from "./presentation/views/generate-feature-modal";
+import { openOrNotice } from "./presentation/views/modal-helpers";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
 import {
   DefaultRunHistoryService,
@@ -142,21 +143,29 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // state, the run-status eligibility rule, and the serializing evidence chain
   // that used to live here.
   private postRunCoordinator!: PostRunCoordinator;
+  // Every NodeChildProcessRunner built by this composition root, so onunload
+  // can issue best-effort kill signals to ANY still-running child — including
+  // an in-flight `npm install` on the shared runner, which no command path can
+  // reach once the plugin is gone (A6).
+  private readonly processRunners: NodeChildProcessRunner[] = [];
 
   async onload(): Promise<void> {
     const eventBus = new InMemoryEventBus((error) =>
       this.logger?.error("Event handler failed", error as Error),
     );
     const pathSafety = new DefaultPathSafetyPolicy();
-    const dataStore = new ObsidianDataStore(this);
 
     // The logger is built first so SettingsService.load() can report a tampered
     // path (P0-1) and so it exists before any settings/secrets are known. Its
     // value-based redaction set (ADR-0019) is populated from the loaded SUT
     // credentials immediately after load and refreshed on every settings change
-    // (P0-2). Reconstructed once the persisted log level is known.
+    // (P0-2). The SAME instance is kept for the plugin's lifetime — services
+    // constructed before settings load (e.g. SettingsService) would otherwise
+    // hold a stale logger that never receives setSecrets refreshes or the
+    // persisted log level (F3); only the level filter is adjusted in place.
     const consoleLogger = new ConsoleLogger("info");
     this.logger = consoleLogger;
+    const dataStore = new ObsidianDataStore(this, this.logger);
     const vault = new ObsidianVaultAdapter(this.app);
     // The vault is passed so validate() can run the ADR-0015 one-project-per-vault
     // sibling Test Hub check.
@@ -168,7 +177,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       vault,
     );
     this.hubSettings = await this.hubSettingsService.load();
-    this.logger = new ConsoleLogger(this.hubSettings.logging.level);
+    consoleLogger.setMinLevel(this.hubSettings.logging.level);
     this.refreshLoggerSecrets();
 
     this.workspaceAdapter = new ObsidianWorkspaceAdapter(this.app);
@@ -188,6 +197,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
 
     const absoluteFs = new NodeAbsoluteFileSystem(this.app);
     const childProcess = new NodeChildProcessRunner();
+    this.processRunners.push(childProcess);
     const templateWriter = new RunnerTemplateWriter(absoluteFs);
     const commandSafety = new DefaultCommandSafetyPolicy();
 
@@ -290,11 +300,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // A dedicated runner instance for test execution: cancel() kills only the
     // (single, ADR-0018) active test process, never a concurrent validation,
     // repair, or install spawned on the shared `childProcess`.
+    const runProcessRunner = new NodeChildProcessRunner();
+    this.processRunners.push(runProcessRunner);
     this.testExecutionService = new DefaultTestExecutionService(
       this.hubSettingsService,
       this.suiteService,
       this.useCaseService,
-      new NodeChildProcessRunner(),
+      runProcessRunner,
       absoluteFs,
       commandSafety,
       eventBus,
@@ -424,6 +436,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           // Narrow read-only slice: the toolbar checks for an active run on open
           // and reads the last run's scope to power Re-run.
           activeRunId: () => this.testExecutionService.activeRunId(),
+          activeRunStartedAt: () => this.testExecutionService.activeRunStartedAt(),
           lastRun: () => this.testExecutionService.lastRun(),
           // Wave G §1: the "Open evidence" button. The coordinator already owns
           // the post-run evidence flow, so it is the cleanest synchronous source
@@ -579,6 +592,12 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // synchronous per PRES-H1, and the per-run snapshot already protects
     // attribution, so we do not block teardown on whenSettled() here.
     this.postRunCoordinator?.stop();
+    // Best-effort kill signal to ANY child still tracked by either runner —
+    // notably an in-flight `npm install`/`playwright install` on the shared
+    // runner, which would otherwise survive unload with no way to stop it (A6).
+    // Idempotent with the cancel() above (an already-signalled child is gone
+    // from the tracking map or tolerates a second signal).
+    for (const runner of this.processRunners) runner.disposeAll();
     // registerView + each view's onClose already tear the views down on unload;
     // detachLeavesOfType is explicitly discouraged (it destroys the user's saved
     // workspace layout across reloads/updates), so it is intentionally NOT called
@@ -638,18 +657,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     }
   }
 
-  // Wave C §1: the dashboard hub's "Generate documentation" quick action.
   // Opens a linked Evidence note from the console/dashboard. An evidence note
   // can be deleted after its link was rendered (entry-point review) — a silent
-  // no-op there left the user clicking a dead button, so surface the failure.
+  // no-op there left the user clicking a dead button, so surface the failure
+  // (via the same openOrNotice helper the views use, with a specific message).
   private async openEvidenceNote(path: VaultPath): Promise<void> {
-    const opened = await this.workspaceAdapter.openFile(path);
-    if (!opened.ok) {
-      new Notice(
-        `Could not open the evidence note "${path}". It may have been moved or deleted.`,
-        10000,
-      );
-    }
+    await openOrNotice(this.workspaceAdapter, path, {
+      message: `Could not open the evidence note "${path}". It may have been moved or deleted.`,
+      timeout: 10000,
+    });
   }
 
   // Reuses the documentation service the command palette uses; the UI is thin.
@@ -668,7 +684,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // emits settings.updated, which the dashboard subscribes to for its refresh),
   // so the view passes a name and never writes settings itself.
   private async switchEnvironment(name: string): Promise<void> {
-    if (!(name in this.hubSettings.sut.environments)) {
+    // Object.hasOwn, not `in`: a name like "toString" would hit the prototype
+    // chain with `in` and pass the guard without a real environment.
+    if (!Object.hasOwn(this.hubSettings.sut.environments, name)) {
       new Notice(`Unknown environment: ${name}`, 10000);
       return;
     }
@@ -692,14 +710,29 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   }
 
   async updateSettings(next: TestHubSettings): Promise<Result<void>> {
+    // Optimistic in-memory swap BEFORE the awaited save, for two reasons:
+    // (1) save() publishes `settings.updated` while it is awaited, and the
+    //     bus synchronously drives the dashboard re-render — which reads
+    //     getSettings(); assigning afterwards made that one render (the one
+    //     meant to show the change) paint the STALE settings.
+    // (2) the settings tab debounces saves PER FIELD and each handler builds
+    //     `next` from getSettings(); assigning afterwards let a second field's
+    //     handler snapshot a base that missed the first field's edit, silently
+    //     reverting it (the F2 lost-update, on the caller side).
+    const previous = this.hubSettings;
+    this.hubSettings = next;
+    this.refreshLoggerSecrets();
     const result = await this.hubSettingsService.save(next);
-    if (result.ok) {
-      this.hubSettings = next;
-      // New/changed SUT credentials must start being scrubbed immediately
-      // (ADR-0019 value-based redaction, P0-2 / T3).
-      this.refreshLoggerSecrets();
-      this.logger.info("Settings updated");
+    if (!result.ok) {
+      // Roll back — but only if no newer update superseded this one while the
+      // save was in flight (their optimistic state must not be clobbered).
+      if (this.hubSettings === next) {
+        this.hubSettings = previous;
+        this.refreshLoggerSecrets();
+      }
+      return result;
     }
+    this.logger.info("Settings updated");
     return result;
   }
 
@@ -723,10 +756,12 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       );
       return;
     }
-    // Re-load the now-default settings so the in-memory copy + redaction set
-    // match the persisted reset.
+    // Re-load the now-default settings so the in-memory copy, redaction set,
+    // AND the logger's level filter match the persisted reset (the in-place
+    // setMinLevel exists precisely so this stays one logger instance, F3).
     this.hubSettings = await this.hubSettingsService.load();
     this.refreshLoggerSecrets();
+    this.logger.setMinLevel(this.hubSettings.logging.level);
     new Notice("Test Hub reset to a clean state.");
   }
 

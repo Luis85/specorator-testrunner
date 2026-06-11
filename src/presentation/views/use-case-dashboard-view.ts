@@ -5,6 +5,7 @@ import type { UseCaseService } from "../../application/services/use-case-service
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
+import { openOrNotice, renderLoadError } from "./modal-helpers";
 import { RenderScheduler } from "./render-scheduler";
 import { featureCountCell, projectUseCaseRows } from "./use-case-rows";
 
@@ -97,7 +98,13 @@ export class UseCaseDashboardView extends ItemView {
       this.deps.specificationService.listFeatures(),
     ]);
     if (!result.ok) {
-      container.createEl("p", { text: `Could not load Use Cases: ${result.error.message}` });
+      // Recoverable dead-end: offer a retry instead of a bare terminal message.
+      renderLoadError(
+        container,
+        `Could not load Use Cases: ${result.error.message}`,
+        "Retry loading the Use Cases",
+        () => void this.scheduler.schedule(),
+      );
       return;
     }
 
@@ -154,7 +161,7 @@ export class UseCaseDashboardView extends ItemView {
         attr: { "aria-label": `Open the ${row.id} note` },
       });
       note.addEventListener("click", () => {
-        void this.deps.workspace.openFile(row.path);
+        void openOrNotice(this.deps.workspace, row.path);
       });
       // Per-row Run button (Wave B): launches a use-case-scoped run via the
       // shared launcher, which reveals the Test Console first.

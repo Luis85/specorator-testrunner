@@ -3,6 +3,7 @@ import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { SpecificationService } from "../../application/services/specification-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { UseCase } from "../../domain/entities/use-case";
+import { openOrNotice, submitOnEnter } from "./modal-helpers";
 
 export interface GenerateFeatureDeps {
   useCaseService: UseCaseService;
@@ -62,7 +63,7 @@ export const generateFeatureForUseCase = (
       return;
     }
     new Notice(`Generated ${result.value.path}.`);
-    await deps.workspace.openFile(result.value.path);
+    await openOrNotice(deps.workspace, result.value.path);
     onGenerated?.(result.value.path);
   };
 
@@ -96,6 +97,9 @@ class SlugPromptModal extends Modal {
     });
     new Setting(contentEl).setName("Slug").addText((text) => {
       text.setPlaceholder("edge-cases").onChange((value) => (this.slug = value));
+      // Enter submits (shared helper) so the keyboard flow doesn't force a
+      // mouse trip — same wiring as the other prompt modals.
+      submitOnEnter(text.inputEl, () => this.submit());
       // Autofocus the only input so the user can type the slug immediately
       // instead of tabbing/clicking into the field first.
       text.inputEl.focus();
@@ -104,21 +108,23 @@ class SlugPromptModal extends Modal {
       button
         .setButtonText("Create Feature")
         .setCta()
-        .onClick(() => {
-          if (this.submitting) return;
-          const slug = this.slug.trim();
-          if (slug === "") {
-            new Notice("Please enter a slug for the new Feature.");
-            return;
-          }
-          this.submitting = true; // never reset: the modal closes here
-          this.close();
-          this.onSubmit(slug);
-        }),
+        .onClick(() => this.submit()),
     );
   }
 
   onClose(): void {
     this.contentEl.empty();
+  }
+
+  private submit(): void {
+    if (this.submitting) return;
+    const slug = this.slug.trim();
+    if (slug === "") {
+      new Notice("Please enter a slug for the new Feature.");
+      return;
+    }
+    this.submitting = true; // never reset: the modal closes here
+    this.close();
+    this.onSubmit(slug);
   }
 }

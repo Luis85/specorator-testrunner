@@ -2,15 +2,30 @@ import type { RunId, VaultPath } from "../value-objects/identifiers";
 
 /** Test-run domain types (TIS §6.8–§6.13). */
 
-export type ExecutionScope = "use-case" | "feature" | "suite" | "all" | "demo";
+/**
+ * Run scopes, as a runtime list so frontmatter read-back validation
+ * (UseCaseService.parse) enumerates the same single source the
+ * {@link ExecutionScope} union is derived from.
+ */
+export const EXECUTION_SCOPES = ["use-case", "feature", "suite", "all", "demo"] as const;
 
-export type TestRunStatus =
-  | "queued"
-  | "running"
-  | "passed"
-  | "failed"
-  | "errored" // never reached normal completion (EN-2)
-  | "cancelled";
+export type ExecutionScope = (typeof EXECUTION_SCOPES)[number];
+
+/**
+ * Run lifecycle states, as a runtime list so frontmatter read-back validation
+ * enumerates the same single source the {@link TestRunStatus} union is
+ * derived from.
+ */
+export const TEST_RUN_STATUSES = [
+  "queued",
+  "running",
+  "passed",
+  "failed",
+  "errored", // never reached normal completion (EN-2)
+  "cancelled",
+] as const;
+
+export type TestRunStatus = (typeof TEST_RUN_STATUSES)[number];
 
 export interface TestRunResult {
   passed: number;
@@ -50,7 +65,9 @@ export interface TestRun {
  * distinct from a real `"passed"` — so a skipped UC does not count toward the
  * Passing KPI (ADR-0017).
  */
-export type UseCaseRunOutcome = TestRunStatus | "skipped";
+export const USE_CASE_RUN_OUTCOMES = [...TEST_RUN_STATUSES, "skipped"] as const;
+
+export type UseCaseRunOutcome = (typeof USE_CASE_RUN_OUTCOMES)[number];
 
 export interface TestRunSummary {
   runId: RunId;

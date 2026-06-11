@@ -3,7 +3,7 @@ import type { ChildProcessRunner } from "../ports/child-process-runner";
 import { REQUIRED_RUNNER_DEPENDENCIES, VALIDATED_RUNNER_FILES } from "../content/runner-manifest";
 import { buildGitHubActionsWorkflow, isNpmCiCommand } from "../content/ci-workflow-content";
 import { isSafeCiCommand } from "./pipeline-generation-service";
-import { playwrightBrowsersCandidates, resolveRunnerCwd } from "./runner-paths";
+import { playwrightBrowsersCandidates } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
 import type { TestHubSettings } from "../../domain/settings/settings";
@@ -82,10 +82,6 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     }
 
     const runnerAbs = `${base.value.replace(/[/\\]$/, "")}/${settings.paths.testRunnerPath}`;
-    const cwd = (await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath)) as {
-      ok: true;
-      value: string;
-    };
 
     const nodeAvailable = await this.commandSucceeds(
       [settings.runner.nodeExecutable, "--version"],
@@ -111,7 +107,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     const dependenciesInstalled = nodeModulesExists && missingDependencies.length === 0;
     const playwrightAvailable =
       dependenciesInstalled &&
-      (await this.commandSucceeds(["npx", "playwright", "--version"], cwd.value));
+      (await this.commandSucceeds(["npx", "playwright", "--version"], runnerAbs));
     const browsersInstalled = await this.detectBrowsers(runnerAbs);
 
     if (!nodeAvailable)
@@ -238,7 +234,10 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
       // Generation requires the run command to invoke an npm SCRIPT (not an
       // install), so readiness must flag the same — npmRunScript returns null
       // for a non-`npm run` command, which also leaves the script unverified.
-      if (!isSafeCiCommand(effectiveCiCommand) || npmRunScript(effectiveCiCommand) === null) {
+      if (
+        !isSafeCiCommand(effectiveCiCommand, this.commandSafety) ||
+        npmRunScript(effectiveCiCommand) === null
+      ) {
         missingItems.push(
           `CI run command "${effectiveCiCommand}" is not supported by Generate CI Workflow.`,
         );
@@ -271,7 +270,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
       // use e.g. `npm install --no-package-lock` doesn't, so don't reject that
       // valid CI config.
       const effectiveCiInstall = settings.runner.ciInstallCommand.trim() || "npm ci";
-      if (!isSafeCiCommand(effectiveCiInstall)) {
+      if (!isSafeCiCommand(effectiveCiInstall, this.commandSafety)) {
         missingItems.push(
           `CI install command "${effectiveCiInstall}" is not supported by Generate CI Workflow.`,
         );

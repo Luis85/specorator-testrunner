@@ -16,7 +16,9 @@ import {
   type OnboardingActionId,
   type QuickActionId,
 } from "./dashboard-rows";
+import { activateOnEnterOrSpace } from "./keyboard-activation";
 import { RenderScheduler } from "./render-scheduler";
+import { renderLoadError } from "./modal-helpers";
 
 export const DASHBOARD_VIEW_TYPE = "e2e-test-hub-dashboard";
 
@@ -186,8 +188,14 @@ export class DashboardView extends ItemView {
     const result = await this.deps.traceabilityService.snapshot();
     if (!result.ok) {
       // Initialized but the snapshot failed (a real I/O error, not a fresh
-      // vault) — surface it rather than masquerading as "not initialized".
-      container.createEl("p", { text: `Could not load dashboard: ${result.error.message}` });
+      // vault) — surface it rather than masquerading as "not initialized",
+      // and offer a retry instead of a bare terminal message.
+      renderLoadError(
+        container,
+        `Could not load dashboard: ${result.error.message}`,
+        "Retry loading the dashboard",
+        () => void this.scheduler.schedule(),
+      );
       return;
     }
 
@@ -201,7 +209,7 @@ export class DashboardView extends ItemView {
     // Cases yet (a first-time user right after the wizard), guide the
     // create-UC → demo-run → docs path. We only reach this branch when
     // isInitialized() returned true above. Disappears once a Use Case exists.
-    if (shouldShowOnboarding(true, result.value.totalUseCases)) {
+    if (shouldShowOnboarding(result.value.totalUseCases)) {
       this.renderOnboarding(container);
     }
 
@@ -234,6 +242,12 @@ export class DashboardView extends ItemView {
 
     // Recent runs (US-038).
     container.createEl("h3", { text: "Recent Runs" });
+    if (view.recentRuns.length === 0) {
+      container.createEl("p", { text: "No Test Runs yet. Run a Test Suite to see results here." });
+      return;
+    }
+    // EPIC-008: only rendered once at least one run exists — an empty history
+    // has nothing to "view all" of.
     container
       .createEl("button", {
         text: "View all runs",
@@ -243,10 +257,6 @@ export class DashboardView extends ItemView {
       .addEventListener("click", () => {
         void this.deps.openEvidenceExplorer();
       });
-    if (view.recentRuns.length === 0) {
-      container.createEl("p", { text: "No Test Runs yet. Run a Test Suite to see results here." });
-      return;
-    }
 
     const table = container.createEl("table", { cls: "e2e-test-hub-runs-table" });
     const headRow = table.createEl("thead").createEl("tr");
@@ -258,13 +268,34 @@ export class DashboardView extends ItemView {
     for (const run of view.recentRuns) {
       // Clicking a row opens its linked Evidence note (Wave C §3). Rows without
       // evidence (e.g. errored runs) are inert with an explanatory tooltip.
+      // The row itself carries no link role/tabindex — that would destroy its
+      // table semantics for screen readers; the Run ID cell holds the real
+      // link-button and the whole-row click is a sighted-user convenience.
       const tr = body.createEl("tr", {
         cls: run.navigable ? "e2e-test-hub-run-row is-navigable" : "e2e-test-hub-run-row",
-        attr: run.navigable
-          ? { "aria-label": run.ariaLabel, role: "link", tabindex: "0" }
-          : { "aria-label": run.ariaLabel, title: NO_EVIDENCE_TOOLTIP },
       });
-      tr.createEl("td", { text: run.runId });
+      if (run.navigable && run.evidencePath !== undefined) {
+        const path = run.evidencePath;
+        const open = (): void => {
+          void this.deps.openEvidence(path);
+        };
+        // Same pattern as the Use Cases table's id link-button.
+        const link = tr.createEl("td").createEl("button", {
+          text: run.runId,
+          cls: "e2e-test-hub-link-button",
+          attr: { "aria-label": run.ariaLabel },
+        });
+        link.addEventListener("click", (event) => {
+          // The row's convenience click listener below would fire open() again.
+          event.stopPropagation();
+          open();
+        });
+        activateOnEnterOrSpace(link, open);
+        tr.addEventListener("click", open);
+      } else {
+        tr.createEl("td", { text: run.runId });
+        tr.setAttr("title", NO_EVIDENCE_TOOLTIP);
+      }
       // data-status mirrors the raw TestRunStatus so styles.css can tint the
       // cell via Obsidian theme vars. The status TEXT stays, so the outcome is
       // legible without colour (colour-blind / high-contrast safe).
@@ -274,20 +305,6 @@ export class DashboardView extends ItemView {
         attr: { "data-status": run.status },
       });
       tr.createEl("td", { text: run.date });
-      if (run.navigable && run.evidencePath !== undefined) {
-        const path = run.evidencePath;
-        const open = (): void => {
-          void this.deps.openEvidence(path);
-        };
-        tr.addEventListener("click", open);
-        // Keyboard activation (the row is role=link, tabindex=0).
-        tr.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            open();
-          }
-        });
-      }
     }
   }
 

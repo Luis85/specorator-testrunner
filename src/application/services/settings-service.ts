@@ -60,6 +60,9 @@ export interface SettingsValidationMessage {
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** Runtime mirror of LoggingSettings["level"] for tamper repair on load. */
+const LOG_LEVELS: ReadonlySet<string> = new Set(["debug", "info", "warn", "error"]);
+
 /** Shallow-by-section merge of persisted data over defaults. */
 const mergeWithDefaults = (raw: unknown): TestHubSettings => {
   const data = (raw ?? {}) as Partial<TestHubSettings>;
@@ -86,6 +89,24 @@ export class DefaultSettingsService implements SettingsService {
      */
     private readonly vaultFs?: VaultFileSystem,
   ) {}
+
+  /**
+   * Serializes save()/reset() persistence. The settings tab debounces saves
+   * PER FIELD (P4-9), so two quick edits to different fields produce two
+   * overlapping save() calls; without serialization both would read the same
+   * "previous", interleave their load→save→diff sections, and the last
+   * whole-object write would win — silently dropping the first change (F2).
+   */
+  private persistChain: Promise<unknown> = Promise.resolve();
+
+  /** Queues `task` behind every previously queued persistence task. */
+  private serialize<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.persistChain.then(task);
+    // The chain itself must survive a failed task; the failure still reaches
+    // the caller through `run`.
+    this.persistChain = run.catch(() => undefined);
+    return run;
+  }
 
   async load(): Promise<TestHubSettings> {
     return this.sanitizeRunnerEnvInputs(
@@ -120,6 +141,21 @@ export class DefaultSettingsService implements SettingsService {
         paths[field] = DEFAULT_SETTINGS.paths[field];
       }
     }
+    // logging.level is consumed directly by the composition root's
+    // setMinLevel; an out-of-union value (tampered/synced data.json) would
+    // make LEVEL_ORDER[level] undefined and silently DISABLE the level filter
+    // for the whole session — repair it with the same log-and-fallback
+    // posture as the path screens.
+    let level = settings.logging.level;
+    if (!LOG_LEVELS.has(level)) {
+      this.logger.error(
+        `Configured "logging.level" is not a valid level; falling back to the default.`,
+        undefined,
+        { value: level, fallback: DEFAULT_SETTINGS.logging.level },
+      );
+      level = DEFAULT_SETTINGS.logging.level;
+    }
+
     const loggingPath = vaultPath(settings.logging.path, this.pathSafety);
     if (!loggingPath.ok) {
       this.logger.error(
@@ -130,13 +166,13 @@ export class DefaultSettingsService implements SettingsService {
       return {
         ...settings,
         paths,
-        logging: { ...settings.logging, path: DEFAULT_SETTINGS.logging.path },
+        logging: { ...settings.logging, level, path: DEFAULT_SETTINGS.logging.path },
       };
     }
     return {
       ...settings,
       paths,
-      logging: { ...settings.logging, path: loggingPath.value },
+      logging: { ...settings.logging, level, path: loggingPath.value },
     };
   }
 
@@ -196,9 +232,13 @@ export class DefaultSettingsService implements SettingsService {
             // ADR-0019). Reserved process-control keys (PATH, NODE_OPTIONS, …)
             // are dropped here too, so they can't reach the runner env sink.
             this.logger.error(
+              // Field name `entry`, not `key`: the logger's SENSITIVE_KEY
+              // pattern matches the field NAME "key" and would blank exactly
+              // the diagnostic this log exists to carry (F5). The env-var NAME
+              // is not a credential — only its value is (ADR-0019).
               `Configured auth env key in "sut.environments.${name}" ${problem}; dropping that entry.`,
               undefined,
-              { environment: name, key },
+              { environment: name, entry: key },
             );
           }
         }
@@ -280,11 +320,12 @@ export class DefaultSettingsService implements SettingsService {
             if (typeof value === "string") {
               env[key] = value;
             } else {
-              // KEY only — the value may be a credential (ADR-0019).
+              // KEY only — the value may be a credential (ADR-0019). Field
+              // name `entry`, not `key`, so SENSITIVE_KEY doesn't blank it (F5).
               this.logger.error(
                 `Configured auth env value in "sut.environments.${name}" is not a string; dropping that entry.`,
                 undefined,
-                { environment: name, key },
+                { environment: name, entry: key },
               );
             }
           }
@@ -345,30 +386,36 @@ export class DefaultSettingsService implements SettingsService {
     return { active: sut.active, environments };
   }
 
-  async save(settings: TestHubSettings): Promise<Result<void>> {
-    const validation = await this.validate(settings);
-    if (!validation.valid) {
-      return err(
-        appError("SETTINGS_INVALID", "Settings failed validation.", {
-          details: { errors: validation.errors },
-        }),
-      );
-    }
-    // Diff the persisted settings against the incoming ones so the event
-    // carries the real changed field names (Event Catalog §13: { changedFields }).
-    const previous = await this.load();
-    await this.store.save(settings);
-    const changedFields = diffSettings(previous, settings);
-    await this.eventBus.publish(createEvent("settings.updated", { changedFields }));
-    return ok(undefined);
+  save(settings: TestHubSettings): Promise<Result<void>> {
+    return this.serialize(async () => {
+      const validation = await this.validate(settings);
+      if (!validation.valid) {
+        return err(
+          appError("SETTINGS_INVALID", "Settings failed validation.", {
+            details: { errors: validation.errors },
+          }),
+        );
+      }
+      // Diff the persisted settings against the incoming ones so the event
+      // carries the real changed field names (Event Catalog §13: { changedFields }).
+      const previous = await this.load();
+      const saved = await this.store.save(settings);
+      if (!saved.ok) return saved;
+      const changedFields = diffSettings(previous, settings);
+      await this.eventBus.publish(createEvent("settings.updated", { changedFields }));
+      return ok(undefined);
+    });
   }
 
-  async reset(correlationId?: string): Promise<Result<TestHubSettings>> {
-    await this.store.save(DEFAULT_SETTINGS);
-    await this.eventBus.publish(
-      createEvent("settings.reset", { profile: "default" }, { correlationId }),
-    );
-    return ok(DEFAULT_SETTINGS);
+  reset(correlationId?: string): Promise<Result<TestHubSettings>> {
+    return this.serialize(async () => {
+      const saved = await this.store.save(DEFAULT_SETTINGS);
+      if (!saved.ok) return saved;
+      await this.eventBus.publish(
+        createEvent("settings.reset", { profile: "default" }, { correlationId }),
+      );
+      return ok(DEFAULT_SETTINGS);
+    });
   }
 
   async validate(settings: TestHubSettings): Promise<SettingsValidationResult> {
@@ -399,7 +446,11 @@ export class DefaultSettingsService implements SettingsService {
     // map must validate as "active not defined" rather than crash.
     const environments = isPlainRecord(settings.sut.environments) ? settings.sut.environments : {};
 
-    if (!environments[settings.sut.active]) {
+    // Object.hasOwn (not a truthy index) for the same prototype-chain trap
+    // repairSutShape documents: an active named "toString"/"constructor" with
+    // no real environment would otherwise resolve a prototype member (truthy)
+    // and slip past this error into the runner env builder.
+    if (!Object.hasOwn(environments, settings.sut.active)) {
       errors.push({
         field: "sut.active",
         message: `Active environment "${settings.sut.active}" is not defined.`,

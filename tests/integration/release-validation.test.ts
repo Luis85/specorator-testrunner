@@ -38,6 +38,14 @@ describe("release validation: manifest contract", () => {
     expect(manifest.version).toBe(pkg.version);
   });
 
+  it("versions.json maps the manifest version to its minAppVersion", () => {
+    // Obsidian's installer consults versions.json to pick a compatible release;
+    // a missing or stale entry would offer the new version to vaults that
+    // cannot run it.
+    const versions = readJson("versions.json");
+    expect(versions[manifest.version as string]).toBe(manifest.minAppVersion);
+  });
+
   it("manifest declares the required Obsidian fields", () => {
     expect(typeof manifest.minAppVersion).toBe("string");
     expect(typeof manifest.description).toBe("string");

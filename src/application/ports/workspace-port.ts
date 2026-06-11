@@ -12,5 +12,4 @@ export interface WorkspacePort {
    * An already-open leaf is revealed wherever the user moved it.
    */
   openView(viewType: string, location?: "main" | "sidebar"): Promise<Result<void>>;
-  revealInExplorer(path: VaultPath): Promise<Result<void>>;
 }

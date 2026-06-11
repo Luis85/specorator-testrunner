@@ -44,12 +44,15 @@ const isNpmCiShape = (command: string): boolean => {
 };
 
 // Actions runs `run:` steps through a shell, so a configured CI command must be
-// free of shell metacharacters (even after a `--` separator) AND an npm ci/run
-// shape. Exported so CI-readiness validation can reject exactly the commands
-// `generate()` would refuse to write, keeping the two consistent.
+// free of shell metacharacters (even after a `--` separator) AND a recognised
+// argv shape: one the ADR-0010 local-spawn allowlist (`commandSafety`) accepts
+// verbatim, or the relaxed npm ci/run shape above. Exported so CI-readiness
+// validation can reject exactly the commands `generate()` would refuse to
+// write, keeping the two consistent.
 const CI_COMMAND_CHARSET = /^[A-Za-z0-9 _:./=@-]+$/;
-export const isSafeCiCommand = (command: string): boolean =>
-  CI_COMMAND_CHARSET.test(command) && isNpmCiShape(command);
+export const isSafeCiCommand = (command: string, commandSafety: CommandSafetyPolicy): boolean =>
+  CI_COMMAND_CHARSET.test(command) &&
+  (isNpmCiShape(command) || commandSafety.assertSafe(command.split(/\s+/).filter(Boolean)).ok);
 
 /** CI pipeline generation contract (TIS §8.13, US-040, UC-019). */
 export interface PipelineGenerationService {
@@ -90,8 +93,9 @@ export class DefaultPipelineGenerationService implements PipelineGenerationServi
     // The configured CI install/run commands are interpolated verbatim into the
     // workflow `run:` steps, which Actions executes through a shell on push. A
     // synced/tampered settings blob could otherwise smuggle arbitrary commands
-    // (e.g. a curl pipe) into the committed workflow, so screen them against the
-    // same allowlist used for local spawns (ADR-0010) before writing.
+    // (e.g. a curl pipe) into the committed workflow, so screen them — against
+    // the same allowlist used for local spawns (ADR-0010), relaxed to the npm
+    // run/install shapes CI legitimately configures — before writing.
     const effectiveInstall = request.settings.runner.ciInstallCommand.trim() || "npm ci";
     const effectiveRun = request.settings.runner.ciRunCommand.trim() || "npm run test:ci";
     const nodeVersion = request.settings.ci.nodeVersion.trim() || "22";
@@ -188,13 +192,18 @@ export class DefaultPipelineGenerationService implements PipelineGenerationServi
           ),
         );
       }
-      // Unlike the local spawn allowlist (which fixes the script name), CI can
-      // legitimately use a custom npm script or install flags (`npm run e2e:ci`,
-      // `npm install --no-audit`). The shell-safe charset above already blocks
-      // every metacharacter, so here we only require the npm CI shape: an `npm`
-      // run/install/ci invocation. That permits configured CI commands while
-      // still rejecting arbitrary programs (e.g. a `curl` wrapper).
-      if (!isNpmCiShape(command)) {
+      // Require the npm CI shape — an `npm` run/install/ci invocation — or an
+      // argv the local ADR-0010 spawn allowlist accepts verbatim (a fortiori
+      // safe here, since the charset above already screened the metacharacters
+      // a shell-less local spawn tolerates). Unlike the local allowlist (which
+      // fixes the script name), the npm CI shape lets CI legitimately use a
+      // custom npm script or install flags (`npm run e2e:ci`,
+      // `npm install --no-audit`) while still rejecting arbitrary programs
+      // (e.g. a `curl` wrapper).
+      if (
+        !isNpmCiShape(command) &&
+        !this.commandSafety.assertSafe(command.split(/\s+/).filter(Boolean)).ok
+      ) {
         return err(
           appError(
             "VALIDATION_FAILED",

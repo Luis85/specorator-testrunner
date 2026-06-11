@@ -75,4 +75,52 @@ describe("ConsoleLogger", () => {
     logger.info("msg", { a: "", b: "real" });
     expect(log).toHaveBeenCalledWith(expect.any(String), { a: "", b: "***" });
   });
+
+  it("scrubs a secret interpolated into the MESSAGE text (F4)", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const logger = new ConsoleLogger("info");
+    logger.setSecrets(["super-secret-token"]);
+    logger.info("baseUrl https://user:super-secret-token@host failed");
+    expect(log).toHaveBeenCalledWith("[e2e-test-hub] baseUrl https://user:***@host failed");
+  });
+
+  it("scrubs a secret nested inside the error field's message/stack (F4)", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logger = new ConsoleLogger("info");
+    logger.setSecrets(["super-secret-token"]);
+    logger.error("boom", new Error("auth failed for super-secret-token"));
+    const fields = error.mock.calls[0][1] as { error: { message: string } };
+    expect(fields.error.message).toBe("auth failed for ***");
+  });
+
+  it("adjusts the level filter in place via setMinLevel (F3)", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const logger = new ConsoleLogger("warn");
+    logger.info("filtered");
+    expect(log).not.toHaveBeenCalled();
+    logger.setMinLevel("debug");
+    logger.info("now visible");
+    expect(log).toHaveBeenCalledOnce();
+  });
+
+  it("omits the error field entirely when error() is called without one", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    new ConsoleLogger("info").error("plain failure");
+    expect(error).toHaveBeenCalledWith("[e2e-test-hub] plain failure");
+  });
+});
+
+describe("redactFields (nested values, F4)", () => {
+  it("recurses into plain objects and arrays", () => {
+    const out = redactFields(
+      { error: { details: { hint: "use super-secret-token" }, parts: ["super-secret-token"] } },
+      new Set(["super-secret-token"]),
+    );
+    expect(out).toEqual({ error: { details: { hint: "use ***" }, parts: ["***"] } });
+  });
+
+  it("redacts sensitive KEYS at any depth", () => {
+    const out = redactFields({ error: { token: "abc" } });
+    expect(out).toEqual({ error: { token: "***" } });
+  });
 });

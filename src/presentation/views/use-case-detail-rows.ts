@@ -86,7 +86,9 @@ export const featureHealthLine = (health: FeatureHealth): FeatureHealthLine => {
   return {
     text: `${scenarios}${wip}`,
     wipBadge: health.featureIsWip,
-    wipTooltip: "This Feature is tagged @wip and is excluded from the KPI roll-up (ADR-0017).",
+    // The KPI exclusion is decided by ADR-0017, but the decision id is an
+    // internal reference and stays out of user copy.
+    wipTooltip: "This Feature is tagged @wip and is excluded from the KPI roll-up.",
   };
 };
 

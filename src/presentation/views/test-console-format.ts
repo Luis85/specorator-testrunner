@@ -28,9 +28,6 @@ export const formatStatusBanner = (status: TestRunStatus, durationMs?: number): 
   }
 };
 
-/** CSS modifier suffix for status-driven styling. */
-export const statusModifier = (status: TestRunStatus): string => status;
-
 /**
  * Recognizes Cucumber's end-of-run summary lines ("1 scenario (1 undefined)",
  * "3 steps (3 undefined)") in the streamed output. The banner appends them so

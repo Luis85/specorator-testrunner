@@ -53,6 +53,53 @@ describe("DefaultSettingsService", () => {
     expect(event?.payload).toEqual({ changedFields: [] });
   });
 
+  it("serializes overlapping saves so their load→save sections can't interleave (F2)", async () => {
+    // The settings tab debounces saves PER FIELD, so two quick edits produce
+    // two overlapping save() calls. Unserialized, both read the same baseline
+    // (load, load, save, save) and the diffs/writes interleave; the chain must
+    // yield strictly load → save → load → save.
+    const order: string[] = [];
+    const store = new FakeDataStore();
+    const recordingStore = {
+      load: () => {
+        order.push("load");
+        return store.load();
+      },
+      save: (data: unknown) => {
+        order.push("save");
+        return store.save(data);
+      },
+    };
+    const { bus } = recordingEventBus();
+    const service = new DefaultSettingsService(recordingStore, new DefaultPathSafetyPolicy(), bus);
+    const first = service.save({
+      ...DEFAULT_SETTINGS,
+      logging: { ...DEFAULT_SETTINGS.logging, level: "debug" as const },
+    });
+    const second = service.save({
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "22" },
+    });
+    expect((await first).ok).toBe(true);
+    expect((await second).ok).toBe(true);
+    expect(order).toEqual(["load", "save", "load", "save"]);
+  });
+
+  it("surfaces a data-store save failure as an err Result (F2)", async () => {
+    const { bus } = recordingEventBus();
+    const failingStore = {
+      load: async () => undefined,
+      save: async () => ({
+        ok: false as const,
+        error: { code: "SETTINGS_SAVE_FAILED" as const, message: "disk full" },
+      }),
+    };
+    const service = new DefaultSettingsService(failingStore, new DefaultPathSafetyPolicy(), bus);
+    const result = await service.save(DEFAULT_SETTINGS);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("SETTINGS_SAVE_FAILED");
+  });
+
   it("settings.validated emits { valid, warnings: string[] }", async () => {
     const { service, events } = makeService();
     const withEmptyNodeVersion = {
@@ -451,8 +498,9 @@ describe("DefaultSettingsService — ADR-0015 sibling Test Hub detection", () =>
     return { service, events };
   };
 
-  const siblingWarning = (validation: { warnings: { message: string }[] }) =>
-    validation.warnings.find((w) => /more than one Test Hub/i.test(w.message));
+  const siblingWarning = (validation: {
+    warnings: { message: string; severity: "error" | "warning" }[];
+  }) => validation.warnings.find((w) => /more than one Test Hub/i.test(w.message));
 
   it("is a no-op for a normal single-folder vault", async () => {
     const { service } = makeServiceWithVault(["Test Hub", "Use Cases", "Specifications"]);

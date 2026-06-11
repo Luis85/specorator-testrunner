@@ -120,16 +120,18 @@ describe("QUICK_ACTIONS", () => {
       expect(action.ariaLabel.length).toBeGreaterThan(0);
     }
   });
+
+  it("files Generate documentation under Create — it produces artifacts, it doesn't run tests", () => {
+    expect(QUICK_ACTIONS.find((a) => a.id === "generate-docs")?.group).toBe("create");
+  });
 });
 
 describe("onboarding panel (Wave G §2)", () => {
-  it("shows only when initialized AND the vault has zero Use Cases", () => {
-    expect(shouldShowOnboarding(true, 0)).toBe(true);
-    // Not initialized: the Initialize CTA owns the screen instead.
-    expect(shouldShowOnboarding(false, 0)).toBe(false);
+  it("shows only when the vault has zero Use Cases (the view gates on isInitialized first)", () => {
+    expect(shouldShowOnboarding(0)).toBe(true);
     // A Use Case exists: the panel disappears naturally.
-    expect(shouldShowOnboarding(true, 1)).toBe(false);
-    expect(shouldShowOnboarding(false, 3)).toBe(false);
+    expect(shouldShowOnboarding(1)).toBe(false);
+    expect(shouldShowOnboarding(3)).toBe(false);
   });
 
   it("walks create-UC → demo run → Getting Started as numbered steps 1–3", () => {

@@ -1,4 +1,5 @@
 import { type App, Modal, Setting } from "obsidian";
+import { submitOnEnter } from "../views/modal-helpers";
 import { environmentNameProblem } from "./settings-rows";
 
 export interface AddEnvironmentDeps {
@@ -38,12 +39,7 @@ export class AddEnvironmentModal extends Modal {
     new Setting(contentEl).setName("Name").addText((text) => {
       text.setPlaceholder("staging").onChange((value) => (this.name = value));
       // Enter submits so the single-field modal doesn't force a mouse trip.
-      text.inputEl.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          this.submit();
-        }
-      });
+      submitOnEnter(text.inputEl, () => this.submit());
       // Autofocus the only input so the user can start typing immediately.
       text.inputEl.focus();
     });

@@ -4,7 +4,6 @@ import {
   formatElapsed,
   formatOutputLine,
   formatStatusBanner,
-  statusModifier,
   summaryHint,
 } from "../src/presentation/views/test-console-format";
 
@@ -31,10 +30,6 @@ describe("test-console-format", () => {
   it("renders in-progress and queued banners", () => {
     expect(formatStatusBanner("running")).toBe("Run in progress…");
     expect(formatStatusBanner("queued")).toBe("Run queued");
-  });
-
-  it("uses the status as the CSS modifier", () => {
-    expect(statusModifier("failed")).toBe("failed");
   });
 
   it("formats elapsed time as mm:ss, padded", () => {

@@ -6,10 +6,13 @@ import {
   EVIDENCE_PAGE_SIZE,
   EVIDENCE_STATUS_FILTERS,
   projectEvidenceGroups,
+  statusFilterLabel,
   type EvidenceMonthGroup,
   type EvidenceStatusFilter,
 } from "./evidence-explorer-rows";
+import { activateOnEnterOrSpace } from "./keyboard-activation";
 import { RenderScheduler } from "./render-scheduler";
+import { renderLoadError } from "./modal-helpers";
 
 export const EVIDENCE_EXPLORER_VIEW_TYPE = "e2e-test-hub-evidence";
 
@@ -79,7 +82,13 @@ export class EvidenceExplorerView extends ItemView {
 
     const result = await this.deps.runHistory.list({ offset: 0, limit: this.visibleLimit });
     if (!result.ok) {
-      container.createEl("p", { text: `Could not load run history: ${result.error.message}` });
+      // Recoverable dead-end: offer a retry instead of a bare terminal message.
+      renderLoadError(
+        container,
+        `Could not load run history: ${result.error.message}`,
+        "Retry loading the run history",
+        () => void this.scheduler.schedule(),
+      );
       return;
     }
     const { entries, hasMore } = result.value;
@@ -114,13 +123,16 @@ export class EvidenceExplorerView extends ItemView {
 
   private renderFilter(container: HTMLElement): void {
     const bar = container.createDiv({ cls: "e2e-test-hub-evidence-toolbar" });
-    bar.createEl("label", { text: "Status: ", attr: { for: "e2e-test-hub-evidence-filter" } });
-    const select = bar.createEl("select", {
-      attr: { id: "e2e-test-hub-evidence-filter", "aria-label": "Filter runs by status" },
+    // The <select> nests inside its <label> so the association is structural —
+    // no hardcoded id/for pair to drift (or collide across open leaves).
+    const label = bar.createEl("label", { text: "Status: " });
+    const select = label.createEl("select", {
+      attr: { "aria-label": "Filter runs by status" },
     });
     for (const option of EVIDENCE_STATUS_FILTERS) {
+      // Display labels are capitalized; the VALUE stays the lowercase filter.
       select.createEl("option", {
-        text: option === "all" ? "All" : option,
+        text: statusFilterLabel(option),
         attr: { value: option },
       });
     }
@@ -141,11 +153,25 @@ export class EvidenceExplorerView extends ItemView {
     }
     const body = table.createEl("tbody");
     for (const row of group.rows) {
-      const tr = body.createEl("tr", {
-        cls: "e2e-test-hub-run-row is-navigable",
-        attr: { "aria-label": row.ariaLabel, role: "link", tabindex: "0" },
+      // The row carries no link role/tabindex — that would destroy its table
+      // semantics for screen readers; the Run ID cell holds the real
+      // link-button and the whole-row click is a sighted-user convenience.
+      const tr = body.createEl("tr", { cls: "e2e-test-hub-run-row is-navigable" });
+      const open = (): void => {
+        void this.deps.openEvidence(row.evidencePath);
+      };
+      // Same pattern as the Use Cases table's id link-button.
+      const link = tr.createEl("td").createEl("button", {
+        text: row.runId,
+        cls: "e2e-test-hub-link-button",
+        attr: { "aria-label": row.ariaLabel },
       });
-      tr.createEl("td", { text: row.runId });
+      link.addEventListener("click", (event) => {
+        // The row's convenience click listener below would fire open() again.
+        event.stopPropagation();
+        open();
+      });
+      activateOnEnterOrSpace(link, open);
       // data-status + visible text mirrors the dashboard's colour-blind-safe
       // status cells (styles.css tints on data-status, the label always stays).
       tr.createEl("td", {
@@ -158,16 +184,7 @@ export class EvidenceExplorerView extends ItemView {
       tr.createEl("td", { text: row.total });
       tr.createEl("td", { text: row.scope });
       tr.createEl("td", { text: row.date });
-      const open = (): void => {
-        void this.deps.openEvidence(row.evidencePath);
-      };
       tr.addEventListener("click", open);
-      tr.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          open();
-        }
-      });
     }
   }
 }

@@ -150,7 +150,7 @@ The Test Hub turns requirements into executable specifications:
 
 ## How to: create a Use Case
 
-Run **Create Use Case**, give it a title, and the plugin writes a \`UC-NNN\` note
+Run **New Use Case**, give it a title, and the plugin writes a \`UC-NNN\` note
 into \`${paths.useCasesPath}/\`. Browse them from the **Open Use Cases** view.
 
 ## How to: generate a Feature
@@ -167,7 +167,7 @@ Initialization creates two suites:
 - **Smoke** — \`@smoke\` critical-path scenarios.
 - **Regression** — \`@regression\` the full regression set (empty until you tag scenarios).
 
-Create more with **Create Test Suite** (a tag expression). Tag a Feature
+Create more with **New Test Suite** (a tag expression). Tag a Feature
 \`@wip\` to keep half-built work out of the dashboard roll-up.
 
 ## How to: run tests

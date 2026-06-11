@@ -32,10 +32,6 @@ class FakeWorkspace implements WorkspacePort {
   async openView(): Promise<Result<void>> {
     return ok(undefined);
   }
-
-  async revealInExplorer(): Promise<Result<void>> {
-    return ok(undefined);
-  }
 }
 
 const makeService = () => {
@@ -208,7 +204,7 @@ describe("documentation content builders (US-043/044/045)", () => {
   it("user manual documents the core workflow and commands (US-044)", () => {
     const manual = byType("manual");
     expect(manual).toContain("# User Manual");
-    expect(manual).toContain("Create Use Case");
+    expect(manual).toContain("New Use Case");
     expect(manual).toContain("Generate Feature from Use Case");
     expect(manual).toContain("Open Dashboard");
     expect(manual).toContain("Generate CI Workflow");
