@@ -30,7 +30,9 @@ export interface GuidedTourViewDeps {
  */
 export class GuidedTourView extends ItemView {
   private readonly subscriptions: Unsubscribe[] = [];
-  private readonly scheduler = new RenderScheduler(() => Promise.resolve(this.render()));
+  private readonly scheduler = new RenderScheduler(async () => {
+    this.render();
+  });
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -44,7 +46,7 @@ export class GuidedTourView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Guided Tour";
+    return "Guided tour";
   }
 
   getIcon(): string {
@@ -77,7 +79,7 @@ export class GuidedTourView extends ItemView {
   private render(): void {
     const container = this.contentEl;
     container.empty();
-    container.createEl("h2", { text: "Guided Tour" });
+    container.createEl("h2", { text: "Guided tour" });
 
     const model = projectTour(this.deps.tour.getState());
     container.createDiv({ cls: "e2e-test-hub-tour-progress", text: model.progressLabel });

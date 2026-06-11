@@ -131,7 +131,7 @@ export class DashboardView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Test Hub Dashboard";
+    return "Test Hub dashboard";
   }
 
   getIcon(): string {
@@ -178,7 +178,7 @@ export class DashboardView extends ItemView {
   private async render(): Promise<void> {
     const container = this.contentEl;
     container.empty();
-    container.createEl("h2", { text: "Test Hub Dashboard" });
+    container.createEl("h2", { text: "Test Hub dashboard" });
 
     // Wave C §1: gate on a REAL initialization signal (the vault structure
     // exists). A fresh vault returns ok([]) from the snapshot — the missing Use
@@ -251,7 +251,7 @@ export class DashboardView extends ItemView {
     }
 
     // Recent runs (US-038).
-    container.createEl("h3", { text: "Recent Runs" });
+    container.createEl("h3", { text: "Recent runs" });
     if (view.recentRuns.length === 0) {
       container.createEl("p", { text: "No Test Runs yet. Run a Test Suite to see results here." });
       return;
@@ -481,7 +481,7 @@ export class DashboardView extends ItemView {
   private renderDocumentationActions(container: HTMLElement): void {
     const actions = container.createDiv({ cls: "e2e-test-hub-doc-actions" });
     // All three guides US-046 maps to UC-021/022/023 must be reachable here.
-    const buttons: ReadonlyArray<[string, DashboardDocumentType]> = [
+    const buttons: readonly [string, DashboardDocumentType][] = [
       ["Getting Started", "getting-started"],
       ["User Manual", "manual"],
       ["Troubleshooting", "troubleshooting"],

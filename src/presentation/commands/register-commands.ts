@@ -155,7 +155,7 @@ export function registerCommands(
       return;
     }
     if (listed.value.length === 0) {
-      new Notice("No Feature files yet. Generate one first.");
+      new Notice("No feature files yet. Generate one first.");
       return;
     }
     new RunPickerModal(
@@ -190,7 +190,7 @@ export function registerCommands(
   /** Path of the active note, or a Notice when there is no feature open. */
   const activeFeaturePath = (): VaultPath | null => {
     const file = plugin.app.workspace.getActiveFile();
-    if (!file || file.extension !== "feature") {
+    if (file?.extension !== "feature") {
       new Notice("Open a .feature file first.");
       return null;
     }
@@ -404,12 +404,12 @@ export function registerCommands(
   });
   plugin.addCommand({
     id: "generate-feature",
-    name: "Generate Feature from Use Case",
+    name: "Generate feature from Use Case",
     callback: () => void openGenerateFeature(),
   });
   plugin.addCommand({
     id: "validate-feature",
-    name: "Validate Feature",
+    name: "Validate feature",
     callback: () => void validateActiveFeature(),
   });
   plugin.addCommand({
@@ -448,7 +448,7 @@ export function registerCommands(
   });
   plugin.addCommand({
     id: "run-feature",
-    name: "Run Feature…",
+    name: "Run feature…",
     callback: () => void runFeature(),
   });
   plugin.addCommand({
@@ -489,18 +489,18 @@ export function registerCommands(
   });
   plugin.addCommand({
     id: "open-user-manual",
-    name: "Open User Manual",
+    name: "Open user manual",
     callback: () => void deps.openDocumentation("manual"),
   });
   plugin.addCommand({
     id: "open-troubleshooting",
-    name: "Open Troubleshooting",
+    name: "Open troubleshooting",
     callback: () => void deps.openDocumentation("troubleshooting"),
   });
 
   plugin.addCommand({
     id: "open-guided-tour",
-    name: "Open Guided Tour",
+    name: "Open guided tour",
     callback: () => void deps.workspace.openView(GUIDED_TOUR_VIEW_TYPE, "sidebar"),
   });
 

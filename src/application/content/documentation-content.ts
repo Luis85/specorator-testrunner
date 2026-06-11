@@ -77,7 +77,7 @@ Obsidian.
    **Test Hub Dashboard**.
 5. **Generate the CI workflow** to run the same suite on every push.
 
-New here? Run the **Open Guided Tour** command — it walks you through this
+New here? Run the **Open guided tour** command — it walks you through this
 whole loop, learning by doing.
 `,
 });
@@ -119,7 +119,7 @@ network access and behaves identically in CI.
 
 ## Build your own (Guided Tour)
 
-Run the **Open Guided Tour** command (or click **Start guided tour** right
+Run the **Open guided tour** command (or click **Start guided tour** right
 after initialization). The tour is a sidebar checklist that walks you through
 authoring your own Use Case, Feature, step definitions, Test Suite, run, and
 Evidence — each step completes by itself when you perform the real action,

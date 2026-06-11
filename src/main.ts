@@ -111,6 +111,10 @@ import {
   EVIDENCE_EXPLORER_VIEW_TYPE,
   EvidenceExplorerView,
 } from "./presentation/views/evidence-explorer-view";
+import {
+  FEATURE_EDITOR_VIEW_TYPE,
+  FeatureEditorView,
+} from "./presentation/views/feature-editor-view";
 import { InMemoryEventBus } from "./shared/event-bus/event-bus";
 import { ConsoleLogger } from "./shared/logging/logger";
 import type { Result } from "./shared/result/result";
@@ -544,6 +548,26 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         }),
     );
 
+    // The `.feature` file handler: clicking a Feature file in the explorer /
+    // quick switcher (or a detail-view "Open" button) now renders the Feature
+    // Editor. registerExtensions throws if another plugin already claimed the
+    // extension — degrade with a warning instead of failing the whole onload.
+    this.registerView(
+      FEATURE_EDITOR_VIEW_TYPE,
+      (leaf) =>
+        new FeatureEditorView(leaf, {
+          specifications: this.specificationService,
+          featureInsight: this.featureInsightService,
+        }),
+    );
+    try {
+      this.registerExtensions(["feature"], FEATURE_EDITOR_VIEW_TYPE);
+    } catch (error) {
+      this.logger.warn("Could not register the .feature extension", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     // The settings tab drives validate/repair/CI inline (Wave A); it receives
     // only the narrow service slices its SettingsTabServices contract names.
     this.addSettingTab(
@@ -574,7 +598,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     );
     this.addRibbonIcon(
       "gauge",
-      "Open Test Hub Dashboard",
+      "Open Test Hub dashboard",
       () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
     );
     this.addRibbonIcon(
@@ -730,7 +754,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private openLatestEvidence(): void {
     const latest = this.postRunCoordinator.lastEvidence();
     if (latest === null) {
-      new Notice("No Evidence note yet — run a test first.");
+      new Notice("No evidence note yet — run a test first.");
       return;
     }
     void this.openEvidenceNote(latest.evidencePath);

@@ -229,7 +229,7 @@ describe("documentation content builders (US-043/044/045)", () => {
     const docs = buildDocumentation(DEFAULT_SETTINGS);
     const gettingStarted = docs.find((doc) => doc.type === "getting-started");
     const index = docs.find((doc) => doc.type === "index");
-    expect(gettingStarted?.content).toContain("Open Guided Tour");
-    expect(index?.content).toContain("Open Guided Tour");
+    expect(gettingStarted?.content).toContain("Open guided tour");
+    expect(index?.content).toContain("Open guided tour");
   });
 });

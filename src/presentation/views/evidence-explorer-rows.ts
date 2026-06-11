@@ -91,7 +91,7 @@ export const projectEvidenceGroups = (
     if (filter !== "all" && (entry.status ?? "unknown") !== filter) continue;
     const heading = `${entry.year} / ${entry.month}`;
     const last = groups[groups.length - 1];
-    if (last !== undefined && last.heading === heading) {
+    if (last?.heading === heading) {
       last.rows.push(projectEvidenceRow(entry));
     } else {
       groups.push({ heading, rows: [projectEvidenceRow(entry)] });

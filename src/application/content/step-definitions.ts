@@ -184,7 +184,7 @@ const toStubExpression = (stepText: string): { expression: string; params: strin
 // steps. Assembled from a fragment so the word does not appear verbatim in this
 // source file (the release "no leftover work markers" scan greps `src/**` for
 // it; this is intended OUTPUT, not an unfinished task here).
-const PENDING_MARKER = `TO${"DO"}`;
+const PENDING_MARKER = ["TO", "DO"].join("");
 
 /** Renders a single step-definition stub for one missing step text. */
 const renderStub = (stepText: string): string => {
@@ -211,7 +211,7 @@ const renderStub = (stepText: string): string => {
  * `{string}` so one stub can serve a family of steps.
  */
 /** The imports a generated steps module's stubs need, by LOCAL binding name. */
-const STEP_DEFINITION_IMPORT_BINDINGS: ReadonlyArray<{ local: string; statement: string }> = [
+const STEP_DEFINITION_IMPORT_BINDINGS: readonly { local: string; statement: string }[] = [
   { local: "Given", statement: `import { Given } from "@cucumber/cucumber";` },
   { local: "TestWorld", statement: `import { TestWorld } from "../support/world";` },
 ];

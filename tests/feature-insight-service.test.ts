@@ -5,6 +5,7 @@ import {
   effectiveScenarioTags,
   projectFeatureHealth,
 } from "../src/application/services/feature-insight-service";
+import { parseFeature } from "../src/application/content/gherkin";
 import type { FeatureFileEntry } from "../src/application/services/specification-service";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
 import { parseTagExpression, type TagExpression } from "../src/domain/policies/tag-expression";
@@ -57,6 +58,25 @@ describe("projectFeatureHealth", () => {
       wipScenarioCount: 0, // feature-level @wip is the badge, not the (M @wip) count
       featureIsWip: true,
     });
+  });
+
+  it("counts @wip carried only on a runnable Examples block", () => {
+    const f = parseFeature(
+      `Feature: F
+
+  Scenario Outline: O
+    Given x
+
+    @wip
+    Examples:
+      | a |
+      | 1 |
+`,
+      vp("Specifications/features/UC-009-wip-block.feature"),
+    );
+    expect(f).not.toBeNull();
+    if (!f) return;
+    expect(projectFeatureHealth(f).wipScenarioCount).toBe(1);
   });
 });
 
@@ -219,5 +239,144 @@ describe("DefaultFeatureInsightService.healthFor", () => {
     const broken = await service.healthFor(vp(`${FEATURES_DIR}/UC-009-broken.feature`));
     expect(broken.ok).toBe(false);
     if (!broken.ok) expect(broken.error.code).toBe("VALIDATION_FAILED");
+  });
+});
+
+describe("listKnownTags", () => {
+  it("unions feature, scenario and Examples tags, seeded with conventions, sorted", async () => {
+    const fs = new FakeVaultFileSystem();
+    const path = "Specifications/features/UC-001-a.feature";
+    fs.files.set(
+      path,
+      `@feature-level
+Feature: F
+
+  @scenario-level
+  Scenario Outline: S
+    Given x
+
+    @examples-level
+    Examples:
+      | a |
+      | 1 |
+`,
+    );
+    const service = new DefaultFeatureInsightService(
+      { listFeatures: async () => ok([{ path: vp(path), label: "UC-001-a.feature" }]) },
+      fs,
+    );
+
+    const result = await service.listKnownTags();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual([
+      "@examples-level",
+      "@feature-level",
+      "@scenario-level",
+      "@smoke",
+      "@wip",
+    ]);
+  });
+
+  it("skips unreadable/unparseable features (best-effort)", async () => {
+    const fs = new FakeVaultFileSystem();
+    fs.files.set("Specifications/features/UC-002-bad.feature", "not gherkin");
+    const service = new DefaultFeatureInsightService(
+      {
+        listFeatures: async () =>
+          ok([
+            { path: vp("Specifications/features/UC-002-bad.feature"), label: "UC-002-bad.feature" },
+            {
+              path: vp("Specifications/features/UC-003-gone.feature"),
+              label: "UC-003-gone.feature",
+            },
+          ]),
+      },
+      fs,
+    );
+
+    const result = await service.listKnownTags();
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toEqual(["@smoke", "@wip"]);
+  });
+});
+
+describe("Examples-level tag matching (Cucumber per-row semantics)", () => {
+  const feature = parseFeature(
+    `Feature: F
+
+  Scenario Outline: O
+    Given x
+
+    @set-1
+    Examples: first
+      | a |
+      | 1 |
+
+    @set-2
+    Examples: second
+      | a |
+      | 2 |
+`,
+    vp("Specifications/features/UC-001-o.feature"),
+  );
+
+  it("matches a tag that lives only on an Examples block", () => {
+    expect(feature).not.toBeNull();
+    if (!feature) return;
+    const expression = parseTagExpression("@set-1");
+    expect(expression.ok).toBe(true);
+    if (!expression.ok) return;
+    expect(countMatchingScenariosInFeature(expression.value, feature)).toBe(1);
+  });
+
+  it("does not union tags ACROSS blocks (each block is its own set)", () => {
+    expect(feature).not.toBeNull();
+    if (!feature) return;
+    const expression = parseTagExpression("@set-1 and @set-2");
+    expect(expression.ok).toBe(true);
+    if (!expression.ok) return;
+    expect(countMatchingScenariosInFeature(expression.value, feature)).toBe(0);
+  });
+
+  it("ignores Examples blocks without rows (nothing would execute)", () => {
+    const rowless = parseFeature(
+      `Feature: F
+
+  Scenario Outline: O
+    Given x
+
+    @slow
+    Examples: empty
+      | a |
+`,
+      vp("Specifications/features/UC-002-rowless.feature"),
+    );
+    expect(rowless).not.toBeNull();
+    if (!rowless) return;
+    const expression = parseTagExpression("@slow");
+    expect(expression.ok).toBe(true);
+    if (!expression.ok) return;
+    expect(countMatchingScenariosInFeature(expression.value, rowless)).toBe(0);
+  });
+
+  it("an Outline with no Examples matches nothing, even feature-level tags", () => {
+    const bare = parseFeature(
+      `@tagged
+Feature: F
+
+  Scenario Outline: O
+    Given x
+`,
+      vp("Specifications/features/UC-003-bare.feature"),
+    );
+    expect(bare).not.toBeNull();
+    if (!bare) return;
+    const expression = parseTagExpression("@tagged");
+    expect(expression.ok).toBe(true);
+    if (!expression.ok) return;
+    expect(countMatchingScenariosInFeature(expression.value, bare)).toBe(0);
   });
 });

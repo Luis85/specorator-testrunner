@@ -52,10 +52,13 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     try {
       const existing = this.app.vault.getAbstractFileByPath(normalized);
       if (existing instanceof TFile) {
-        await this.app.vault.modify(existing, content);
+        // Vault.process, not Vault.modify: background edits go through the
+        // atomic read-modify-write path (plugin guidelines §"Use
+        // Vault.process"); the content is a wholesale replacement.
+        await this.app.vault.process(existing, () => content);
         return ok(undefined);
       }
-      return this.createFile(unsafeVaultPath(normalized), content);
+      return await this.createFile(unsafeVaultPath(normalized), content);
     } catch (cause) {
       return err(appError("INIT_FAILED", `Could not write file "${path}".`, { cause }));
     }
@@ -81,8 +84,8 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
       if (!(await this.app.vault.adapter.exists(normalized))) return ok([]);
       const files: VaultPath[] = [];
       const queue = [normalized];
-      while (queue.length > 0) {
-        const dir = queue.shift() as string;
+      let dir: string | undefined;
+      while ((dir = queue.shift()) !== undefined) {
         const listing = await this.app.vault.adapter.list(dir);
         files.push(...listing.files.map(unsafeVaultPath));
         queue.push(...listing.folders);
@@ -104,8 +107,8 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
       // root) directly, exactly as listFilesRecursive above does; "/" can throw in
       // a real vault and fall through to ok([]), silently disabling the check.
       const queue = [""];
-      while (queue.length > 0) {
-        const dir = queue.shift() as string;
+      let dir: string | undefined;
+      while ((dir = queue.shift()) !== undefined) {
         const listing = await this.app.vault.adapter.list(dir);
         for (const folder of listing.folders) {
           folders.push(unsafeVaultPath(folder));
@@ -129,6 +132,11 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
       // (e.g. dot-folders like `.testrunner` that Obsidian does not track).
       const folder = this.app.vault.getAbstractFileByPath(normalized);
       if (folder) {
+        // Deliberately NOT FileManager.trashFile(): this only ever removes
+        // plugin-generated runtime folders (UC-024 reset, `.testrunner` with
+        // its node_modules + Chromium) — moving those to the user's trash
+        // would be hostile, and they are regenerable by the wizard.
+        // eslint-disable-next-line obsidianmd/prefer-file-manager-trash-file
         await this.app.vault.delete(folder, true);
       } else {
         await this.app.vault.adapter.rmdir(normalized, true);

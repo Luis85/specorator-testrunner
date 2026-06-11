@@ -791,5 +791,8 @@ const repairOnboardingShape = (raw: OnboardingSettings): OnboardingSettings => (
   completedSteps: stringArray(raw.completedSteps),
   skippedSteps: stringArray(raw.skippedSteps),
   sequenceProgress: sequenceProgressMap(raw.sequenceProgress),
-  dismissed: raw.dismissed === true,
+  // typeof guard (not a `=== true` literal compare, which the lint forbids):
+  // the field is TYPED boolean but a tampered/synced data.json can carry any
+  // JSON value here, and a truthy string must still repair to false.
+  dismissed: typeof raw.dismissed === "boolean" && raw.dismissed,
 });

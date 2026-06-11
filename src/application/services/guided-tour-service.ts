@@ -132,7 +132,7 @@ export class DefaultGuidedTourService implements GuidedTourService {
   markDone(stepId: TourStepId): Promise<Result<void>> {
     return this.enqueue(async () => {
       const definition = TOUR_STEPS.find((step) => step.id === stepId);
-      if (!definition || definition.completion.kind !== "manual") {
+      if (definition?.completion.kind !== "manual") {
         return err(
           appError("VALIDATION_FAILED", `Step "${stepId}" cannot be marked done manually.`),
         );
@@ -146,7 +146,7 @@ export class DefaultGuidedTourService implements GuidedTourService {
   skip(stepId: TourStepId): Promise<Result<void>> {
     return this.enqueue(async () => {
       const definition = TOUR_STEPS.find((step) => step.id === stepId);
-      if (!definition || !definition.skippable) {
+      if (!definition?.skippable) {
         return err(appError("VALIDATION_FAILED", `Step "${stepId}" cannot be skipped.`));
       }
       if (this.isSettled(stepId)) return ok(undefined);

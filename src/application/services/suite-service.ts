@@ -221,7 +221,7 @@ export class DefaultSuiteService implements SuiteService {
     //    (incl. non-suite)     note, or a non-suite note — review P2).
     const atTarget = indexed.value.find((n) => n.path === path);
     const occupiedByForeign = (await this.fs.exists(path)) && !atTarget; // non-suite note at path
-    if (occupiedByForeign || (atTarget && atTarget.suite === null && atTarget.id !== suite.id)) {
+    if (occupiedByForeign || (atTarget?.suite === null && atTarget.id !== suite.id)) {
       return err(
         appError(
           "VALIDATION_FAILED",
@@ -239,7 +239,7 @@ export class DefaultSuiteService implements SuiteService {
         appError("VALIDATION_FAILED", `A Test Suite with id "${suite.id}" already exists.`),
       );
     }
-    if (!atTarget || atTarget.suite === null) {
+    if (!atTarget?.suite) {
       // A foreign note at the path was already refused above, so here the path is
       // either empty (create) or holds this same suite's malformed note (repair).
       const written = atTarget

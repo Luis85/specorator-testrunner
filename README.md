@@ -46,7 +46,7 @@ every command, but each one is also reachable through a view:
   doing: each step explains why it matters, offers the real action button and
   copy-paste snippets, and completes by itself (via domain events) when the
   user performs the action — ending with a self-authored greeting test run
-  green. Reachable via **Open Guided Tour**, the wizard's success screen, and
+  green. Reachable via **Open guided tour**, the wizard's success screen, and
   a dashboard call to action.
 - **Settings.** A **System under test** section to add/remove environments and
   edit their base URL and credential variables (validation errors shown

@@ -94,7 +94,7 @@ export interface OnboardingSettings {
    * the tour (PR #31 Codex review).
    */
   sequenceProgress: Record<string, OnboardingSequenceProgress>;
-  /** Hides the dashboard CTA only; the Open Guided Tour command always reopens. */
+  /** Hides the dashboard CTA only; the Open guided tour command always reopens. */
   dismissed: boolean;
 }
 

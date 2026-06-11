@@ -677,7 +677,10 @@ describe("DefaultTestExecutionService", () => {
       new DefaultPathSafetyPolicy(),
       bus,
     );
+    // Deliberately a prototype-less spread: only `load` is reached before the
+    // service under test fails, and it must reject.
     const brokenSettings = {
+      // eslint-disable-next-line @typescript-eslint/no-misused-spread
       ...settings,
       load: () => Promise.reject(new Error("data store exploded")),
     } as unknown as DefaultSettingsService;
