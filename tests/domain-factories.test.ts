@@ -48,6 +48,17 @@ describe("createFeatureSpecification (ADR-0012 no orphans)", () => {
     if (!result.ok) return;
     expect("background" in result.value).toBe(false);
   });
+
+  it("passes a feature description through (Feature Editor round-trip)", () => {
+    const result = createFeatureSpecification({
+      path: vp("Specifications/features/UC-001-x.feature"),
+      useCaseId: "UC-001",
+      featureName: "F",
+      description: ["Some context line."],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.description).toEqual(["Some context line."]);
+  });
 });
 
 describe("createSuite (ADR-0011 tag expression is the source of truth)", () => {
