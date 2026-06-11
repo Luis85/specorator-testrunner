@@ -82,6 +82,7 @@ playwright-bdd migration as the bridge into V2 feature work.
 | Quality | 673+ tests, ≥80% coverage gate, release workflow verifies tag/manifest and runs the suite; quality harness (2026-06-11): ESLint 10 `strictTypeChecked` + Obsidian plugin-guideline rules, vitest test-hygiene rules, and a fallow codebase-intelligence audit on every PR — currently **advisory/non-blocking** (flip + tighten scheduled as §9 item 0.4) |
 | Non-technical UX | Whole loop reachable without the command palette (Dashboard quick actions, Use Case detail, inline results) |
 | Spec authoring | Structured **Feature Editor** view (PR #29, post-review): Gherkin round-trip parse/serialize with raw-mode fallback, live validation strip, and authoring aids — non-technical users edit scenarios without touching Gherkin syntax |
+| Onboarding | **Guided Tour** (ADR-0020, PR #31): event-observed sidebar checklist over the full loop — the user performs each step in the real UI, `GuidedTourService` observes domain events and auto-advances, progress persists across reloads; the demo fixture gained a greeting form so the self-authored `@tour` scenario exercises genuinely new behavior, including a real missing-steps → generate → implement cycle |
 
 ### 2.2 Hard V1 constraints (with their decision records)
 
@@ -212,6 +213,12 @@ the proposal is accepted.
 
 > **Priority key** — P1: core of V2.0; P2: fast follow (V2.1); P3: V2.x
 > opportunistic.
+
+> **Cross-cutting expectation (ADR-0020):** every V2 epic that adds a
+> user-facing workflow also extends the **Guided Tour** with matching steps
+> (or a per-feature mini-tour) — the tour observes domain events, so new
+> workflows that publish events are teachable by construction, and onboarding
+> must not drift from the product.
 
 ### EPIC-013 — Playwright-Native Runner *(P1, foundation)*
 
@@ -477,7 +484,9 @@ list) where individual items can be promoted to scenarios over time, so that
 adoption is gradual instead of all-in BDD.
 *AC:* checklist template with per-item "Promote to scenario"; promoted items
 keep a link to their origin; unpromoted items can be recorded as manual-test
-results in evidence (manual pass/fail capture).
+results in evidence (manual pass/fail capture); evaluate reusing the Guided
+Tour's event-observed checklist infrastructure (ADR-0020) so promoted items
+auto-tick when their scenario first passes.
 
 **US-081 Step Library with autocomplete** —
 As a **Business Analyst**, I want a browsable Step Library (every implemented
@@ -730,7 +739,7 @@ builds directly on top of them.
 | --- | --- | --- |
 | 3.1 | Spike: generate a playwright-bdd `.testrunner` beside the demo content; validate existing `.feature` compatibility, Cucumber JSON/Messages output through the (now port-based) import pipeline, evidence generation, and cancel/single-run semantics on POSIX **and** Windows | Spike findings recorded; ADR from 2.4 confirmed or amended |
 | 3.2 | Execute US-051/US-052: swap the generated runner to playwright-bdd with typed step stubs; repair migrates V1 `.testrunner` projects non-destructively (via 2.2) with a clear report; keep cucumber-JSON import as a fallback during the transition window | Demo test green; migrated sample vault green |
-| 3.3 | Validation: full unit/integration suite, `e2e-smoke` green on all OSes (via 0.2), docs updated (README disclosure, Getting Started, CONTEXT.md terms) | **Only after this gate does V2.0 feature work (§8) begin** |
+| 3.3 | Validation: full unit/integration suite, `e2e-smoke` green on all OSes (via 0.2), the **Guided Tour completes end-to-end against the migrated runner** (its step predicates key on run scopes, spec events, and the demo/`@tour` content — ADR-0020), docs updated (README disclosure, Getting Started, CONTEXT.md terms) | **Only after this gate does V2.0 feature work (§8) begin** |
 
 ## 10. Key sources
 
