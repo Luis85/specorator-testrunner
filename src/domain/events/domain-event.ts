@@ -76,7 +76,12 @@ export type DomainEventType =
   // settings
   | "settings.updated"
   | "settings.validated"
-  | "settings.reset";
+  | "settings.reset"
+  // guided tour
+  | "tour.started"
+  | "tour.step.completed"
+  | "tour.step.skipped"
+  | "tour.completed";
 
 /**
  * Compile-time payload contract for every {@link DomainEventType}, sourced
@@ -177,4 +182,10 @@ export interface EventPayloads {
   "settings.updated": { changedFields: string[] };
   "settings.reset": { profile: "default" };
   "settings.validated": { valid: boolean; warnings: string[] };
+
+  // guided tour (Event Catalog "Tour Events")
+  "tour.started": { tourId: string };
+  "tour.step.completed": { tourId: string; stepId: string; via: "event" | "manual" };
+  "tour.step.skipped": { tourId: string; stepId: string };
+  "tour.completed": { tourId: string };
 }
