@@ -79,7 +79,7 @@ playwright-bdd migration as the bridge into V2 feature work.
 | Architecture | Hexagonal layering lint-enforced; ports/adapters give clean extension seams (`VaultFileSystem`, `AbsoluteFileSystem`, `ChildProcessRunner`, `TemplateWriter`, `DataStore`, `WorkspacePort`) |
 | Event model | ~80 domain events, compiler-checked payload map, correlation/causation IDs, `PostRunCoordinator` serialization |
 | Security | argv-shape command allowlist (`shell:false`), path-safety policy + `JSON.stringify` sink escaping, credential redaction, TOCTOU-free maintenance lock |
-| Quality | 673 tests, ≥80% coverage gate, release workflow verifies tag/manifest and runs the suite |
+| Quality | 673+ tests, ≥80% coverage gate, release workflow verifies tag/manifest and runs the suite; quality harness (2026-06-11): ESLint 10 `strictTypeChecked` + Obsidian plugin-guideline rules, vitest test-hygiene rules, and a fallow codebase-intelligence audit on every PR — currently **advisory/non-blocking** (flip + tighten scheduled as §9 item 0.4) |
 | Non-technical UX | Whole loop reachable without the command palette (Dashboard quick actions, Use Case detail, inline results) |
 | Spec authoring | Structured **Feature Editor** view (PR #29, post-review): Gherkin round-trip parse/serialize with raw-mode fallback, live validation strip, and authoring aids — non-technical users edit scenarios without touching Gherkin syntax |
 
@@ -694,6 +694,7 @@ builds directly on top of them.
 | 0.1 | Tag and release V1 from this GitHub repository and document installation via the **BRAT** plugin (beta auto-update) as the official distribution channel; includes the ribbon-trim product call from review §4. **Obsidian community marketplace submission is deferred indefinitely** — the plugin stays where it is. | Establishes the baseline users will migrate *from*; V2's `.testrunner` migration path needs a defined V1 to upgrade; BRAT gives early adopters auto-updating installs without a marketplace review cycle |
 | 0.2 | Make the opt-in `e2e-smoke` workflow a reliable pre-release gate: add the per-OS Playwright browser caching (review §4) and run it on demand for runner-template changes | This workflow is the safety net the runner swap will be validated against — it must be trustworthy first |
 | 0.3 | Pin `release.yml` actions to SHAs (review §4; `contents: write`) | Lock down the release path before V2 increases release cadence |
+| 0.4 | Flip the advisory quality gates to **blocking** and tighten them: make the fallow audit job fail the build (drop `continue-on-error`) with repo-tuned thresholds once signal quality is observed on a few PRs (the recorded follow-up in the [fallow integration design spec](../superpowers/specs/2026-06-11-fallow-integration-design.md)), and promote remaining warn-level lint rules (e.g. `vitest/no-disabled-tests`) to errors | V2 work should land against the strict gates from day one — flipping later means retrofitting V2 code and renegotiating thresholds under feature pressure |
 
 ### Phase 1 — Clear recorded debt V2 builds on
 
