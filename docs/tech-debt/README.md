@@ -22,6 +22,7 @@ commit/PR in the item before closing).
 | [[TD-003]] | Single source of truth for structural Feature validation | specifications | medium |
 | [[TD-004]] | Replace the Feature Editor's `commit(structureChanged)` flag | feature-editor | large |
 | [[TD-005]] | Unify the "is this scenario an Outline" predicate | specifications | small |
+| [[TD-006]] | Flip the advisory quality gates to blocking and tighten them | quality | small |
 
 ## Minor notes (not worth an item yet)
 
