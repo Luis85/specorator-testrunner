@@ -81,6 +81,7 @@ playwright-bdd migration as the bridge into V2 feature work.
 | Security | argv-shape command allowlist (`shell:false`), path-safety policy + `JSON.stringify` sink escaping, credential redaction, TOCTOU-free maintenance lock |
 | Quality | 673 tests, ≥80% coverage gate, release workflow verifies tag/manifest and runs the suite |
 | Non-technical UX | Whole loop reachable without the command palette (Dashboard quick actions, Use Case detail, inline results) |
+| Spec authoring | Structured **Feature Editor** view (PR #29, post-review): Gherkin round-trip parse/serialize with raw-mode fallback, live validation strip, and authoring aids — non-technical users edit scenarios without touching Gherkin syntax |
 
 ### 2.2 Hard V1 constraints (with their decision records)
 
@@ -104,9 +105,13 @@ playwright-bdd migration as the bridge into V2 feature work.
 
 Per-note write serialization, output-event ordering, settings scalar repair,
 `LiveRefresh` extraction, action SHA-pinning, browser caching in CI, vault-base
-normalization, `joinVaultPath` hardening, shared serial queue, ribbon-icon trim.
-These stay on the engineering backlog; this proposal does not re-plan them,
-but EPIC-018 picks up the product-facing ones (ribbon trim, vault pollution).
+normalization, `joinVaultPath` hardening, shared serial queue, ribbon-icon trim
+— plus the formal [tech-debt register](../tech-debt/README.md) (TD-001…005)
+deferred from the Feature Editor review (PR #29): escaped pipes in table
+cells, the one-argument-per-step invariant, duplicated structural validation,
+the editor's `commit(structureChanged)` flag, and the Outline predicate.
+All of these are sequenced in the pre-V2 implementation plan (§9); EPIC-018
+additionally picks up the product-facing ones (ribbon trim, vault pollution).
 
 ---
 
@@ -480,8 +485,8 @@ step, its parameters, and where it's used) and step autocomplete while
 editing a feature, so that I reuse the team's vocabulary instead of inventing
 near-duplicate steps.
 *AC:* library indexed from `.testrunner` step definitions; a Step Library
-view lists steps with usage counts and dead steps; editing a `.feature` (or
-feature section) offers suggestion of existing steps; this is the
+view lists steps with usage counts and dead steps; editing a Feature in the
+Feature Editor offers existing-step suggestions; this is the
 testomat.io-style authoring aid the competitive research ranked as the single
 best non-technical-authoring feature in the market — and it directly attacks
 the #1 BDD abandonment cause (authoring friction and step duplication).
@@ -645,9 +650,12 @@ existing V1 `.testrunner` users need a guided, non-destructive repair path
 What must be done **before any V2 scope starts**. Phases 0–2 harden the V1
 codebase and put the migration machinery in place; the **last item is the
 playwright-bdd migration itself** — once it is green, V2.0 feature work
-begins. Most Phase 0–1 items come from the "deliberately deferred" list in
-the [2026-06-11 review §4](../reviews/2026-06-11%20Product%20Review%20and%20Improvement%20Plan.md);
-they are sequenced here because V2 builds directly on top of them.
+begins. The Phase 0–1 items come from two registers: the "deliberately
+deferred" list in the
+[2026-06-11 review §4](../reviews/2026-06-11%20Product%20Review%20and%20Improvement%20Plan.md)
+and the [tech-debt register](../tech-debt/README.md) (TD-001…005, deferred
+from the Feature Editor review, PR #29). They are sequenced here because V2
+builds directly on top of them.
 
 ### Phase 0 — Ship and stabilize V1
 
@@ -668,6 +676,11 @@ they are sequenced here because V2 builds directly on top of them.
 | 1.5 | Path plumbing hardening: normalize the vault-base trailing separator once in `NodeAbsoluteFileSystem.getVaultBasePath()`; assert no `..` / leading `/` inside `joinVaultPath` (review §4) | The migration and MCP server (later) both mint paths; close the gaps before new callers appear |
 | 1.6 | Extract `LiveRefresh` from the five views (review §4) | V2 adds new views (triage, readiness, step library); copy six instead of refactoring eight |
 | 1.7 | `register-commands` smoke test + migrate `vault.adapter.exists` to the Vault API (review §4; community-review bots flag adapter usage) | V2's new commands touch this surface, and staying marketplace-clean keeps the (indefinitely deferred) submission option open at zero extra cost |
+| 1.8 | [[TD-001]] Escaped pipes (`\|`) in Gherkin table cells: implement the official escape at the parse/serialize boundary; drop the `/` substitution and the guard's backslash special case | The playwright-bdd migration hands our features to the **official** Gherkin parser — files using the standard `\|` escape must round-trip, and the editor must stop silently rewriting user data |
+| 1.9 | [[TD-002]] One-argument-per-step enforced in the domain model (sum-type `argument` on `GherkinStep`) | Today `serialiseFeature` can emit Gherkin Cucumber refuses to parse (table + doc string); after the runner migration that invalid output fails the suite — make the invalid state unrepresentable first |
+| 1.10 | [[TD-003]] Single source of structural Feature validation (`structuralIssues()` in the application layer, consumed by service + editor) | V2's scenario quality lint (US-074) layers new rules on validation; building it on two already-drifting copies doubles every rule |
+| 1.11 | [[TD-005]] One `isScenarioOutline` predicate exported from the domain entity, with deliberately chosen semantics | Scenario Reference (US-056) keys Outline examples as `::row-N` — identity and suite-match counts must agree on what an Outline *is* before history lands |
+| 1.12 | [[TD-004]] Replace the Feature Editor's `commit(structureChanged)` flag with focus-preserving re-render (the one *large* item; can run parallel to Phase 2) | V2 grows the editor (lint strip US-074, step autocomplete US-081); every new control re-rolls the stale-DOM/focus dice until re-render is safe by construction |
 
 ### Phase 2 — Foundations the V2 epics assume
 
