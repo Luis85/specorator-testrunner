@@ -756,6 +756,10 @@ const diffSettings = (before: TestHubSettings, after: TestHubSettings): string[]
   return changed;
 };
 
+/** Keeps only the string entries of a possibly-tampered array value. */
+const stringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+
 /**
  * Structural repair for the persisted `onboarding` section (same log-free,
  * never-break-startup posture as the other load screens — this section is
@@ -769,7 +773,3 @@ const repairOnboardingShape = (raw: OnboardingSettings): OnboardingSettings => (
   skippedSteps: stringArray(raw.skippedSteps),
   dismissed: raw.dismissed === true,
 });
-
-/** Keeps only the string entries of a possibly-tampered array value. */
-const stringArray = (value: unknown): string[] =>
-  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
