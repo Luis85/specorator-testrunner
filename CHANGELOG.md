@@ -18,6 +18,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Release safety: the release workflow verifies the tag against
   `manifest.json` and runs lint/typecheck/tests before publishing;
   `versions.json` consistency is asserted by the release-validation suite.
+- Quality harness: fallow codebase intelligence as a devDependency with
+  repo-tuned config (`.fallowrc.jsonc`), `quality:*` npm scripts, an advisory
+  changed-code audit job in CI, and agent-facing surfaces (`.mcp.json` MCP
+  server, `.claude/skills/fallow` pointer skill, `AGENTS.md`).
 
 ### Fixed
 
