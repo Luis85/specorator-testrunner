@@ -1,4 +1,5 @@
 import type { DomainEventType } from "../events/domain-event";
+import { matchesTags, parseTagExpression } from "../policies/tag-expression";
 
 /**
  * The Guided Tour's step model (spec 2026-06-11): a pure, ordered table of ten
@@ -86,13 +87,30 @@ const record = (payload: unknown): Record<string, unknown> | null =>
     : null;
 
 /**
- * True when a Cucumber Tag Expression contains the literal `@tour` tag as a
- * token ("@tour", "@tour and not @wip") — not as a prefix of another tag
- * ("@tournament"). Tokenizes on whitespace and parentheses, the only
- * structural characters in tag expressions.
+ * True when a Cucumber Tag Expression would SELECT the authored `@tour`
+ * scenario — evaluated with the real tag-expression semantics, not a token
+ * scan, so `not @tour` (token present, scenario excluded) is rejected while
+ * `@smoke or @tour` (scenario included) passes (PR #31 Codex review).
  */
-const hasTourTag = (tagExpression: unknown): boolean =>
-  typeof tagExpression === "string" && tagExpression.split(/[\s()]+/).includes("@tour");
+const selectsTourScenario = (tagExpression: unknown): boolean => {
+  if (typeof tagExpression !== "string") return false;
+  const parsed = parseTagExpression(tagExpression);
+  return parsed.ok && matchesTags(parsed.value, ["@tour"]);
+};
+
+/**
+ * Shared by the create-suite rule and run-own-test's first sequence rule (the
+ * one check, no drift): a non-default suite whose Tag Expression selects the
+ * authored scenario.
+ */
+const isTourSuiteCreation = (payload: unknown, ctx: TourEventContext): boolean => {
+  const p = record(payload);
+  return (
+    typeof p?.suiteId === "string" &&
+    !ctx.defaultSuiteIds.includes(p.suiteId) &&
+    selectsTourScenario(p.tagExpression)
+  );
+};
 
 /**
  * The scenario the user authors in step 4. The three greeting steps are NEW —
@@ -297,21 +315,14 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       kind: "event",
       rule: {
         type: "suite.created",
-        // The Tag Expression must include @tour (PR #31 Codex review): any
-        // other custom suite would not select the authored scenario, so the
-        // next step's run could never execute it.
-        matches: (payload, ctx) => {
-          const p = record(payload);
-          return (
-            typeof p?.suiteId === "string" &&
-            !ctx.defaultSuiteIds.includes(p.suiteId) &&
-            hasTourTag(p.tagExpression)
-          );
-        },
+        // The Tag Expression must SELECT the authored scenario (PR #31 Codex
+        // review): any other custom suite — including `not @tour` — would not
+        // run it, so the next step's run could never execute it.
+        matches: isTourSuiteCreation,
       },
     },
     skippable: false,
-    hint: "This step completes when you create a suite whose tag expression includes @tour.",
+    hint: "This step completes when you create a suite whose tag expression selects @tour.",
   },
   {
     id: "run-own-test",
@@ -329,14 +340,7 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       rules: [
         {
           type: "suite.created",
-          matches: (payload, ctx) => {
-            const p = record(payload);
-            return (
-              typeof p?.suiteId === "string" &&
-              !ctx.defaultSuiteIds.includes(p.suiteId) &&
-              hasTourTag(p.tagExpression)
-            );
-          },
+          matches: isTourSuiteCreation,
           capture: (payload) => {
             const value = record(payload)?.suiteId;
             return typeof value === "string" ? value : undefined;

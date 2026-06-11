@@ -160,16 +160,23 @@ describe("completion predicates", () => {
     );
   });
 
-  it("create-suite wants a non-default suite whose tag expression includes @tour", () => {
+  it("create-suite wants a non-default suite whose tag expression SELECTS @tour", () => {
     const rule = eventRule("create-suite");
     expect(rule.matches({ suiteId: "tour", tagExpression: "@tour" }, ctx)).toBe(true);
     expect(rule.matches({ suiteId: "tour", tagExpression: "@tour and not @wip" }, ctx)).toBe(true);
+    expect(rule.matches({ suiteId: "tour", tagExpression: "@smoke or @tour" }, ctx)).toBe(true);
     expect(rule.matches({ suiteId: "smoke", tagExpression: "@tour" }, ctx)).toBe(false);
     expect(rule.matches({ suiteId: "regression", tagExpression: "@tour" }, ctx)).toBe(false);
     // A custom suite that does NOT select the authored scenario must not
-    // complete the step (PR #31 Codex review) — including tag prefixes.
+    // complete the step (PR #31 Codex review) — including tag prefixes, a
+    // NEGATED @tour (token present, scenario excluded), and malformed input.
     expect(rule.matches({ suiteId: "nightly", tagExpression: "@regression" }, ctx)).toBe(false);
     expect(rule.matches({ suiteId: "tour", tagExpression: "@tournament" }, ctx)).toBe(false);
+    expect(rule.matches({ suiteId: "tour", tagExpression: "not @tour" }, ctx)).toBe(false);
+    expect(rule.matches({ suiteId: "tour", tagExpression: "@smoke and not @tour" }, ctx)).toBe(
+      false,
+    );
+    expect(rule.matches({ suiteId: "tour", tagExpression: "@tour and" }, ctx)).toBe(false);
     expect(rule.matches({ suiteId: "tour" }, ctx)).toBe(false);
   });
 
@@ -179,6 +186,7 @@ describe("completion predicates", () => {
     expect(created.matches({ suiteId: "tour", tagExpression: "@tour" }, ctx)).toBe(true);
     expect(created.matches({ suiteId: "smoke", tagExpression: "@tour" }, ctx)).toBe(false);
     expect(created.matches({ suiteId: "nightly", tagExpression: "@regression" }, ctx)).toBe(false);
+    expect(created.matches({ suiteId: "tour", tagExpression: "not @tour" }, ctx)).toBe(false);
     expect(created.capture?.({ suiteId: "tour", tagExpression: "@tour" })).toBe("tour");
     // Rule 2: only THAT suite's execution counts (PR #31 Codex review), and it
     // must carry the runId the final rule keys on.
