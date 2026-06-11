@@ -51,7 +51,7 @@ export const buildStarterFeature = (useCase: UseCase, slug: string): string => {
   const title = useCase.title || useCase.id;
   return `${tag}
 Feature: ${title}
-  ${useCase.description ? useCase.description : `Specification for ${useCase.id}.`}
+  ${useCase.description ?? `Specification for ${useCase.id}.`}
 
   Scenario: ${slug.replace(/-/g, " ")}
     Given a precondition

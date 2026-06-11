@@ -37,6 +37,9 @@ export class AddEnvironmentModal extends Modal {
     });
 
     new Setting(contentEl).setName("Name").addText((text) => {
+      // The placeholder shows an example VALUE, and Environment names are
+      // lowercase identifiers (CONTEXT.md: `staging`, `production`).
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
       text.setPlaceholder("staging").onChange((value) => (this.name = value));
       // Enter submits so the single-field modal doesn't force a mouse trip.
       submitOnEnter(text.inputEl, () => this.submit());

@@ -54,3 +54,37 @@ jobs:
 
       - name: Test (with coverage thresholds)
         run: npm run test:coverage
+
+  # Advisory changed-code quality evidence (fallow audit). The verdict lands in
+  # the job summary; a warn/fail verdict marks the step failed for visibility
+  # but never blocks the PR (see docs/superpowers/specs/
+  # 2026-06-11-fallow-integration-design.md — gating is a possible follow-up).
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The audit diffs against the merge-base with the PR base branch.
+          fetch-depth: 0
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fallow audit (advisory)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          # GITHUB_BASE_REF is only set on pull_request events; on main pushes
+          # fallow's own merge-base discovery applies (a no-op changeset).
+          if [ -n "$GITHUB_BASE_REF" ]; then
+            npx fallow audit --base "origin/$GITHUB_BASE_REF" --format markdown | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            npx fallow audit --format markdown | tee -a "$GITHUB_STEP_SUMMARY"
+          fi

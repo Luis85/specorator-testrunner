@@ -20,7 +20,7 @@ import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifier
  * `UC-\d+` per ADR-0012, not from the file body.
  */
 
-const STEP_KEYWORDS: ReadonlyArray<GherkinStep["keyword"]> = [
+const STEP_KEYWORDS: readonly GherkinStep["keyword"][] = [
   "Given",
   "When",
   "Then",
@@ -74,11 +74,9 @@ const parseStep = (line: string): GherkinStep | null => {
 
 const FEATURE_RE = /^Feature:\s*(.*)$/;
 const SCENARIO_RE = /^Scenario(\s+Outline)?:\s*(.*)$/;
-const BACKGROUND_RE = /^Background:/;
 const EXAMPLES_RE = /^Examples:\s*(.*)$/;
-// `Rule:` blocks are NOT modelled (see the module doc); the regex exists so a
-// Rule line is never mistaken for description text — it must fail the guard.
-const RULE_RE = /^Rule:/;
+// `Rule:` blocks are NOT modelled (see the module doc); the `startsWith("Rule:")`
+// guards below exist so a Rule line is never mistaken for description text.
 
 /** Splits a `| a | b |` row into trimmed cells (escaped `\|` not supported). */
 const parseTableRow = (line: string): string[] =>
@@ -184,7 +182,7 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
 
     // Background steps run before every scenario; collected separately so they
     // are checked by detectMissingSteps and round-trip as a `Background:` block.
-    if (BACKGROUND_RE.test(line)) {
+    if (line.startsWith("Background:")) {
       current = null;
       inBackground = true;
       pendingTags = [];
@@ -255,7 +253,7 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
       }
     }
 
-    if (step === null && descriptionTarget !== null && !RULE_RE.test(line)) {
+    if (step === null && descriptionTarget !== null && !line.startsWith("Rule:")) {
       descriptionTarget.push(line);
       // A scenario's description array is attached on its first line so empty
       // descriptions never appear in the model (keeps round trips stable).
@@ -302,11 +300,7 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
 export const serialiseCell = (cell: string): string => cell.replace(/\|/g, "/");
 
 /** Appends `| a | b |` rows at `indent`. */
-const pushTable = (
-  lines: string[],
-  rows: ReadonlyArray<readonly string[]>,
-  indent: string,
-): void => {
+const pushTable = (lines: string[], rows: readonly (readonly string[])[], indent: string): void => {
   for (const row of rows) lines.push(`${indent}| ${row.map(serialiseCell).join(" | ")} |`);
 };
 
@@ -441,9 +435,9 @@ export const isPlainDescriptionLine = (line: string): boolean => {
   if (
     FEATURE_RE.test(trimmed) ||
     SCENARIO_RE.test(trimmed) ||
-    BACKGROUND_RE.test(trimmed) ||
+    trimmed.startsWith("Background:") ||
     EXAMPLES_RE.test(trimmed) ||
-    RULE_RE.test(trimmed)
+    trimmed.startsWith("Rule:")
   ) {
     return false;
   }

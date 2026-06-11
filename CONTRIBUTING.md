@@ -23,6 +23,24 @@ npm run build          # production bundle
 npm run test:coverage  # vitest with enforced coverage thresholds (NFR-002)
 ```
 
+## Quality evidence
+
+[fallow](https://github.com/fallow-rs/fallow) provides deterministic quality
+evidence on top of the gate (config: `.fallowrc.jsonc`). CI runs the
+changed-code audit advisorily on every PR; locally:
+
+```bash
+npm run quality:audit      # changed-code risk verdict vs. origin/main — run before requesting review
+npm run quality            # full analysis: health + duplication + cleanup opportunities
+npm run quality:health     # health score and grade
+npm run quality:dead-code  # unused files/exports/deps (NB: Obsidian lifecycle
+                           # overrides are warn-only false-positive candidates)
+npm run quality:dupes      # clone groups
+```
+
+Coding agents get the same evidence through the fallow MCP server
+(`.mcp.json`) and skill — see `AGENTS.md`.
+
 ## Project conventions
 
 - **Read `CONTEXT.md` first.** The glossary terms (Use Case, Test Suite,

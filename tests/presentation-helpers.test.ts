@@ -10,6 +10,7 @@ vi.mock("obsidian", async (importOriginal) => {
   const actual = await importOriginal<typeof import("obsidian")>();
   return {
     ...actual,
+    // eslint-disable-next-line @typescript-eslint/no-extraneous-class -- mocks obsidian's `new Notice(msg)` class shape
     Notice: class {
       constructor(message: string) {
         noticeMessages.push(message);

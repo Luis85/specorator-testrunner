@@ -10,14 +10,14 @@ export type FrontmatterValue =
   | boolean
   | null
   | undefined
-  | Array<string | number | boolean>;
+  | (string | number | boolean)[];
 
 const needsQuoting = (value: string): boolean =>
   value === "" ||
   /^\s|\s$/.test(value) || // leading/trailing whitespace
   /^[-?:,[\]{}#&*!|>'"%@`]/.test(value) || // ambiguous leading indicator
   /:\s/.test(value) || // looks like a nested mapping
-  /:$/.test(value) ||
+  value.endsWith(":") ||
   /\s#/.test(value) || // looks like a trailing comment
   /^(true|false|null|yes|no|on|off)$/i.test(value) || // reserved words
   /^[+-]?(\d+\.?\d*|\.\d+)$/.test(value); // numeric-looking
