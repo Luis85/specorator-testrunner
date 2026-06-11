@@ -758,3 +758,49 @@ describe("DefaultSettingsService — structural repair of tampered sut shapes", 
     expect(validation.errors).toEqual([]);
   });
 });
+
+describe("onboarding settings", () => {
+  const makeService = (raw: unknown) =>
+    new DefaultSettingsService(
+      new FakeDataStore(raw),
+      new DefaultPathSafetyPolicy(),
+      recordingEventBus().bus,
+      silentLogger,
+    );
+
+  it("defaults the onboarding section when data.json predates the tour", async () => {
+    const settings = await makeService(undefined).load();
+    expect(settings.onboarding).toEqual({
+      tourId: null,
+      completedSteps: [],
+      skippedSteps: [],
+      dismissed: false,
+    });
+  });
+
+  it("keeps a valid persisted onboarding section", async () => {
+    const settings = await makeService({
+      onboarding: {
+        tourId: "abc",
+        completedSteps: ["create-use-case"],
+        skippedSteps: ["run-demo"],
+        dismissed: true,
+      },
+    }).load();
+    expect(settings.onboarding.tourId).toBe("abc");
+    expect(settings.onboarding.completedSteps).toEqual(["create-use-case"]);
+    expect(settings.onboarding.skippedSteps).toEqual(["run-demo"]);
+    expect(settings.onboarding.dismissed).toBe(true);
+  });
+
+  it("repairs a malformed onboarding section to the defaults", async () => {
+    const settings = await makeService({
+      onboarding: { tourId: 42, completedSteps: "nope", skippedSteps: [7, "x"], dismissed: "yes" },
+    }).load();
+    expect(settings.onboarding.tourId).toBeNull();
+    expect(settings.onboarding.completedSteps).toEqual([]);
+    // Non-string entries are dropped; string entries survive structurally.
+    expect(settings.onboarding.skippedSteps).toEqual(["x"]);
+    expect(settings.onboarding.dismissed).toBe(false);
+  });
+});

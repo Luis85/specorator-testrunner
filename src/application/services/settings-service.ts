@@ -4,6 +4,7 @@ import type { PathSafetyPolicy } from "../../domain/policies/path-safety-policy"
 import {
   authEnvKeyProblem,
   DEFAULT_SETTINGS,
+  type OnboardingSettings,
   type SutEnvironment,
   type TestHubPathSettings,
   type TestHubSettings,
@@ -73,6 +74,7 @@ const mergeWithDefaults = (raw: unknown): TestHubSettings => {
     ci: { ...DEFAULT_SETTINGS.ci, ...data.ci },
     sut: { ...DEFAULT_SETTINGS.sut, ...data.sut },
     logging: { ...DEFAULT_SETTINGS.logging, ...data.logging },
+    onboarding: { ...DEFAULT_SETTINGS.onboarding, ...data.onboarding },
   };
 };
 
@@ -109,9 +111,10 @@ export class DefaultSettingsService implements SettingsService {
   }
 
   async load(): Promise<TestHubSettings> {
-    return this.sanitizeRunnerEnvInputs(
+    const settings = this.sanitizeRunnerEnvInputs(
       this.sanitizePaths(mergeWithDefaults(await this.store.load())),
     );
+    return { ...settings, onboarding: repairOnboardingShape(settings.onboarding) };
   }
 
   /**
@@ -752,3 +755,21 @@ const diffSettings = (before: TestHubSettings, after: TestHubSettings): string[]
   }
   return changed;
 };
+
+/**
+ * Structural repair for the persisted `onboarding` section (same log-free,
+ * never-break-startup posture as the other load screens — this section is
+ * self-healing state, not user configuration, so silent fallback is fine):
+ * non-string tourId → null; non-array step lists → []; non-string entries
+ * dropped; non-boolean dismissed → false. Pure: no I/O.
+ */
+const repairOnboardingShape = (raw: OnboardingSettings): OnboardingSettings => ({
+  tourId: typeof raw.tourId === "string" ? raw.tourId : null,
+  completedSteps: stringArray(raw.completedSteps),
+  skippedSteps: stringArray(raw.skippedSteps),
+  dismissed: raw.dismissed === true,
+});
+
+/** Keeps only the string entries of a possibly-tampered array value. */
+const stringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];

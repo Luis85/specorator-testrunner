@@ -66,6 +66,21 @@ export interface LoggingSettings {
   level: "debug" | "info" | "warn" | "error";
 }
 
+/**
+ * Guided Tour progress (spec 2026-06-11). Persisted with the settings so a
+ * UC-024 reset clears it together with everything else. Step ids are stored as
+ * plain strings here; the GuidedTourService (which owns the step table)
+ * ignores ids it does not know.
+ */
+export interface OnboardingSettings {
+  /** Correlation id of the current tour traversal; null until the tour starts. */
+  tourId: string | null;
+  completedSteps: string[];
+  skippedSteps: string[];
+  /** Hides the dashboard CTA only; the Open Guided Tour command always reopens. */
+  dismissed: boolean;
+}
+
 export interface TestHubSettings {
   paths: TestHubPathSettings;
   runner: RunnerSettings;
@@ -73,6 +88,7 @@ export interface TestHubSettings {
   ci: CiSettings;
   sut: SutSettings; // per ADR-0013 + ADR-0014
   logging: LoggingSettings; // per ADR-0019
+  onboarding: OnboardingSettings;
 }
 
 /**
@@ -210,5 +226,11 @@ export const DEFAULT_SETTINGS: TestHubSettings = {
     enabled: true,
     path: unsafeVaultPath("Test Hub/logs"),
     level: "info",
+  },
+  onboarding: {
+    tourId: null,
+    completedSteps: [],
+    skippedSteps: [],
+    dismissed: false,
   },
 };
