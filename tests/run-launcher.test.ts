@@ -49,7 +49,9 @@ const makeExec = (
   return { ...stub, service: stub as unknown as TestExecutionService };
 };
 
-const makeConsole = (): OpenConsolePort & { openConsole: ReturnType<typeof vi.fn> } => ({
+const makeConsole = (): OpenConsolePort & {
+  openConsole: ReturnType<typeof vi.fn<OpenConsolePort["openConsole"]>>;
+} => ({
   openConsole: vi.fn(async () => undefined),
 });
 
