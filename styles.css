@@ -821,3 +821,107 @@
 .e2e-test-hub-load-older {
   margin-top: var(--size-4-3, 12px);
 }
+
+/* --- Feature Editor (.feature file handler) ------------------------------ */
+
+.e2e-test-hub-feature-editor-toolbar {
+  display: flex;
+  gap: var(--size-2-2);
+  margin-bottom: var(--size-4-2);
+}
+
+.e2e-test-hub-feature-editor-banner {
+  padding: var(--size-4-2);
+  margin-bottom: var(--size-4-2);
+  border-radius: var(--radius-s);
+  background-color: var(--background-secondary);
+  color: var(--text-warning);
+}
+
+.e2e-test-hub-feature-editor-raw {
+  width: 100%;
+  min-height: 60vh;
+  font-family: var(--font-monospace);
+  resize: vertical;
+}
+
+.e2e-test-hub-feature-editor-card {
+  padding: var(--size-4-2);
+  margin-bottom: var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+}
+
+.e2e-test-hub-feature-editor-scenario-head,
+.e2e-test-hub-feature-editor-step {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-2);
+  margin-bottom: var(--size-2-2);
+}
+
+.e2e-test-hub-feature-editor-name,
+.e2e-test-hub-feature-editor-scenario-head input,
+.e2e-test-hub-feature-editor-step-text {
+  flex: 1;
+}
+
+.e2e-test-hub-feature-editor-description,
+.e2e-test-hub-feature-editor-docstring {
+  width: 100%;
+  font-family: var(--font-monospace);
+}
+
+.e2e-test-hub-feature-editor-step.is-missing-step .e2e-test-hub-feature-editor-step-text {
+  border-color: var(--text-warning);
+}
+
+.e2e-test-hub-feature-editor-step-flag {
+  min-width: 1em;
+  color: var(--text-warning);
+  font-weight: 700;
+}
+
+.e2e-test-hub-feature-editor-check[data-level="error"] {
+  color: var(--text-error);
+}
+
+.e2e-test-hub-feature-editor-check[data-level="warning"] {
+  color: var(--text-warning);
+}
+
+.e2e-test-hub-feature-editor-check[data-level="ok"] {
+  color: var(--text-success);
+}
+
+.e2e-test-hub-feature-editor-tags {
+  margin: var(--size-2-2) 0;
+}
+
+.e2e-test-hub-feature-editor-tag-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-1);
+  margin-right: var(--size-2-2);
+}
+
+.e2e-test-hub-feature-editor-step-extras {
+  margin: 0 0 var(--size-2-2) var(--size-4-4);
+}
+
+.e2e-test-hub-feature-editor-grid {
+  border-collapse: collapse;
+  margin-bottom: var(--size-2-2);
+}
+
+.e2e-test-hub-feature-editor-grid td,
+.e2e-test-hub-feature-editor-grid th {
+  border: 1px solid var(--background-modifier-border);
+  padding: var(--size-2-1);
+}
+
+.e2e-test-hub-feature-editor-grid input {
+  width: 100%;
+  border: none;
+  background: transparent;
+}
