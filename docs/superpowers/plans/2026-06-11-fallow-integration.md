@@ -8,7 +8,6 @@
 
 **Conventions you must follow (this codebase):**
 - Comments explain constraints/why, not what. Match the existing density.
-- CI workflow content is asserted by `tests/ci-workflow-content.test.ts` — extend it for any `ci.yml` change.
 - Run `npm run lint && npm run format:check && npm run typecheck && npm test` before every commit. Use `npm run format` to fix formatting.
 - Boundary enforcement stays in eslint; do NOT enable fallow boundary rules.
 
@@ -24,7 +23,7 @@
 ### Task 2: advisory CI audit job
 
 - [ ] New `quality` job in `.github/workflows/ci.yml`: ubuntu-latest, Node 22, `checkout` with `fetch-depth: 0`, `npm ci`, audit step with `continue-on-error: true` appending `npx fallow audit --format markdown` to `$GITHUB_STEP_SUMMARY`, `FALLOW_AUDIT_BASE` pinned to the PR base ref when present
-- [ ] Extend `tests/ci-workflow-content.test.ts` (write the failing assertions first) covering: job exists, fetch-depth 0, continue-on-error advisory step
+- [x] ~~Extend `tests/ci-workflow-content.test.ts`~~ — dropped: that test covers the plugin-**generated** vault workflow, not this repo's own `ci.yml`; no repo workflow file is unit-tested today
 - [ ] Verify: `npm test`
 
 ### Task 3: agentic surfaces

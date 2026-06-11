@@ -80,8 +80,11 @@ New independent `quality` job in `.github/workflows/ci.yml`:
 - **Advisory mechanism:** `continue-on-error: true` on the audit step — a
   warn/fail verdict shows as a failed step annotation but the job (and the
   PR check) stays green.
-- `tests/ci-workflow-content.test.ts` extended to cover the new job, keeping
-  the repo's "CI content is tested" idiom.
+- Correction discovered during implementation: `tests/ci-workflow-content.test.ts`
+  covers the **plugin-generated vault workflow**
+  (`src/application/content/ci-workflow-content.ts`), not this repo's own
+  `ci.yml` — no repo workflow file is unit-tested today, so the new job needs
+  no test extension.
 
 ## Part 3 — Agentic integration
 
@@ -114,5 +117,4 @@ no runtime coverage. The pre-existing findings (clone groups, hotspots) are
 2. CI on this branch's PR shows the advisory `quality` job green with the
    audit verdict in the job summary.
 3. `npx fallow-mcp` starts and speaks MCP on stdio (registered via `.mcp.json`).
-4. Existing suite stays green: lint, format:check, typecheck, vitest
-   (including the extended `ci-workflow-content` test).
+4. Existing suite stays green: lint, format:check, typecheck, vitest.
