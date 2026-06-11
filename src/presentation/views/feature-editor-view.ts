@@ -28,6 +28,7 @@ import {
   projectValidation,
   removeExamplesColumn,
   sanitizeCell,
+  sanitizeDocStringLines,
   stepIsImplemented,
   stepSuggestions,
 } from "./feature-editor-format";
@@ -551,8 +552,11 @@ export class FeatureEditorView extends TextFileView {
       });
       textarea.value = docString.lines.join("\n");
       textarea.addEventListener("change", () => {
-        docString.lines = textarea.value.split("\n");
-        docString.fence = fenceFor(docString.lines);
+        const lines = textarea.value.split("\n");
+        const fence = fenceFor(lines);
+        docString.lines = sanitizeDocStringLines(lines, fence);
+        docString.fence = fence;
+        textarea.value = docString.lines.join("\n"); // reflect escaped delimiter lines
         this.commit(false);
       });
       const removeDoc = extras.createEl("button", { text: "Remove text block" });

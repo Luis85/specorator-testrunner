@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFeature } from "../src/application/content/gherkin";
+import { parseFeature, serialiseFeature } from "../src/application/content/gherkin";
 import type { ExamplesBlock } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import {
@@ -15,6 +15,7 @@ import {
   projectValidation,
   removeExamplesColumn,
   sanitizeCell,
+  sanitizeDocStringLines,
   stepIsImplemented,
   stepSuggestions,
   suggestedKeyword,
@@ -129,6 +130,31 @@ describe("sanitizers", () => {
       "keep me",
       "also keep",
     ]);
+  });
+
+  it("sanitizeDocStringLines escapes body lines that would close the chosen fence", () => {
+    const lines = ['"""', "```", "ok"];
+    const fence = fenceFor(lines); // """ present → backtick fence chosen
+    expect(fence).toBe("```");
+    expect(sanitizeDocStringLines(lines, fence)).toEqual(['"""', "\\```", "ok"]);
+  });
+
+  it("escaped delimiter lines survive a serialize → parse round trip", () => {
+    const feature = parseFeature(
+      "Feature: F\n\n  Scenario: S\n    Given a payload:\n",
+      vp("Specifications/features/UC-001-doc.feature"),
+    );
+    expect(feature).not.toBeNull();
+    if (!feature) return;
+    const fence = fenceFor(['"""', "```"]);
+    feature.scenarios[0].steps[0].docString = {
+      fence,
+      lines: sanitizeDocStringLines(['"""', "```", "tail"], fence),
+    };
+    const text = serialiseFeature(feature);
+    const reparsed = parseFeature(text, feature.path);
+    expect(reparsed?.scenarios[0].steps[0].docString?.lines).toEqual(['"""', "\\```", "tail"]);
+    expect(reparsed?.scenarios[0].steps).toHaveLength(1);
   });
 });
 

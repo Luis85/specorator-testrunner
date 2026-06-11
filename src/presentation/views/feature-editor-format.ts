@@ -132,6 +132,15 @@ export const sanitizeCell = (value: string): string => value.replace(/\|/g, "/")
 export const fenceFor = (lines: readonly string[]): '"""' | "```" =>
   lines.some((line) => line.trim() === '"""') ? "```" : '"""';
 
+/**
+ * Escapes body lines that would terminate the chosen fence early (Gherkin's
+ * own `\"""` convention). Needed when the body contains BOTH delimiters, so
+ * no fence choice alone is safe; Cucumber unescapes the backslash at runtime
+ * while our parser keeps the line literal (trim ≠ fence → round-trip safe).
+ */
+export const sanitizeDocStringLines = (lines: readonly string[], fence: '"""' | "```"): string[] =>
+  lines.map((line) => (line.trim() === fence ? line.replace(fence, `\\${fence}`) : line));
+
 /** Splits textarea input into the lines that round-trip as description text. */
 export const asDescriptionLines = (value: string): string[] =>
   value
