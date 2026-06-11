@@ -128,6 +128,10 @@ describe("completion predicates", () => {
     expect(zero.matches({ featurePath: "f.feature", missingSteps: ["x"] }, ctx, "f.feature")).toBe(
       false,
     );
+    // Without a capture the sequence must stall, never widen to any feature.
+    expect(zero.matches({ featurePath: "f.feature", missingSteps: [] }, ctx, undefined)).toBe(
+      false,
+    );
   });
 
   it("create-suite excludes the default suites", () => {
@@ -145,6 +149,12 @@ describe("completion predicates", () => {
     expect(passed.matches({ runId: "RUN-1", status: "passed" }, ctx, "RUN-1")).toBe(true);
     expect(passed.matches({ runId: "RUN-2", status: "passed" }, ctx, "RUN-1")).toBe(false);
     expect(passed.matches({ runId: "RUN-1", status: "failed" }, ctx, "RUN-1")).toBe(false);
+    // A malformed suite.executed without a string runId must not advance the
+    // sequence (PR #31 Codex review) …
+    expect(executed.matches({ suiteId: "tour" }, ctx)).toBe(false);
+    expect(executed.matches({ suiteId: "tour", runId: 7 }, ctx)).toBe(false);
+    // … and without a capture the passed-run rule must stall, never widen.
+    expect(passed.matches({ runId: "RUN-1", status: "passed" }, ctx, undefined)).toBe(false);
   });
 
   it("run-own-test requires create-suite", () => {

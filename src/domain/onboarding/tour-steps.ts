@@ -249,12 +249,16 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
         },
         {
           type: "specification.missingSteps.detected",
+          // No captured-undefined wildcard: the previous rule guarantees the
+          // featurePath capture, so the zero-missing detection must be for
+          // exactly the feature whose steps were generated.
           matches: (payload, _ctx, captured) => {
             const p = record(payload);
             return (
               Array.isArray(p?.missingSteps) &&
               p.missingSteps.length === 0 &&
-              (captured === undefined || p.featurePath === captured)
+              captured !== undefined &&
+              p.featurePath === captured
             );
           },
         },
@@ -297,9 +301,17 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       rules: [
         {
           type: "suite.executed",
+          // runId must be a string HERE: it is the capture the next rule keys
+          // on, and a malformed payload that advanced the sequence without a
+          // captured id would otherwise let any later passed run complete the
+          // step (PR #31 Codex review).
           matches: (payload, ctx) => {
             const p = record(payload);
-            return typeof p?.suiteId === "string" && !ctx.defaultSuiteIds.includes(p.suiteId);
+            return (
+              typeof p?.suiteId === "string" &&
+              typeof p.runId === "string" &&
+              !ctx.defaultSuiteIds.includes(p.suiteId)
+            );
           },
           capture: (payload) => {
             const value = record(payload)?.runId;
@@ -308,9 +320,11 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
         },
         {
           type: "testrun.completed",
+          // No captured-undefined wildcard: the previous rule guarantees the
+          // capture, so a missing id must stall the sequence, never widen it.
           matches: (payload, _ctx, captured) => {
             const p = record(payload);
-            return p?.status === "passed" && (captured === undefined || p.runId === captured);
+            return p?.status === "passed" && captured !== undefined && p.runId === captured;
           },
         },
       ],
