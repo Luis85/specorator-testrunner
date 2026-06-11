@@ -61,8 +61,8 @@ strong layering, security posture, and test coverage. The research says the
   does take from this: all run/spec metadata lives in clean YAML properties,
   so the vault stays fully queryable with core Bases for users who want it.
 
-The proposal below defines **eight V2 epics (EPIC-013…020), 31 user stories
-(US-051…081), and 12 use cases (UC-025…036)**, with a recommended priority
+The proposal below defines **eight V2 epics (EPIC-013…020), 33 user stories
+(US-051…083), and 13 use cases (UC-025…037)**, with a recommended priority
 order, explicit non-goals, and a **pre-V2 implementation plan (§9)** that
 clears recorded debt and lays the required foundations — ending with the
 playwright-bdd migration as the bridge into V2 feature work.
@@ -491,6 +491,34 @@ testomat.io-style authoring aid the competitive research ranked as the single
 best non-technical-authoring feature in the market — and it directly attacks
 the #1 BDD abandonment cause (authoring friction and step duplication).
 
+**US-082 Use Case Editor** —
+As a **Product Owner**, I want a guided Use Case Editor — structured fields
+for title, description, domain, actor, preconditions, main-success-scenario
+steps, postconditions, and linked Features — so that creating a well-formed
+Use Case doesn't require knowing the frontmatter schema or the UC-NNN house
+format.
+*AC:* follows the shipped Feature Editor pattern: structured view with
+round-trip parse/serialize of frontmatter + body sections, raw-mode fallback
+when a note doesn't round-trip, and a live validation strip (missing
+title/actor, empty success scenario, broken Feature links); creates notes in
+the existing UC-001 format so hand-written Use Cases open without loss;
+reuses the focus-preserving re-render foundation from §9 item 1.12 (TD-004).
+
+**US-083 Linked entity notes (Actors and shared concepts)** —
+As a **Business Analyst**, I want actors — and similar shared concepts such
+as domains — created as their **own frontmatter + Markdown notes** that Use
+Cases reference via wikilinks, so that "who uses this" and "what belongs to
+this domain" are answered by backlinks and the graph view instead of
+duplicated free-text strings.
+*AC:* the Use Case Editor's actor/domain fields are **pick-or-create**:
+autocomplete over existing entity notes, and creating inline scaffolds a new
+note with typed frontmatter (`type: actor` / `type: domain`) in a dedicated
+folder; Use Case frontmatter stores the wikilink, so every entity note's
+backlinks list the Use Cases it participates in; a one-shot, non-destructive
+migration command converts existing free-text `actor:`/`domain:` values into
+entity notes + links; all properties stay plain YAML (Bases-queryable per
+US-076).
+
 **FEAT (V2.x, stories on acceptance): exploratory session notes** *(P3)* —
 a timed exploratory-testing session template (charter, notes, findings,
 screenshots) that joins the same evidence/traceability graph — closes the
@@ -601,6 +629,7 @@ One line each; full notes to be authored on acceptance, in the UC-001 format.
 | UC-034 | Drive the Test Hub from a coding agent via MCP | Developer | EPIC-016 |
 | UC-035 | Facilitate discovery with an Example Map | Product Owner | EPIC-017 |
 | UC-036 | Promote a checklist item to an automated Scenario | Solo Developer | EPIC-017 |
+| UC-037 | Author a Use Case with the guided editor (incl. linked Actor notes) | Product Owner | EPIC-017 |
 
 ---
 
@@ -617,9 +646,10 @@ and report pipeline were just migrated once (§9 Phase 3); everything else
 layers on top without breaking changes.
 
 **V2.1:** flakiness & triage (US-058/059), readiness/sign-off/exports
-(US-061…065), retention sweep (US-066), Step Library (US-081),
-Bases-friendly metadata (US-076), chrome hygiene (US-078), credential
-keychain, storageState, sharded CI, Messages/Allure.
+(US-061…065), retention sweep (US-066), Step Library (US-081), Use Case
+Editor + linked entity notes (US-082/083), Bases-friendly metadata (US-076),
+chrome hygiene (US-078), credential keychain, storageState, sharded CI,
+Messages/Allure.
 
 **V2.x:** discovery suite (EPIC-017), mobile read-only, importers, headless
 CLI, multi-env matrix, GitLab CI.
@@ -680,7 +710,7 @@ builds directly on top of them.
 | 1.9 | [[TD-002]] One-argument-per-step enforced in the domain model (sum-type `argument` on `GherkinStep`) | Today `serialiseFeature` can emit Gherkin Cucumber refuses to parse (table + doc string); after the runner migration that invalid output fails the suite — make the invalid state unrepresentable first |
 | 1.10 | [[TD-003]] Single source of structural Feature validation (`structuralIssues()` in the application layer, consumed by service + editor) | V2's scenario quality lint (US-074) layers new rules on validation; building it on two already-drifting copies doubles every rule |
 | 1.11 | [[TD-005]] One `isScenarioOutline` predicate exported from the domain entity, with deliberately chosen semantics | Scenario Reference (US-056) keys Outline examples as `::row-N` — identity and suite-match counts must agree on what an Outline *is* before history lands |
-| 1.12 | [[TD-004]] Replace the Feature Editor's `commit(structureChanged)` flag with focus-preserving re-render (the one *large* item; can run parallel to Phase 2) | V2 grows the editor (lint strip US-074, step autocomplete US-081); every new control re-rolls the stale-DOM/focus dice until re-render is safe by construction |
+| 1.12 | [[TD-004]] Replace the Feature Editor's `commit(structureChanged)` flag with focus-preserving re-render (the one *large* item; can run parallel to Phase 2) | V2 grows the editor (lint strip US-074, step autocomplete US-081) and adds a sibling Use Case Editor (US-082) built on the same pattern; every new control re-rolls the stale-DOM/focus dice until re-render is safe by construction |
 
 ### Phase 2 — Foundations the V2 epics assume
 
