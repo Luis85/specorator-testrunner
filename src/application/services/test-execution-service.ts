@@ -362,10 +362,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
       if (activeRun.terminated) return ok(run);
 
       await this.publish("testrun.requested", run.id, {
-        // The catalog's `testrun.requested.scope` is the four public scopes; the
-        // internal "demo" scope (a smoke run over demo content) surfaces as
-        // "suite" on the bus, which is the suite it executes.
-        scope: request.scope === "demo" ? "suite" : request.scope,
+        // The scope is published VERBATIM, including "demo" (Event Catalog §7):
+        // it used to be masked as "suite", but a user suite whose id slugifies
+        // to "demo" then became indistinguishable from the shipped Demo Test
+        // on the bus (PR #31 Codex review).
+        scope: request.scope,
         target: request.target,
       });
       await this.publish("testrun.started", run.id, {

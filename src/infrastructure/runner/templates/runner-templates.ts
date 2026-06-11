@@ -194,6 +194,9 @@ Then("I should see {string}", async function (this: TestWorld, expected: string)
 });
 `;
 
+// The fixture script concatenates strings instead of using a template literal:
+// a \${...} placeholder inside this TS template literal would be interpolated
+// at build time, not in the browser.
 const EXAMPLE_HTML = `<!doctype html>
 <html lang="en">
   <head>
@@ -204,9 +207,19 @@ const EXAMPLE_HTML = `<!doctype html>
     <h1>Obsidian E2E Test Hub Demo</h1>
     <button id="continue">Continue</button>
     <div id="result"></div>
+    <hr />
+    <!-- Guided Tour greeting form: the user's self-authored scenario drives this. -->
+    <label for="name">Name</label>
+    <input id="name" type="text" />
+    <button id="greet">Greet</button>
+    <div id="greeting"></div>
     <script>
       document.getElementById("continue").addEventListener("click", () => {
         document.getElementById("result").textContent = "Test completed";
+      });
+      document.getElementById("greet").addEventListener("click", () => {
+        const name = document.getElementById("name").value;
+        document.getElementById("greeting").textContent = "Hello, " + name + "!";
       });
     </script>
   </body>

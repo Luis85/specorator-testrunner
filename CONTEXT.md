@@ -70,6 +70,10 @@ _Avoid_: Mock, stub, test page.
 The first-run modal that scaffolds the vault, generates documentation, creates default suites, installs the runner, and validates. Does **not** auto-run the demo test.
 _Avoid_: Onboarding flow, setup screen, first-launch dialog.
 
+**Guided Tour**:
+The event-observed onboarding checklist: a persistent sidebar view that walks a user through the full V1 loop (Use Case → Feature → Gherkin → step definitions → Suite → Run → Evidence → CI) by observing domain events as the user performs each real action. Distinct from the Initialization Wizard — the wizard scaffolds, the tour teaches. Completing it leaves the user with a self-authored test (the `@tour` greeting scenario against the extended fixture).
+_Avoid_: Tutorial, walkthrough, onboarding wizard.
+
 **System Under Test (SUT)**:
 The application that the tests drive. Real usage points at one of several **Environments**; the demo locks the SUT to a local static HTML fixture (`file://`) and ignores environment configuration entirely.
 _Avoid_: Target, app under test, AUT.
@@ -99,5 +103,5 @@ A past-tense fact published on the in-process **EventBus** with the envelope def
 _Avoid_: Message, notification, signal.
 
 **Correlation ID**:
-A constant identifier shared by all events in one logical flow. For a Test Run, `correlationId = runId`; for the Initialization Wizard, the wizard invocation id.
+A constant identifier shared by all events in one logical flow. For a Test Run, `correlationId = runId`; for the Initialization Wizard, the wizard invocation id; for the Guided Tour, the `tourId`.
 _Avoid_: Trace id, request id.

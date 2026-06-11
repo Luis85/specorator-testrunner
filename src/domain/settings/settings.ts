@@ -66,6 +66,41 @@ export interface LoggingSettings {
   level: "debug" | "info" | "warn" | "error";
 }
 
+/**
+ * Mid-flight progress of one tour step's event-sequence: the index of the rule
+ * it is waiting for next, and the values the already-matched rules captured
+ * (suiteId / runId / feature path the later rules correlate on). One entry per
+ * matched rule, `null` for a rule that captures nothing — kept per rule (not a
+ * single slot) so a failed-attempt reset can roll back to an earlier rule
+ * without losing ITS correlation value.
+ */
+export interface OnboardingSequenceProgress {
+  index: number;
+  captures: (string | null)[];
+}
+
+/**
+ * Guided Tour progress (spec 2026-06-11). Persisted with the settings so a
+ * UC-024 reset clears it together with everything else. Step ids are stored as
+ * plain strings here; the GuidedTourService (which owns the step table)
+ * ignores ids it does not know.
+ */
+export interface OnboardingSettings {
+  /** Correlation id of the current tour traversal; null until the tour starts. */
+  tourId: string | null;
+  completedSteps: string[];
+  skippedSteps: string[];
+  /**
+   * Event-sequence progress per step id. Persisted because the events that
+   * START a sequence (suite.created, stepdefinition.generated) cannot re-fire
+   * once their artifact exists — losing this across a reload would dead-end
+   * the tour (PR #31 Codex review).
+   */
+  sequenceProgress: Record<string, OnboardingSequenceProgress>;
+  /** Hides the dashboard CTA only; the Open guided tour command always reopens. */
+  dismissed: boolean;
+}
+
 export interface TestHubSettings {
   paths: TestHubPathSettings;
   runner: RunnerSettings;
@@ -73,6 +108,7 @@ export interface TestHubSettings {
   ci: CiSettings;
   sut: SutSettings; // per ADR-0013 + ADR-0014
   logging: LoggingSettings; // per ADR-0019
+  onboarding: OnboardingSettings;
 }
 
 /**
@@ -210,5 +246,12 @@ export const DEFAULT_SETTINGS: TestHubSettings = {
     enabled: true,
     path: unsafeVaultPath("Test Hub/logs"),
     level: "info",
+  },
+  onboarding: {
+    tourId: null,
+    completedSteps: [],
+    skippedSteps: [],
+    sequenceProgress: {},
+    dismissed: false,
   },
 };

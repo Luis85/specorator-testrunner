@@ -42,6 +42,12 @@ every command, but each one is also reachable through a view:
 - **Test Console.** A toolbar with **Cancel run** (enabled only while a run is
   active), **Re-run**, and **Clear**, plus a live elapsed timer and the run's
   scope, over the streaming output.
+- **Guided Tour.** A right-sidebar checklist that teaches the full loop by
+  doing: each step explains why it matters, offers the real action button and
+  copy-paste snippets, and completes by itself (via domain events) when the
+  user performs the action — ending with a self-authored greeting test run
+  green. Reachable via **Open guided tour**, the wizard's success screen, and
+  a dashboard call to action.
 - **Settings.** A **System under test** section to add/remove environments and
   edit their base URL and credential variables (validation errors shown
   inline), plus **Validate environment**, **Repair installation**, **Generate CI

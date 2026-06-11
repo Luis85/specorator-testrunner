@@ -239,6 +239,9 @@ export class DefaultSpecificationService implements SpecificationService {
         featurePath,
         valid: result.valid,
         errors: errors.map((e) => e.message),
+        // Tags travel with the result so observers (e.g. the Guided Tour's
+        // authoring step) can require a tag without re-reading the file.
+        tags: feature?.tags ?? [],
       }),
     );
     return ok(result);

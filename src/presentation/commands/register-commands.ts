@@ -17,6 +17,7 @@ import type { RunLauncher } from "../run/run-launcher";
 import { DASHBOARD_VIEW_TYPE } from "../views/dashboard-view";
 import { EVIDENCE_EXPLORER_VIEW_TYPE } from "../views/evidence-explorer-view";
 import { GenerateFeatureModal } from "../views/generate-feature-modal";
+import { GUIDED_TOUR_VIEW_TYPE } from "../views/guided-tour-view";
 import { RunPickerModal } from "../views/run-picker-modal";
 import { SUITE_VIEW_TYPE } from "../views/suite-dashboard-view";
 import { TEST_CONSOLE_VIEW_TYPE } from "../views/test-console-view";
@@ -58,12 +59,24 @@ export interface TestHubCommandDeps {
 }
 
 /**
+ * Command bodies the composition root re-uses for view buttons (the Guided
+ * Tour's CI step runs the SAME body as the "Generate CI workflow" command, so
+ * the logic stays defined once).
+ */
+export interface RegisteredCommandHelpers {
+  generateCiWorkflow(overwriteExisting?: boolean): Promise<void>;
+}
+
+/**
  * Registers the Test Hub command-palette surface (moved out of `main.ts`,
  * review P2-7). Commands are thin: each body loads/calls the injected services
  * and surfaces the typed outcome as a Notice — no business logic lives here.
  * Ribbon icons and view registration stay in the composition root.
  */
-export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void {
+export function registerCommands(
+  plugin: Plugin,
+  deps: TestHubCommandDeps,
+): RegisteredCommandHelpers {
   /**
    * Re-runs report import + evidence for the last finished run on demand
    * (UC-016, US-032). The eligibility rule and serialization live in the
@@ -484,4 +497,12 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
     name: "Open troubleshooting",
     callback: () => void deps.openDocumentation("troubleshooting"),
   });
+
+  plugin.addCommand({
+    id: "open-guided-tour",
+    name: "Open guided tour",
+    callback: () => void deps.workspace.openView(GUIDED_TOUR_VIEW_TYPE, "sidebar"),
+  });
+
+  return { generateCiWorkflow };
 }
