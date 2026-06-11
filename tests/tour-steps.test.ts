@@ -90,7 +90,10 @@ describe("completion predicates", () => {
   it("author-gherkin requires a valid, non-demo feature", () => {
     const rule = eventRule("author-gherkin");
     expect(
-      rule.matches({ featurePath: "Specifications/features/UC-002-greet.feature", valid: true }, ctx),
+      rule.matches(
+        { featurePath: "Specifications/features/UC-002-greet.feature", valid: true },
+        ctx,
+      ),
     ).toBe(true);
     expect(
       rule.matches(
@@ -99,7 +102,10 @@ describe("completion predicates", () => {
       ),
     ).toBe(false);
     expect(
-      rule.matches({ featurePath: "Specifications/features/UC-002-greet.feature", valid: false }, ctx),
+      rule.matches(
+        { featurePath: "Specifications/features/UC-002-greet.feature", valid: false },
+        ctx,
+      ),
     ).toBe(false);
   });
 
@@ -113,7 +119,9 @@ describe("completion predicates", () => {
     const [generated, zero] = sequenceRules("implement-steps");
     expect(generated.matches({ featurePath: "f.feature", stepFile: "s.ts" }, ctx)).toBe(true);
     expect(generated.capture?.({ featurePath: "f.feature" })).toBe("f.feature");
-    expect(zero.matches({ featurePath: "f.feature", missingSteps: [] }, ctx, "f.feature")).toBe(true);
+    expect(zero.matches({ featurePath: "f.feature", missingSteps: [] }, ctx, "f.feature")).toBe(
+      true,
+    );
     expect(zero.matches({ featurePath: "other.feature", missingSteps: [] }, ctx, "f.feature")).toBe(
       false,
     );

@@ -235,9 +235,7 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       "runner's src/steps/ folder. Open that file, replace the stubs with the implementation " +
       "below, then run Detect Missing Steps again — zero missing completes this step.",
     action: { id: "open-use-cases", label: "Open Use Cases" },
-    snippets: [
-      { title: "Step implementation", language: "typescript", code: TOUR_STEPS_SNIPPET },
-    ],
+    snippets: [{ title: "Step implementation", language: "typescript", code: TOUR_STEPS_SNIPPET }],
     completion: {
       kind: "event-sequence",
       rules: [
