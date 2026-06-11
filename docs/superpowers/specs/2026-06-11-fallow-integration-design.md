@@ -110,6 +110,38 @@ feature-sliced presets, no SARIF upload, no git hooks (`fallow init --hooks`),
 no runtime coverage. The pre-existing findings (clone groups, hotspots) are
 *reported*, not fixed, in this change.
 
+## Addendum (2026-06-11): ESLint 10 + Obsidian plugin guidelines
+
+Follow-up request in the same session: "do the same with latest eslint …, also
+add the obsidian linter rules — goal is a stable quality harness."
+
+- **ESLint 9.39 → 10.4, typescript-eslint → 8.61** (8.61 supports eslint 10);
+  zero rule fallout on the existing config.
+- **`eslint-plugin-obsidianmd` (0.3.0) recommended preset**, every entry
+  re-scoped to `src/**/*.ts` via AND-files: the preset's un-scoped entries
+  carry type-aware rules that crash on untyped `.mjs` files, and its
+  `package.json` entries are dropped (one disables type-checked linting
+  wherever it applies; dependency hygiene is fallow's job).
+- **Sentence-case reconciled with CONTEXT.md**: the glossary terms (Test Hub,
+  Use Case, Test Suite, Test Run, Tag Expression, Demo Test, …) are configured
+  as `brands` so the rule now enforces the product language in BOTH directions
+  — lowercasing stray Title Case ("Run Demo Test" stays, "Create Feature" →
+  "Create feature") and re-capitalizing glossary terms ("test runs" → "Test
+  Runs"). ~25 UI strings fixed; two lowercase example-value placeholders
+  (`staging`, `edge-cases`) carry justified inline disables.
+- **Real findings fixed**: popout-window-unsafe DOM timers in
+  `create-suite-modal`; glossary-inconsistent copy.
+- **Justified inline disables** (each with a why-comment): Node timers in
+  `node-child-process-runner` (need `Timeout.unref()`), permanent delete of
+  regenerable runtime folders in `obsidian-vault-adapter` (trash-ing a 150 MB
+  `.testrunner` would be hostile), the console sink in `logger.ts` (ADR-0019).
+- **Deferred with a warn-level signal**: the Obsidian 1.13 settings API
+  migration (`display()` → `getSettingDefinitions()`, `setWarning()` →
+  `setDestructive()`) requires bumping `minAppVersion` from 1.8.0 — caught by
+  `obsidianmd/no-unsupported-api` when a naive rename was attempted. Tracked
+  as follow-up; `@typescript-eslint/no-deprecated` is `warn` for
+  `settings-tab.ts` only.
+
 ## Acceptance
 
 1. `npm run quality` and `npm run quality:audit` run locally; the

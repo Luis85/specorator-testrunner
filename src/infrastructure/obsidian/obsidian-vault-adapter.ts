@@ -129,6 +129,11 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
       // (e.g. dot-folders like `.testrunner` that Obsidian does not track).
       const folder = this.app.vault.getAbstractFileByPath(normalized);
       if (folder) {
+        // Deliberately NOT FileManager.trashFile(): this only ever removes
+        // plugin-generated runtime folders (UC-024 reset, `.testrunner` with
+        // its node_modules + Chromium) — moving those to the user's trash
+        // would be hostile, and they are regenerable by the wizard.
+        // eslint-disable-next-line obsidianmd/prefer-file-manager-trash-file
         await this.app.vault.delete(folder, true);
       } else {
         await this.app.vault.adapter.rmdir(normalized, true);

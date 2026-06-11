@@ -1,6 +1,7 @@
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 import builtinModules from "builtin-modules";
+import obsidianmd from "eslint-plugin-obsidianmd";
 
 // Every Node builtin, as import-specifier globs: bare ("fs"), subpath
 // ("fs/promises"), and the "node:" protocol forms. Used by the layer rules
@@ -32,6 +33,71 @@ export default tseslint.config(
     ...config,
     files: ["**/*.ts"],
   })),
+  // Obsidian plugin guidelines (community-plugin review rules): API usage,
+  // command/setting conventions, vault/workspace correctness, plus the
+  // bundled no-unsanitized/SDL security checks. Every preset entry is
+  // re-scoped to the plugin source with an AND-files pattern: the preset's
+  // un-scoped entries carry type-aware rules that crash on untyped files
+  // (esbuild.config.mjs, scripts/*.mjs), and its rules only concern Obsidian
+  // plugin code anyway. The package.json entries are dropped: one would
+  // disable type-checked rules wherever it applies, and dependency hygiene is
+  // already covered by fallow.
+  ...obsidianmd.configs.recommended
+    .filter((config) => !config.files?.includes("package.json"))
+    .map((config) => ({ ...config, files: [["src/**", "**/*.ts"]] })),
+  {
+    files: ["src/**/*.ts"],
+    rules: {
+      // Obsidian's sentence-case guideline, reconciled with CONTEXT.md: the
+      // glossary terms are the product language and stay capitalized in
+      // user-facing copy; everything else must be sentence case.
+      "obsidianmd/ui/sentence-case": [
+        "error",
+        {
+          brands: [
+            "Test Hub",
+            "Use Case",
+            "Use Cases",
+            "Feature Specification",
+            "Feature Specifications",
+            "Test Suite",
+            "Test Suites",
+            "Test Run",
+            "Test Runs",
+            "Test Evidence",
+            "Test Console",
+            "Evidence Explorer",
+            "Tag Expression",
+            "Initialization Wizard",
+            "Getting Started",
+            "Demo Test",
+            "Markdown",
+            "Playwright",
+            "Chromium",
+            "Cucumber",
+            "Gherkin",
+            "Obsidian",
+            "GitHub",
+            "Node.js",
+          ],
+          acronyms: ["E2E", "CI", "KPI", "SUT", "URL", "ID", "MB"],
+          // Environment-variable names quoted verbatim in copy.
+          ignoreRegex: ["\\bBASE_URL\\b"],
+        },
+      ],
+    },
+  },
+  {
+    // PluginSettingTab.display() and ButtonComponent.setWarning() are
+    // deprecated since Obsidian 1.13 (getSettingDefinitions() /
+    // setDestructive()), but the replacements require bumping minAppVersion
+    // from 1.8.0 — the migration is a settings-tab rewrite tracked as a
+    // follow-up. Keep the signal visible without failing lint.
+    files: ["src/presentation/settings/settings-tab.ts"],
+    rules: {
+      "@typescript-eslint/no-deprecated": "warn",
+    },
+  },
   {
     files: ["**/*.ts"],
     languageOptions: {

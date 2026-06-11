@@ -520,7 +520,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     );
     this.addRibbonIcon(
       "gauge",
-      "Open Test Hub Dashboard",
+      "Open Test Hub dashboard",
       () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
     );
     this.addRibbonIcon(

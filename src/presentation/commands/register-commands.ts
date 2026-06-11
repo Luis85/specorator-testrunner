@@ -142,7 +142,7 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
       return;
     }
     if (listed.value.length === 0) {
-      new Notice("No Feature files yet. Generate one first.");
+      new Notice("No feature files yet. Generate one first.");
       return;
     }
     new RunPickerModal(
@@ -391,12 +391,12 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   });
   plugin.addCommand({
     id: "generate-feature",
-    name: "Generate Feature from Use Case",
+    name: "Generate feature from Use Case",
     callback: () => void openGenerateFeature(),
   });
   plugin.addCommand({
     id: "validate-feature",
-    name: "Validate Feature",
+    name: "Validate feature",
     callback: () => void validateActiveFeature(),
   });
   plugin.addCommand({
@@ -435,7 +435,7 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   });
   plugin.addCommand({
     id: "run-feature",
-    name: "Run Feature…",
+    name: "Run feature…",
     callback: () => void runFeature(),
   });
   plugin.addCommand({
@@ -476,12 +476,12 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   });
   plugin.addCommand({
     id: "open-user-manual",
-    name: "Open User Manual",
+    name: "Open user manual",
     callback: () => void deps.openDocumentation("manual"),
   });
   plugin.addCommand({
     id: "open-troubleshooting",
-    name: "Open Troubleshooting",
+    name: "Open troubleshooting",
     callback: () => void deps.openDocumentation("troubleshooting"),
   });
 }

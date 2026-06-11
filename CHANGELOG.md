@@ -22,9 +22,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
   repo-tuned config (`.fallowrc.jsonc`), `quality:*` npm scripts, an advisory
   changed-code audit job in CI, and agent-facing surfaces (`.mcp.json` MCP
   server, `.claude/skills/fallow` pointer skill, `AGENTS.md`).
+- Quality harness: ESLint upgraded to v10 with the `eslint-plugin-obsidianmd`
+  plugin-guideline rules scoped to `src/`; the sentence-case rule is
+  configured with the CONTEXT.md glossary as brand terms so UI copy is
+  enforced glossary-consistent in both directions.
 
 ### Fixed
 
+- Popout-window-unsafe `setTimeout`/`clearTimeout` in the create-suite modal
+  now use the window-bound timers.
+- ~25 UI strings normalized to Obsidian sentence-case while preserving
+  glossary capitalization (e.g. "Create Feature" → "Create feature",
+  "test runs" → "Test Runs").
 - A corrupt `data.json` no longer prevents the plugin from loading; it
   degrades to default settings with a logged error.
 - Settings saves are serialized and disk failures surface as Notices instead

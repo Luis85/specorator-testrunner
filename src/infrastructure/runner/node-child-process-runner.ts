@@ -137,6 +137,9 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       const pid = child.pid;
       try {
         process.kill(-pid, "SIGTERM");
+        // Node timer, not a DOM timer: `.unref()` below needs Node's Timeout
+        // object, which `window.setTimeout` (a number) cannot provide.
+        // eslint-disable-next-line obsidianmd/prefer-window-timers
         const escalation = setTimeout(() => {
           // Grace period over — force the GROUP. Deliberately not gated on the
           // wrapper's exitCode: the wrapper (npm) can die on SIGTERM while a
@@ -156,6 +159,7 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
         // `close` fires once the process exited AND the stdio pipes drained —
         // i.e. the whole tree is done writing. Cancelling then both avoids a
         // pointless late SIGKILL and shrinks the pid-reuse window to ~0.
+        // eslint-disable-next-line obsidianmd/prefer-window-timers -- Node timer (see above)
         child.once("close", () => clearTimeout(escalation));
         return;
       } catch {

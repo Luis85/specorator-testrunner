@@ -24,7 +24,7 @@ export class GenerateFeatureModal extends FuzzySuggestModal<UseCase> {
     private readonly useCases: UseCase[],
   ) {
     super(app);
-    this.setPlaceholder("Select a Use Case to generate a Feature for");
+    this.setPlaceholder("Select a Use Case to generate a feature for");
   }
 
   getItems(): UseCase[] {
@@ -91,11 +91,14 @@ class SlugPromptModal extends Modal {
 
   onOpen(): void {
     const { contentEl } = this;
-    contentEl.createEl("h2", { text: "Name the new Feature" });
+    contentEl.createEl("h2", { text: "Name the new feature" });
     contentEl.createEl("p", {
       text: `${this.useCase.id} already has ${this.useCase.featureFiles.length} Feature(s). Enter a slug for the new one (e.g. "edge-cases").`,
     });
     new Setting(contentEl).setName("Slug").addText((text) => {
+      // The placeholder shows an example VALUE: slugs are lowercase by
+      // definition (they become part of the `.feature` filename).
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
       text.setPlaceholder("edge-cases").onChange((value) => (this.slug = value));
       // Enter submits (shared helper) so the keyboard flow doesn't force a
       // mouse trip — same wiring as the other prompt modals.
@@ -106,7 +109,7 @@ class SlugPromptModal extends Modal {
     });
     new Setting(contentEl).addButton((button) =>
       button
-        .setButtonText("Create Feature")
+        .setButtonText("Create feature")
         .setCta()
         .onClick(() => this.submit()),
     );
@@ -120,7 +123,7 @@ class SlugPromptModal extends Modal {
     if (this.submitting) return;
     const slug = this.slug.trim();
     if (slug === "") {
-      new Notice("Please enter a slug for the new Feature.");
+      new Notice("Please enter a slug for the new feature.");
       return;
     }
     this.submitting = true; // never reset: the modal closes here

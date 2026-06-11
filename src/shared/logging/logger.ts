@@ -148,6 +148,9 @@ export class ConsoleLogger implements Logger {
     // The message is scrubbed too — call sites interpolate config values
     // (e.g. a baseUrl that can embed `user:pass@host`) into message text.
     const line = `${this.prefix} ${redactSecrets(msg, this.secrets)}`;
+    // The console IS this logger's sink (ADR-0019): level-gated, redacted,
+    // prefixed — not the "unnecessary logging" the guideline targets.
+    // eslint-disable-next-line obsidianmd/rule-custom-message
     const sink = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
     if (redacted && Object.keys(redacted).length > 0) sink(line, redacted);
     else sink(line);

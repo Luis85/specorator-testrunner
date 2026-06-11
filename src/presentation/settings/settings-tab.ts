@@ -183,7 +183,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Active environment")
       .setDesc(
-        "Test runs execute against this environment. Switching is a single action — never edit a URL inline.",
+        "Test Runs execute against this environment. Switching is a single action — never edit a URL inline.",
       )
       .addDropdown((dropdown) => {
         for (const name of environmentNames) dropdown.addOption(name, name);
@@ -222,7 +222,7 @@ export class TestHubSettingTab extends PluginSettingTab {
 
     new Setting(block)
       .setName("Base URL")
-      .setDesc("Injected into test runs as BASE_URL (http, https, or file).")
+      .setDesc("Injected into Test Runs as BASE_URL (http, https, or file).")
       .addText((text) => {
         text.setPlaceholder("https://staging.example.com").setValue(env.baseUrl);
         const flush = debounce(
@@ -503,7 +503,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Reset Test Hub")
       .setDesc(
-        "Restore a clean install: remove the regenerable .testrunner runtime, restore default settings, and re-initialize. Your Use Cases, Specifications, Features, Suites and Evidence are preserved.",
+        "Restore a clean install: remove the regenerable .testrunner runtime, restore default settings, and re-initialize. Your Use Cases, Feature Specifications, Test Suites and Test Evidence are preserved.",
       )
       .addButton((button) => this.wireResetButton(button));
   }
