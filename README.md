@@ -5,18 +5,23 @@ end-to-end tests** directly inside their vault — combining Use Cases, Gherkin
 specifications, test suites, Playwright execution, evidence, and CI/CD into a
 single Markdown-native, local-first workflow.
 
-> **Status:** In development. The product direction is captured in the
-> [PRD](./docs/Obsidian%20E2E%20Test%20Hub.md). Implemented so far:
-> **EPIC-001/EPIC-002 (Foundation & Initialization)** — the layered plugin
-> skeleton, settings service + UI, and the Initialization Wizard that scaffolds
-> the vault, generates documentation and demo content, and creates the default
-> Smoke/Regression suites; and **EPIC-003 (Test Runner)** — generating the
-> self-contained `.testrunner` project, installing npm dependencies and the
-> Chromium browser, validating the environment, and repairing the installation;
-> and **EPIC-004 (Use Case Management)** — creating Use Cases with generated
-> frontmatter, indexing them from the vault, and a live "Use Cases" panel
-> listing ID/Title/Status/Automation Status. Specification management
-> (EPIC-005) is next.
+> **Status:** In development; the V1 feature set is implemented end to end.
+> The product direction is captured in the
+> [PRD](./docs/Obsidian%20E2E%20Test%20Hub.md). Implemented:
+> **EPIC-001/002 (Foundation & Initialization)** — the layered plugin skeleton,
+> settings service + UI, and the Initialization Wizard; **EPIC-003 (Test
+> Runner)** — generating, installing, validating, and repairing the
+> self-contained `.testrunner` project; **EPIC-004 (Use Case Management)** —
+> Use Case creation, indexing, explorer, and detail view; **EPIC-005
+> (Specification Management)** — Gherkin Feature generation, validation,
+> missing-step detection, and step-definition generation; **EPIC-006 (Test
+> Suite Management)** — tag-expression suites with a live suite explorer;
+> **EPIC-007 (Test Execution)** — streaming runs with cancel/re-run in the
+> Test Console; **EPIC-008 (Reporting & Evidence)** — report import, Evidence
+> notes, and the Evidence Explorer over the partitioned run history;
+> **EPIC-009 (Dashboard)** — KPI roll-up, quick actions, and recent runs; and
+> **EPIC-010 (CI/CD)** — GitHub Actions workflow generation and CI-readiness
+> checks.
 
 ## Working from the UI
 
@@ -133,12 +138,22 @@ Vault
 ```
 .
 ├── manifest.json          # Obsidian plugin manifest
+├── versions.json          # Plugin version → minAppVersion map
 ├── package.json           # Plugin build + typecheck scripts
 ├── tsconfig.json          # TypeScript config (strict)
+├── vitest.config.ts       # Vitest config (coverage gates per NFR-002)
+├── eslint.config.mjs      # ESLint flat config (incl. layer-boundary rules)
 ├── esbuild.config.mjs     # esbuild bundler config
 ├── styles.css             # Plugin styles
 ├── src/
-│   └── main.ts            # Plugin entry point
+│   ├── main.ts            # Plugin entry point / composition root
+│   ├── domain/            # Entities, value objects, policies, events, settings
+│   ├── application/       # Services, ports, generated-content templates
+│   ├── infrastructure/    # Obsidian, Node fs, child-process, runner adapters
+│   ├── presentation/      # Views, modals, settings tab, commands
+│   └── shared/            # Result, errors, EventBus, logging, utils
+├── tests/                 # Vitest unit + integration suite (incl. __stubs__)
+├── scripts/               # test-build.mjs, e2e-smoke.mjs (+ entry)
 ├── CONTEXT.md                     # Glossary (per grill-with-docs skill)
 ├── docs/
 │   ├── Obsidian E2E Test Hub.md   # Product Requirements (source of truth)
@@ -152,10 +167,12 @@ Vault
 │   │   └── 0001-*.md … 0019-*.md       # Architectural decision records
 │   ├── use-cases/
 │   │   └── UC-001.md … UC-024.md       # One note per use case
-│   └── issues/
-│       ├── EPIC-001.md … EPIC-012.md   # Epics (12)
-│       ├── FEAT-001.md … FEAT-028.md   # Features (28)
-│       └── US-001.md … US-050.md       # User stories (50)
+│   ├── issues/
+│   │   ├── EPIC-001.md … EPIC-012.md   # Epics (12)
+│   │   ├── FEAT-001.md … FEAT-028.md   # Features (28)
+│   │   └── US-001.md … US-050.md       # User stories (50)
+│   ├── reviews/                        # Consolidated review & improvement plans
+│   └── superpowers/                    # Plans + specs from skill-driven sessions
 ├── .claude/skills/
 │   ├── grill-with-docs/                  # Stress-test plans against docs / glossary (mattpocock/skills)
 │   ├── improve-codebase-architecture/    # Find deepening opportunities (mattpocock/skills)
@@ -175,7 +192,9 @@ Vault
 │   ├── using-git-worktrees/
 │   └── NOTICE-superpowers.txt            # Upstream attribution + MIT license
 └── .github/workflows/
-    └── ci.yml                     # Typecheck + build on push / PR
+    ├── ci.yml                     # Lint, format, typecheck, build, coverage
+    ├── e2e-smoke.yml              # Opt-in E2E smoke over the real runner
+    └── release.yml                # Tag-triggered release with plugin assets
 ```
 
 ## Documents
@@ -195,13 +214,21 @@ Use cases live as individual notes under `docs/use-cases/UC-NNN.md`. Backlog ite
 Requires Node 20+.
 
 ```bash
-npm install        # install dependencies
-npm run dev        # esbuild watch mode
-npm run build      # production bundle (main.js)
-npm run typecheck  # tsc --noEmit
-npm run test       # vitest unit + integration suite
+npm install            # install dependencies
+npm run dev            # esbuild watch mode
+npm run build          # production bundle (main.js)
+npm run typecheck      # tsc --noEmit (src, tests, and scripts)
+npm run lint           # eslint (incl. layer-boundary import rules)
+npm run format         # prettier --write
+npm run format:check   # prettier --check
+npm run test           # vitest unit + integration suite
+npm run test:watch     # vitest watch mode
 npm run test:coverage  # vitest with v8 coverage (NFR-002: ≥ 80%)
+npm run test-build     # install the built plugin into a scratch vault
 ```
+
+CI (`.github/workflows/ci.yml`) runs lint, format check, typecheck, build,
+and the coverage-gated test suite on every push and pull request.
 
 ## License
 

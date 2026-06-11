@@ -70,7 +70,7 @@ Path: `src/presentation/{views,components,commands,settings}`.
 
 Each view subscribes to the `EventBus` for state it cares about and dispatches commands to application services for state changes. Views do not publish domain events directly; services do.
 
-> **Naming note (reconciled with code).** The implemented Obsidian `ItemView` classes are `DashboardView` (the main dashboard — drafted here as `TestHubView`), `UseCaseDashboardView` (drafted as `UseCaseExplorerView`), `SuiteDashboardView` (drafted as `SuiteExplorerView`), and `TestConsoleView` (the sidebar live-run panel — drafted as `TestRunPanel`), all under `src/presentation/views/`. There are no separate `SpecificationExplorerView`, `EvidenceExplorerView`, or `DocumentationView` leaf classes in V1; that functionality is folded into the dashboards/notes. The first-run flow is `InitializationWizardModal`. Treat the names below as the originally-planned surfaces; the parenthetical/real class names are authoritative.
+> **Naming note (reconciled with code).** The implemented Obsidian `ItemView` classes are `DashboardView` (the main dashboard — drafted here as `TestHubView`), `UseCaseDashboardView` (drafted as `UseCaseExplorerView`), `UseCaseDetailView` (per-Use-Case authoring surface), `SuiteDashboardView` (drafted as `SuiteExplorerView`), `TestConsoleView` (the sidebar live-run panel — drafted as `TestRunPanel`), and `EvidenceExplorerView` (view type `e2e-test-hub-evidence`, over the partitioned run history), all under `src/presentation/views/`. There are no separate `SpecificationExplorerView` or `DocumentationView` leaf classes in V1; that functionality is folded into the dashboards/notes. The first-run flow is `InitializationWizardModal`; further modals are `CreateUseCaseModal`, `EditUseCaseModal`, `CreateSuiteModal`, `GenerateFeatureModal`, `RunPickerModal`, and `AddEnvironmentModal`. Treat the names below as the originally-planned surfaces; the parenthetical/real class names are authoritative.
 
 | View | Surface | Purpose | Consumes |
 | --- | --- | --- | --- |
@@ -186,6 +186,22 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 - **Purpose:** Maintain Use Case ↔ Feature ↔ Suite ↔ Run ↔ Evidence links (FR-017); owns the suite-membership index (per SDD AD-10); feeds the dashboard.
 - **Responsibilities:** Aggregate the Use Case index into a `DashboardSnapshot`. Exposes two reads: `refreshDashboard()` (computes **and publishes** `dashboard.refreshed`/`dashboard.kpi.updated` — used to PUSH from the `PostRunCoordinator` and from a dashboard view's open) and `snapshot()` (the same computation **without** publishing — read by the views when re-rendering, so a view reacting to `dashboard.*` cannot loop, P2-6).
 - **Publishes:** `dashboard.refreshed`, `dashboard.kpi.updated` (from `refreshDashboard()` only).
+
+### 5.16 `DemoContentService`
+
+- **Purpose:** Generate the demo Use Case + Feature shipped by the Initialization Wizard (FEAT-005). The demo is the first-run smoke check; it is **not** auto-executed (AD-1). Writes are idempotent (`writeIfAbsent`).
+- **Publishes:** `usecase.created`, `specification.created`, `specification.linkedToUseCase`.
+- **Depends on:** `VaultFileSystem`, `SettingsService`, `EventBus`.
+
+### 5.17 `FeatureInsightService`
+
+- **Purpose:** Read-only scenario/tag insight for the dashboards: "how many scenarios does this Test Suite's Tag Expression actually match?" (suite explorer + `CreateSuiteModal` preview) and "how healthy is this Feature Specification?" (Use Case detail view). A pure query service — publishes no events.
+- **Depends on:** `SpecificationService` (discovery), the Gherkin parser, `domain/policies/tag-expression`.
+
+### 5.18 `RunHistoryService`
+
+- **Purpose:** Project historical runs from the ADR-0016 evidence partitions (`Test Evidence/YYYY/MM/<runId>/`) for the Evidence Explorer. Path-derived fields are always present; frontmatter-derived fields degrade to `undefined` when a note is edited or corrupt — the Markdown stays the single source of truth.
+- **Depends on:** `VaultFileSystem`, `SettingsService`, `Logger`.
 
 ---
 
@@ -338,13 +354,13 @@ Domain → no outer layer
 - Infrastructure → concrete implementations
 - Presentation → application services
 
-**Enforcement (reconciled with code).** Layering is enforced *partially*, not by the mechanism previously claimed. There **is** an ESLint setup (`eslint.config.mjs`, typescript-eslint type-checked config) wired into CI as a `npm run lint` step (`.github/workflows/ci.yml`), and it enforces `@typescript-eslint/no-floating-promises` (among others). However, there is **no** `no-restricted-imports` rule encoding the layer boundaries and **no** layer-import test fixture. So the import directions above are enforced today only by `tsconfig` structure + code review, not by a dedicated layering lint rule. Adding a `no-restricted-imports` layer rule (and/or a layer-import fixture) is a tracked backlog item (V1 Review P4-2).
+**Enforcement (reconciled with code).** Layering is enforced by lint. The ESLint setup (`eslint.config.mjs`, typescript-eslint type-checked config) is wired into CI as a `npm run lint` step (`.github/workflows/ci.yml`), enforces `@typescript-eslint/no-floating-promises` (among others), and — since V1 Review P4-2 landed (2026-06-09) — encodes the layer boundaries above as per-layer `no-restricted-imports` rules (domain imports nothing outward; application may not import infrastructure/presentation/obsidian; presentation may not import infrastructure; etc.).
 
 ---
 
 ## 11. Recommended source structure
 
-> **As-built note.** The tree below is the originally *recommended* layout. The implemented layout differs in a few places (verified against `src/`): there is no `domain/repositories/` (see §6.5), no `presentation/commands/` or `presentation/components/` (commands live in `main.ts`, view-row helpers live under `presentation/views/`), and `infrastructure/` contains only `obsidian/`, `filesystem/`, and `runner/` (no `reports/`, `templates/`, or `ci/` — see §7). The application layer also has a `content/` folder (generated runner/doc content).
+> **As-built note.** The tree below is the originally *recommended* layout. The implemented layout differs in a few places (verified against `src/`): there is no `domain/repositories/` (see §6.5) and no `presentation/components/` (view-row helpers live under `presentation/views/`), but `presentation/commands/` **does** exist (`register-commands.ts` — the command table moved out of `main.ts`) alongside a `presentation/run/` folder (`run-launcher.ts`). `infrastructure/` contains only `obsidian/`, `filesystem/`, and `runner/` (no `reports/`, `templates/`, or `ci/` — see §7). The application layer also has a `content/` folder (generated runner/doc content).
 
 ```
 src/

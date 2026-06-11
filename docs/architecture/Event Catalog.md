@@ -677,7 +677,7 @@ It is **not** an event-sourcing system in V1. Aggregates own state; events commu
 | --- | --- | --- |
 | Test run | `correlationId = runId` | All `testrun.*`, `report.*`, `evidence.*` events for a single execution share the same `correlationId`. |
 | Initialization | `correlationId = initialization invocation id` | All `testhub.initialization.*`, `testrunner.installed`, `documentation.generated` for one wizard run share the id. |
-| Use Case creation | `correlationId = useCaseId` | `usecase.created` → `usecase.indexed` chain via `causationId`. |
+| Use Case creation | `correlationId = useCaseId` | Single `usecase.created` event; indexing happens synchronously inside the subscriber (see EN-3 — `usecase.indexed` was removed). |
 | Reset | `correlationId = reset invocation id` | `settings.reset` causes the subsequent re-initialization flow. |
 
 `causationId` always points to the previous event in the chain; `correlationId` is constant across a logical flow.

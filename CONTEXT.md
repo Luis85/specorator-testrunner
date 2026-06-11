@@ -7,7 +7,7 @@ Markdown-native, local-first BDD workbench inside Obsidian: define Use Cases, wr
 ### Product surfaces
 
 **Test Hub**:
-The plugin's user-facing workbench inside Obsidian. Encompasses the dashboard, explorers, monitor, and settings.
+The plugin's user-facing workbench inside Obsidian. Encompasses the dashboard, explorers, Test Console, and settings.
 _Avoid_: Plugin UI, frontend, workbench.
 
 **.testrunner**:
