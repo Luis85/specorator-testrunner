@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   collectStepTexts,
+  isPlainDescriptionLine,
   parseFeature,
+  roundTripsLosslessly,
+  serialiseFeature,
   useCaseIdFromPath,
 } from "../src/application/content/gherkin";
+import type { FeatureSpecification } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const RICH = `@uc-001
@@ -238,5 +242,69 @@ describe("parseFeature (extended Gherkin)", () => {
       { keyword: "Given", text: "<a> plus <b>" },
       { keyword: "Then", text: "the result is <sum>" },
     ]);
+  });
+});
+
+describe("serialiseFeature / roundTripsLosslessly", () => {
+  const path = vp("Specifications/features/UC-001-rich.feature");
+
+  it("round-trips the rich corpus losslessly", () => {
+    expect(roundTripsLosslessly(RICH, path)).toBe(true);
+  });
+
+  it("serialize → parse is stable (fixed point)", () => {
+    const first = parseFeature(RICH, path);
+    expect(first).not.toBeNull();
+    if (!first) return;
+    const text = serialiseFeature(first);
+    expect(parseFeature(text, path)).toEqual(first);
+    expect(serialiseFeature(parseFeature(text, path) as FeatureSpecification)).toBe(text);
+  });
+
+  it("is insensitive to table-cell padding", () => {
+    const padded = RICH.replace("| a | b | sum |", "|  a |b   | sum|");
+    expect(roundTripsLosslessly(padded, path)).toBe(true);
+  });
+
+  it("is insensitive to tag spacing", () => {
+    const spaced = RICH.replace("@uc-001", "@uc-001   ").replace("@set-1", " @set-1");
+    expect(roundTripsLosslessly(spaced, path)).toBe(true);
+  });
+
+  it("fails the guard for comments (not modelled — must fall back to raw)", () => {
+    expect(roundTripsLosslessly(`# top comment\n${RICH}`, path)).toBe(false);
+  });
+
+  it("fails the guard for Rule: blocks between scenarios", () => {
+    const withRule = `Feature: F\n  Scenario: A\n    Given x\n  Rule: extra\n  Scenario: B\n    Given y\n`;
+    expect(roundTripsLosslessly(withRule, path)).toBe(false);
+  });
+
+  it("fails the guard for unparseable content", () => {
+    expect(roundTripsLosslessly("not gherkin", path)).toBe(false);
+  });
+});
+
+describe("isPlainDescriptionLine", () => {
+  it("accepts free text", () => {
+    expect(isPlainDescriptionLine("As a user I want things")).toBe(true);
+  });
+
+  it.each([
+    "@tag",
+    "# comment",
+    "| a | b |",
+    '"""',
+    "```",
+    "Feature: F",
+    "Scenario: S",
+    "Scenario Outline: S",
+    "Background:",
+    "Examples:",
+    "Given a step",
+    "",
+    "   ",
+  ])("rejects %j", (line) => {
+    expect(isPlainDescriptionLine(line)).toBe(false);
   });
 });

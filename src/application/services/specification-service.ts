@@ -1,5 +1,5 @@
 import { buildStarterFeature, featureFileName, nextFeatureSlug } from "../content/feature-content";
-import { collectStepTexts, parseFeature, useCaseIdFromPath } from "../content/gherkin";
+import { collectStepTexts, parseFeature, serialiseFeature, useCaseIdFromPath } from "../content/gherkin";
 import { findMissingSteps, parseStepDefinitions } from "../content/step-definitions";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
@@ -76,29 +76,6 @@ export interface SpecificationService {
    */
   listFeatures(): Promise<Result<FeatureFileEntry[]>>;
 }
-
-/** Serialises a {@link FeatureSpecification} back to plain Gherkin (no YAML). */
-const serialiseFeature = (specification: FeatureSpecification): string => {
-  const lines: string[] = [];
-  if (specification.tags.length > 0) lines.push(specification.tags.join(" "));
-  lines.push(`Feature: ${specification.featureName}`);
-  if (specification.background && specification.background.length > 0) {
-    lines.push("");
-    lines.push("  Background:");
-    for (const step of specification.background) {
-      lines.push(`    ${step.keyword} ${step.text}`.trimEnd());
-    }
-  }
-  for (const scenario of specification.scenarios) {
-    lines.push("");
-    if (scenario.tags.length > 0) lines.push(`  ${scenario.tags.join(" ")}`);
-    lines.push(`  Scenario: ${scenario.name}`);
-    for (const step of scenario.steps) {
-      lines.push(`    ${step.keyword} ${step.text}`.trimEnd());
-    }
-  }
-  return `${lines.join("\n")}\n`;
-};
 
 export class DefaultSpecificationService implements SpecificationService {
   constructor(
