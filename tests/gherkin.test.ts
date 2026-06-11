@@ -1,10 +1,46 @@
 import { describe, expect, it } from "vitest";
 import {
   collectStepTexts,
+  isPlainDescriptionLine,
   parseFeature,
+  roundTripsLosslessly,
+  serialiseFeature,
   useCaseIdFromPath,
 } from "../src/application/content/gherkin";
+import type { FeatureSpecification } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
+
+const RICH = `@uc-001
+Feature: Rich
+  A description line.
+
+  Background:
+    Given a base state
+
+  Scenario: With table and doc string
+    Given a payload:
+      """json
+      {
+        "a": 1
+      }
+      """
+    When I submit:
+      | name | value |
+      | a    | 1     |
+    Then it works
+
+  @outline
+  Scenario Outline: Math
+    Some scenario context.
+    Given <a> plus <b>
+    Then the result is <sum>
+
+    @set-1
+    Examples: small numbers
+      | a | b | sum |
+      | 1 | 2 | 3   |
+      | 2 | 3 | 5   |
+`;
 
 const FEATURE = `@demo @smoke
 Feature: Open Example Page
@@ -156,5 +192,190 @@ describe("parseFeature", () => {
     expect(feature).not.toBeNull();
     if (!feature) return;
     expect(collectStepTexts(feature)).toEqual(["a payload:", "it is accepted"]);
+  });
+});
+
+describe("parseFeature (extended Gherkin)", () => {
+  const feature = parseFeature(RICH, vp("Specifications/features/UC-001-rich.feature"));
+
+  it("captures feature and scenario descriptions", () => {
+    expect(feature?.description).toEqual(["A description line."]);
+    expect(feature?.scenarios[1].description).toEqual(["Some scenario context."]);
+    expect(feature?.scenarios[0].description).toBeUndefined();
+  });
+
+  it("captures the Scenario Outline keyword and its Examples blocks", () => {
+    expect(feature?.scenarios[0].keyword).toBeUndefined();
+    expect(feature?.scenarios[1].keyword).toBe("Scenario Outline");
+    expect(feature?.scenarios[1].examples).toEqual([
+      {
+        tags: ["@set-1"],
+        name: "small numbers",
+        header: ["a", "b", "sum"],
+        rows: [
+          ["1", "2", "3"],
+          ["2", "3", "5"],
+        ],
+      },
+    ]);
+  });
+
+  it("attaches a data table to the preceding step", () => {
+    const when = feature?.scenarios[0].steps[1];
+    expect(when?.dataTable).toEqual([
+      ["name", "value"],
+      ["a", "1"],
+    ]);
+  });
+
+  it("attaches a doc string (with media type, dedented) to the preceding step", () => {
+    const given = feature?.scenarios[0].steps[0];
+    expect(given?.docString).toEqual({
+      fence: '"""',
+      mediaType: "json",
+      lines: ["{", '  "a": 1', "}"],
+    });
+  });
+
+  it("keeps Examples rows out of the scenario steps", () => {
+    expect(feature?.scenarios[1].steps).toEqual([
+      { keyword: "Given", text: "<a> plus <b>" },
+      { keyword: "Then", text: "the result is <sum>" },
+    ]);
+  });
+
+  it("parses a bare * as a zero-text step (not description text)", () => {
+    const f = parseFeature(
+      "Feature: F\n\n  Scenario: S\n    *\n",
+      vp("Specifications/features/UC-001-star.feature"),
+    );
+    expect(f?.scenarios[0].steps).toEqual([{ keyword: "*", text: "" }]);
+    expect(f?.scenarios[0].description).toBeUndefined();
+  });
+});
+
+describe("serialiseFeature / roundTripsLosslessly", () => {
+  const path = vp("Specifications/features/UC-001-rich.feature");
+
+  it("round-trips the rich corpus losslessly", () => {
+    expect(roundTripsLosslessly(RICH, path)).toBe(true);
+  });
+
+  it("serialize → parse is stable (fixed point)", () => {
+    const first = parseFeature(RICH, path);
+    expect(first).not.toBeNull();
+    if (!first) return;
+    const text = serialiseFeature(first);
+    expect(parseFeature(text, path)).toEqual(first);
+    expect(serialiseFeature(parseFeature(text, path) as FeatureSpecification)).toBe(text);
+  });
+
+  it("is insensitive to table-cell padding", () => {
+    const padded = RICH.replace("| a | b | sum |", "|  a |b   | sum|");
+    expect(roundTripsLosslessly(padded, path)).toBe(true);
+  });
+
+  it("is insensitive to tag spacing", () => {
+    const spaced = RICH.replace("@uc-001", "@uc-001   ").replace("@set-1", " @set-1");
+    expect(roundTripsLosslessly(spaced, path)).toBe(true);
+  });
+
+  it("fails the guard for comments (not modelled — must fall back to raw)", () => {
+    expect(roundTripsLosslessly(`# top comment\n${RICH}`, path)).toBe(false);
+  });
+
+  it("fails the guard for Rule: blocks between scenarios", () => {
+    const withRule = `Feature: F\n  Scenario: A\n    Given x\n  Rule: extra\n  Scenario: B\n    Given y\n`;
+    expect(roundTripsLosslessly(withRule, path)).toBe(false);
+  });
+
+  it("fails the guard for unparseable content", () => {
+    expect(roundTripsLosslessly("not gherkin", path)).toBe(false);
+  });
+
+  it("fails the guard for a Rule: line directly under Feature:", () => {
+    const ruleAsDescription = `Feature: F\n  Rule: my rule\n\n  Scenario: S\n    Given x\n`;
+    expect(roundTripsLosslessly(ruleAsDescription, path)).toBe(false);
+  });
+
+  it("preserves trailing whitespace in doc-string bodies (round-trips)", () => {
+    const feature = `Feature: F\n\n  Scenario: S\n    Given a payload:\n      """\n      line with trailing spaces   \n      """\n`;
+    expect(roundTripsLosslessly(feature, path)).toBe(true);
+    const parsed = parseFeature(feature, path);
+    expect(parsed?.scenarios[0].steps[0].docString?.lines).toEqual([
+      "line with trailing spaces   ",
+    ]);
+  });
+
+  it("fails the guard for a doc-string body line shallower than its fence", () => {
+    const feature = `Feature: F\n\n  Scenario: S\n    Given a payload:\n      """\n   outdented beyond the fence\n      """\n`;
+    expect(roundTripsLosslessly(feature, path)).toBe(false);
+  });
+
+  it("fails the guard for escaped-pipe table cells (not modelled)", () => {
+    const escaped = RICH.replace("| a    | 1     |", String.raw`| a\|b | 1     |`);
+    expect(roundTripsLosslessly(escaped, path)).toBe(false);
+  });
+
+  it("preserves blank paragraph breaks inside descriptions", () => {
+    const feature = "Feature: F\n  para1\n\n  para2\n\n  Scenario: S\n    Given x\n";
+    expect(roundTripsLosslessly(feature, path)).toBe(true);
+    const parsed = parseFeature(feature, path);
+    expect(parsed?.description).toEqual(["para1", "", "para2"]);
+    if (!parsed) return;
+    expect(serialiseFeature(parsed)).toContain("  para1\n\n  para2");
+  });
+
+  it("round-trips interior blank doc-string body lines", () => {
+    const feature = `Feature: F\n\n  Scenario: S\n    Given a payload:\n      """\n      first\n\n      last\n      """\n`;
+    expect(roundTripsLosslessly(feature, path)).toBe(true);
+    expect(parseFeature(feature, path)?.scenarios[0].steps[0].docString?.lines).toEqual([
+      "first",
+      "",
+      "last",
+    ]);
+  });
+
+  it("fails the guard for a whitespace-only doc-string body line it cannot represent", () => {
+    const feature = `Feature: F\n\n  Scenario: S\n    Given a payload:\n      """\n      first\n   \n      last\n      """\n`;
+    expect(roundTripsLosslessly(feature, path)).toBe(false);
+  });
+
+  it("sanitises literal pipes in model cells (table shape is the invariant)", () => {
+    const spec = parseFeature(RICH, path);
+    expect(spec).not.toBeNull();
+    if (!spec) return;
+    spec.scenarios[1].examples?.[0].rows.push(["a|b", "2", "3"]);
+    const text = serialiseFeature(spec);
+    expect(text).toContain("| a/b | 2 | 3 |");
+    const reparsed = parseFeature(text, path);
+    expect(reparsed?.scenarios[1].examples?.[0].rows).toHaveLength(3);
+    expect(reparsed?.scenarios[1].examples?.[0].rows[2]).toEqual(["a/b", "2", "3"]);
+  });
+});
+
+describe("isPlainDescriptionLine", () => {
+  it("accepts free text", () => {
+    expect(isPlainDescriptionLine("As a user I want things")).toBe(true);
+  });
+
+  it.each([
+    "@tag",
+    "# comment",
+    "| a | b |",
+    '"""',
+    "```",
+    "Feature: F",
+    "Scenario: S",
+    "Scenario Outline: S",
+    "Background:",
+    "Examples:",
+    "Given a step",
+    "",
+    "   ",
+    "Rule: extra",
+    "*",
+  ])("rejects %j", (line) => {
+    expect(isPlainDescriptionLine(line)).toBe(false);
   });
 });
