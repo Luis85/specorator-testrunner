@@ -266,6 +266,81 @@ describe("DefaultGuidedTourService", () => {
     expect(current().onboarding.tourId).not.toBe(firstTourId);
   });
 
+  it("completes run-demo only for the DEMO run, not an arbitrary green run", async () => {
+    const { bus, service } = harness();
+    // An arbitrary passing run (e.g. Run all) must not settle the demo step.
+    await bus.publish(
+      createEvent("testrun.completed", {
+        runId: "RUN-OTHER",
+        status: "passed",
+        durationMs: 1,
+        passed: 1,
+        failed: 0,
+        skipped: 0,
+      }),
+    );
+    expect(status(service, "run-demo")).not.toBe("done");
+    // The demo flow: requested(target demo) → started → THAT run passes.
+    await bus.publish(createEvent("testrun.requested", { scope: "suite", target: "demo" }));
+    await bus.publish(
+      createEvent("testrun.started", {
+        runId: "RUN-DEMO",
+        command: "npm run test:smoke",
+        workingDirectory: ".testrunner",
+      }),
+    );
+    await bus.publish(
+      createEvent("testrun.completed", {
+        runId: "RUN-DEMO",
+        status: "passed",
+        durationMs: 1,
+        passed: 1,
+        failed: 0,
+        skipped: 0,
+      }),
+    );
+    expect(status(service, "run-demo")).toBe("done");
+  });
+
+  it("a failed attempt re-arms a run-correlated sequence so retrying works", async () => {
+    const { bus, service } = harness();
+    await bus.publish(
+      createEvent("suite.created", {
+        suiteId: "tour",
+        name: "Tour",
+        path: "t.md",
+        tagExpression: "@tour",
+      }),
+    );
+    // Attempt 1: the Tour suite runs RED (e.g. steps still pending).
+    await bus.publish(createEvent("suite.executed", { suiteId: "tour", runId: "RUN-RED" }));
+    await bus.publish(
+      createEvent("testrun.completed", {
+        runId: "RUN-RED",
+        status: "failed",
+        durationMs: 1,
+        passed: 0,
+        failed: 1,
+        skipped: 0,
+      }),
+    );
+    expect(status(service, "run-own-test")).not.toBe("done");
+    // Attempt 2: the user fixes the steps and just re-runs the suite — the
+    // failed terminal must have rolled the sequence back (PR #31 review).
+    await bus.publish(createEvent("suite.executed", { suiteId: "tour", runId: "RUN-GREEN" }));
+    await bus.publish(
+      createEvent("testrun.completed", {
+        runId: "RUN-GREEN",
+        status: "passed",
+        durationMs: 1,
+        passed: 1,
+        failed: 0,
+        skipped: 0,
+      }),
+    );
+    expect(status(service, "run-own-test")).toBe("done");
+  });
+
   it("dismiss persists and is reflected in state", async () => {
     const { service, current } = harness();
     await service.dismiss();
@@ -301,7 +376,7 @@ describe("DefaultGuidedTourService", () => {
     );
     expect(current().onboarding.sequenceProgress["run-own-test"]).toEqual({
       index: 1,
-      captured: "tour",
+      captures: ["tour"],
     });
 
     // Session 2: a fresh service seeded from the persisted settings — running

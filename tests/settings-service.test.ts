@@ -814,17 +814,18 @@ describe("onboarding settings", () => {
         skippedSteps: [],
         dismissed: false,
         sequenceProgress: {
-          "run-own-test": { index: 1, captured: "tour" },
-          "implement-steps": { index: 1, captured: 7 }, // non-string capture dropped from entry
-          "bad-index": { index: -1 },
+          "run-own-test": { index: 2, captures: ["tour", "RUN-1"] },
+          "implement-steps": { index: 1, captures: [7] }, // non-string capture → null
+          "no-captures": { index: 1 }, // captures must be an array
+          "bad-index": { index: -1, captures: [] },
           "not-an-object": "nope",
-          fraction: { index: 0.5 },
+          fraction: { index: 0.5, captures: [] },
         },
       },
     }).load();
     expect(settings.onboarding.sequenceProgress).toEqual({
-      "run-own-test": { index: 1, captured: "tour" },
-      "implement-steps": { index: 1 },
+      "run-own-test": { index: 2, captures: ["tour", "RUN-1"] },
+      "implement-steps": { index: 1, captures: [null] },
     });
   });
 });

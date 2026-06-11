@@ -2,6 +2,7 @@ import {
   isTourStepId,
   TOUR_STEPS,
   tourObservedEventTypes,
+  type TourCompletion,
   type TourEventContext,
   type TourEventRule,
   type TourStepDefinition,
@@ -69,10 +70,12 @@ export class DefaultGuidedTourService implements GuidedTourService {
   private readonly skipped = new Set<TourStepId>();
   private tourId: string | null = null;
   private dismissed = false;
-  // Transient (per-session) sequence/arming state. Losing it on reload only
-  // means re-triggering the cheap observable action (e.g. re-run detection).
+  // Sequence state: the next rule index per step and, per ALREADY-matched
+  // rule, the value it captured (kept per rule, not single-slot, so a
+  // failed-attempt reset can roll back without losing earlier correlations).
+  // Persisted via onboarding.sequenceProgress; arming stays session-only.
   private readonly sequenceIndex = new Map<TourStepId, number>();
-  private readonly capturedValue = new Map<TourStepId, string | undefined>();
+  private readonly captures = new Map<TourStepId, (string | undefined)[]>();
   private readonly armed = new Set<TourStepId>();
   private tourCompletedPublished = false;
   // Serializes event handling + persistence (same pattern as
@@ -198,7 +201,10 @@ export class DefaultGuidedTourService implements GuidedTourService {
     for (const [id, progress] of Object.entries(onboarding.sequenceProgress)) {
       if (!isTourStepId(id) || this.isSettled(id)) continue;
       this.sequenceIndex.set(id, progress.index);
-      this.capturedValue.set(id, progress.captured);
+      this.captures.set(
+        id,
+        progress.captures.map((capture) => capture ?? undefined),
+      );
     }
     this.tourCompletedPublished = this.allSettled();
   }
@@ -207,7 +213,7 @@ export class DefaultGuidedTourService implements GuidedTourService {
     this.completed.clear();
     this.skipped.clear();
     this.sequenceIndex.clear();
-    this.capturedValue.clear();
+    this.captures.clear();
     this.armed.clear();
     this.tourId = null;
     this.dismissed = false;
@@ -240,19 +246,53 @@ export class DefaultGuidedTourService implements GuidedTourService {
           await this.completeStep(definition, "event", event);
         }
       } else if (completion.kind === "event-sequence") {
-        const index = this.sequenceIndex.get(definition.id) ?? 0;
-        const rule: TourEventRule | undefined = completion.rules[index];
-        if (rule?.type !== event.type) continue;
-        if (!rule.matches(event.payload, this.ctx, this.capturedValue.get(definition.id))) continue;
-        if (rule.capture) this.capturedValue.set(definition.id, rule.capture(event.payload));
-        if (index + 1 >= completion.rules.length) {
-          await this.completeStep(definition, "event", event);
-        } else {
-          this.sequenceIndex.set(definition.id, index + 1);
-          // Persist the advance: the matched event cannot re-fire (its
-          // artifact now exists), so this progress must survive a reload.
-          await this.persist();
-        }
+        await this.handleSequence(definition, completion, event);
+      }
+    }
+  }
+
+  /**
+   * Advances one step's event-sequence, or rolls it back on a failed-attempt
+   * terminal. `captures[i]` is the value rule `i` captured; rule `i` matches
+   * against `captures[i - 1]` (its correlation key).
+   */
+  private async handleSequence(
+    definition: TourStepDefinition,
+    completion: Extract<TourCompletion, { kind: "event-sequence" }>,
+    event: DomainEvent,
+  ): Promise<void> {
+    const index = this.sequenceIndex.get(definition.id) ?? 0;
+    const captures = this.captures.get(definition.id) ?? [];
+    const priorCapture = index > 0 ? captures[index - 1] : undefined;
+
+    const rule: TourEventRule | undefined = completion.rules[index];
+    if (rule?.type === event.type && rule.matches(event.payload, this.ctx, priorCapture)) {
+      this.captures.set(definition.id, [
+        ...captures.slice(0, index),
+        rule.capture?.(event.payload),
+      ]);
+      if (index + 1 >= completion.rules.length) {
+        await this.completeStep(definition, "event", event);
+      } else {
+        this.sequenceIndex.set(definition.id, index + 1);
+        // Persist the advance: the matched event may not re-fire (its
+        // artifact now exists), so this progress must survive a reload.
+        await this.persist();
+      }
+      return;
+    }
+
+    // Failed-attempt reset (PR #31): a red/errored/cancelled attempt rolls the
+    // sequence back to retryFrom so simply retrying the action works — the
+    // final rule otherwise keeps waiting for the FAILED run's id forever.
+    const retryFrom = completion.retryFrom ?? 0;
+    if (index <= retryFrom) return;
+    for (const reset of completion.resetOn ?? []) {
+      if (reset.type === event.type && reset.matches(event.payload, this.ctx, priorCapture)) {
+        this.sequenceIndex.set(definition.id, retryFrom);
+        this.captures.set(definition.id, captures.slice(0, retryFrom));
+        await this.persist();
+        return;
       }
     }
   }
@@ -264,6 +304,7 @@ export class DefaultGuidedTourService implements GuidedTourService {
   ): Promise<void> {
     this.completed.add(definition.id);
     this.sequenceIndex.delete(definition.id);
+    this.captures.delete(definition.id);
     const tourId = await this.ensureTourStarted(cause);
     await this.persist();
     await this.eventBus.publish(
@@ -310,8 +351,11 @@ export class DefaultGuidedTourService implements GuidedTourService {
     const sequenceProgress: Record<string, OnboardingSequenceProgress> = {};
     for (const [id, index] of this.sequenceIndex) {
       if (this.isSettled(id)) continue;
-      const captured = this.capturedValue.get(id);
-      sequenceProgress[id] = captured === undefined ? { index } : { index, captured };
+      const captures = this.captures.get(id) ?? [];
+      sequenceProgress[id] = {
+        index,
+        captures: captures.map((capture) => capture ?? null),
+      };
     }
     const next: TestHubSettings = {
       ...current,

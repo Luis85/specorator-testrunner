@@ -68,12 +68,15 @@ export interface LoggingSettings {
 
 /**
  * Mid-flight progress of one tour step's event-sequence: the index of the rule
- * it is waiting for next, and the value the previously matched rule captured
- * (a suiteId / runId / feature path the next rule correlates on).
+ * it is waiting for next, and the values the already-matched rules captured
+ * (suiteId / runId / feature path the later rules correlate on). One entry per
+ * matched rule, `null` for a rule that captures nothing — kept per rule (not a
+ * single slot) so a failed-attempt reset can roll back to an earlier rule
+ * without losing ITS correlation value.
  */
 export interface OnboardingSequenceProgress {
   index: number;
-  captured?: string;
+  captures: (string | null)[];
 }
 
 /**

@@ -43,8 +43,21 @@ export interface TourEventRule {
 
 export type TourCompletion =
   | { kind: "event"; rule: TourEventRule }
-  /** Each rule must match once, in order (steps 6 and 8). */
-  | { kind: "event-sequence"; rules: readonly TourEventRule[] }
+  /** Each rule must match once, in order. */
+  | {
+      kind: "event-sequence";
+      rules: readonly TourEventRule[];
+      /**
+       * Rules that roll the sequence back to {@link retryFrom} when they match
+       * mid-flight — the terminal events of a FAILED attempt. Without them a
+       * run-correlated sequence would keep waiting for the failed run's id and
+       * dead-end the step on the documented "fix it, then re-run" path
+       * (PR #31 Codex review). `matches` receives the most recent capture.
+       */
+      resetOn?: readonly TourEventRule[];
+      /** Index the sequence rolls back to on reset (default 0). */
+      retryFrom?: number;
+    }
   | { kind: "manual" };
 
 /** Ids the view maps to deps callbacks — the tour never re-implements actions. */
@@ -148,6 +161,34 @@ const tourFeatureValidated: TourEventRule = {
 };
 
 /**
+ * The terminal events of a failed/aborted attempt, for run-correlated
+ * sequences' `resetOn`. `captured` is the value the sequence is currently
+ * waiting on; before a runId is captured the rules match any terminal —
+ * ADR-0018 (single active run) guarantees a terminal seen mid-sequence
+ * belongs to the attempt being tracked. A PASSED terminal never resets (the
+ * final rule consumes it first).
+ */
+const failedAttemptTerminals: readonly TourEventRule[] = [
+  {
+    type: "testrun.completed",
+    matches: (payload, _ctx, captured) => {
+      const p = record(payload);
+      return p?.status === "failed" && (captured === undefined || p.runId === captured);
+    },
+  },
+  {
+    type: "testrun.failed",
+    matches: (payload, _ctx, captured) =>
+      captured === undefined || record(payload)?.runId === captured,
+  },
+  {
+    type: "testrun.cancelled",
+    matches: (payload, _ctx, captured) =>
+      captured === undefined || record(payload)?.runId === captured,
+  },
+];
+
+/**
  * The scenario the user authors in step 4. The three greeting steps are NEW —
  * they deliberately do not collide with the shipped `example.steps.ts`
  * patterns (that file is user-owned, `overwrite: false`, and duplicate
@@ -197,11 +238,38 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       "before you build your own.",
     action: { id: "run-demo", label: "Run demo test" },
     completion: {
-      kind: "event",
-      rule: {
-        type: "testrun.completed",
-        matches: (payload) => record(payload)?.status === "passed",
-      },
+      // Correlated to the DEMO run (PR #31 Codex review): a demo request
+      // surfaces on the bus as target "demo" (the internal demo scope maps to
+      // "suite"), the started event that follows carries the runId, and only
+      // THAT run's passing completes the step — an arbitrary green run does
+      // not. ADR-0018 (single active run) keeps the request→started pairing
+      // unambiguous.
+      kind: "event-sequence",
+      rules: [
+        {
+          type: "testrun.requested",
+          matches: (payload) => record(payload)?.target === "demo",
+        },
+        {
+          type: "testrun.started",
+          matches: (payload) => typeof record(payload)?.runId === "string",
+          capture: (payload) => {
+            const value = record(payload)?.runId;
+            return typeof value === "string" ? value : undefined;
+          },
+        },
+        {
+          type: "testrun.completed",
+          matches: (payload, _ctx, captured) => {
+            const p = record(payload);
+            return p?.status === "passed" && captured !== undefined && p.runId === captured;
+          },
+        },
+      ],
+      // A red/errored/cancelled demo attempt re-arms the whole sequence so the
+      // user can simply click Run demo test again.
+      resetOn: failedAttemptTerminals,
+      retryFrom: 0,
     },
     skippable: true,
   },
@@ -423,6 +491,11 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
           },
         },
       ],
+      // A failed attempt rolls back to AFTER suite.created (which cannot
+      // re-fire — duplicate suite ids are rejected): the user fixes their
+      // steps and just re-runs the Tour suite (the hint's documented path).
+      resetOn: failedAttemptTerminals,
+      retryFrom: 1,
     },
     skippable: false,
     requiresCompleted: ["create-suite"],
@@ -460,13 +533,14 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
   },
 ];
 
-/** Every event type any rule (incl. armedBy) observes — the service's subscription set. */
+/** Every event type any rule (incl. armedBy and resets) observes — the service's subscription set. */
 export const tourObservedEventTypes = (): DomainEventType[] => {
   const types = new Set<DomainEventType>();
   for (const step of TOUR_STEPS) {
     if (step.completion.kind === "event") types.add(step.completion.rule.type);
     if (step.completion.kind === "event-sequence") {
       for (const rule of step.completion.rules) types.add(rule.type);
+      for (const rule of step.completion.resetOn ?? []) types.add(rule.type);
     }
     if (step.armedBy) types.add(step.armedBy.type);
   }

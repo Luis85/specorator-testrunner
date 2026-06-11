@@ -771,9 +771,15 @@ const sequenceProgressMap = (value: unknown): Record<string, OnboardingSequenceP
   const repaired: Record<string, OnboardingSequenceProgress> = {};
   for (const [stepId, entry] of Object.entries(value as Record<string, unknown>)) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
-    const { index, captured } = entry as { index?: unknown; captured?: unknown };
+    const { index, captures } = entry as { index?: unknown; captures?: unknown };
     if (typeof index !== "number" || !Number.isInteger(index) || index < 0) continue;
-    repaired[stepId] = typeof captured === "string" ? { index, captured } : { index };
+    if (!Array.isArray(captures)) continue;
+    // A non-string capture degrades to null ("no capture"): correlation rules
+    // then stall rather than widen, which is the safe failure mode.
+    repaired[stepId] = {
+      index,
+      captures: captures.map((capture) => (typeof capture === "string" ? capture : null)),
+    };
   }
   return repaired;
 };

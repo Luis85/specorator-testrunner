@@ -73,11 +73,48 @@ describe("TOUR_STEPS table", () => {
 });
 
 describe("completion predicates", () => {
-  it("run-demo matches only a passed run", () => {
-    const rule = eventRule("run-demo");
-    expect(rule.matches({ status: "passed" }, ctx)).toBe(true);
-    expect(rule.matches({ status: "failed" }, ctx)).toBe(false);
-    expect(rule.matches(null, ctx)).toBe(false);
+  it("run-demo sequence: demo requested, run started, THAT run passes", () => {
+    const [requested, started, passed] = sequenceRules("run-demo");
+    // Only the demo request anchors the sequence — an arbitrary green run
+    // must not settle the step (PR #31 Codex review).
+    expect(requested.matches({ scope: "suite", target: "demo" }, ctx)).toBe(true);
+    expect(requested.matches({ scope: "suite", target: "smoke" }, ctx)).toBe(false);
+    expect(requested.matches({ scope: "all", target: "all" }, ctx)).toBe(false);
+    expect(started.matches({ runId: "RUN-1", command: "npm run test" }, ctx)).toBe(true);
+    expect(started.matches({ command: "npm run test" }, ctx)).toBe(false);
+    expect(started.capture?.({ runId: "RUN-1" })).toBe("RUN-1");
+    expect(passed.matches({ runId: "RUN-1", status: "passed" }, ctx, "RUN-1")).toBe(true);
+    expect(passed.matches({ runId: "RUN-2", status: "passed" }, ctx, "RUN-1")).toBe(false);
+    expect(passed.matches({ runId: "RUN-1", status: "failed" }, ctx, "RUN-1")).toBe(false);
+    expect(passed.matches({ runId: "RUN-1", status: "passed" }, ctx, undefined)).toBe(false);
+  });
+
+  it("run-correlated sequences reset on failed-attempt terminals", () => {
+    for (const id of ["run-demo", "run-own-test"] as const) {
+      const completion = step(id).completion;
+      if (completion.kind !== "event-sequence") throw new Error(`${id} is not a sequence step`);
+      const resets = completion.resetOn ?? [];
+      expect(resets.map((rule) => rule.type)).toEqual([
+        "testrun.completed",
+        "testrun.failed",
+        "testrun.cancelled",
+      ]);
+      const [completedReset, failedReset, cancelledReset] = resets;
+      // A FAILED terminal of the tracked run resets; a passed one never does.
+      expect(completedReset.matches({ runId: "RUN-1", status: "failed" }, ctx, "RUN-1")).toBe(true);
+      expect(completedReset.matches({ runId: "RUN-1", status: "passed" }, ctx, "RUN-1")).toBe(
+        false,
+      );
+      expect(completedReset.matches({ runId: "RUN-2", status: "failed" }, ctx, "RUN-1")).toBe(
+        false,
+      );
+      expect(failedReset.matches({ runId: "RUN-1", reason: "boom" }, ctx, "RUN-1")).toBe(true);
+      expect(cancelledReset.matches({ runId: "RUN-1" }, ctx, "RUN-1")).toBe(true);
+      // Before a runId is captured, any terminal re-arms (ADR-0018: only one
+      // run can be in flight, so it belongs to the tracked attempt).
+      expect(failedReset.matches({ runId: "RUN-9", reason: "boom" }, ctx, undefined)).toBe(true);
+    }
+    expect(step("run-demo").completion.kind === "event-sequence").toBe(true);
   });
 
   it("create-use-case excludes the shipped demo Use Case", () => {
