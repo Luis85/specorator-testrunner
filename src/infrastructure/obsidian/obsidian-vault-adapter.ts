@@ -75,18 +75,6 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     }
   }
 
-  async listFiles(path: VaultPath): Promise<Result<VaultPath[]>> {
-    const normalized = normalizePath(path);
-    try {
-      if (!(await this.app.vault.adapter.exists(normalized))) return ok([]);
-      const listing = await this.app.vault.adapter.list(normalized);
-      // Listings under an already-validated path are trusted vault-relative paths.
-      return ok(listing.files.map(unsafeVaultPath));
-    } catch (cause) {
-      return err(appError("INIT_FAILED", `Could not list "${path}".`, { cause }));
-    }
-  }
-
   async listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>> {
     const normalized = normalizePath(path);
     try {

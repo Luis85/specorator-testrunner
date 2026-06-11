@@ -11,8 +11,6 @@ export interface VaultFileSystem {
   createFile(path: VaultPath, content: string): Promise<Result<void>>;
   readFile(path: VaultPath): Promise<Result<string>>;
   writeFile(path: VaultPath, content: string): Promise<Result<void>>;
-  /** Immediate file children of a folder (non-recursive). */
-  listFiles(path: VaultPath): Promise<Result<VaultPath[]>>;
   /** All file descendants of a folder, at any depth. */
   listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>>;
   /**

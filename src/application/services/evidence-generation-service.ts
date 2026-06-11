@@ -84,7 +84,15 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     if (settings.automation.generateEvidenceMarkdown) {
       // A prefix of an already-branded VaultPath is itself vault-safe.
       const folder = unsafeVaultPath(evidencePath.slice(0, evidencePath.lastIndexOf("/")));
-      await this.fs.createFolder(folder);
+      const folderCreated = await this.fs.createFolder(folder);
+      if (!folderCreated.ok) {
+        return err(
+          appError("EVIDENCE_WRITE_FAILED", `Could not create evidence folder "${folder}".`, {
+            details: { runId: run.id, path: folder },
+            cause: folderCreated.error,
+          }),
+        );
+      }
       // writeFile (overwrite) so re-importing the same run refreshes the note;
       // the evidence path is deterministic per runId and createFile would throw.
       // Resolve each linked UC's note basename so the wikilink resolves in

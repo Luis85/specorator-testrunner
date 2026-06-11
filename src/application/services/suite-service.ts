@@ -1,4 +1,8 @@
 import { buildSuiteNote, DEFAULT_SUITES, type DefaultSuiteSeed } from "../content/default-suites";
+import { slugify } from "../content/feature-content";
+// Suite filenames need exactly the Use Case note-name rule (strip path
+// separators / filename-reserved chars, collapse spaces) — reuse it.
+import { sanitizeTitle as sanitizeFileName } from "../content/use-case-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import { createSuite, type TestSuite } from "../../domain/entities/suite";
@@ -43,20 +47,6 @@ export interface SuiteService {
   findAll(): Promise<Result<TestSuite[]>>; // US-024/US-025 visibility, UC-008
   resolveTagExpression(suiteId: SuiteId): Promise<Result<string>>; // per AD-4
 }
-
-const slugify = (name: string): SuiteId =>
-  name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-/** Strips path separators / filename-reserved chars from a note filename. */
-const sanitizeFileName = (name: string): string =>
-  name
-    .replace(/[\\/:*?"<>|#^[\]]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 
 export class DefaultSuiteService implements SuiteService {
   constructor(

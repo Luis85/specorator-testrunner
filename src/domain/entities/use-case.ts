@@ -20,14 +20,22 @@ export const USE_CASE_STATUSES = [
 /** Business lifecycle. */
 export type UseCaseStatus = (typeof USE_CASE_STATUSES)[number];
 
+/**
+ * Automation states, as a runtime list so frontmatter read-back validation
+ * (UseCaseService.parse) enumerates the same single source the
+ * {@link AutomationStatus} union is derived from.
+ */
+export const AUTOMATION_STATUSES = [
+  "not-planned",
+  "planned",
+  "missing-steps",
+  "implemented",
+  "passing",
+  "failing",
+] as const;
+
 /** Test state, derived per ADR-0017 with `@wip` exclusion. */
-export type AutomationStatus =
-  | "not-planned"
-  | "planned"
-  | "missing-steps"
-  | "implemented"
-  | "passing"
-  | "failing";
+export type AutomationStatus = (typeof AUTOMATION_STATUSES)[number];
 
 export interface UseCase {
   id: UseCaseId;

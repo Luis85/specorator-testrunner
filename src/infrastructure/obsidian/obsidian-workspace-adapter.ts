@@ -16,8 +16,12 @@ export class ObsidianWorkspaceAdapter implements WorkspacePort {
     if (!(file instanceof TFile)) {
       return err(appError("RUNNER_MISSING_FILE", `Cannot open missing file "${path}".`));
     }
-    await this.app.workspace.getLeaf(true).openFile(file);
-    return ok(undefined);
+    try {
+      await this.app.workspace.getLeaf(true).openFile(file);
+      return ok(undefined);
+    } catch (cause) {
+      return err(appError("INIT_FAILED", `Could not open file "${path}".`, { cause }));
+    }
   }
 
   async openView(viewType: string, location: "main" | "sidebar" = "main"): Promise<Result<void>> {
@@ -32,15 +36,15 @@ export class ObsidianWorkspaceAdapter implements WorkspacePort {
         location === "sidebar" ? workspace.getRightLeaf(false) : workspace.getLeaf("tab");
       if (!target) return err(appError("INIT_FAILED", "No workspace leaf is available."));
       leaf = target;
-      await leaf.setViewState({ type: viewType, active: true });
+      try {
+        await leaf.setViewState({ type: viewType, active: true });
+      } catch (cause) {
+        return err(appError("INIT_FAILED", `Could not open view "${viewType}".`, { cause }));
+      }
     }
     // revealLeaf may return a promise in some Obsidian versions; we do not
     // need to await it (the view is already attached), so discard it.
     void workspace.revealLeaf(leaf);
     return ok(undefined);
-  }
-
-  async revealInExplorer(path: VaultPath): Promise<Result<void>> {
-    return this.openFile(path);
   }
 }

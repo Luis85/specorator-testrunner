@@ -182,6 +182,90 @@ describe("DefaultUseCaseService", () => {
     expect(found.value.featureFiles).toEqual(["Specifications/features/UC-007-ok.feature"]);
   });
 
+  it("falls back to draft / not-planned for hand-edited enum frontmatter (status: banana)", async () => {
+    const { service, fs } = build();
+    // Frontmatter is hand-editable, so enum fields can hold anything — they
+    // must be validated against the domain unions, never cast blindly.
+    fs.files.set(
+      "Use Cases/UC-004 Edited.md",
+      buildNote(
+        {
+          type: "use-case",
+          id: "UC-004",
+          title: "Edited",
+          status: "banana",
+          automation_status: "totally-automated",
+        },
+        "# UC-004",
+      ),
+    );
+
+    const found = await service.findById("UC-004");
+    expect(found.ok).toBe(true);
+    if (!found.ok || !found.value) return;
+    expect(found.value.status).toBe("draft");
+    expect(found.value.automationStatus).toBe("not-planned");
+  });
+
+  it("drops the lastTestRun projection when last_run_status/scope are invalid (KPI safety)", async () => {
+    const { service, fs } = build();
+    // An invalid hand-edited last_run_status must NOT default to "passed" —
+    // that would inflate the ADR-0017 Passing KPI — so the whole summary is
+    // dropped. Same for an invalid scope.
+    fs.files.set(
+      "Use Cases/UC-005 Bad Status.md",
+      buildNote(
+        {
+          type: "use-case",
+          id: "UC-005",
+          title: "Bad Status",
+          last_run_id: "RUN-2026-06-01-100000",
+          last_run_status: "green",
+        },
+        "# UC-005",
+      ),
+    );
+    fs.files.set(
+      "Use Cases/UC-006 Bad Scope.md",
+      buildNote(
+        {
+          type: "use-case",
+          id: "UC-006",
+          title: "Bad Scope",
+          last_run_id: "RUN-2026-06-01-100000",
+          last_run_status: "passed",
+          last_run_scope: "galaxy",
+        },
+        "# UC-006",
+      ),
+    );
+    // A valid summary still round-trips (scope is optional).
+    fs.files.set(
+      "Use Cases/UC-007 Valid.md",
+      buildNote(
+        {
+          type: "use-case",
+          id: "UC-007",
+          title: "Valid",
+          last_run_id: "RUN-2026-06-01-100000",
+          last_run_status: "skipped",
+        },
+        "# UC-007",
+      ),
+    );
+
+    const all = await service.findAll();
+    expect(all.ok).toBe(true);
+    if (!all.ok) return;
+    const byId = new Map(all.value.map((u) => [u.id, u]));
+    expect(byId.get("UC-005")?.lastTestRun).toBeUndefined();
+    expect(byId.get("UC-006")?.lastTestRun).toBeUndefined();
+    expect(byId.get("UC-007")?.lastTestRun).toMatchObject({
+      runId: "RUN-2026-06-01-100000",
+      status: "skipped",
+    });
+  });
+
   it("update drops the legacy singular feature_file so features aren't duplicated", async () => {
     const { service, fs } = build();
     // A note using the legacy `feature_file` key (e.g. the seeded demo).

@@ -299,6 +299,20 @@ describe("DefaultEvidenceGenerationService", () => {
     expect(frontmatter.target).toBe("smoke");
   });
 
+  it("returns EVIDENCE_WRITE_FAILED when the evidence folder cannot be created", async () => {
+    const { service, fs, types } = build();
+    seedUseCase(fs);
+    fs.failOn = { path: "Test Evidence/2026/05/RUN-2026-05-31-100000", message: "locked" };
+
+    const result = await service.generate({ run: run(), report: report() });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("EVIDENCE_WRITE_FAILED");
+    // Nothing was written or advertised for the failed note.
+    expect(fs.files.has(EVIDENCE_PATH)).toBe(false);
+    expect(types()).not.toContain("evidence.generated");
+  });
+
   it("returns EVIDENCE_WRITE_FAILED when the note cannot be written", async () => {
     const { service, fs } = build();
     seedUseCase(fs);
