@@ -18,6 +18,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Release safety: the release workflow verifies the tag against
   `manifest.json` and runs lint/typecheck/tests before publishing;
   `versions.json` consistency is asserted by the release-validation suite.
+- `.feature` files now open inside Obsidian: the extension is registered to a
+  new Feature Editor view with a structured mode (scenario cards, step rows
+  with guided keywords, Examples grids, tag chips with vault-wide
+  suggestions, step autocomplete from the scraped step definitions, and an
+  inline ✓/✗/! validation strip) plus a raw-text mode. Files containing
+  constructs the editor cannot preserve (comments, `Rule:` blocks) open as
+  raw text behind a lossless round-trip guard.
+- The Gherkin parser/serializer now models Scenario Outlines with Examples
+  tables, per-step data tables, doc strings, and description lines, so
+  programmatic Feature updates no longer drop them.
 
 ### Fixed
 
