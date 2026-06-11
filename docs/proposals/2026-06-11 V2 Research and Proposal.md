@@ -65,8 +65,8 @@ strong layering, security posture, and test coverage. The research says the
   filters and formulas read — so users can define their own `.base` views
   over Test Hub data without any plugin support.
 
-The proposal below defines **eight V2 epics (EPIC-013…020), 38 user stories
-(US-051…088), and 13 use cases (UC-025…037)**, with a recommended priority
+The proposal below defines **eight V2 epics (EPIC-013…020), 39 user stories
+(US-051…089), and 13 use cases (UC-025…037)**, with a recommended priority
 order, explicit non-goals, and a **pre-V2 implementation plan (§9)** that
 clears recorded debt and lays the required foundations — ending with the
 playwright-bdd migration as the bridge into V2 feature work.
@@ -398,10 +398,13 @@ releases.
 > The plugin's **only** AI surface: one opt-in, local MCP server the user can
 > activate. No AI chat, no bundled or BYO-API-key model calls, no AI-generated
 > content produced by the plugin itself — all AI work is performed by the
-> user's own agents (Claude Code, Copilot, …) *through* the MCP. Deterministic
-> tests remain the output. Deliberately scheduled **last**, so the MCP exposes
-> a stabilized V2 feature set instead of chasing a moving API. New ADR:
-> "Opt-in local MCP exposure; no in-plugin AI runtime."
+> user's own agents (Claude Code, Copilot, …) *through* the MCP. Alongside
+> it: optionally installable, **provider-selectable agent skills** (US-089) —
+> static instruction files rendered per provider format, never model calls —
+> so each agent learns the hub's workflows natively. Deterministic
+> tests remain the output. Deliberately scheduled **last**, so the MCP and
+> skills expose a stabilized V2 feature set instead of chasing a moving API.
+> New ADR: "Opt-in local MCP exposure; no in-plugin AI runtime."
 
 **US-067 Local MCP server for the Test Hub** —
 As a **Developer**, I want an opt-in local MCP server exposing the plugin's
@@ -453,6 +456,27 @@ selector rot is fixed at repair time — never silently at runtime.
 *AC:* MCP exposes the failing-scenario bundle; output is a reviewable diff;
 healing never changes `.feature` business wording without explicit
 confirmation; compatible with Playwright's healer-agent pattern.
+
+**US-089 Installable agent skills with provider selection** —
+As a **Developer**, I want the plugin to ship a set of dedicated agent
+skills (plan a Use Case, formulate Features, implement steps, run & triage,
+heal a failing scenario — the workflows behind US-067/069–071) that I can
+optionally install for the providers I actually use, so that my agent picks
+up the Test Hub's workflows in its native format instead of me hand-writing
+prompts.
+*AC:* opt-in "Install agent skills" flow with a **provider picker**
+(multi-select — e.g. Claude Code `.claude/skills/`, AGENTS.md-based agents,
+GitHub Copilot instructions, Cursor rules; the provider list is data-driven
+so new formats are additions, not rework); the same skill content is
+rendered per provider format from one source of truth; generation is static
+content only — no model calls (the in-plugin-AI non-goal stands); installed
+files live in the vault/repo, are listed for the user, and are regenerated
+idempotently (user edits are not silently overwritten); skills reference the
+MCP server (US-067) where the provider supports it and degrade to documented
+command workflows where it doesn't; uninstall removes exactly what was
+installed. Precedent: Playwright's `init-agents`, playwright-bdd's agent
+skill, and this repo's own fallow skill — shipping skills with the tool is
+the 2026 distribution pattern.
 
 ### EPIC-017 — Discovery & Non-Technical Collaboration *(P2)*
 
@@ -693,8 +717,9 @@ Maps, scenario generation, lint, checklist on-ramp — US-081/082/083 land in
 V2.1 above), mobile read-only, importers, headless CLI, multi-env matrix
 (US-087), GitLab CI (US-088).
 
-**V2 final (last roadmap item):** EPIC-016 — the opt-in local MCP server and
-agent workflows (US-067…071). Deliberately last so the MCP exposes a
+**V2 final (last roadmap item):** EPIC-016 — the opt-in local MCP server,
+agent workflows, and installable provider-selectable agent skills
+(US-067…071, US-089). Deliberately last so the MCP and the skills expose a
 stabilized feature set covering the plugin's most important use cases,
 rather than chasing a moving internal API.
 
