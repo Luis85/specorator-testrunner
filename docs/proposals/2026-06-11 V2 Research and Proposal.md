@@ -63,7 +63,9 @@ strong layering, security posture, and test coverage. The research says the
 
 The proposal below defines **eight V2 epics (EPIC-013…020), 31 user stories
 (US-051…081), and 12 use cases (UC-025…036)**, with a recommended priority
-order and explicit non-goals.
+order, explicit non-goals, and a **pre-V2 implementation plan (§9)** that
+clears recorded debt and lays the required foundations — ending with the
+playwright-bdd migration as the bridge into V2 feature work.
 
 ---
 
@@ -598,11 +600,15 @@ One line each; full notes to be authored on acceptance, in the UC-001 format.
 
 ## 8. Sequencing & first release cut
 
-**V2.0 (the headline release):** EPIC-013 complete (US-051…055, US-080) +
+**Pre-V2 (see §9):** V1 release & stabilization, recorded-debt cleanup,
+versioning/migration foundations — ending with the playwright-bdd migration
+itself (US-051/052 land here, as the last pre-V2 item).
+
+**V2.0 (the headline release):** the rest of EPIC-013 (US-053…055, US-080) +
 US-056/057 (identity & history, since the runner migration touches the same
-report pipeline) + US-060 (evidence stamps). Rationale: one migration of the
-`.testrunner` and report pipeline, done once; everything else layers on top
-without breaking changes.
+report pipeline) + US-060 (evidence stamps). Rationale: the `.testrunner`
+and report pipeline were just migrated once (§9 Phase 3); everything else
+layers on top without breaking changes.
 
 **V2.1:** flakiness & triage (US-058/059), readiness/sign-off/exports
 (US-061…065), retention sweep (US-066), Step Library (US-081),
@@ -633,7 +639,53 @@ existing V1 `.testrunner` users need a guided, non-destructive repair path
 
 ---
 
-## 9. Key sources
+## 9. Pre-V2 implementation plan
+
+What must be done **before any V2 scope starts**. Phases 0–2 harden the V1
+codebase and put the migration machinery in place; the **last item is the
+playwright-bdd migration itself** — once it is green, V2.0 feature work
+begins. Most Phase 0–1 items come from the "deliberately deferred" list in
+the [2026-06-11 review §4](../reviews/2026-06-11%20Product%20Review%20and%20Improvement%20Plan.md);
+they are sequenced here because V2 builds directly on top of them.
+
+### Phase 0 — Ship and stabilize V1
+
+| # | Item | Why before V2 |
+| --- | --- | --- |
+| 0.1 | Tag and release V1; submit to the Obsidian community plugin store (both reviews judged it store-ready; includes the ribbon-trim product call from review §4) | Establishes the baseline users will migrate *from*; V2's `.testrunner` migration path needs a defined V1 to upgrade |
+| 0.2 | Make the opt-in `e2e-smoke` workflow a reliable pre-release gate: add the per-OS Playwright browser caching (review §4) and run it on demand for runner-template changes | This workflow is the safety net the runner swap will be validated against — it must be trustworthy first |
+| 0.3 | Pin `release.yml` actions to SHAs (review §4; `contents: write`) | Lock down the release path before V2 increases release cadence |
+
+### Phase 1 — Clear recorded debt V2 builds on
+
+| # | Item | Why before V2 |
+| --- | --- | --- |
+| 1.1 | Per-note write serialization: per-path promise-chain mutex in `DefaultUseCaseService` (review §4) | V2 adds more concurrent writers to UC notes (scenario history rollups, evidence stamps, sign-off links) — the existing interleaving risk multiplies |
+| 1.2 | Extract the shared serial queue (`src/shared/async/serial-queue.ts`) from `SettingsService.serialize()` / `PostRunCoordinator.enqueue()` (review §4) | The V2 history writer (US-057) is the "third user" the review said to wait for |
+| 1.3 | Output-event ordering: chain `testrun.output.received` per run, await the tail before the terminal publish (review §4) | Scenario-level attribution (EPIC-014) depends on deterministic output ordering |
+| 1.4 | Settings scalar repair extended to `ci.*` / `automation.*` (review §4) | V2 adds settings (workers, browsers, retention, MCP toggle); the repair posture must be in place before the surface grows |
+| 1.5 | Path plumbing hardening: normalize the vault-base trailing separator once in `NodeAbsoluteFileSystem.getVaultBasePath()`; assert no `..` / leading `/` inside `joinVaultPath` (review §4) | The migration and MCP server (later) both mint paths; close the gaps before new callers appear |
+| 1.6 | Extract `LiveRefresh` from the five views (review §4) | V2 adds new views (triage, readiness, step library); copy six instead of refactoring eight |
+| 1.7 | `register-commands` smoke test + migrate `vault.adapter.exists` to the Vault API (review §4; community-review bots flag adapter usage) | Store submission (0.1) review feedback and V2's new commands both touch this surface |
+
+### Phase 2 — Foundations the V2 epics assume
+
+| # | Item | Why before V2 |
+| --- | --- | --- |
+| 2.1 | Settings/data versioning: add a `schemaVersion` to `data.json` with an explicit, tested migration-step framework (tech review flagged "no versioning scheme") | Every V2 epic changes the settings shape; without versioned migrations each change is a fresh ad-hoc repair hack |
+| 2.2 | Versioned `.testrunner` manifest + repair-driven upgrade framework: runner templates carry a version; `Repair installation` can apply guided, non-destructive upgrades and report what changed | This is the exact mechanism the playwright-bdd migration (3.x) rides on — build the rails before the train |
+| 2.3 | Extract a `ReportParser` port with the current cucumber-JSON parser as its first implementation | Lets the migration add Cucumber Messages alongside JSON without touching the evidence pipeline twice (and opens EPIC-019 later) |
+| 2.4 | Write and accept the V2 ADRs: playwright-bdd adoption, scenario identity & history store, opt-in local MCP / no in-plugin AI runtime, credential storage, browser-matrix default | These are hard-to-reverse decisions; per the project's own ADR discipline they precede implementation |
+
+### Phase 3 — The playwright-bdd migration (last item)
+
+| # | Item | Gate |
+| --- | --- | --- |
+| 3.1 | Spike: generate a playwright-bdd `.testrunner` beside the demo content; validate existing `.feature` compatibility, Cucumber JSON/Messages output through the (now port-based) import pipeline, evidence generation, and cancel/single-run semantics on POSIX **and** Windows | Spike findings recorded; ADR from 2.4 confirmed or amended |
+| 3.2 | Execute US-051/US-052: swap the generated runner to playwright-bdd with typed step stubs; repair migrates V1 `.testrunner` projects non-destructively (via 2.2) with a clear report; keep cucumber-JSON import as a fallback during the transition window | Demo test green; migrated sample vault green |
+| 3.3 | Validation: full unit/integration suite, `e2e-smoke` green on all OSes (via 0.2), docs updated (README disclosure, Getting Started, CONTEXT.md terms) | **Only after this gate does V2.0 feature work (§8) begin** |
+
+## 10. Key sources
 
 Practitioner/survey: PractiTest State of Testing 2025/26 · SmartBear State of
 Software Quality 2026 · Ask HN: BDD and Gherkin tests (36234603) · Automation
