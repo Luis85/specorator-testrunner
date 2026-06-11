@@ -651,8 +651,10 @@ Editor + linked entity notes (US-082/083), Bases-friendly metadata (US-076),
 chrome hygiene (US-078), credential keychain (US-084), storageState
 (US-085), sharded CI, Messages/Allure.
 
-**V2.x:** discovery suite (EPIC-017), mobile read-only, importers, headless
-CLI, multi-env matrix, GitLab CI.
+**V2.x:** the remaining EPIC-017 discovery stories (US-072…075: Example
+Maps, scenario generation, lint, checklist on-ramp — US-081/082/083 land in
+V2.1 above), mobile read-only, importers, headless CLI, multi-env matrix,
+GitLab CI.
 
 **V2 final (last roadmap item):** EPIC-016 — the opt-in local MCP server and
 agent workflows (US-067…071). Deliberately last so the MCP exposes a
