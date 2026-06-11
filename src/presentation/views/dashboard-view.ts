@@ -459,7 +459,7 @@ export class DashboardView extends ItemView {
   private renderDocumentationActions(container: HTMLElement): void {
     const actions = container.createDiv({ cls: "e2e-test-hub-doc-actions" });
     // All three guides US-046 maps to UC-021/022/023 must be reachable here.
-    const buttons: ReadonlyArray<[string, DashboardDocumentType]> = [
+    const buttons: readonly [string, DashboardDocumentType][] = [
       ["Getting Started", "getting-started"],
       ["User Manual", "manual"],
       ["Troubleshooting", "troubleshooting"],

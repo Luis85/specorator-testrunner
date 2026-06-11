@@ -16,7 +16,7 @@ import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifier
  * filename prefix `UC-\d+` per ADR-0012, not from the file body.
  */
 
-const STEP_KEYWORDS: ReadonlyArray<GherkinStep["keyword"]> = [
+const STEP_KEYWORDS: readonly GherkinStep["keyword"][] = [
   "Given",
   "When",
   "Then",
@@ -68,7 +68,6 @@ const parseStep = (line: string): GherkinStep | null => {
 
 const FEATURE_RE = /^Feature:\s*(.*)$/;
 const SCENARIO_RE = /^Scenario(?:\s+Outline)?:\s*(.*)$/;
-const BACKGROUND_RE = /^Background:/;
 
 /**
  * Parses Gherkin `content` into a {@link FeatureSpecification}. Returns `null`
@@ -123,7 +122,7 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
 
     // Background steps run before every scenario; collected separately so they
     // are checked by detectMissingSteps and round-trip as a `Background:` block.
-    if (BACKGROUND_RE.test(line)) {
+    if (line.startsWith("Background:")) {
       current = null;
       inBackground = true;
       pendingTags = [];

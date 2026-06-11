@@ -55,7 +55,7 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
         await this.app.vault.modify(existing, content);
         return ok(undefined);
       }
-      return this.createFile(unsafeVaultPath(normalized), content);
+      return await this.createFile(unsafeVaultPath(normalized), content);
     } catch (cause) {
       return err(appError("INIT_FAILED", `Could not write file "${path}".`, { cause }));
     }
@@ -81,8 +81,8 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
       if (!(await this.app.vault.adapter.exists(normalized))) return ok([]);
       const files: VaultPath[] = [];
       const queue = [normalized];
-      while (queue.length > 0) {
-        const dir = queue.shift() as string;
+      let dir: string | undefined;
+      while ((dir = queue.shift()) !== undefined) {
         const listing = await this.app.vault.adapter.list(dir);
         files.push(...listing.files.map(unsafeVaultPath));
         queue.push(...listing.folders);
@@ -104,8 +104,8 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
       // root) directly, exactly as listFilesRecursive above does; "/" can throw in
       // a real vault and fall through to ok([]), silently disabling the check.
       const queue = [""];
-      while (queue.length > 0) {
-        const dir = queue.shift() as string;
+      let dir: string | undefined;
+      while ((dir = queue.shift()) !== undefined) {
         const listing = await this.app.vault.adapter.list(dir);
         for (const folder of listing.folders) {
           folders.push(unsafeVaultPath(folder));

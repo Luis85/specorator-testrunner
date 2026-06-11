@@ -405,7 +405,8 @@ describe("DefaultMaintenanceService.reset (UC-024)", () => {
     // Nothing deleted: the stale runner config survives the refused reset.
     expect(vault.files.has(".testrunner/cucumber.mjs")).toBe(true);
 
-    await execution.cancel(execution.activeRunId() as string).catch(() => undefined);
+    const activeId = execution.activeRunId();
+    if (activeId) await execution.cancel(activeId).catch(() => undefined);
     await execution.whenActiveSettles().catch(() => undefined);
   });
 

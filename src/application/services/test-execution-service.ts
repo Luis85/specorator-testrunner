@@ -480,7 +480,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
 
   async cancel(runId: RunId): Promise<Result<void>> {
     const activeRun = this.active;
-    if (!activeRun || activeRun.run.id !== runId) {
+    if (activeRun?.run.id !== runId) {
       return err(
         appError("RUN_CANCELLED", `No active test run with id "${runId}" to cancel.`, {
           details: { requestedRunId: runId, activeRunId: activeRun?.run.id },

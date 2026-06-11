@@ -30,7 +30,7 @@ describe("parseTagExpression", () => {
   });
 
   describe("malformed expressions return err", () => {
-    const cases: Array<[string, string]> = [
+    const cases: [string, string][] = [
       ["@a and", "ends unexpectedly"],
       ["and @a", 'found "and"'],
       ["or", 'found "or"'],

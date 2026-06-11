@@ -368,8 +368,7 @@ export class TestHubSettingTab extends PluginSettingTab {
       this.display();
       return;
     }
-    const environments = { ...current.sut.environments };
-    delete environments[name];
+    const { [name]: _removed, ...environments } = current.sut.environments;
     const saved = await this.persistSut({ ...current.sut, environments });
     if (saved) this.display();
   }
@@ -462,7 +461,7 @@ export class TestHubSettingTab extends PluginSettingTab {
 
   private renderSutErrors(messages: string[]): void {
     const target = this.sutErrorsEl;
-    if (!target || !target.isConnected) return;
+    if (!target?.isConnected) return;
     target.empty();
     for (const message of messages) {
       target.createDiv({ cls: "e2e-test-hub-settings-error-row", text: `✗ ${message}` });

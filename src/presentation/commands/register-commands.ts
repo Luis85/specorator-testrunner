@@ -177,7 +177,7 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
   /** Path of the active note, or a Notice when there is no feature open. */
   const activeFeaturePath = (): VaultPath | null => {
     const file = plugin.app.workspace.getActiveFile();
-    if (!file || file.extension !== "feature") {
+    if (file?.extension !== "feature") {
       new Notice("Open a .feature file first.");
       return null;
     }

@@ -178,10 +178,10 @@ export const QUICK_ACTIONS: readonly QuickAction[] = [
 ];
 
 /** The dashboard hub's groups, in render order, with their visible headings. */
-export const QUICK_ACTION_GROUPS: ReadonlyArray<{
+export const QUICK_ACTION_GROUPS: readonly {
   group: QuickAction["group"];
   heading: string;
-}> = [
+}[] = [
   { group: "create", heading: "Create" },
   { group: "run", heading: "Run" },
   { group: "open", heading: "Open" },

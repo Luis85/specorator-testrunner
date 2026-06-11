@@ -58,7 +58,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     private readonly commandSafety: CommandSafetyPolicy,
     private readonly eventBus: EventBus,
     private readonly env: Record<string, string | undefined> = {},
-    private readonly platform: string = "linux",
+    private readonly platform = "linux",
   ) {}
 
   async validateEnvironment(correlationId?: string): Promise<RunnerValidationResult> {
@@ -334,7 +334,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
       "Ensure repository variable E2E_BASE_URL is set; CI reads BASE_URL from it, not from local settings (ADR-0011).",
     );
     const active = settings.sut.environments[settings.sut.active];
-    if (!active || !active.baseUrl.trim()) {
+    if (!active?.baseUrl.trim()) {
       warnings.push("Active environment has no local BASE_URL configured.");
     }
     // The workflow injects every auth.env key configured across environments as

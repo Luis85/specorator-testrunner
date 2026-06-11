@@ -2,6 +2,7 @@ import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 import builtinModules from "builtin-modules";
 import obsidianmd from "eslint-plugin-obsidianmd";
+import vitest from "@vitest/eslint-plugin";
 
 // Every Node builtin, as import-specifier globs: bare ("fs"), subpath
 // ("fs/promises"), and the "node:" protocol forms. Used by the layer rules
@@ -29,10 +30,12 @@ export default tseslint.config(
     ignores: ["main.js", "node_modules/", "dist/", "build/", "coverage/", ".claude/"],
   },
   eslint.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked.map((config) => ({
-    ...config,
-    files: ["**/*.ts"],
-  })),
+  ...[...tseslint.configs.strictTypeChecked, ...tseslint.configs.stylisticTypeChecked].map(
+    (config) => ({
+      ...config,
+      files: ["**/*.ts"],
+    }),
+  ),
   // Obsidian plugin guidelines (community-plugin review rules): API usage,
   // command/setting conventions, vault/workspace correctness, plus the
   // bundled no-unsanitized/SDL security checks. Every preset entry is
@@ -107,6 +110,23 @@ export default tseslint.config(
     },
     rules: {
       "@typescript-eslint/no-floating-promises": "error",
+      // strictTypeChecked tuning. Two rules are off because they fight
+      // deliberate idioms in this codebase:
+      // - no-unnecessary-condition: with `noUncheckedIndexedAccess` off,
+      //   index accesses type as defined, so the rule wants the defensive
+      //   guards around untrusted data (frontmatter, hand-edited data.json,
+      //   argv tokens) and teardown-time `this.service?.` chains DELETED.
+      //   Revisit together with a `noUncheckedIndexedAccess` tsconfig change.
+      // - no-empty-function: noop fakes, null-loggers, and default progress
+      //   reporters are the null-object idiom here; fallow reports actually
+      //   dead code.
+      "@typescript-eslint/no-unnecessary-condition": "off",
+      "@typescript-eslint/no-empty-function": "off",
+      "@typescript-eslint/no-confusing-void-expression": ["error", { ignoreArrowShorthand: true }],
+      "@typescript-eslint/restrict-template-expressions": [
+        "error",
+        { allowNumber: true, allowBoolean: true },
+      ],
       // Port/adapter and Obsidian view methods (`onOpen`, `onClose`, fakes,
       // repositories) implement async interface signatures even when a given
       // implementation has no `await`; requiring one would force behavioral
@@ -305,6 +325,25 @@ export default tseslint.config(
         URL: "readonly",
         __dirname: "readonly",
       },
+    },
+  },
+  {
+    // Vitest test hygiene: catches the test anti-patterns agents introduce
+    // most often (focused/disabled tests, assertion-free tests, misused
+    // matchers). no-focused-tests is an error — a stray `.only` silently
+    // shrinks CI coverage to one test.
+    files: ["tests/**/*.ts"],
+    plugins: { vitest },
+    rules: {
+      ...vitest.configs.recommended.rules,
+      "vitest/no-focused-tests": "error",
+      "vitest/no-disabled-tests": "warn",
+      // vitest supports a failure-message second argument: expect(v, "msg").
+      "vitest/valid-expect": ["error", { maxArgs: 2 }],
+      // Narrowing the Result discriminated union requires asserting inside
+      // `if (result.ok) { … }` — the guard is the assertion pattern here, not
+      // a flaky conditional test.
+      "vitest/no-conditional-expect": "off",
     },
   },
   {
