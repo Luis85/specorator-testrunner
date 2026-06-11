@@ -61,8 +61,8 @@ strong layering, security posture, and test coverage. The research says the
   does take from this: all run/spec metadata lives in clean YAML properties,
   so the vault stays fully queryable with core Bases for users who want it.
 
-The proposal below defines **eight V2 epics (EPIC-013…020), 33 user stories
-(US-051…083), and 13 use cases (UC-025…037)**, with a recommended priority
+The proposal below defines **eight V2 epics (EPIC-013…020), 35 user stories
+(US-051…085), and 13 use cases (UC-025…037)**, with a recommended priority
 order, explicit non-goals, and a **pre-V2 implementation plan (§9)** that
 clears recorded debt and lays the required foundations — ending with the
 playwright-bdd migration as the bridge into V2 feature work.
@@ -585,7 +585,7 @@ outside Obsidian.
 
 ### EPIC-020 — Trust, Security & CI Depth *(P2–P3)*
 
-**Credential storage upgrade** *(P2)* —
+**US-084 Credential storage upgrade** *(P2)* —
 As a **QA Engineer**, I want credentials in the OS keychain (Electron
 `safeStorage`) instead of plaintext `data.json`, so that a synced vault never
 leaks secrets.
@@ -593,7 +593,7 @@ leaks secrets.
 behavior where keychain is unavailable (documented); export/repair never
 prints values; supersedes AD-9 with a new ADR.
 
-**Session/auth reuse** *(P2)* —
+**US-085 Session/auth reuse (storageState)** *(P2)* —
 As a **QA Engineer**, I want optional Playwright `storageState` support in
 the generated runner (login once per run, reuse the session), so that suites
 stop re-logging-in per scenario.
@@ -648,8 +648,8 @@ layers on top without breaking changes.
 **V2.1:** flakiness & triage (US-058/059), readiness/sign-off/exports
 (US-061…065), retention sweep (US-066), Step Library (US-081), Use Case
 Editor + linked entity notes (US-082/083), Bases-friendly metadata (US-076),
-chrome hygiene (US-078), credential keychain, storageState, sharded CI,
-Messages/Allure.
+chrome hygiene (US-078), credential keychain (US-084), storageState
+(US-085), sharded CI, Messages/Allure.
 
 **V2.x:** discovery suite (EPIC-017), mobile read-only, importers, headless
 CLI, multi-env matrix, GitLab CI.
