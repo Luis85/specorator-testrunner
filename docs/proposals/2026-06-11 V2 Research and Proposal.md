@@ -61,8 +61,8 @@ strong layering, security posture, and test coverage. The research says the
   does take from this: all run/spec metadata lives in clean YAML properties,
   so the vault stays fully queryable with core Bases for users who want it.
 
-The proposal below defines **eight V2 epics (EPIC-013…020), 35 user stories
-(US-051…085), and 13 use cases (UC-025…037)**, with a recommended priority
+The proposal below defines **eight V2 epics (EPIC-013…020), 38 user stories
+(US-051…088), and 13 use cases (UC-025…037)**, with a recommended priority
 order, explicit non-goals, and a **pre-V2 implementation plan (§9)** that
 clears recorded debt and lays the required foundations — ending with the
 playwright-bdd migration as the bridge into V2 feature work.
@@ -610,13 +610,30 @@ stop re-logging-in per scenario.
 file is git-ignored and excluded from evidence; env-var transport (ADR-0014)
 remains the credential source.
 
-**CI depth** *(P2/P3)* —
-Sharded GitHub Actions generation (matrix + blob-report merge + artifact
-retention defaults) *(P2)*; browser caching in the generated workflow *(P2)*;
-multi-environment matrix (run a suite against N environments) *(P3)*;
-GitLab CI as the second provider behind the existing provider seam *(P3 —
-research found GitLab demand comparable to Azure DevOps; PRD §14's Azure
-DevOps remains reserved)*.
+**US-086 Sharded CI generation** *(P2)* —
+As a **QA Engineer**, I want the generated GitHub Actions workflow to
+support sharding, so that CI suite time scales with the suite instead of
+serially compounding.
+*AC:* optional shard matrix with blob-report merge job and sensible artifact
+retention defaults; per-OS Playwright browser caching in the generated
+workflow; the CI readiness check validates the sharded variant.
+
+**US-087 Multi-environment CI matrix** *(P3)* —
+As a **QA Engineer**, I want to run a suite against multiple named
+Environments in one CI run, so that cross-environment regressions surface
+together.
+*AC:* workflow matrix over selected Environments; per-environment secrets
+follow the existing `E2E_*` convention; results import and evidence remain
+attributable per environment.
+
+**US-088 GitLab CI provider** *(P3)* —
+As a **Developer**, I want GitLab CI as a second pipeline provider behind
+the existing provider seam, so that non-GitHub teams get CI generation too
+(research found GitLab demand comparable to Azure DevOps; PRD §14's Azure
+DevOps remains reserved).
+*AC:* provider selection in settings; the generated `.gitlab-ci.yml` passes
+the same command-safety and YAML screening as the GitHub template; CI
+readiness checks adapt per provider.
 
 ---
 
@@ -658,12 +675,12 @@ layers on top without breaking changes.
 (US-061…065), retention sweep (US-066), Step Library (US-081), Use Case
 Editor + linked entity notes (US-082/083), Bases-friendly metadata (US-076),
 chrome hygiene (US-078), credential keychain (US-084), storageState
-(US-085), sharded CI, Messages/Allure.
+(US-085), sharded CI (US-086), Messages/Allure.
 
 **V2.x:** the remaining EPIC-017 discovery stories (US-072…075: Example
 Maps, scenario generation, lint, checklist on-ramp — US-081/082/083 land in
-V2.1 above), mobile read-only, importers, headless CLI, multi-env matrix,
-GitLab CI.
+V2.1 above), mobile read-only, importers, headless CLI, multi-env matrix
+(US-087), GitLab CI (US-088).
 
 **V2 final (last roadmap item):** EPIC-016 — the opt-in local MCP server and
 agent workflows (US-067…071). Deliberately last so the MCP exposes a
