@@ -5,7 +5,11 @@ import {
   serialiseFeature,
   useCaseIdFromPath,
 } from "../content/gherkin";
-import { findMissingSteps, parseStepDefinitions } from "../content/step-definitions";
+import {
+  findMissingSteps,
+  parseStepDefinitions,
+  type StepDefinitionPattern,
+} from "../content/step-definitions";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import type { UseCaseService } from "./use-case-service";
@@ -80,6 +84,21 @@ export interface SpecificationService {
    *   published (discovery is a read-only query).
    */
   listFeatures(): Promise<Result<FeatureFileEntry[]>>;
+  /**
+   * Publish-only `specification.updated` for a Feature whose file was ALREADY
+   * written by the caller (the Feature Editor saves through Obsidian's
+   * TextFileView lifecycle, not through `update`). Keeps the event vocabulary
+   * in the application layer so dashboards/explorers refresh identically for
+   * UI-editor saves and programmatic updates.
+   */
+  announceUpdated(specification: FeatureSpecification): Promise<void>;
+  /**
+   * The step-definition patterns scraped from `.testrunner/src/steps/\**\/*.ts`
+   * — the SAME source `detectMissingSteps` matches against, so the Feature
+   * Editor's autocomplete/missing-step flags and the Detect action agree.
+   * A missing steps folder yields an empty list (every step reads missing).
+   */
+  listStepPatterns(): Promise<Result<StepDefinitionPattern[]>>;
 }
 
 export class DefaultSpecificationService implements SpecificationService {
@@ -162,6 +181,12 @@ export class DefaultSpecificationService implements SpecificationService {
     const written = await this.fs.writeFile(specification.path, serialiseFeature(specification));
     if (!written.ok) return err(written.error);
 
+    await this.announceUpdated(specification);
+    this.logger.info("Feature updated", { featurePath: specification.path });
+    return ok(undefined);
+  }
+
+  async announceUpdated(specification: FeatureSpecification): Promise<void> {
     await this.eventBus.publish(
       createEvent("specification.updated", {
         featurePath: specification.path,
@@ -169,8 +194,12 @@ export class DefaultSpecificationService implements SpecificationService {
         tags: specification.tags,
       }),
     );
-    this.logger.info("Feature updated", { featurePath: specification.path });
-    return ok(undefined);
+  }
+
+  async listStepPatterns(): Promise<Result<StepDefinitionPattern[]>> {
+    const settings = await this.settingsService.load();
+    const stepsDir = joinVaultPath(settings.paths.testRunnerPath, "src/steps");
+    return ok(await this.loadStepDefinitions(stepsDir));
   }
 
   /** UC-007 / US-020: parse the Feature and report structural errors. */
@@ -225,9 +254,8 @@ export class DefaultSpecificationService implements SpecificationService {
       return err(appError("VALIDATION_FAILED", `"${featurePath}" is not a valid Feature.`));
     }
 
-    const settings = await this.settingsService.load();
-    const stepsDir = joinVaultPath(settings.paths.testRunnerPath, "src/steps");
-    const definitions = await this.loadStepDefinitions(stepsDir);
+    const patterns = await this.listStepPatterns();
+    const definitions = patterns.ok ? patterns.value : [];
 
     const missingSteps = findMissingSteps(collectStepTexts(feature), definitions);
 
