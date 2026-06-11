@@ -1,4 +1,8 @@
-import { isPlainDescriptionLine, useCaseIdFromPath } from "../../application/content/gherkin";
+import {
+  isPlainDescriptionLine,
+  serialiseCell,
+  useCaseIdFromPath,
+} from "../../application/content/gherkin";
 import {
   isStepDefined,
   type StepDefinitionPattern,
@@ -21,6 +25,21 @@ export interface ValidationItem {
   message: string;
 }
 
+const flagDoubleArguments = (
+  items: ValidationItem[],
+  steps: readonly GherkinStep[],
+  label: string,
+): void => {
+  for (const step of steps) {
+    if (step.dataTable && step.docString) {
+      items.push({
+        level: "error",
+        message: `A step in "${label}" has both a data table and a text block (Gherkin allows one argument).`,
+      });
+    }
+  }
+};
+
 /**
  * Live structural validation over the in-memory spec — the same rules as
  * `SpecificationService.validate` (name, ≥1 scenario, steps per scenario,
@@ -42,15 +61,7 @@ export const projectValidation = (specification: FeatureSpecification): Validati
   if (specification.scenarios.length === 0) {
     items.push({ level: "error", message: "Feature has no scenarios." });
   }
-  for (const step of specification.background ?? []) {
-    if (step.dataTable && step.docString) {
-      items.push({
-        level: "error",
-        message:
-          'A step in "Background" has both a data table and a text block (Gherkin allows one argument).',
-      });
-    }
-  }
+  flagDoubleArguments(items, specification.background ?? [], "Background");
   for (const scenario of specification.scenarios) {
     const label = scenario.name.trim() === "" ? "(unnamed)" : scenario.name;
     if (scenario.name.trim() === "") {
@@ -68,14 +79,7 @@ export const projectValidation = (specification: FeatureSpecification): Validati
         });
       }
     }
-    for (const step of scenario.steps) {
-      if (step.dataTable && step.docString) {
-        items.push({
-          level: "error",
-          message: `A step in "${label}" has both a data table and a text block (Gherkin allows one argument).`,
-        });
-      }
-    }
+    flagDoubleArguments(items, scenario.steps, label);
   }
   return items;
 };
@@ -142,8 +146,11 @@ export const normalizeTag = (value: string): string | null => {
   return joined === "" ? null : `@${joined}`;
 };
 
-/** Keeps a table cell round-trippable: a raw `|` would break the row syntax. */
-export const sanitizeCell = (value: string): string => value.replace(/\|/g, "/").trim();
+/**
+ * Keeps a table cell round-trippable via the serializer's own cell encoding
+ * (one policy, two surfaces), trimmed for tidy editor input.
+ */
+export const sanitizeCell = (value: string): string => serialiseCell(value).trim();
 
 /** Picks a doc-string fence the body cannot terminate early. */
 export const fenceFor = (lines: readonly string[]): '"""' | "```" =>
@@ -158,12 +165,22 @@ export const fenceFor = (lines: readonly string[]): '"""' | "```" =>
 export const sanitizeDocStringLines = (lines: readonly string[], fence: '"""' | "```"): string[] =>
   lines.map((line) => (line.trim() === fence ? line.replace(fence, `\\${fence}`) : line));
 
-/** Splits textarea input into the lines that round-trip as description text. */
-export const asDescriptionLines = (value: string): string[] =>
-  value
+/**
+ * Splits textarea input into the lines that round-trip as description text.
+ * Interior blank lines survive as paragraph breaks (the parser preserves
+ * them); boundary blanks are layout and are dropped.
+ */
+export const asDescriptionLines = (value: string): string[] => {
+  const lines = value
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => isPlainDescriptionLine(line));
+    .filter((line) => line === "" || isPlainDescriptionLine(line));
+  const start = lines.findIndex((line) => line !== "");
+  if (start === -1) return [];
+  let end = lines.length - 1;
+  while (lines[end] === "") end -= 1;
+  return lines.slice(start, end + 1);
+};
 
 /** De-duplicated datalist suggestions for the step-text inputs. */
 export const stepSuggestions = (patterns: readonly StepDefinitionPattern[]): string[] => [

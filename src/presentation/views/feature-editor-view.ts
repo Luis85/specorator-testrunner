@@ -351,6 +351,21 @@ export class FeatureEditorView extends TextFileView {
     renderChips();
   }
 
+  /** The ↑/↓ pair used by scenario heads and step rows alike. */
+  private appendMoveButtons<T>(parent: HTMLElement, noun: string, array: T[], index: number): void {
+    const up = parent.createEl("button", { text: "↑", attr: { "aria-label": `Move ${noun} up` } });
+    up.addEventListener("click", () => {
+      if (moveItem(array, index, -1)) this.commit(true);
+    });
+    const down = parent.createEl("button", {
+      text: "↓",
+      attr: { "aria-label": `Move ${noun} down` },
+    });
+    down.addEventListener("click", () => {
+      if (moveItem(array, index, 1)) this.commit(true);
+    });
+  }
+
   private renderScenarioCard(
     parent: HTMLElement,
     spec: FeatureSpecification,
@@ -388,20 +403,7 @@ export class FeatureEditorView extends TextFileView {
       this.commit(false);
     });
 
-    const moveUp = head.createEl("button", {
-      text: "↑",
-      attr: { "aria-label": "Move scenario up" },
-    });
-    moveUp.addEventListener("click", () => {
-      if (moveItem(spec.scenarios, index, -1)) this.commit(true);
-    });
-    const moveDown = head.createEl("button", {
-      text: "↓",
-      attr: { "aria-label": "Move scenario down" },
-    });
-    moveDown.addEventListener("click", () => {
-      if (moveItem(spec.scenarios, index, 1)) this.commit(true);
-    });
+    this.appendMoveButtons(head, "scenario", spec.scenarios, index);
     const remove = head.createEl("button", {
       text: "Delete",
       attr: { "aria-label": "Delete scenario" },
@@ -477,17 +479,7 @@ export class FeatureEditorView extends TextFileView {
       refreshFlag();
     });
 
-    const moveUp = row.createEl("button", { text: "↑", attr: { "aria-label": "Move step up" } });
-    moveUp.addEventListener("click", () => {
-      if (moveItem(steps, index, -1)) this.commit(true);
-    });
-    const moveDown = row.createEl("button", {
-      text: "↓",
-      attr: { "aria-label": "Move step down" },
-    });
-    moveDown.addEventListener("click", () => {
-      if (moveItem(steps, index, 1)) this.commit(true);
-    });
+    this.appendMoveButtons(row, "step", steps, index);
     const remove = row.createEl("button", { text: "×", attr: { "aria-label": "Delete step" } });
     remove.addEventListener("click", () => {
       steps.splice(index, 1);
