@@ -94,6 +94,10 @@ export interface DashboardViewDeps {
   // settings.updated event drives the refresh; the resolved Result lets the view
   // skip a redundant local refresh on failure.
   switchEnvironment: (name: string) => Promise<void>;
+  // Guided Tour CTA (spec 2026-06-11): shown while the tour is neither
+  // completed nor dismissed; opens the sidebar tour view.
+  tourVisible: () => boolean;
+  openGuidedTour: () => void;
 }
 
 /**
@@ -146,6 +150,11 @@ export class DashboardView extends ItemView {
     // `settings.updated`; repaint the badge (+ anything env-derived) on it.
     this.subscriptions.push(
       this.deps.eventBus.subscribe("settings.updated", () => this.scheduler.schedule()),
+    );
+    // The Guided Tour CTA disappears once the tour completes; repaint on it so
+    // an already-open dashboard hides the banner without a manual refresh.
+    this.subscriptions.push(
+      this.deps.eventBus.subscribe("tour.completed", () => this.scheduler.schedule()),
     );
     // First paint: PUSH a refresh once (emits dashboard.refreshed + kpi.updated
     // per UC-018 steps 2–3). Subsequent event-driven re-renders read the
@@ -204,6 +213,7 @@ export class DashboardView extends ItemView {
 
     // Quick actions (Wave C §1): the common entry points as real buttons.
     this.renderQuickActions(container);
+    this.renderTourCta(container);
 
     // Onboarding (Wave G §2): when the hub is initialized but holds no Use
     // Cases yet (a first-time user right after the wizard), guide the
@@ -379,6 +389,18 @@ export class DashboardView extends ItemView {
         button.addEventListener("click", () => this.dispatchQuickAction(action.id));
       }
     }
+  }
+
+  /** "Continue the guided tour" banner, hidden once completed or dismissed. */
+  private renderTourCta(container: HTMLElement): void {
+    if (!this.deps.tourVisible()) return;
+    const banner = container.createDiv({ cls: "e2e-test-hub-tour-cta" });
+    const button = banner.createEl("button", {
+      text: "Continue the guided tour",
+      cls: "mod-cta",
+      attr: { "aria-label": "Continue the guided tour" },
+    });
+    button.addEventListener("click", () => this.deps.openGuidedTour());
   }
 
   /**

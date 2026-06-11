@@ -16,6 +16,8 @@ export interface InitializationWizardDeps {
   initialization: InitializationService;
   workspace: WorkspacePort;
   getSettings: () => TestHubSettings;
+  /** Opens the Guided Tour view (spec 2026-06-11); wired in main.ts. */
+  openGuidedTour?: () => void;
 }
 
 /**
@@ -163,24 +165,35 @@ export class InitializationWizardModal extends Modal {
     // was actually generated (otherwise the button — and the guide — don't exist).
     const summary = `Test Hub ready: ${result.createdFolders.length} folders and ${result.createdFiles.length} files created.`;
     contentEl.createEl("p", {
-      text: result.documentationGenerated
-        ? `${summary} Open Getting Started for a walkthrough.`
-        : summary,
+      text: this.deps.openGuidedTour
+        ? `${summary} Take the guided tour to build and run your first test yourself.`
+        : result.documentationGenerated
+          ? `${summary} Open Getting Started for a walkthrough.`
+          : summary,
     });
     new Notice("E2E Test Hub initialized.");
 
     const actions = new Setting(contentEl);
-    if (result.documentationGenerated) {
-      const gettingStarted = joinVaultPath(settings.paths.documentationPath, "Getting Started.md");
+    if (this.deps.openGuidedTour) {
       actions.addButton((button) =>
         button
-          .setButtonText("Open Getting Started")
+          .setButtonText("Start guided tour")
           .setCta()
-          .onClick(async () => {
-            await openOrNotice(this.deps.workspace, gettingStarted);
+          .onClick(() => {
+            this.deps.openGuidedTour?.();
             this.close();
           }),
       );
+    }
+    if (result.documentationGenerated) {
+      const gettingStarted = joinVaultPath(settings.paths.documentationPath, "Getting Started.md");
+      actions.addButton((button) => {
+        button.setButtonText("Open Getting Started").onClick(async () => {
+          await openOrNotice(this.deps.workspace, gettingStarted);
+          this.close();
+        });
+        if (!this.deps.openGuidedTour) button.setCta();
+      });
     }
     actions.addButton((button) => button.setButtonText("Close").onClick(() => this.close()));
   }

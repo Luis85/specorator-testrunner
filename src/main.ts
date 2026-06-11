@@ -34,6 +34,12 @@ import {
   type ReportImportService,
 } from "./application/services/report-import-service";
 import { PostRunCoordinator } from "./application/services/post-run-coordinator";
+import {
+  DefaultGuidedTourService,
+  type GuidedTourService,
+} from "./application/services/guided-tour-service";
+import { DEMO_FEATURE_FILE_NAME, DEMO_USE_CASE_ID } from "./application/content/demo-content";
+import { DEFAULT_SUITES } from "./application/content/default-suites";
 import { DefaultRunnerInstallationService } from "./application/services/runner-installation-service";
 import {
   DefaultSettingsService,
@@ -74,7 +80,10 @@ import { ObsidianVaultAdapter } from "./infrastructure/obsidian/obsidian-vault-a
 import { ObsidianWorkspaceAdapter } from "./infrastructure/obsidian/obsidian-workspace-adapter";
 import { NodeChildProcessRunner } from "./infrastructure/runner/node-child-process-runner";
 import { RunnerTemplateWriter } from "./infrastructure/runner/runner-template-writer";
-import { registerCommands } from "./presentation/commands/register-commands";
+import {
+  registerCommands,
+  type RegisteredCommandHelpers,
+} from "./presentation/commands/register-commands";
 import { RunLauncher } from "./presentation/run/run-launcher";
 import { TestHubSettingTab, type SettingsHost } from "./presentation/settings/settings-tab";
 import { CreateSuiteModal } from "./presentation/views/create-suite-modal";
@@ -93,6 +102,7 @@ import {
 import { generateFeatureForUseCase } from "./presentation/views/generate-feature-modal";
 import { openOrNotice } from "./presentation/views/modal-helpers";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
+import { GUIDED_TOUR_VIEW_TYPE, GuidedTourView } from "./presentation/views/guided-tour-view";
 import {
   DefaultRunHistoryService,
   type RunHistoryService,
@@ -143,6 +153,8 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // state, the run-status eligibility rule, and the serializing evidence chain
   // that used to live here.
   private postRunCoordinator!: PostRunCoordinator;
+  private guidedTourService!: GuidedTourService;
+  private commandHelpers!: RegisteredCommandHelpers;
   // Every NodeChildProcessRunner built by this composition root, so onunload
   // can issue best-effort kill signals to ANY still-running child — including
   // an in-flight `npm install` on the shared runner, which no command path can
@@ -371,6 +383,25 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     });
     this.postRunCoordinator.start();
 
+    // Guided Tour (spec 2026-06-11): observes the user's real actions on the
+    // bus and advances the onboarding checklist whether or not the view is
+    // open. Persistence goes through the SettingsHost so the in-memory
+    // settings copy stays current (optimistic swap in updateSettings).
+    this.guidedTourService = new DefaultGuidedTourService(
+      {
+        getSettings: () => this.hubSettings,
+        updateSettings: (next) => this.updateSettings(next),
+      },
+      eventBus,
+      this.logger,
+      {
+        demoUseCaseId: DEMO_USE_CASE_ID,
+        demoFeatureFileName: DEMO_FEATURE_FILE_NAME,
+        defaultSuiteIds: DEFAULT_SUITES.map((suite) => suite.id),
+      },
+    );
+    this.guidedTourService.start();
+
     this.registerView(
       USE_CASE_VIEW_TYPE,
       (leaf) =>
@@ -478,6 +509,12 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           switchEnvironment: (name) => this.switchEnvironment(name),
           openEvidenceExplorer: () =>
             void this.workspaceAdapter.openView(EVIDENCE_EXPLORER_VIEW_TYPE),
+          tourVisible: () => {
+            const state = this.guidedTourService.getState();
+            return !state.completed && !state.dismissed;
+          },
+          openGuidedTour: () =>
+            void this.workspaceAdapter.openView(GUIDED_TOUR_VIEW_TYPE, "sidebar"),
         }),
     );
     this.registerView(
@@ -487,6 +524,23 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
           runHistory: this.runHistoryService,
           eventBus,
           openEvidence: (path) => this.openEvidenceNote(path),
+        }),
+    );
+    this.registerView(
+      GUIDED_TOUR_VIEW_TYPE,
+      (leaf) =>
+        new GuidedTourView(leaf, {
+          tour: this.guidedTourService,
+          eventBus,
+          runDemo: () => this.runLauncher.launch({ scope: "demo", target: "demo" }),
+          openCreateUseCase: () => this.openCreateUseCase(),
+          openUseCases: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
+          openCreateSuite: () => this.openCreateSuite(),
+          openSuites: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
+          openLatestEvidence: () => this.openLatestEvidence(),
+          // Lazy: commandHelpers is assigned by registerCommands() below,
+          // before any view can open.
+          generateCiWorkflow: () => this.commandHelpers.generateCiWorkflow(),
         }),
     );
 
@@ -533,7 +587,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // presentation/commands/register-commands.ts behind a narrow deps contract;
     // the composition root only supplies the wired services plus the few
     // open-a-modal helpers it shares with the ribbons/views above.
-    registerCommands(this, {
+    this.commandHelpers = registerCommands(this, {
       getSettings: () => this.hubSettings,
       validationService: this.validationService,
       maintenanceService: this.maintenanceService,
@@ -592,6 +646,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // synchronous per PRES-H1, and the per-run snapshot already protects
     // attribution, so we do not block teardown on whenSettled() here.
     this.postRunCoordinator?.stop();
+    this.guidedTourService?.stop();
     // Best-effort kill signal to ANY child still tracked by either runner —
     // notably an in-flight `npm install`/`playwright install` on the shared
     // runner, which would otherwise survive unload with no way to stop it (A6).
@@ -610,6 +665,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       initialization: this.initializationService,
       workspace: this.workspaceAdapter,
       getSettings: () => this.hubSettings,
+      openGuidedTour: () => void this.workspaceAdapter.openView(GUIDED_TOUR_VIEW_TYPE, "sidebar"),
     }).open();
   }
 
@@ -666,6 +722,18 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       message: `Could not open the evidence note "${path}". It may have been moved or deleted.`,
       timeout: 10000,
     });
+  }
+
+  // Guided Tour step 9: open the most recent Evidence note, or say why not.
+  // lastEvidence() returns the { runId, evidencePath } record (or null), so the
+  // null check guards the whole record and the path is read off it.
+  private openLatestEvidence(): void {
+    const latest = this.postRunCoordinator.lastEvidence();
+    if (latest === null) {
+      new Notice("No Evidence note yet — run a test first.");
+      return;
+    }
+    void this.openEvidenceNote(latest.evidencePath);
   }
 
   // Reuses the documentation service the command palette uses; the UI is thin.
