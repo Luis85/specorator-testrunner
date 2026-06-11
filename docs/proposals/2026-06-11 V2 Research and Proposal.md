@@ -55,8 +55,11 @@ strong layering, security posture, and test coverage. The research says the
   roadmap item once the V2 feature set it exposes is stable.
 - **The platform moved under us, favorably.** Obsidian Bases shipped a
   documented plugin API (`registerBasesView()`, Oct 2025); the community has
-  migrated Dataview→Bases. V2 dashboards should be Bases-native views over
-  YAML properties.
+  migrated Dataview→Bases. We deliberately do **not** build our dashboards on
+  Bases — its view environment is too restrictive for what the Test Hub needs
+  — and custom Bases views are out of scope for now (revisit later). What V2
+  does take from this: all run/spec metadata lives in clean YAML properties,
+  so the vault stays fully queryable with core Bases for users who want it.
 
 The proposal below defines **eight V2 epics (EPIC-013…020), 31 user stories
 (US-051…081), and 12 use cases (UC-025…036)**, with a recommended priority
@@ -116,7 +119,7 @@ but EPIC-018 picks up the product-facing ones (ribbon trim, vault pollution).
 | Playwright ecosystem | playwright-bdd (v9, 2026-06), Playwright UI mode/trace viewer/codegen, Playwright Test Agents, Checkly ($24+/mo), Currents ($49+/mo), Argos/Percy (visual), Allure 3 (real-time, quality gates), ReportPortal | One runner rules: everything plugs into `@playwright/test` as reporter or codegen, never as a replacement runner. Trace.zip is the universal artifact. cucumber-js-as-runner is documented as the legacy path. |
 | AI-assisted testing | QA Wolf (~$90k/yr service), mabl ($499+/mo), testRigor, Octomind (MCP server, exportable Playwright), Momentic ($250+/mo, runtime AI), Stagehand (OSS, dropped Playwright in v3) | Table stakes 2026: NL test generation, repair-time healing, AI failure triage, MCP server. All competitors are cloud-bound; none serves local-first/privacy-sensitive users (finance: 54.9% blocked by compliance concerns on cloud AI). |
 | Docs-as-code / traceability | Sphinx-Needs, StrictDoc, OpenFastTrace, testomat.io (~$27–30/user/mo), Testspace, Doc Detective | Borrow: typed directional links (`covers:`) with requirement revisions, CI-failable coverage-chain linting, interchange export, scenario-ID write-back into generated code. **Markdown with Gherkin (`.feature.md`)** is an official Cucumber spec. |
-| Obsidian ecosystem | 4,658 plugins, zero QA/testing/traceability plugins; Bases API shipped; Dataview effectively unmaintained | First-in-category position. Build dashboards on Bases (`registerBasesView`), keep all metadata in YAML properties, avoid vault pollution, degrade gracefully on mobile. |
+| Obsidian ecosystem | 4,658 plugins, zero QA/testing/traceability plugins; Bases API shipped; Dataview effectively unmaintained | First-in-category position. Keep all metadata in Bases-queryable YAML properties (custom Bases views judged too restrictive for our dashboards — parked for later), avoid vault pollution, degrade gracefully on mobile. |
 
 ### 3.2 Differentiators we uniquely have
 
@@ -143,7 +146,7 @@ interop; release-readiness reporting.
 | PO / BA | Facilitate Example Mapping; **review, not write**, Gherkin; plain-language "ready to ship?"; defensible sign-off; prove testing to auditors | POs resist authoring Gherkin ("too technical"); stakeholders never read feature files; SOC 2 audits demand 150+ evidence artifacts; UAT sign-off needs named approver + timestamp | EPIC-017 (discovery), EPIC-015 (readiness, sign-off, audit export) |
 | Developer | Run one scenario fast; typed steps with IDE support; no regex glue; debug via Playwright traces; feed specs to AI coding agents | "Regex-based spaghetti" is the canonical complaint; playwright-bdd exists precisely to escape cucumber-js; Spec Kit/Playwright Agents made Markdown specs an AI artifact | EPIC-013 (typed steps, traces), EPIC-016 (opt-in MCP — last roadmap item) |
 | Delivery manager | Defensible GO/NO-GO per release; separate signal from flakiness noise; prove requirement coverage; report upward in non-technical language; survive audits without the screenshot scramble | Manual report assembly goes stale immediately; pass rate alone is a vanity metric; dashboards need ≤5–7 metrics with targets and trends, each drillable | EPIC-015 (readiness, one-pager, audit export), EPIC-014 (flakiness metric) |
-| Obsidian power user | Queryable dashboards over notes; data ownership; no vault pollution; mobile read access | Bases-first migration; vault-pollution complaints; ~30% of plugins desktop-only is tolerated but penalized | EPIC-018 (Bases views, mobile read-only, pollution control) |
+| Obsidian power user | Queryable dashboards over notes; data ownership; no vault pollution; mobile read access | Bases-first migration; vault-pollution complaints; ~30% of plugins desktop-only is tolerated but penalized | EPIC-018 (Bases-friendly metadata, mobile read-only, pollution control) |
 | Solo dev / agency | "Evidence I tested this for my client"; UAT sign-off to unblock invoices; monthly retainer report; checklist-first on-ramp | Client disputes hinge on documentation; white-label QA reports are a $49–399/mo competitor product; solo devs live in Markdown checklists, fear brittle suites | EPIC-015 (client report export, sign-off), EPIC-017 (checklist on-ramp) |
 
 Cross-cutting 2026 anxiety (SmartBear, n=273 decision-makers): **70% say
@@ -185,6 +188,7 @@ verification system of record for AI-built software.*
 - **No test recorder / visual test builder** (PRD V3; Playwright codegen exists — NG3/NG4 stand).
 - **No cloud service, no telemetry, no hosted dashboard** (P2 Local First is the moat).
 - **No in-plugin AI features** — no chat UI, no bundled or BYO-API-key model calls, no AI-generated content produced by the plugin itself. All AI work happens through the user's own agents via the opt-in local MCP server (EPIC-016, the last roadmap item). Runtime-AI test steps (Momentic-style runtime interpretation) stay out of scope too: they trade away determinism, our strength.
+- **No custom Bases views** — the Test Hub's dashboards stay custom plugin views; the Bases view environment is too restrictive for our dashboard needs. We keep metadata Bases-queryable (US-076) and may revisit `registerBasesView` integration later.
 - **No mobile-device (Appium) or API-first testing epics** (Playwright's `request` fixture becomes available for API-setup steps via EPIC-013 — evidence says API data setup makes suites 3–4x faster — but device labs and standalone API testing are out of scope).
 - **No Jira/Azure-DevOps two-way sync in V2.0** (importers only, → EPIC-019; full sync is V2.x+ pending demand).
 
@@ -487,22 +491,28 @@ practitioners already use Obsidian by hand.
 
 ### EPIC-018 — Obsidian-Native Experience *(P2)*
 
-> Ride the platform: Bases views, mobile read access, graph hygiene.
+> Ride the platform — mobile read access, graph hygiene, queryable metadata —
+> while the Test Hub's dashboards remain our **own custom views**. Building
+> them on Obsidian Bases was evaluated and rejected for now: the Bases view
+> environment is too restrictive for what the dashboards need to do. Custom
+> Bases views (`registerBasesView`) are explicitly out of scope and may be
+> revisited later.
 
-**US-076 Bases-powered explorers** —
-As an **Obsidian power user**, I want Use Cases, runs, and the traceability
-data exposed as Bases views (`registerBasesView`), so that I can filter,
-group, and extend them like any other vault data.
+**US-076 Bases-friendly metadata** —
+As an **Obsidian power user**, I want all Use Case, run, and traceability
+metadata kept in clean YAML frontmatter properties, so that I can build my
+own queries and views with core Bases (or Dataview) without the plugin
+needing to provide them.
 *AC:* run/scenario/use-case metadata lives in YAML properties (no inline
-metadata); plugin registers at least a Test Hub results view; stock `.base`
-files shipped by the init wizard; existing custom views keep working
-(Dataview is not a dependency).
+metadata, no plugin-proprietary formats); property names are documented and
+stable across releases; the plugin's own views read the same properties (one
+source of truth); no dependency on Bases or Dataview.
 
 **US-077 Mobile read-only degradation** —
 As a **Delivery Manager**, I want dashboards, evidence, and specs readable on
 Obsidian mobile, so that sync users aren't punished by `isDesktopOnly`.
 *AC:* investigate splitting execution (desktop) from reading (everywhere);
-at minimum: all generated artifacts are plain Markdown/Bases that render on
+at minimum: all generated artifacts are plain Markdown that renders on
 mobile; document sync behavior; stretch: plugin loads on mobile with
 execution affordances hidden.
 
@@ -595,9 +605,9 @@ report pipeline) + US-060 (evidence stamps). Rationale: one migration of the
 without breaking changes.
 
 **V2.1:** flakiness & triage (US-058/059), readiness/sign-off/exports
-(US-061…065), retention sweep (US-066), Step Library (US-081), Bases views
-(US-076), chrome hygiene (US-078), credential keychain, storageState,
-sharded CI, Messages/Allure.
+(US-061…065), retention sweep (US-066), Step Library (US-081),
+Bases-friendly metadata (US-076), chrome hygiene (US-078), credential
+keychain, storageState, sharded CI, Messages/Allure.
 
 **V2.x:** discovery suite (EPIC-017), mobile read-only, importers, headless
 CLI, multi-env matrix, GitLab CI.
