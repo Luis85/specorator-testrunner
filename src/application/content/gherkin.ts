@@ -267,13 +267,22 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
   };
 };
 
+/**
+ * A cell is written into a `|`-delimited row, where a literal `|` would split
+ * it and change the table shape on the next parse. The V1 cell model cannot
+ * represent escaped pipes (see {@link parseTableRow}), so the serializer
+ * substitutes `/` — shape integrity outranks the glyph. Parsed models can
+ * never contain a pipe cell; this guards cells constructed programmatically.
+ */
+const serialiseCell = (cell: string): string => cell.replace(/\|/g, "/");
+
 /** Appends `| a | b |` rows at `indent`. */
 const pushTable = (
   lines: string[],
   rows: ReadonlyArray<readonly string[]>,
   indent: string,
 ): void => {
-  for (const row of rows) lines.push(`${indent}| ${row.join(" | ")} |`);
+  for (const row of rows) lines.push(`${indent}| ${row.map(serialiseCell).join(" | ")} |`);
 };
 
 /** Appends one step line plus its data-table / doc-string arguments. */
