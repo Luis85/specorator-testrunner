@@ -160,26 +160,39 @@ describe("completion predicates", () => {
     );
   });
 
-  it("create-suite excludes the default suites", () => {
+  it("create-suite wants a non-default suite whose tag expression includes @tour", () => {
     const rule = eventRule("create-suite");
-    expect(rule.matches({ suiteId: "tour" }, ctx)).toBe(true);
-    expect(rule.matches({ suiteId: "smoke" }, ctx)).toBe(false);
-    expect(rule.matches({ suiteId: "regression" }, ctx)).toBe(false);
+    expect(rule.matches({ suiteId: "tour", tagExpression: "@tour" }, ctx)).toBe(true);
+    expect(rule.matches({ suiteId: "tour", tagExpression: "@tour and not @wip" }, ctx)).toBe(true);
+    expect(rule.matches({ suiteId: "smoke", tagExpression: "@tour" }, ctx)).toBe(false);
+    expect(rule.matches({ suiteId: "regression", tagExpression: "@tour" }, ctx)).toBe(false);
+    // A custom suite that does NOT select the authored scenario must not
+    // complete the step (PR #31 Codex review) — including tag prefixes.
+    expect(rule.matches({ suiteId: "nightly", tagExpression: "@regression" }, ctx)).toBe(false);
+    expect(rule.matches({ suiteId: "tour", tagExpression: "@tournament" }, ctx)).toBe(false);
+    expect(rule.matches({ suiteId: "tour" }, ctx)).toBe(false);
   });
 
-  it("run-own-test sequence: non-default suite executed, then that run passes", () => {
-    const [executed, passed] = sequenceRules("run-own-test");
-    expect(executed.matches({ suiteId: "tour", runId: "RUN-1" }, ctx)).toBe(true);
-    expect(executed.matches({ suiteId: "smoke", runId: "RUN-1" }, ctx)).toBe(false);
+  it("run-own-test sequence: @tour suite created, THAT suite executed, THAT run passes", () => {
+    const [created, executed, passed] = sequenceRules("run-own-test");
+    // Rule 1: the @tour suite's creation, capturing its id.
+    expect(created.matches({ suiteId: "tour", tagExpression: "@tour" }, ctx)).toBe(true);
+    expect(created.matches({ suiteId: "smoke", tagExpression: "@tour" }, ctx)).toBe(false);
+    expect(created.matches({ suiteId: "nightly", tagExpression: "@regression" }, ctx)).toBe(false);
+    expect(created.capture?.({ suiteId: "tour", tagExpression: "@tour" })).toBe("tour");
+    // Rule 2: only THAT suite's execution counts (PR #31 Codex review), and it
+    // must carry the runId the final rule keys on.
+    expect(executed.matches({ suiteId: "tour", runId: "RUN-1" }, ctx, "tour")).toBe(true);
+    expect(executed.matches({ suiteId: "nightly", runId: "RUN-1" }, ctx, "tour")).toBe(false);
+    expect(executed.matches({ suiteId: "tour" }, ctx, "tour")).toBe(false);
+    expect(executed.matches({ suiteId: "tour", runId: 7 }, ctx, "tour")).toBe(false);
+    expect(executed.matches({ suiteId: "tour", runId: "RUN-1" }, ctx, undefined)).toBe(false);
     expect(executed.capture?.({ suiteId: "tour", runId: "RUN-1" })).toBe("RUN-1");
+    // Rule 3: only THAT run's passing completes the step.
     expect(passed.matches({ runId: "RUN-1", status: "passed" }, ctx, "RUN-1")).toBe(true);
     expect(passed.matches({ runId: "RUN-2", status: "passed" }, ctx, "RUN-1")).toBe(false);
     expect(passed.matches({ runId: "RUN-1", status: "failed" }, ctx, "RUN-1")).toBe(false);
-    // A malformed suite.executed without a string runId must not advance the
-    // sequence (PR #31 Codex review) …
-    expect(executed.matches({ suiteId: "tour" }, ctx)).toBe(false);
-    expect(executed.matches({ suiteId: "tour", runId: 7 }, ctx)).toBe(false);
-    // … and without a capture the passed-run rule must stall, never widen.
+    // Without a capture the rules must stall, never widen.
     expect(passed.matches({ runId: "RUN-1", status: "passed" }, ctx, undefined)).toBe(false);
   });
 

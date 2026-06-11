@@ -67,7 +67,10 @@ describe("DefaultGuidedTourService", () => {
         tagExpression: "@smoke",
       }),
     );
-    expect(status(service, "create-use-case")).toBe("active");
+    // Neither demo artifact completes its step: run-demo (step 1) still holds
+    // the active slot, so both steps stay unsettled.
+    expect(status(service, "run-demo")).toBe("active");
+    expect(status(service, "create-use-case")).toBe("pending");
     expect(status(service, "create-suite")).toBe("pending");
   });
 
@@ -232,7 +235,9 @@ describe("DefaultGuidedTourService", () => {
     const firstTourId = current().onboarding.tourId;
     const restarted = await service.restart();
     expect(restarted.ok).toBe(true);
-    expect(status(service, "create-use-case")).toBe("active");
+    // A fresh tour starts at step 1 again; the completed step is cleared.
+    expect(status(service, "run-demo")).toBe("active");
+    expect(status(service, "create-use-case")).toBe("pending");
     expect(current().onboarding.completedSteps).toEqual([]);
     expect(current().onboarding.tourId).not.toBe(firstTourId);
   });

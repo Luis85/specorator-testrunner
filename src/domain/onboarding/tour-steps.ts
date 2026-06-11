@@ -86,6 +86,15 @@ const record = (payload: unknown): Record<string, unknown> | null =>
     : null;
 
 /**
+ * True when a Cucumber Tag Expression contains the literal `@tour` tag as a
+ * token ("@tour", "@tour and not @wip") — not as a prefix of another tag
+ * ("@tournament"). Tokenizes on whitespace and parentheses, the only
+ * structural characters in tag expressions.
+ */
+const hasTourTag = (tagExpression: unknown): boolean =>
+  typeof tagExpression === "string" && tagExpression.split(/[\s()]+/).includes("@tour");
+
+/**
  * The scenario the user authors in step 4. The three greeting steps are NEW —
  * they deliberately do not collide with the shipped `example.steps.ts`
  * patterns (that file is user-owned, `overwrite: false`, and duplicate
@@ -288,13 +297,21 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       kind: "event",
       rule: {
         type: "suite.created",
+        // The Tag Expression must include @tour (PR #31 Codex review): any
+        // other custom suite would not select the authored scenario, so the
+        // next step's run could never execute it.
         matches: (payload, ctx) => {
           const p = record(payload);
-          return typeof p?.suiteId === "string" && !ctx.defaultSuiteIds.includes(p.suiteId);
+          return (
+            typeof p?.suiteId === "string" &&
+            !ctx.defaultSuiteIds.includes(p.suiteId) &&
+            hasTourTag(p.tagExpression)
+          );
         },
       },
     },
     skippable: false,
+    hint: "This step completes when you create a suite whose tag expression includes @tour.",
   },
   {
     id: "run-own-test",
@@ -304,20 +321,39 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       "same runner CI uses — green here means green anywhere.",
     action: { id: "open-suites", label: "Open Test Suites" },
     completion: {
+      // Three correlated rules (PR #31 Codex review): the @tour suite's
+      // creation captures its suiteId, only THAT suite's execution captures
+      // the runId, and only THAT run's passing completes the step — running
+      // an unrelated custom suite cannot satisfy "run your own test".
       kind: "event-sequence",
       rules: [
         {
-          type: "suite.executed",
-          // runId must be a string HERE: it is the capture the next rule keys
-          // on, and a malformed payload that advanced the sequence without a
-          // captured id would otherwise let any later passed run complete the
-          // step (PR #31 Codex review).
+          type: "suite.created",
           matches: (payload, ctx) => {
             const p = record(payload);
             return (
               typeof p?.suiteId === "string" &&
+              !ctx.defaultSuiteIds.includes(p.suiteId) &&
+              hasTourTag(p.tagExpression)
+            );
+          },
+          capture: (payload) => {
+            const value = record(payload)?.suiteId;
+            return typeof value === "string" ? value : undefined;
+          },
+        },
+        {
+          type: "suite.executed",
+          // runId must be a string HERE: it is the capture the next rule keys
+          // on, and advancing without it would let any later passed run
+          // complete the step.
+          matches: (payload, _ctx, captured) => {
+            const p = record(payload);
+            return (
+              typeof p?.suiteId === "string" &&
               typeof p.runId === "string" &&
-              !ctx.defaultSuiteIds.includes(p.suiteId)
+              captured !== undefined &&
+              p.suiteId === captured
             );
           },
           capture: (payload) => {

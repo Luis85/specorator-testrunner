@@ -111,16 +111,16 @@ export class DefaultGuidedTourService implements GuidedTourService {
   }
 
   getState(): TourState {
-    // "active" is the first non-settled, non-skippable step. Skippable steps
-    // are presented as "pending" until the user explicitly skips or completes
-    // them — they are opt-in side-quests that should never block the main flow
-    // from appearing as actionable.
+    // "active" is the FIRST step that is neither done nor skipped — skippable
+    // or not. The view expands only the active step (action button, snippets,
+    // Skip / Mark done), so a skippable step must be able to hold the slot:
+    // the Skip affordance lives in exactly that expansion.
     let activeAssigned = false;
     const steps = TOUR_STEPS.map((definition) => {
       let status: TourStepStatus;
       if (this.completed.has(definition.id)) status = "done";
       else if (this.skipped.has(definition.id)) status = "skipped";
-      else if (!activeAssigned && !definition.skippable) {
+      else if (!activeAssigned) {
         status = "active";
         activeAssigned = true;
       } else status = "pending";
