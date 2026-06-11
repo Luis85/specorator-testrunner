@@ -114,6 +114,13 @@ export interface FeatureInsightService {
   scenarioCounter(): Promise<Result<ScenarioCounter>>;
   /** Reads + parses one Feature file and projects its {@link FeatureHealth}. */
   healthFor(featurePath: VaultPath): Promise<Result<FeatureHealth>>;
+  /**
+   * Union of every feature-, scenario- and Examples-level tag across the
+   * Feature corpus, seeded with the `@smoke`/`@wip` conventions and sorted.
+   * Best-effort like the other corpus queries (unreadable or unparseable
+   * files are skipped); feeds the Feature Editor's tag picker.
+   */
+  listKnownTags(): Promise<Result<string[]>>;
 }
 
 export class DefaultFeatureInsightService implements FeatureInsightService {
@@ -163,5 +170,26 @@ export class DefaultFeatureInsightService implements FeatureInsightService {
       return err(appError("VALIDATION_FAILED", `"${featurePath}" is not a valid Feature.`));
     }
     return ok(projectFeatureHealth(feature));
+  }
+
+  async listKnownTags(): Promise<Result<string[]>> {
+    const listed = await this.specifications.listFeatures();
+    if (!listed.ok) return err(listed.error);
+
+    const tags = new Set<string>(["@smoke", "@wip"]);
+    for (const entry of listed.value) {
+      const read = await this.fs.readFile(entry.path);
+      if (!read.ok) continue; // best-effort: skip unreadable files
+      const feature = parseFeature(read.value, entry.path);
+      if (feature === null) continue; // not valid Gherkin — skip
+      for (const tag of feature.tags) tags.add(tag);
+      for (const scenario of feature.scenarios) {
+        for (const tag of scenario.tags) tags.add(tag);
+        for (const block of scenario.examples ?? []) {
+          for (const tag of block.tags) tags.add(tag);
+        }
+      }
+    }
+    return ok([...tags].sort());
   }
 }

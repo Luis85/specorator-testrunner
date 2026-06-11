@@ -221,3 +221,64 @@ describe("DefaultFeatureInsightService.healthFor", () => {
     if (!broken.ok) expect(broken.error.code).toBe("VALIDATION_FAILED");
   });
 });
+
+describe("listKnownTags", () => {
+  it("unions feature, scenario and Examples tags, seeded with conventions, sorted", async () => {
+    const fs = new FakeVaultFileSystem();
+    const path = "Specifications/features/UC-001-a.feature";
+    fs.files.set(
+      path,
+      `@feature-level
+Feature: F
+
+  @scenario-level
+  Scenario Outline: S
+    Given x
+
+    @examples-level
+    Examples:
+      | a |
+      | 1 |
+`,
+    );
+    const service = new DefaultFeatureInsightService(
+      { listFeatures: async () => ok([{ path: vp(path), label: "UC-001-a.feature" }]) },
+      fs,
+    );
+
+    const result = await service.listKnownTags();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual([
+      "@examples-level",
+      "@feature-level",
+      "@scenario-level",
+      "@smoke",
+      "@wip",
+    ]);
+  });
+
+  it("skips unreadable/unparseable features (best-effort)", async () => {
+    const fs = new FakeVaultFileSystem();
+    fs.files.set("Specifications/features/UC-002-bad.feature", "not gherkin");
+    const service = new DefaultFeatureInsightService(
+      {
+        listFeatures: async () =>
+          ok([
+            { path: vp("Specifications/features/UC-002-bad.feature"), label: "UC-002-bad.feature" },
+            {
+              path: vp("Specifications/features/UC-003-gone.feature"),
+              label: "UC-003-gone.feature",
+            },
+          ]),
+      },
+      fs,
+    );
+
+    const result = await service.listKnownTags();
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toEqual(["@smoke", "@wip"]);
+  });
+});
