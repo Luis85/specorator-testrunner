@@ -820,3 +820,11 @@
 .e2e-test-hub-suite-tag-preview[data-status="error"] {
   color: var(--text-error);
 }
+
+/* Evidence Explorer (EPIC-008) */
+.e2e-test-hub-evidence-toolbar {
+  margin: var(--size-4-2, 8px) 0;
+}
+.e2e-test-hub-load-older {
+  margin-top: var(--size-4-3, 12px);
+}

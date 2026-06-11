@@ -95,7 +95,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
       const noteStatus = this.displayStatus(run, report.result);
       const written = await this.fs.writeFile(
         evidencePath,
-        this.renderNote(evidence, report, ucNoteNames, noteStatus),
+        this.renderNote(evidence, report, ucNoteNames, noteStatus, run),
       );
       if (!written.ok) {
         return err(
@@ -305,6 +305,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
     report: ImportedReport,
     ucNoteNames: Map<UseCaseId, string>,
     noteStatus: TestRunStatus | "skipped",
+    run: TestRun,
   ): string {
     const { result } = evidence;
     const screenshots = evidence.artifacts.filter((a) => a.type === "screenshot");
@@ -321,6 +322,10 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
         failed: result.failed,
         skipped: result.skipped,
         total: result.total,
+        // Scope + target let the Evidence Explorer say WHAT each historical run
+        // covered without re-deriving it from linked Use Cases.
+        scope: run.scope,
+        target: run.target,
         linked_use_cases: evidence.linkedUseCases.length > 0 ? evidence.linkedUseCases : undefined,
         screenshots: screenshots.length > 0 ? screenshots.map((a) => a.path) : undefined,
         traces: traces.length > 0 ? traces.map((a) => a.path) : undefined,

@@ -15,6 +15,7 @@ import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import type { RunLauncher } from "../run/run-launcher";
 import { DASHBOARD_VIEW_TYPE } from "../views/dashboard-view";
+import { EVIDENCE_EXPLORER_VIEW_TYPE } from "../views/evidence-explorer-view";
 import { GenerateFeatureModal } from "../views/generate-feature-modal";
 import { RunPickerModal } from "../views/run-picker-modal";
 import { SUITE_VIEW_TYPE } from "../views/suite-dashboard-view";
@@ -376,6 +377,11 @@ export function registerCommands(plugin: Plugin, deps: TestHubCommandDeps): void
     id: "open-test-suites",
     name: "Open Test Suites",
     callback: () => void deps.workspace.openView(SUITE_VIEW_TYPE),
+  });
+  plugin.addCommand({
+    id: "open-evidence-explorer",
+    name: "Open Evidence Explorer",
+    callback: () => void deps.workspace.openView(EVIDENCE_EXPLORER_VIEW_TYPE),
   });
   plugin.addCommand({
     id: "generate-feature",
