@@ -146,7 +146,31 @@ export class FeatureEditorView extends TextFileView {
     ]);
     if (patterns.ok) this.stepPatterns = patterns.value;
     if (tags.ok) this.knownTags = tags.value;
-    this.render();
+    // A full render would rebuild every input from the model, discarding any
+    // focused-but-uncommitted edit (fields commit on change/blur). When the
+    // user is already typing, fill the datalists in place instead — the
+    // missing-step flags re-evaluate per row on the next change anyway.
+    if (this.contentEl.querySelector("input:focus, textarea:focus, select:focus") === null) {
+      this.render();
+      return;
+    }
+    this.populateDatalists();
+  }
+
+  /** (Re)fills the shared autocomplete datalists without touching the DOM around them. */
+  private populateDatalists(): void {
+    const stepList = this.contentEl.querySelector<HTMLElement>(`#${STEP_DATALIST_ID}`);
+    if (stepList) {
+      stepList.empty();
+      for (const suggestion of stepSuggestions(this.stepPatterns)) {
+        stepList.createEl("option", { attr: { value: suggestion } });
+      }
+    }
+    const tagList = this.contentEl.querySelector<HTMLElement>(`#${TAG_DATALIST_ID}`);
+    if (tagList) {
+      tagList.empty();
+      for (const tag of this.knownTags) tagList.createEl("option", { attr: { value: tag } });
+    }
   }
 
   // --- rendering -----------------------------------------------------------
@@ -219,12 +243,9 @@ export class FeatureEditorView extends TextFileView {
     const body = root.createDiv({ cls: "e2e-test-hub-feature-editor-body" });
 
     // Native datalist autocomplete shared by the step/tag inputs.
-    const stepList = body.createEl("datalist", { attr: { id: STEP_DATALIST_ID } });
-    for (const suggestion of stepSuggestions(this.stepPatterns)) {
-      stepList.createEl("option", { attr: { value: suggestion } });
-    }
-    const tagList = body.createEl("datalist", { attr: { id: TAG_DATALIST_ID } });
-    for (const tag of this.knownTags) tagList.createEl("option", { attr: { value: tag } });
+    body.createEl("datalist", { attr: { id: STEP_DATALIST_ID } });
+    body.createEl("datalist", { attr: { id: TAG_DATALIST_ID } });
+    this.populateDatalists();
 
     this.validationEl = body.createDiv({
       cls: "e2e-test-hub-feature-editor-validation",
