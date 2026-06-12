@@ -34,7 +34,7 @@ deliberately deferred — this repository is the source of truth.
 1. Install **BRAT** from the Obsidian community plugin store and enable it.
 2. In BRAT: **Add beta plugin** → enter `Luis85/specorator-testrunner` — BRAT
    installs the latest release.
-3. Enable **E2E Test Hub** under _Settings → Community plugins_.
+3. Enable **Specorator Testrunner** under _Settings → Community plugins_.
 
 BRAT checks for new releases (on startup; configurable in BRAT's settings) and
 updates the plugin automatically. The plugin is desktop-only (it spawns Node
@@ -221,7 +221,8 @@ Vault
 │   └── NOTICE-superpowers.txt            # Upstream attribution + MIT license
 └── .github/workflows/
     ├── ci.yml                     # Lint, format, typecheck, build, coverage
-    ├── e2e-smoke.yml              # Opt-in E2E smoke over the real runner
+    ├── e2e-smoke.yml              # E2E smoke over the real runner (on demand
+    │                              #   + auto-run on runner-template changes)
     └── release.yml                # Tag-triggered release with plugin assets
 ```
 

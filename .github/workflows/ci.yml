@@ -57,8 +57,11 @@ jobs:
 
   # Blocking changed-code quality gate (fallow audit, TD-006 flip). The
   # verdict gates on findings INTRODUCED by the changeset (new-only
-  # attribution), so it fails on regressions, not on pre-existing inventory;
-  # the verdict also lands in the job summary.
+  # attribution), targeting regressions rather than pre-existing inventory —
+  # but note: ANY edit to a file (even comment-only) brings that file's
+  # findings into scope, where attribution can surface pre-existing
+  # complexity (observed on PR #33). The verdict also lands in the job
+  # summary.
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Opt-in E2E smoke test (run by .github/workflows/e2e-smoke.yml, or locally):
+ * E2E smoke test (run by .github/workflows/e2e-smoke.yml — on demand or on
+ * runner-template changes — or locally):
  * proves a `.testrunner` generated from the ACTUAL templates installs and the
  * demo test passes on a real OS — the class of failure unit tests can't catch
  * (npm.cmd quoting, cucumber config wiring, playwright install).

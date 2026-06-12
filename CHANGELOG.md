@@ -13,10 +13,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Installation documentation: GitHub releases + BRAT are the official
   distribution channel (community-marketplace submission deferred
   indefinitely, per the V2 proposal §5.3).
-- Evidence Explorer over the partitioned run history (ADR-0016), wired to the
-  ribbon, command palette, and dashboard.
-- Opt-in E2E smoke workflow (`workflow_dispatch` or the `e2e-smoke` PR label,
-  ubuntu + windows) over the real runner templates.
+- Evidence Explorer over the partitioned run history (ADR-0016), wired to
+  the command palette and dashboard (its default ribbon icon was later
+  trimmed — see Changed).
+- E2E smoke workflow (`workflow_dispatch` or the `e2e-smoke` PR label,
+  ubuntu + windows) over the real runner templates (later extended to
+  auto-trigger on runner-template changes — see Changed).
 - Run-execution hardening: SIGTERM→SIGKILL escalation for stuck runners,
   terminal `testrun.failed` event on unexpected faults, child-process cleanup
   on plugin unload.
@@ -50,6 +52,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The plugin is now named **Specorator Testrunner** (formerly "E2E Test
+  Hub") — manifest name, docs, and UI brand terms renamed; the plugin id
+  (`e2e-test-hub`) is unchanged, so existing installs keep their settings.
 - The E2E smoke workflow is now a dependable pre-release gate: Playwright
   browsers are cached per OS, and the suite triggers automatically on PRs
   that change the runner-template surface (in addition to manual dispatch
