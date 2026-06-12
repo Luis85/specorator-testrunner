@@ -15,6 +15,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
   Validate action and the editor's live strip (TD-003); whitespace-only
   feature names are now flagged on both surfaces, and an orphan filename is
   consistently an error (ADR-0012).
+- One domain predicate decides "is this scenario an Outline" everywhere
+  (TD-005, lenient semantics): suite/tag match counts, the validation strip,
+  and the editor's Examples grid can no longer disagree.
 - Command registration is covered by a smoke test (unique ids, full surface,
   callbacks invocable), and the vault adapter's existence checks now resolve
   through the Vault API first, keeping adapter access to the documented
