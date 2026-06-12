@@ -106,11 +106,17 @@ try {
   const relativeFeaturePath = relative(runnerRoot, featureFilePath).split(sep).join("/");
   const scopedCommand = `npm run test -- --profile scoped ${relativeFeaturePath}`;
   console.log(`\n$ ${scopedCommand}`);
-  const scopedOutput = execSync(scopedCommand, {
-    cwd: runnerRoot,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  // Cucumber emits its deprecation warning on STDERR; merge it into stdout
+  // (`2>&1` works in both sh and cmd.exe) so the assertion below can see it —
+  // execSync's return value carries stdout only. The try/catch surfaces the
+  // captured output on failure, which execSync's bare error message omits.
+  let scopedOutput = "";
+  try {
+    scopedOutput = execSync(`${scopedCommand} 2>&1`, { cwd: runnerRoot, encoding: "utf8" });
+  } catch (error) {
+    const captured = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+    fail(`scoped run failed:\n${captured}\n${error.message}`);
+  }
 
   // Assert the scoped report: exactly 1 scenario, all steps passed.
   const scopedReport = JSON.parse(readFileSync(reportPath, "utf8"));
@@ -131,9 +137,9 @@ try {
           .join(", "),
     );
   }
-  // Belt-and-braces: the deprecation warning must not appear in stdout.
+  // The merged output must not carry the paths-merge deprecation warning.
   if (scopedOutput.includes("specified paths in both")) {
-    fail("scoped run: cucumber printed the paths-merge deprecation warning in stdout");
+    fail("scoped run: cucumber printed the paths-merge deprecation warning");
   }
   console.log(`\nE2E smoke scoped-run PASSED: 1 scenario, all steps passed.`);
 } catch (error) {

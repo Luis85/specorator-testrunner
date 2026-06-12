@@ -134,9 +134,11 @@ export class TestHubSettingTab extends PluginSettingTab {
   // fallow-ignore-next-line unused-class-member
   display(): void {
     // Runtime detection: on pre-1.13 Obsidian builds `SettingTab.display` does
-    // not exist on the base prototype at all. `Object.getPrototypeOf` returns
-    // `unknown` here; we narrow to the call signature before using it.
-    const baseProto: unknown = Object.getPrototypeOf(TestHubSettingTab.prototype);
+    // not exist on the base prototype at all. Anchor to PluginSettingTab
+    // explicitly (not Object.getPrototypeOf) so an intermediate class in the
+    // hierarchy can never change which display() this delegates to; narrow to
+    // the call signature before using it.
+    const baseProto: unknown = PluginSettingTab.prototype;
     const baseDisplay =
       baseProto !== null &&
       typeof baseProto === "object" &&

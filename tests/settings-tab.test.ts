@@ -29,6 +29,11 @@ const makeTab = (): TestHubSettingTab => {
 };
 
 describe("TestHubSettingTab.display()", () => {
+  // Restore spies even when an assertion throws (watch-mode leak otherwise).
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("delegates to the base class display() when running on Obsidian 1.13+", () => {
     // The stub's PluginSettingTab has a concrete display() — mirrors 1.13+ runtime.
     const baseSpy = vi.spyOn(PluginSettingTab.prototype, "display");
@@ -36,7 +41,6 @@ describe("TestHubSettingTab.display()", () => {
     // eslint-disable-next-line @typescript-eslint/no-deprecated
     tab.display();
     expect(baseSpy).toHaveBeenCalledOnce();
-    baseSpy.mockRestore();
   });
 
   describe("pre-1.13 fallback (base prototype has no display)", () => {
