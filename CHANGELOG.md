@@ -8,6 +8,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Command registration is covered by a smoke test (unique ids, full surface,
+  callbacks invocable), and the vault adapter's existence checks now resolve
+  through the Vault API first, keeping adapter access to the documented
+  unindexed-path cases only.
 - The six event-driven views now share one `LiveRefresh` helper for the
   subscribe/coalesce/teardown lifecycle instead of six hand-copied
   implementations; V2's new views build on the same helper.
