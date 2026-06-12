@@ -460,33 +460,33 @@ describe("DefaultTestExecutionService", () => {
     );
   });
 
-  it("legacy runner (no scoped export): feature-scoped run omits --profile but keeps the path", async () => {
-    // cucumber.mjs is absent (old runner, never regenerated): scopedProfileArgs
-    // must fall back gracefully so the run still works (deprecation warning, not
-    // hard fail). The feature path must still appear in the argv.
-    const { service, childProcess, absoluteFs } = build();
-    // Do NOT seed cucumber.mjs → readAbsolute returns err → profileArgs = [].
-    const result = await service.execute({
-      scope: "feature",
+  // A pre-upgrade runner whose cucumber.mjs has no scoped export (and is never
+  // rewritten outside init/repair/reset) must fall back to the old path-only
+  // argv: the run keeps working (deprecation warning, not a hard fail on an
+  // unknown profile). Table-driven over the path-scoped run scopes.
+  it.each([
+    {
+      scope: "feature" as const,
       target: "Specifications/features/checkout.feature",
-    });
-    expect(result.ok).toBe(true);
-    expect(childProcess.calls[0].args).not.toContain("--profile");
-    expect(childProcess.calls[0].args).toContain("../Specifications/features/checkout.feature");
-    // Sanity: absoluteFs was NOT seeded with cucumber.mjs.
-    expect(absoluteFs.written.has(CUCUMBER_MJS_PATH)).toBe(false);
-  });
-
-  it("legacy runner: use-case scoped run omits --profile but keeps the feature path", async () => {
-    // Same scenario for the use-case scope: a pre-upgrade runner whose
-    // cucumber.mjs has no scoped export must fall back to the old path-only form.
-    const { service, childProcess } = build();
-    // No cucumber.mjs seeded → scopedProfileArgs returns [].
-    const result = await service.execute({ scope: "use-case", target: "UC-002" });
-    expect(result.ok).toBe(true);
-    expect(childProcess.calls[0].args).not.toContain("--profile");
-    expect(childProcess.calls[0].args).toContain("../Specifications/features/UC-002-*.feature");
-  });
+      expectedPathArg: "../Specifications/features/checkout.feature",
+    },
+    {
+      scope: "use-case" as const,
+      target: "UC-002",
+      expectedPathArg: "../Specifications/features/UC-002-*.feature",
+    },
+  ])(
+    "legacy runner (no scoped export): $scope-scoped run omits --profile but keeps the path",
+    async ({ scope, target, expectedPathArg }) => {
+      const { service, childProcess, absoluteFs } = build();
+      // Do NOT seed cucumber.mjs → readAbsolute returns err → profileArgs = [].
+      expect(absoluteFs.written.has(CUCUMBER_MJS_PATH)).toBe(false);
+      const result = await service.execute({ scope, target });
+      expect(result.ok).toBe(true);
+      expect(childProcess.calls[0].args).not.toContain("--profile");
+      expect(childProcess.calls[0].args).toContain(expectedPathArg);
+    },
+  );
 
   it("excludes deprecated Use Cases' features from Run All (ADR-0012)", async () => {
     const { service, fs, absoluteFs } = build();
