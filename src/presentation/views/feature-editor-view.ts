@@ -14,6 +14,7 @@ import type {
   GherkinStep,
   ScenarioSpecification,
 } from "../../domain/entities/specification";
+import { stepDocString, stepTable } from "../../domain/entities/specification";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import {
   addExamplesColumn,
@@ -520,8 +521,10 @@ export class FeatureEditorView extends TextFileView {
   private renderStepExtras(parent: HTMLElement, step: GherkinStep): void {
     const extras = parent.createDiv({ cls: "e2e-test-hub-feature-editor-step-extras" });
 
-    if (step.dataTable) {
-      const table = step.dataTable;
+    const table = stepTable(step);
+    const docString = stepDocString(step);
+
+    if (table) {
       const grid = extras.createEl("table", { cls: "e2e-test-hub-feature-editor-grid" });
       table.forEach((cells, rowIndex) => {
         const tr = grid.createEl("tr");
@@ -551,22 +554,12 @@ export class FeatureEditorView extends TextFileView {
       });
       const removeTable = extras.createEl("button", { text: "Remove table" });
       removeTable.addEventListener("click", () => {
-        delete step.dataTable;
-        this.commit(true);
-      });
-      // A Gherkin step carries at most ONE argument: each add button renders
-      // only while the step has neither, so the editor cannot produce a
-      // table + doc string combination Cucumber would refuse to parse.
-    } else if (!step.docString) {
-      const addTable = extras.createEl("button", { text: "+ data table" });
-      addTable.addEventListener("click", () => {
-        step.dataTable = [["value"]];
+        delete step.argument;
         this.commit(true);
       });
     }
 
-    if (step.docString) {
-      const docString = step.docString;
+    if (docString) {
       const textarea = extras.createEl("textarea", {
         cls: "e2e-test-hub-feature-editor-docstring",
         attr: { "aria-label": "Doc string", rows: "4" },
@@ -582,13 +575,23 @@ export class FeatureEditorView extends TextFileView {
       });
       const removeDoc = extras.createEl("button", { text: "Remove text block" });
       removeDoc.addEventListener("click", () => {
-        delete step.docString;
+        delete step.argument;
         this.commit(true);
       });
-    } else if (!step.dataTable) {
+    }
+
+    // A Gherkin step carries at most ONE argument (TD-002): the add buttons
+    // render only while the step has no argument, so the editor cannot produce
+    // a table + doc string combination Cucumber would refuse to parse.
+    if (step.argument === undefined) {
+      const addTable = extras.createEl("button", { text: "+ data table" });
+      addTable.addEventListener("click", () => {
+        step.argument = { kind: "table", rows: [["value"]] };
+        this.commit(true);
+      });
       const addDoc = extras.createEl("button", { text: "+ text block" });
       addDoc.addEventListener("click", () => {
-        step.docString = { fence: '"""', lines: [""] };
+        step.argument = { kind: "docString", docString: { fence: '"""', lines: [""] } };
         this.commit(true);
       });
     }

@@ -178,7 +178,11 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
       docStringIndent = raw.slice(0, raw.length - raw.trimStart().length);
       // Without a preceding step the body is still consumed (it is an argument,
       // never steps) but cannot be attached — roundTripsLosslessly catches it.
-      if (lastStep) lastStep.docString = openDocString;
+      // First argument wins (TD-002): a doc string after a table is dropped and
+      // the round-trip guard sends the file to raw mode.
+      if (lastStep && lastStep.argument === undefined) {
+        lastStep.argument = { kind: "docString", docString: openDocString };
+      }
       continue;
     }
 
@@ -260,7 +264,14 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
         if (currentExamples.header.length === 0) currentExamples.header = cells;
         else currentExamples.rows.push(cells);
       } else if (lastStep) {
-        (lastStep.dataTable ??= []).push(cells);
+        if (lastStep.argument === undefined) {
+          lastStep.argument = { kind: "table", rows: [cells] };
+        } else if (lastStep.argument.kind === "table") {
+          lastStep.argument.rows.push(cells);
+        }
+        // else: the step already carries a doc string — Gherkin allows ONE
+        // argument (TD-002). Drop the row; the round-trip guard then fails the
+        // file into raw mode, which is correct (Cucumber rejects the file too).
       }
       descriptionTarget = null;
       continue;
@@ -333,19 +344,23 @@ const pushTable = (lines: string[], rows: readonly (readonly string[])[], indent
   for (const row of rows) lines.push(`${indent}| ${row.map(serialiseCell).join(" | ")} |`);
 };
 
-/** Appends one step line plus its data-table / doc-string arguments. */
+/** Appends one step line plus its single table / doc-string argument. */
 const pushStep = (lines: string[], step: GherkinStep, indent: string): void => {
   lines.push(`${indent}${step.keyword} ${step.text}`.trimEnd());
   const inner = `${indent}  `;
-  if (step.dataTable && step.dataTable.length > 0) pushTable(lines, step.dataTable, inner);
-  if (step.docString) {
-    lines.push(`${inner}${step.docString.fence}${step.docString.mediaType ?? ""}`);
+  const argument = step.argument;
+  if (argument?.kind === "table" && argument.rows.length > 0) {
+    pushTable(lines, argument.rows, inner);
+  }
+  if (argument?.kind === "docString") {
+    const { fence, mediaType, lines: body } = argument.docString;
+    lines.push(`${inner}${fence}${mediaType ?? ""}`);
     // Body lines are emitted verbatim at the fence indent (no trimEnd): the
     // stored content is whitespace-faithful and must stay that way on disk.
-    for (const bodyLine of step.docString.lines) {
+    for (const bodyLine of body) {
       lines.push(bodyLine.length > 0 ? `${inner}${bodyLine}` : "");
     }
-    lines.push(`${inner}${step.docString.fence}`);
+    lines.push(`${inner}${fence}`);
   }
 };
 

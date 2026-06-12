@@ -8,6 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- A Gherkin step's argument is modelled as a sum type (data table OR text
+  block, TD-002): the serializer can no longer emit a step with both, which
+  Cucumber — and the V2 playwright-bdd runner — refuse to parse.
 - Command registration is covered by a smoke test (unique ids, full surface,
   callbacks invocable), and the vault adapter's existence checks now resolve
   through the Vault API first, keeping adapter access to the documented

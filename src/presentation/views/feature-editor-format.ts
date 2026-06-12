@@ -21,21 +21,6 @@ export interface ValidationItem {
   message: string;
 }
 
-const flagDoubleArguments = (
-  items: ValidationItem[],
-  steps: readonly GherkinStep[],
-  label: string,
-): void => {
-  for (const step of steps) {
-    if (step.dataTable && step.docString) {
-      items.push({
-        level: "error",
-        message: `A step in "${label}" has both a data table and a text block (Gherkin allows one argument).`,
-      });
-    }
-  }
-};
-
 /**
  * Live structural validation over the in-memory spec — the same rules as
  * `SpecificationService.validate` (name, ≥1 scenario, steps per scenario,
@@ -58,7 +43,6 @@ export const projectValidation = (specification: FeatureSpecification): Validati
   if (specification.scenarios.length === 0) {
     items.push({ level: "error", message: "Feature has no scenarios." });
   }
-  flagDoubleArguments(items, specification.background ?? [], "Background");
   for (const scenario of specification.scenarios) {
     const label = scenario.name.trim() === "" ? "(unnamed)" : scenario.name;
     if (scenario.name.trim() === "") {
@@ -76,7 +60,6 @@ export const projectValidation = (specification: FeatureSpecification): Validati
         });
       }
     }
-    flagDoubleArguments(items, scenario.steps, label);
   }
   return items;
 };

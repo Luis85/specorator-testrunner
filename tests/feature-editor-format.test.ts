@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseFeature, serialiseFeature } from "../src/application/content/gherkin";
-import type { ExamplesBlock } from "../src/domain/entities/specification";
+import { type ExamplesBlock, stepDocString } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import {
   addExamplesColumn,
@@ -53,36 +53,6 @@ describe("projectValidation", () => {
       "error:Feature has no name.",
       'error:Scenario "O" has no steps.',
       'warning:Scenario Outline "O" has no Examples rows.',
-    ]);
-  });
-
-  it("flags a step carrying both a data table and a text block", () => {
-    const items = projectValidation({
-      path: vp("Specifications/features/UC-001-both.feature"),
-      useCaseId: "UC-001",
-      featureName: "F",
-      tags: [],
-      scenarios: [
-        {
-          name: "S",
-          tags: [],
-          steps: [
-            {
-              keyword: "Given",
-              text: "x",
-              dataTable: [["a"]],
-              docString: { fence: '"""', lines: ["body"] },
-            },
-          ],
-        },
-      ],
-    });
-    expect(items).toEqual([
-      {
-        level: "error",
-        message:
-          'A step in "S" has both a data table and a text block (Gherkin allows one argument).',
-      },
     ]);
   });
 });
@@ -182,13 +152,20 @@ describe("sanitizers", () => {
     expect(feature).not.toBeNull();
     if (!feature) return;
     const fence = fenceFor(['"""', "```"]);
-    feature.scenarios[0].steps[0].docString = {
-      fence,
-      lines: sanitizeDocStringLines(['"""', "```", "tail"], fence),
+    feature.scenarios[0].steps[0].argument = {
+      kind: "docString",
+      docString: {
+        fence,
+        lines: sanitizeDocStringLines(['"""', "```", "tail"], fence),
+      },
     };
     const text = serialiseFeature(feature);
     const reparsed = parseFeature(text, feature.path);
-    expect(reparsed?.scenarios[0].steps[0].docString?.lines).toEqual(['"""', "\\```", "tail"]);
+    expect(reparsed && stepDocString(reparsed.scenarios[0].steps[0])?.lines).toEqual([
+      '"""',
+      "\\```",
+      "tail",
+    ]);
     expect(reparsed?.scenarios[0].steps).toHaveLength(1);
   });
 });

@@ -22,14 +22,29 @@ export interface ExamplesBlock {
   rows: string[][];
 }
 
+/**
+ * A step's single argument (TD-002): Gherkin allows at most ONE — a data
+ * table or a doc string. The sum type makes the table+docString combination
+ * unrepresentable; `serialiseFeature` can no longer emit Gherkin Cucumber
+ * refuses to parse.
+ */
+export type StepArgument =
+  | { kind: "table"; rows: string[][] }
+  | { kind: "docString"; docString: DocString };
+
 export interface GherkinStep {
   keyword: "Given" | "When" | "Then" | "And" | "But" | "*";
   text: string;
-  /** Optional `|`-table argument attached to the step. */
-  dataTable?: string[][];
-  /** Optional doc-string argument attached to the step. */
-  docString?: DocString;
+  /** The step's at-most-one argument (TD-002). */
+  argument?: StepArgument;
 }
+
+/** Convenience accessors so consumers don't re-spell the discriminant. */
+export const stepTable = (step: GherkinStep): string[][] | undefined =>
+  step.argument?.kind === "table" ? step.argument.rows : undefined;
+
+export const stepDocString = (step: GherkinStep): DocString | undefined =>
+  step.argument?.kind === "docString" ? step.argument.docString : undefined;
 
 export interface ScenarioSpecification {
   /** Absent means a plain `Scenario` (backward compatible with V1 literals). */

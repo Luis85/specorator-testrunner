@@ -7,6 +7,7 @@ import {
   serialiseFeature,
   useCaseIdFromPath,
 } from "../src/application/content/gherkin";
+import { stepDocString, stepTable } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const RICH = `@uc-001
@@ -221,7 +222,7 @@ describe("parseFeature (extended Gherkin)", () => {
 
   it("attaches a data table to the preceding step", () => {
     const when = feature?.scenarios[0].steps[1];
-    expect(when?.dataTable).toEqual([
+    expect(when && stepTable(when)).toEqual([
       ["name", "value"],
       ["a", "1"],
     ]);
@@ -229,7 +230,7 @@ describe("parseFeature (extended Gherkin)", () => {
 
   it("attaches a doc string (with media type, dedented) to the preceding step", () => {
     const given = feature?.scenarios[0].steps[0];
-    expect(given?.docString).toEqual({
+    expect(given && stepDocString(given)).toEqual({
       fence: '"""',
       mediaType: "json",
       lines: ["{", '  "a": 1', "}"],
@@ -303,7 +304,7 @@ describe("serialiseFeature / roundTripsLosslessly", () => {
     const feature = `Feature: F\n\n  Scenario: S\n    Given a payload:\n      """\n      line with trailing spaces   \n      """\n`;
     expect(roundTripsLosslessly(feature, path)).toBe(true);
     const parsed = parseFeature(feature, path);
-    expect(parsed?.scenarios[0].steps[0].docString?.lines).toEqual([
+    expect(parsed && stepDocString(parsed.scenarios[0].steps[0])?.lines).toEqual([
       "line with trailing spaces   ",
     ]);
   });
@@ -318,6 +319,16 @@ describe("serialiseFeature / roundTripsLosslessly", () => {
     expect(roundTripsLosslessly(escaped, path)).toBe(true);
   });
 
+  it("a file with both a table and a doc string on one step fails the round-trip guard (TD-002)", () => {
+    const text = `Feature: F\n\n  Scenario: S\n    Given x\n      | a |\n      """\n      body\n      """\n`;
+    const bothPath = vp("Specifications/features/UC-001-both-args.feature");
+    const spec = parseFeature(text, bothPath);
+    expect(spec).not.toBeNull();
+    if (!spec) return;
+    expect(stepDocString(spec.scenarios[0].steps[0])).toBeUndefined(); // first argument won
+    expect(roundTripsLosslessly(text, bothPath)).toBe(false); // raw mode, like Cucumber would reject it
+  });
+
   it("preserves blank paragraph breaks inside descriptions", () => {
     const feature = "Feature: F\n  para1\n\n  para2\n\n  Scenario: S\n    Given x\n";
     expect(roundTripsLosslessly(feature, path)).toBe(true);
@@ -330,7 +341,8 @@ describe("serialiseFeature / roundTripsLosslessly", () => {
   it("round-trips interior blank doc-string body lines", () => {
     const feature = `Feature: F\n\n  Scenario: S\n    Given a payload:\n      """\n      first\n\n      last\n      """\n`;
     expect(roundTripsLosslessly(feature, path)).toBe(true);
-    expect(parseFeature(feature, path)?.scenarios[0].steps[0].docString?.lines).toEqual([
+    const parsed = parseFeature(feature, path);
+    expect(parsed && stepDocString(parsed.scenarios[0].steps[0])?.lines).toEqual([
       "first",
       "",
       "last",
@@ -362,7 +374,7 @@ describe("table cell escapes (TD-001, official Gherkin: \\|, \\\\, \\n)", () => 
 
   it("parses the three official escapes into literal cell values", () => {
     const spec = parseFeature(featureWith(String.raw`| a\|b\\c\nd |`), path);
-    expect(spec?.scenarios[0].steps[0].dataTable).toEqual([["col"], ["a|b\\c\nd"]]);
+    expect(spec && stepTable(spec.scenarios[0].steps[0])).toEqual([["col"], ["a|b\\c\nd"]]);
   });
 
   it("re-escapes on serialization so escaped cells round-trip losslessly", () => {
@@ -372,7 +384,7 @@ describe("table cell escapes (TD-001, official Gherkin: \\|, \\\\, \\n)", () => 
 
   it("leaves an unknown backslash sequence verbatim (lenient parse)", () => {
     const spec = parseFeature(featureWith(String.raw`| a\b |`), path);
-    expect(spec?.scenarios[0].steps[0].dataTable).toEqual([["col"], [String.raw`a\b`]]);
+    expect(spec && stepTable(spec.scenarios[0].steps[0])).toEqual([["col"], [String.raw`a\b`]]);
   });
 });
 
