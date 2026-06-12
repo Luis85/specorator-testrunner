@@ -54,14 +54,18 @@ jobs:
     # Runs on: manual dispatch; adding the `e2e-smoke` label itself (not any
     # other label landing while it happens to be present); pushes/reopens on a
     # PR that already carries the label; or any PR event whose diff touches
-    # the runner-template surface (see the `changes` job).
+    # the runner-template surface (see the `changes` job). always() keeps the
+    # dispatch/label paths alive even if the `changes` job fails; the
+    # cancelled guard stops superseded runs from resurrecting via always().
     if: >-
-      ${{
+      always() &&
+      needs.changes.result != 'cancelled' &&
+      (
         github.event_name == 'workflow_dispatch' ||
         (github.event.action == 'labeled' && github.event.label.name == 'e2e-smoke') ||
         (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'e2e-smoke')) ||
         needs.changes.outputs.runner-templates == 'true'
-      }}
+      )
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
