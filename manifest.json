@@ -1,6 +1,6 @@
 {
   "id": "e2e-test-hub",
-  "name": "E2E Test Hub",
+  "name": "Specorator Testrunner",
   "version": "0.0.1",
   "minAppVersion": "1.13.0",
   "description": "Define, manage, execute, and document end-to-end tests directly inside your vault.",

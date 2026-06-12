@@ -1,4 +1,4 @@
-# Obsidian E2E Test Hub
+# Specorator Testrunner
 
 An Obsidian plugin that lets users **define, manage, execute, and document
 end-to-end tests** directly inside their vault — combining Use Cases, Gherkin
@@ -7,7 +7,7 @@ single Markdown-native, local-first workflow.
 
 > **Status:** In development; the V1 feature set is implemented end to end.
 > The product direction is captured in the
-> [PRD](./docs/Obsidian%20E2E%20Test%20Hub.md). Implemented:
+> [PRD](./docs/Specorator%20Testrunner.md). Implemented:
 > **EPIC-001/002 (Foundation & Initialization)** — the layered plugin skeleton,
 > settings service + UI, and the Initialization Wizard; **EPIC-003 (Test
 > Runner)** — generating, installing, validating, and repairing the
@@ -162,7 +162,7 @@ Vault
 ├── scripts/               # test-build.mjs, e2e-smoke.mjs (+ entry)
 ├── CONTEXT.md                     # Glossary (per grill-with-docs skill)
 ├── docs/
-│   ├── Obsidian E2E Test Hub.md   # Product Requirements (source of truth)
+│   ├── Specorator Testrunner.md   # Product Requirements (source of truth)
 │   ├── architecture/
 │   │   ├── Solution Design.md                     # Architecture of record
 │   │   ├── Building Block View.md                 # Arc42 §5 building blocks
@@ -170,14 +170,16 @@ Vault
 │   │   ├── Technical Interface Specification.md   # TypeScript contracts
 │   │   └── Event Catalog.md                       # V1 domain event catalog
 │   ├── adr/
-│   │   └── 0001-*.md … 0019-*.md       # Architectural decision records
+│   │   └── 0001-*.md … 0020-*.md       # Architectural decision records
 │   ├── use-cases/
-│   │   └── UC-001.md … UC-024.md       # One note per use case
+│   │   └── UC-001.md … UC-037.md       # One note per use case (UC-025+ proposed for V2)
 │   ├── issues/
-│   │   ├── EPIC-001.md … EPIC-012.md   # Epics (12)
-│   │   ├── FEAT-001.md … FEAT-028.md   # Features (28)
-│   │   └── US-001.md … US-050.md       # User stories (50)
+│   │   ├── EPIC-001.md … EPIC-020.md   # Epics (20; EPIC-013+ proposed for V2)
+│   │   ├── FEAT-001.md … FEAT-032.md   # Features (32; FEAT-029+ proposed for V2)
+│   │   └── US-001.md … US-089.md       # User stories (89; US-051+ proposed for V2)
+│   ├── proposals/                      # V2 research & proposal (epic/story/UC source)
 │   ├── reviews/                        # Consolidated review & improvement plans
+│   ├── tech-debt/                      # Tech-debt register (TD-NNN)
 │   └── superpowers/                    # Plans + specs from skill-driven sessions
 ├── .claude/skills/
 │   ├── grill-with-docs/                  # Stress-test plans against docs / glossary (mattpocock/skills)
@@ -205,7 +207,7 @@ Vault
 
 ## Documents
 
-- [Obsidian E2E Test Hub](./docs/Obsidian%20E2E%20Test%20Hub.md) — Product Requirements (source of truth for scope).
+- [Specorator Testrunner](./docs/Specorator%20Testrunner.md) — Product Requirements (source of truth for scope).
 - [CONTEXT.md](./CONTEXT.md) — Project glossary (used by the `grill-with-docs` skill).
 - [Solution Design](./docs/architecture/Solution%20Design.md) — architecture, domain model, V1 architectural decisions.
 - [Building Block View](./docs/architecture/Building%20Block%20View.md) — Arc42 §5 building blocks (views, services, adapters, runner internals).

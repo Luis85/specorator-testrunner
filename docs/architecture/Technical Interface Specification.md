@@ -1,4 +1,4 @@
-# Technical Interface Specification — Obsidian E2E Test Hub
+# Technical Interface Specification — Specorator Testrunner
 
 > Concrete TypeScript contracts for V1: shared types, domain entities, repositories, application services, infrastructure ports, frontmatter schemas, runner templates, CI templates, and validation policies. Implementation-ready.
 
@@ -6,7 +6,7 @@
 - **Status:** Draft
 - **Stage:** Solution Design / Implementation Preparation
 - **Type:** Technical Contract Document
-- **Companion documents:** [[Obsidian E2E Test Hub]], [[Solution Design]], [[Building Block View]], [[Runtime View]], [[Event Catalog]]
+- **Companion documents:** [[Specorator Testrunner]], [[Solution Design]], [[Building Block View]], [[Runtime View]], [[Event Catalog]]
 
 ---
 
@@ -1275,10 +1275,10 @@ export const fixtureUrl = (file: string): string =>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Obsidian E2E Test Hub — Demo</title>
+    <title>Specorator Testrunner — Demo</title>
   </head>
   <body>
-    <h1>Obsidian E2E Test Hub Demo</h1>
+    <h1>Specorator Testrunner Demo</h1>
     <button id="continue">Continue</button>
     <div id="result"></div>
     <script>

@@ -5,7 +5,7 @@ status: accepted
 title: Provide Out-of-the-box Demo Test
 date: 2026-05-30
 related:
-  - "[[Obsidian E2E Test Hub]]"
+  - "[[Specorator Testrunner]]"
   - "[[Solution Design]]"
   - "[[UC-001]]"
 ---

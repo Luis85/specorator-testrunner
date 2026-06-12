@@ -54,7 +54,7 @@ const buildIndexDoc = (settings: TestHubSettings): DocumentationFile => ({
   fileName: "Test Hub Documentation.md",
   content: `# Test Hub Documentation
 
-Welcome to the **E2E Test Hub** docs. This vault is a Markdown-native,
+Welcome to the **Specorator Testrunner** docs. This vault is a Markdown-native,
 local-first BDD workbench: define Use Cases, write Gherkin specifications,
 execute Playwright tests, review evidence, and ship a CI pipeline — all from
 Obsidian.
@@ -90,7 +90,7 @@ const buildGettingStartedDoc = (settings: TestHubSettings): DocumentationFile =>
     fileName: "Getting Started.md",
     content: `# Getting Started
 
-Welcome to the **E2E Test Hub**. This guide takes you from an empty vault to a
+Welcome to the **Specorator Testrunner**. This guide takes you from an empty vault to a
 passing test.
 
 ## What initialization created
@@ -208,7 +208,7 @@ an existing one. **Check CI Readiness** reports anything still missing.
 
 ## Settings
 
-Open **Settings → E2E Test Hub** to review folder locations, runner commands,
+Open **Settings → Specorator Testrunner** to review folder locations, runner commands,
 and environments. Use **Reset to defaults** to restore the shipped configuration.
 
 ## Logs and privacy (ADR-0019)

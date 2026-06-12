@@ -1,11 +1,11 @@
-# Solution Design — Obsidian E2E Test Hub
+# Solution Design — Specorator Testrunner
 
 > Architecture of record: bounded contexts, domain model, services, runner, CI, and V1 architectural decisions.
 
 - **Version:** 1.0
 - **Status:** Draft
 - **Architecture Stage:** Solution Design
-- **Companion documents:** [[Obsidian E2E Test Hub]], [[Building Block View]], [[Runtime View]], [[Technical Interface Specification]], [[Event Catalog]]
+- **Companion documents:** [[Specorator Testrunner]], [[Building Block View]], [[Runtime View]], [[Technical Interface Specification]], [[Event Catalog]]
 
 ---
 
@@ -13,7 +13,7 @@
 
 ### Purpose
 
-This document describes the architecture and technical design of the Obsidian E2E Test Hub. The [[Obsidian E2E Test Hub]] PRD defines *what* the product does and *why*; this Solution Design defines *how* it is structured and *how* the parts collaborate.
+This document describes the architecture and technical design of the Specorator Testrunner. The [[Specorator Testrunner]] PRD defines *what* the product does and *why*; this Solution Design defines *how* it is structured and *how* the parts collaborate.
 
 The solution enables users to:
 

@@ -5,7 +5,7 @@ status: accepted
 title: Event-observed Guided Tour for Onboarding
 date: 2026-06-11
 related:
-  - "[[Obsidian E2E Test Hub]]"
+  - "[[Specorator Testrunner]]"
   - "[[Solution Design]]"
   - "[[0009-provide-out-of-the-box-demo-test]]"
 ---

@@ -58,6 +58,7 @@ export default tseslint.config(
         "error",
         {
           brands: [
+            "Specorator Testrunner",
             "Test Hub",
             "Use Case",
             "Use Cases",
