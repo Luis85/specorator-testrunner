@@ -37,6 +37,7 @@ export class LiveRefresh {
     return this.scheduler.schedule();
   }
 
+  /** Terminal: the scheduler stays disposed — create a new instance to re-open. */
   close(): void {
     // Unsubscribe BEFORE disposing the scheduler so a handler firing
     // mid-teardown can't schedule() on a disposed scheduler (PRES-M1).

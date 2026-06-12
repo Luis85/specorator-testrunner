@@ -24,7 +24,7 @@ describe("LiveRefresh", () => {
     live.close();
   });
 
-  it("ignores events after close, and close is safe during a pending render", async () => {
+  it("ignores events after close (unsubscribed before dispose)", async () => {
     const bus = new InMemoryEventBus();
     let renders = 0;
     const live = new LiveRefresh(bus, () => {

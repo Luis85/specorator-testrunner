@@ -149,12 +149,15 @@ export class DashboardView extends ItemView {
     await this.deps.eventBus.publish(
       createEvent("dashboard.opened", { dashboardPath: DASHBOARD_VIEW_TYPE }),
     );
-    // First paint: PUSH a refresh once (emits dashboard.refreshed + kpi.updated
-    // per UC-018 steps 2–3). Subsequent event-driven re-renders read the
-    // non-emitting snapshot() so they never loop. The subscriptions below ignore
-    // this self-published refresh while it is already rendering (coalesced).
+    // Subscribe FIRST (open() registers synchronously and queues the initial
+    // render), then PUSH one refresh (emits dashboard.refreshed + kpi.updated
+    // per UC-018 steps 2–3) — its self-published events coalesce into the
+    // already-pending render instead of being missed in a subscribe gap.
+    // Subsequent event-driven re-renders read the non-emitting snapshot() so
+    // they never loop.
+    const initialRender = this.live.open(REFRESH_ON);
     await this.deps.traceabilityService.refreshDashboard().catch(() => undefined);
-    await this.live.open(REFRESH_ON);
+    await initialRender;
   }
 
   async onClose(): Promise<void> {
