@@ -39,7 +39,15 @@ describe("structuralIssues (TD-003 single source)", () => {
     expect(structuralIssues(spec).map((item) => item.message)).toContain("Feature has no name.");
   });
 
-  it("flags a scenarioless feature and stepless scenarios", () => {
+  it("flags a feature with no scenarios at all", () => {
+    const spec = parseFeature("Feature: F\n", vp("Specifications/features/UC-001-bare.feature"));
+    if (!spec) return;
+    expect(structuralIssues(spec).map((item) => item.message)).toEqual([
+      "Feature has no scenarios.",
+    ]);
+  });
+
+  it("flags stepless scenarios", () => {
     const spec = parseFeature(
       "Feature: F\n  Scenario: Empty\n",
       vp("Specifications/features/UC-001-empty.feature"),
