@@ -283,6 +283,8 @@ export class DefaultTestExecutionService implements TestExecutionService {
     return this.active?.completion ?? Promise.resolve();
   }
 
+  // Pre-existing complexity surfaced by this file entering the audit scope
+  // (TD-006 gate caveat); refactor candidate alongside Phase 1 debt work.
   // fallow-ignore-next-line complexity
   async execute(request: ExecuteTestRequest): Promise<Result<TestRun>> {
     // Maintenance (reset/repair) and runs are mutually exclusive (security L1).
@@ -592,6 +594,9 @@ export class DefaultTestExecutionService implements TestExecutionService {
    * under shell: false they are passed through as-is, so a path with `$`, `&`,
    * or spaces survives unchanged (the PR #7 decision to rework to argv arrays).
    */
+  // One branch over the cognitive threshold since the scoped-profile args
+  // (each path-scoped case prepends them); extract per-scope helpers when
+  // Phase 1 touches this area rather than splitting mid-release.
   // fallow-ignore-next-line complexity
   private async resolveCommand(
     request: ExecuteTestRequest,

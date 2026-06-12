@@ -81,7 +81,7 @@ const cucumberMjs = (featuresGlob: string): string => `const base = {
     "progress",
     "json:reports/cucumber-report.json",
   ],
-  // NOTE: the deprecated \\\`publishQuiet\\\` option was REMOVED in Cucumber 12
+  // NOTE: the deprecated \`publishQuiet\` option was REMOVED in Cucumber 12
   // (the publish banner it suppressed no longer exists). Cucumber 12 rejects
   // unknown options, so it must not be emitted here (P4-5).
   parallel: 0,
@@ -90,7 +90,7 @@ const cucumberMjs = (featuresGlob: string): string => `const base = {
 export default { ...base, paths: [${JSON.stringify(featuresGlob)}] };
 
 // Scoped runs (the Test Hub passing explicit feature paths as CLI arguments)
-// select this profile so the config \\\`paths\\\` glob does not merge with the CLI
+// select this profile so the config \`paths\` glob does not merge with the CLI
 // paths — that merge is deprecated and prints a warning into the Test Console.
 export const scoped = { ...base };
 `;
