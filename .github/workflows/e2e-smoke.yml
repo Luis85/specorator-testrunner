@@ -14,21 +14,54 @@ on:
 permissions:
   contents: read
 
-# Heavy (Chromium download per OS) — a newer run on the same ref supersedes any
-# in-flight one.
+# Heavy (npm install per OS; browser cache warm-up on a miss) — a newer run on
+# the same ref supersedes any in-flight one.
 concurrency:
   group: e2e-smoke-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Detects PR changes to the runner-template surface so the smoke gate runs
+  # automatically on exactly the changes it exists to protect.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      runner-templates: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v6
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+      - name: Diff the runner-template surface against the PR base
+        id: diff
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ -z "$BASE_REF" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "origin/$BASE_REF...HEAD" | grep -qE '^(src/infrastructure/runner/templates/|src/application/content/demo-content\.ts|scripts/e2e-smoke|\.github/workflows/e2e-smoke\.yml)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   smoke:
+    needs: changes
     # Runs on: manual dispatch; adding the `e2e-smoke` label itself (not any
-    # other label landing while it happens to be present); or pushes/reopens on
-    # a PR that already carries the label.
+    # other label landing while it happens to be present); pushes/reopens on a
+    # PR that already carries the label; or any PR event whose diff touches
+    # the runner-template surface (see the `changes` job).
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.action == 'labeled' && github.event.label.name == 'e2e-smoke') ||
-      (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'e2e-smoke'))
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'e2e-smoke') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'e2e-smoke')) ||
+        needs.changes.outputs.runner-templates == 'true'
+      }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:

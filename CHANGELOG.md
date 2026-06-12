@@ -44,6 +44,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The E2E smoke workflow is now a dependable pre-release gate: Playwright
+  browsers are cached per OS, and the suite triggers automatically on PRs
+  that change the runner-template surface (in addition to manual dispatch
+  and the `e2e-smoke` label).
 - Requires Obsidian 1.13+ (`minAppVersion` 1.8.0 → 1.13.0); destructive
   buttons use the 1.13 `setDestructive()` API.
 - The settings tab is built on the Obsidian 1.13 declarative
