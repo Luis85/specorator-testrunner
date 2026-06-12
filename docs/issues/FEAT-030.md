@@ -4,7 +4,10 @@ type: feature
 title: Exploratory Session Notes
 status: proposed
 priority: P3
+increment: V2.x
 epic: "[[EPIC-017]]"
+stories:
+  - "[[US-093]]"
 ---
 
 # FEAT-030 Exploratory Session Notes
@@ -19,4 +22,6 @@ practitioners already use Obsidian by hand.
 
 ## Stories
 
-To be defined on acceptance (V2.x).
+Drafted ahead of acceptance; the feature itself stays V2.x.
+
+- [[US-093]] — Exploratory session notes
