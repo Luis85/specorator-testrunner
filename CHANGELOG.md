@@ -6,6 +6,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `runInitialization` is decomposed into per-phase step methods (behaviour
+  unchanged), retiring the known complexity hot spot that tripped the
+  blocking quality gate on any edit to `initialization-service.ts`.
+
 ## [1.0.0] — 2026-06-12
 
 ### Added
