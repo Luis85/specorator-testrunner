@@ -17,6 +17,7 @@ import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
+import { SerialQueue } from "../../shared/async/serial-queue";
 
 /** No-op logger so tests can construct the service without wiring one. */
 const NOOP_LOGGER: Logger = {
@@ -100,16 +101,7 @@ export class DefaultSettingsService implements SettingsService {
    * "previous", interleave their load→save→diff sections, and the last
    * whole-object write would win — silently dropping the first change (F2).
    */
-  private persistChain: Promise<unknown> = Promise.resolve();
-
-  /** Queues `task` behind every previously queued persistence task. */
-  private serialize<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.persistChain.then(task);
-    // The chain itself must survive a failed task; the failure still reaches
-    // the caller through `run`.
-    this.persistChain = run.catch(() => undefined);
-    return run;
-  }
+  private readonly persistQueue = new SerialQueue();
 
   async load(): Promise<TestHubSettings> {
     const settings = this.sanitizeRunnerEnvInputs(
@@ -391,7 +383,7 @@ export class DefaultSettingsService implements SettingsService {
   }
 
   save(settings: TestHubSettings): Promise<Result<void>> {
-    return this.serialize(async () => {
+    return this.persistQueue.run(async () => {
       const validation = await this.validate(settings);
       if (!validation.valid) {
         return err(
@@ -412,7 +404,7 @@ export class DefaultSettingsService implements SettingsService {
   }
 
   reset(correlationId?: string): Promise<Result<TestHubSettings>> {
-    return this.serialize(async () => {
+    return this.persistQueue.run(async () => {
       const saved = await this.store.save(DEFAULT_SETTINGS);
       if (!saved.ok) return saved;
       await this.eventBus.publish(

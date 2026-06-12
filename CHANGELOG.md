@@ -11,6 +11,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `runInitialization` is decomposed into per-phase step methods (behaviour
   unchanged), retiring the known complexity hot spot that tripped the
   blocking quality gate on any edit to `initialization-service.ts`.
+- The hand-rolled persistence chains in `SettingsService` and
+  `PostRunCoordinator` now share one `SerialQueue` utility
+  (`src/shared/async/serial-queue.ts`), extracted now that per-note Use Case
+  write serialization is its third user.
 
 ## [1.0.0] — 2026-06-12
 

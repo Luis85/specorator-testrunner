@@ -8,6 +8,7 @@ import { appError } from "../../shared/errors/errors";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
+import { SerialQueue } from "../../shared/async/serial-queue";
 
 /** Terminal run events that drive the post-run import→evidence flow (EN-2). */
 const TERMINAL_EVENTS: DomainEventType[] = [
@@ -63,7 +64,7 @@ export interface PostRunCoordinatorDeps {
  *
  * Application-layer only: it orchestrates injected services/ports and has no
  * Obsidian or infrastructure imports. The run-status eligibility rule and the
- * `lastRun`/`evidenceChain` state that used to live in `main.ts` move here.
+ * `lastRun`/`postRunQueue` state that used to live in `main.ts` move here.
  *
  * Non-blocking: the terminal-event handler ENQUEUES the import work and returns
  * immediately rather than awaiting it. `execute()` awaits the terminal publish
@@ -73,7 +74,7 @@ export interface PostRunCoordinatorDeps {
  *
  * Serialization: post-run import then writes Use Case frontmatter, so back-to-
  * back runs could interleave and clobber each other's evidence/last_run fields.
- * Every task is queued through a single {@link evidenceChain} promise so they
+ * Every task is queued through a single {@link postRunQueue} so they
  * run one at a time; {@link whenSettled} lets the caller await the tail on
  * unload. Each task first waits for its run to settle (snapshot recorded).
  */
@@ -81,8 +82,8 @@ export class PostRunCoordinator {
   private subscriptions: Unsubscribe[] = [];
   // Post-run import+evidence reads then writes Use Case frontmatter, so back-to-
   // back runs could interleave and clobber each other's evidence/last_run fields
-  // — serialize them through a single chain.
-  private evidenceChain: Promise<void> = Promise.resolve();
+  // — serialize them through a single queue (shared SerialQueue, review §4).
+  private readonly postRunQueue = new SerialQueue();
   // Wave G §1: the most recently generated evidence note (run id + path). The
   // bus does not replay, so a Test Console opened AFTER `evidence.generated`
   // fired needs a synchronous probe to know the last run's evidence already
@@ -130,10 +131,10 @@ export class PostRunCoordinator {
 
   /**
    * Resolves when the in-flight import/evidence chain has settled (replaces the
-   * `evidenceChain` await `main.ts` did on unload). Never rejects.
+   * hand-rolled chain `main.ts` awaited on unload). Never rejects.
    */
   whenSettled(): Promise<void> {
-    return this.evidenceChain.catch(() => undefined);
+    return this.postRunQueue.whenSettled();
   }
 
   /**
@@ -159,7 +160,7 @@ export class PostRunCoordinator {
     if (!IMPORTABLE_STATUSES.has(run.status)) {
       return ok({ kind: "ineligible", status: run.status });
     }
-    return this.enqueue(() => this.runImportAndGenerate(run));
+    return this.postRunQueue.run(() => this.runImportAndGenerate(run));
   }
 
   /**
@@ -180,28 +181,15 @@ export class PostRunCoordinator {
     // A spawn-error `errored` run produced no report; the import would only log a
     // safe miss, so skip it. passed/failed/cancelled may all have a report.
     if (!IMPORTABLE_STATUSES.has(run.status)) return;
-    // Fire-and-forget: the chain tracks completion (whenSettled) and the task is
+    // Fire-and-forget: the queue tracks completion (whenSettled) and the task is
     // fault-isolated (runImportAndGenerate never rejects today). The catch is a
     // backstop so a future edit that lets a rejection slip through becomes a
     // logged error instead of an unhandled promise rejection.
-    this.enqueue(() => this.runImportAndGenerate(run)).catch((error: unknown) =>
-      this.logger.error("Post-run task rejected unexpectedly", error as Error),
-    );
-  }
-
-  /**
-   * Queues a task behind any in-flight evidence task so two runs' Use Case
-   * frontmatter updates can't interleave (read-modify-write race). Callers await
-   * the chained task, so ordering and completion are preserved.
-   */
-  private enqueue<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.evidenceChain.catch(() => undefined).then(task);
-    // Track only completion (not the value) in the chain awaited on unload.
-    this.evidenceChain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+    this.postRunQueue
+      .run(() => this.runImportAndGenerate(run))
+      .catch((error: unknown) =>
+        this.logger.error("Post-run task rejected unexpectedly", error as Error),
+      );
   }
 
   /**
