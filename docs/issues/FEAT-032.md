@@ -4,7 +4,10 @@ type: feature
 title: Headless Traceability CLI
 status: proposed
 priority: P3
+increment: V2.x
 epic: "[[EPIC-019]]"
+stories:
+  - "[[US-096]]"
 ---
 
 # FEAT-032 Headless Traceability CLI
@@ -18,4 +21,6 @@ outside Obsidian.
 
 ## Stories
 
-To be defined on acceptance (V2.x).
+Drafted ahead of acceptance; the feature itself stays V2.x.
+
+- [[US-096]] — Headless traceability lint CLI

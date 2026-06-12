@@ -4,7 +4,12 @@ type: feature
 title: Optional Check Libraries
 status: proposed
 priority: P3
+increment: V2.x
 epic: "[[EPIC-013]]"
+stories:
+  - "[[US-090]]"
+  - "[[US-091]]"
+  - "[[US-092]]"
 ---
 
 # FEAT-029 Optional Check Libraries
@@ -25,4 +30,9 @@ step/template library:
 
 ## Stories
 
-To be defined on acceptance (V2.x).
+Drafted ahead of acceptance; the feature itself stays V2.x, picked up
+opportunistically once [[EPIC-013]] has shipped.
+
+- [[US-090]] — Visual regression steps
+- [[US-091]] — Accessibility check steps
+- [[US-092]] — API-setup steps
