@@ -102,7 +102,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Scoped runs (single Feature / Use Case) select a `scoped` cucumber profile
   instead of merging CLI paths with the config glob, removing cucumber's
   deprecation warning from the Test Console output; the e2e-smoke workflow now
-  exercises the scoped invocation shape.
+  exercises the scoped invocation shape. Runners generated before this version
+  don't define the profile yet — the Test Hub detects that and omits it (the
+  old warning remains) until Repair installation regenerates the config.
 - The settings tab no longer crashes (`display is not a function`) on Obsidian
   apps older than 1.13 (reachable via BRAT, which does not enforce
   `minAppVersion`): it now shows a "requires Obsidian 1.13+" notice instead.

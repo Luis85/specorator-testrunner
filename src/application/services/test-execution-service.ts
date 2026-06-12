@@ -589,6 +589,24 @@ export class DefaultTestExecutionService implements TestExecutionService {
   }
 
   /**
+   * `--profile scoped` only when the runner's managed cucumber.mjs actually
+   * defines the profile. Runners generated before the scoped profile existed
+   * (template only re-syncs on init/repair/reset) would otherwise hard-fail
+   * on an unknown profile — strictly worse than the deprecation warning the
+   * profile avoids. Marker-based: cucumber.mjs is a managed file, so the
+   * literal `export const scoped` is stable. (Proper template versioning is
+   * the pre-V2 plan's Phase 2.2.)
+   */
+  private async scopedProfileArgs(settings: TestHubSettings): Promise<string[]> {
+    const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
+    if (!cwd.ok) return [];
+    const config = await this.absoluteFs.readAbsolute(`${cwd.value}/cucumber.mjs`);
+    return config.ok && config.value.includes("export const scoped")
+      ? [...SCOPED_PROFILE_ARGS]
+      : [];
+  }
+
+  /**
    * Resolves the runner argv for a scope (TIS §13.2). Returns a literal argv —
    * tags and feature paths are appended verbatim (AD-4, no quoting/escaping):
    * under shell: false they are passed through as-is, so a path with `$`, `&`,
@@ -614,6 +632,9 @@ export class DefaultTestExecutionService implements TestExecutionService {
         ),
       );
     }
+    // Resolved once per call: only path-scoped branches use it, but computing
+    // it here avoids re-reading the file once per branch in the switch below.
+    const profileArgs = await this.scopedProfileArgs(settings);
     switch (request.scope) {
       case "demo": {
         const smoke = toArgv(settings.runner.smokeRunCommand, ["npm", "run", "test:smoke"]);
@@ -647,7 +668,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
             // warning; same treatment as `feature` and `use-case` scopes).
             return ok(
               appendScopedArgs(base, [
-                ...SCOPED_PROFILE_ARGS,
+                ...profileArgs,
                 ...activeFiles.map((path) => this.featureArg(settings, path)),
               ]),
             );
@@ -657,7 +678,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
           // feature instead of falling back to the all-features glob.
           return ok(
             appendScopedArgs(base, [
-              ...SCOPED_PROFILE_ARGS,
+              ...profileArgs,
               `${this.featurePrefix(settings)}/__no_active_features__.feature`,
             ]),
           );
@@ -676,10 +697,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
         // Select `scoped` profile so the config `paths` glob does not merge
         // with this CLI path and produce a deprecation warning.
         return ok(
-          appendScopedArgs(base, [
-            ...SCOPED_PROFILE_ARGS,
-            this.featureArg(settings, request.target),
-          ]),
+          appendScopedArgs(base, [...profileArgs, this.featureArg(settings, request.target)]),
         );
       case "use-case": {
         // UC-011: target the Use Case's declared featureFiles in order, each as
@@ -693,14 +711,14 @@ export class DefaultTestExecutionService implements TestExecutionService {
         if (featureFiles.length > 0) {
           return ok(
             appendScopedArgs(base, [
-              ...SCOPED_PROFILE_ARGS,
+              ...profileArgs,
               ...featureFiles.map((path) => this.featureArg(settings, path)),
             ]),
           );
         }
         return ok(
           appendScopedArgs(base, [
-            ...SCOPED_PROFILE_ARGS,
+            ...profileArgs,
             `${this.featurePrefix(settings)}/${request.target}-*.feature`,
           ]),
         );
