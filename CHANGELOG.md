@@ -26,6 +26,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
   the edit modal, feature linking) are now serialized per note path, so
   overlapping read-modify-write updates can no longer drop each other's
   frontmatter changes.
+- Streamed runner output events are now chained per run and drained before
+  the terminal run event, so a late output line can no longer arrive after
+  the completed/failed/cancelled banner.
 
 ## [1.0.0] — 2026-06-12
 

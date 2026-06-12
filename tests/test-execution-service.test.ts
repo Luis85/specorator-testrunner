@@ -792,4 +792,32 @@ describe("DefaultTestExecutionService", () => {
     expect(service.lastRun()?.status).toBe("errored");
     expect(service.activeRunId()).toBeNull();
   });
+
+  it("publishes the terminal event only after every streamed output event has been delivered", async () => {
+    const { service, childProcess, bus } = build();
+    // Emit multiple output lines so there are several output events to drain.
+    childProcess.streamLines.push(
+      { stream: "stdout", line: "line 1", timestamp: "t" },
+      { stream: "stdout", line: "line 2", timestamp: "t" },
+      { stream: "stdout", line: "line 3", timestamp: "t" },
+    );
+
+    const sequence: string[] = [];
+    bus.subscribe("testrun.output.received", async () => {
+      // Yield two macrotask ticks so the handler is genuinely async and slow,
+      // giving fire-and-forget publishes a chance to race the terminal event.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      sequence.push("output");
+    });
+    bus.subscribe("testrun.completed", () => {
+      sequence.push("terminal");
+    });
+
+    await service.execute({ scope: "demo", target: "demo" });
+
+    expect(sequence.length).toBeGreaterThan(1);
+    expect(sequence.at(-1)).toBe("terminal");
+    expect(sequence.slice(0, -1).every((entry) => entry === "output")).toBe(true);
+  });
 });
