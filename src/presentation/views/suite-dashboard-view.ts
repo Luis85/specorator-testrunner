@@ -3,10 +3,10 @@ import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SuiteService } from "../../application/services/suite-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
-import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
-import { RenderScheduler } from "./render-scheduler";
+import { LiveRefresh } from "./live-refresh";
 import { projectSuiteRows, scenarioCountCell } from "./suite-rows";
 
 export const SUITE_VIEW_TYPE = "e2e-test-hub-suites";
@@ -44,16 +44,16 @@ export interface SuiteDashboardDeps {
  * here via `findAll`.
  */
 export class SuiteDashboardView extends ItemView {
-  private readonly subscriptions: Unsubscribe[] = [];
-  // Renders await findAll(); coalesce concurrent event-driven renders so a
-  // slow render with stale data can't empty + rebuild the list last (PRES-M2).
-  private readonly scheduler = new RenderScheduler(() => this.render());
+  private readonly live: LiveRefresh;
 
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: SuiteDashboardDeps,
   ) {
     super(leaf);
+    // Renders await findAll(); coalesce concurrent event-driven renders so a
+    // slow render with stale data can't empty + rebuild the list last (PRES-M2).
+    this.live = new LiveRefresh(deps.eventBus, () => this.render());
   }
 
   getViewType(): string {
@@ -69,18 +69,11 @@ export class SuiteDashboardView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
-    for (const type of REFRESH_ON) {
-      this.subscriptions.push(this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()));
-    }
-    await this.scheduler.schedule();
+    await this.live.open(REFRESH_ON);
   }
 
   async onClose(): Promise<void> {
-    // Unsubscribe BEFORE disposing the scheduler so a handler firing mid-teardown
-    // can't schedule() on an already-disposed scheduler (PRES-M1 ordering).
-    for (const unsubscribe of this.subscriptions) unsubscribe();
-    this.subscriptions.length = 0;
-    this.scheduler.dispose();
+    this.live.close();
   }
 
   private async render(): Promise<void> {
@@ -100,7 +93,7 @@ export class SuiteDashboardView extends ItemView {
         container,
         `Could not load Test Suites: ${result.error.message}`,
         "Retry loading the Test Suites",
-        () => void this.scheduler.schedule(),
+        () => void this.live.schedule(),
       );
       return;
     }

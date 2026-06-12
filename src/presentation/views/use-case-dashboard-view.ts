@@ -3,10 +3,10 @@ import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { SpecificationService } from "../../application/services/specification-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
-import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
+import { LiveRefresh } from "./live-refresh";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
-import { RenderScheduler } from "./render-scheduler";
 import { featureCountCell, projectUseCaseRows } from "./use-case-rows";
 
 export const USE_CASE_VIEW_TYPE = "e2e-test-hub-use-cases";
@@ -44,16 +44,16 @@ export interface UseCaseDashboardDeps {
  * richer Markdown traceability dashboard arrives with EPIC-009.
  */
 export class UseCaseDashboardView extends ItemView {
-  private readonly subscriptions: Unsubscribe[] = [];
-  // Renders await findAll(); coalesce concurrent event-driven renders so a
-  // slow render with stale data can't empty + rebuild the list last (PRES-M2).
-  private readonly scheduler = new RenderScheduler(() => this.render());
+  private readonly live: LiveRefresh;
 
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: UseCaseDashboardDeps,
   ) {
     super(leaf);
+    // Renders await findAll(); coalesce concurrent event-driven renders so a
+    // slow render with stale data can't empty + rebuild the list last (PRES-M2).
+    this.live = new LiveRefresh(deps.eventBus, () => this.render());
   }
 
   getViewType(): string {
@@ -69,18 +69,11 @@ export class UseCaseDashboardView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
-    for (const type of REFRESH_ON) {
-      this.subscriptions.push(this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()));
-    }
-    await this.scheduler.schedule();
+    await this.live.open(REFRESH_ON);
   }
 
   async onClose(): Promise<void> {
-    // Unsubscribe BEFORE disposing the scheduler so a handler firing mid-teardown
-    // can't schedule() on an already-disposed scheduler (PRES-M1 ordering).
-    for (const unsubscribe of this.subscriptions) unsubscribe();
-    this.subscriptions.length = 0;
-    this.scheduler.dispose();
+    this.live.close();
   }
 
   private async render(): Promise<void> {
@@ -103,7 +96,7 @@ export class UseCaseDashboardView extends ItemView {
         container,
         `Could not load Use Cases: ${result.error.message}`,
         "Retry loading the Use Cases",
-        () => void this.scheduler.schedule(),
+        () => void this.live.schedule(),
       );
       return;
     }

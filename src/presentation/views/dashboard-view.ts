@@ -3,7 +3,7 @@ import type { TraceabilityService } from "../../application/services/traceabilit
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { createEvent } from "../../shared/event-bus/create-event";
-import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import type { EventBus } from "../../shared/event-bus/event-bus";
 import {
   NO_EVIDENCE_TOOLTIP,
   ONBOARDING_STEPS,
@@ -17,7 +17,7 @@ import {
   type QuickActionId,
 } from "./dashboard-rows";
 import { activateOnEnterOrSpace } from "./keyboard-activation";
-import { RenderScheduler } from "./render-scheduler";
+import { LiveRefresh } from "./live-refresh";
 import { renderLoadError } from "./modal-helpers";
 
 export const DASHBOARD_VIEW_TYPE = "e2e-test-hub-dashboard";
@@ -46,6 +46,12 @@ const REFRESH_ON: DomainEventType[] = [
   // NON-emitting snapshot() (see render()), so reacting here cannot loop.
   "dashboard.refreshed",
   "dashboard.kpi.updated",
+  // An active-environment switch persists through settings, which emits
+  // `settings.updated`; repaint the badge (+ anything env-derived) on it.
+  "settings.updated",
+  // The Guided Tour CTA disappears once the tour completes; repaint on it so
+  // an already-open dashboard hides the banner without a manual refresh.
+  "tour.completed",
 ];
 
 /** The documentation entry points reachable from the dashboard (AC-016). */
@@ -112,18 +118,18 @@ export interface DashboardViewDeps {
  * model via the pure {@link projectDashboard}.
  */
 export class DashboardView extends ItemView {
-  private readonly subscriptions: Unsubscribe[] = [];
-  // Renders are async (they await refreshDashboard). Firing them concurrently
-  // lets a slower render with STALE data empty + rebuild the container last,
-  // clobbering fresher output. The scheduler chains them so they run one at a
-  // time, and coalesces a burst of events into a single trailing render.
-  private readonly scheduler = new RenderScheduler(() => this.render());
+  private readonly live: LiveRefresh;
 
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: DashboardViewDeps,
   ) {
     super(leaf);
+    // Renders are async (they await refreshDashboard). Firing them concurrently
+    // lets a slower render with STALE data empty + rebuild the container last,
+    // clobbering fresher output. The scheduler chains them so they run one at a
+    // time, and coalesces a burst of events into a single trailing render.
+    this.live = new LiveRefresh(deps.eventBus, () => this.render());
   }
 
   getViewType(): string {
@@ -143,36 +149,16 @@ export class DashboardView extends ItemView {
     await this.deps.eventBus.publish(
       createEvent("dashboard.opened", { dashboardPath: DASHBOARD_VIEW_TYPE }),
     );
-    for (const type of REFRESH_ON) {
-      this.subscriptions.push(this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()));
-    }
-    // An active-environment switch persists through settings, which emits
-    // `settings.updated`; repaint the badge (+ anything env-derived) on it.
-    this.subscriptions.push(
-      this.deps.eventBus.subscribe("settings.updated", () => this.scheduler.schedule()),
-    );
-    // The Guided Tour CTA disappears once the tour completes; repaint on it so
-    // an already-open dashboard hides the banner without a manual refresh.
-    this.subscriptions.push(
-      this.deps.eventBus.subscribe("tour.completed", () => this.scheduler.schedule()),
-    );
     // First paint: PUSH a refresh once (emits dashboard.refreshed + kpi.updated
     // per UC-018 steps 2–3). Subsequent event-driven re-renders read the
-    // non-emitting snapshot() so they never loop. The subscriptions above ignore
+    // non-emitting snapshot() so they never loop. The subscriptions below ignore
     // this self-published refresh while it is already rendering (coalesced).
     await this.deps.traceabilityService.refreshDashboard().catch(() => undefined);
-    // Route the initial render through the same chain so an event arriving while
-    // its async refresh is in flight can't start a concurrent render that
-    // finishes first and is then clobbered by this stale initial render.
-    await this.scheduler.schedule();
+    await this.live.open(REFRESH_ON);
   }
 
   async onClose(): Promise<void> {
-    // Unsubscribe BEFORE disposing the scheduler so a handler firing mid-teardown
-    // can't schedule() on an already-disposed scheduler (PRES-M1 ordering).
-    for (const unsubscribe of this.subscriptions) unsubscribe();
-    this.subscriptions.length = 0;
-    this.scheduler.dispose();
+    this.live.close();
   }
 
   private async render(): Promise<void> {
@@ -203,7 +189,7 @@ export class DashboardView extends ItemView {
         container,
         `Could not load dashboard: ${result.error.message}`,
         "Retry loading the dashboard",
-        () => void this.scheduler.schedule(),
+        () => void this.live.schedule(),
       );
       return;
     }

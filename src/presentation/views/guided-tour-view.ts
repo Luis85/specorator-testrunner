@@ -1,9 +1,9 @@
 import { ItemView, Notice, type WorkspaceLeaf } from "obsidian";
 import type { GuidedTourService } from "../../application/services/guided-tour-service";
 import type { TourActionId } from "../../domain/onboarding/tour-steps";
-import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import type { EventBus } from "../../shared/event-bus/event-bus";
 import { projectTour, TOUR_DONE_MESSAGE, type TourStepRow } from "./guided-tour-rows";
-import { RenderScheduler } from "./render-scheduler";
+import { LiveRefresh } from "./live-refresh";
 
 export const GUIDED_TOUR_VIEW_TYPE = "e2e-test-hub-guided-tour";
 
@@ -29,16 +29,14 @@ export interface GuidedTourViewDeps {
  * auto-advances as the GuidedTourService observes the user's real actions.
  */
 export class GuidedTourView extends ItemView {
-  private readonly subscriptions: Unsubscribe[] = [];
-  private readonly scheduler = new RenderScheduler(async () => {
-    this.render();
-  });
+  private readonly live: LiveRefresh;
 
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: GuidedTourViewDeps,
   ) {
     super(leaf);
+    this.live = new LiveRefresh(deps.eventBus, () => this.render());
   }
 
   getViewType(): string {
@@ -56,24 +54,17 @@ export class GuidedTourView extends ItemView {
   async onOpen(): Promise<void> {
     // tour.* drives progress repaints; evidence.generated flips the manual
     // step's in-memory "armed" hint, which publishes no tour event.
-    for (const type of [
+    await this.live.open([
       "tour.started",
       "tour.step.completed",
       "tour.step.skipped",
       "tour.completed",
       "evidence.generated",
-    ] as const) {
-      this.subscriptions.push(this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()));
-    }
-    await this.scheduler.schedule();
+    ]);
   }
 
   async onClose(): Promise<void> {
-    // Unsubscribe BEFORE disposing the scheduler so a handler firing
-    // mid-teardown can't schedule() on a disposed scheduler (PRES-M1 ordering).
-    for (const unsubscribe of this.subscriptions) unsubscribe();
-    this.subscriptions.length = 0;
-    this.scheduler.dispose();
+    this.live.close();
   }
 
   private render(): void {

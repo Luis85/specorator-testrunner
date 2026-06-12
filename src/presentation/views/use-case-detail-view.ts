@@ -7,12 +7,12 @@ import type { UseCaseService } from "../../application/services/use-case-service
 import type { UseCase } from "../../domain/entities/use-case";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
-import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import type { EventBus } from "../../shared/event-bus/event-bus";
 import { type ChecklistRow } from "../settings/settings-rows";
 import type { RunLauncher } from "../run/run-launcher";
 import { EditUseCaseModal } from "./edit-use-case-modal";
+import { LiveRefresh } from "./live-refresh";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
-import { RenderScheduler } from "./render-scheduler";
 import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
 import {
   featureHealthLine,
@@ -93,15 +93,16 @@ export interface UseCaseDetailDeps {
  * command palette.
  */
 export class UseCaseDetailView extends ItemView {
-  private readonly subscriptions: Unsubscribe[] = [];
-  private readonly scheduler = new RenderScheduler(() => this.render());
+  private readonly live: LiveRefresh;
   private useCaseId: UseCaseId | null = null;
+  private isOpen = false;
 
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: UseCaseDetailDeps,
   ) {
     super(leaf);
+    this.live = new LiveRefresh(deps.eventBus, () => this.render());
   }
 
   getViewType(): string {
@@ -130,24 +131,19 @@ export class UseCaseDetailView extends ItemView {
       // event in that gap already invalidated. Let onOpen() do the first render
       // (after subscribing); only re-render here when the view is already open
       // (the leaf-reuse path in main.ts openUseCaseDetail).
-      if (this.subscriptions.length > 0) await this.scheduler.schedule();
+      if (this.isOpen) await this.live.schedule();
     }
     await super.setState(state, result);
   }
 
   async onOpen(): Promise<void> {
-    for (const type of REFRESH_ON) {
-      this.subscriptions.push(this.deps.eventBus.subscribe(type, () => this.scheduler.schedule()));
-    }
-    await this.scheduler.schedule();
+    this.isOpen = true;
+    await this.live.open(REFRESH_ON);
   }
 
   async onClose(): Promise<void> {
-    // Unsubscribe BEFORE disposing the scheduler so a handler firing mid-teardown
-    // can't schedule() on an already-disposed scheduler (PRES-M1 ordering).
-    for (const unsubscribe of this.subscriptions) unsubscribe();
-    this.subscriptions.length = 0;
-    this.scheduler.dispose();
+    this.isOpen = false;
+    this.live.close();
   }
 
   private async render(): Promise<void> {
@@ -167,7 +163,7 @@ export class UseCaseDetailView extends ItemView {
         container,
         `Could not load Use Case: ${found.error.message}`,
         "Retry loading the Use Case",
-        () => void this.scheduler.schedule(),
+        () => void this.live.schedule(),
       );
       return;
     }
@@ -257,7 +253,7 @@ export class UseCaseDetailView extends ItemView {
         attr: { "aria-label": `Generate a Feature Specification for ${header.id}` },
       })
       .addEventListener("click", () =>
-        this.deps.openGenerateFeature(useCase, () => void this.scheduler.schedule()),
+        this.deps.openGenerateFeature(useCase, () => void this.live.schedule()),
       );
   }
 
@@ -272,7 +268,7 @@ export class UseCaseDetailView extends ItemView {
         section,
         `Could not load Feature Specifications: ${listed.error.message}`,
         "Retry loading the Feature Specifications",
-        () => void this.scheduler.schedule(),
+        () => void this.live.schedule(),
       );
       return;
     }

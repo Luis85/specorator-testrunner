@@ -1,7 +1,7 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type { RunHistoryService } from "../../application/services/run-history-service";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
-import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import type { EventBus } from "../../shared/event-bus/event-bus";
 import {
   EVIDENCE_PAGE_SIZE,
   EVIDENCE_STATUS_FILTERS,
@@ -11,7 +11,7 @@ import {
   type EvidenceStatusFilter,
 } from "./evidence-explorer-rows";
 import { activateOnEnterOrSpace } from "./keyboard-activation";
-import { RenderScheduler } from "./render-scheduler";
+import { LiveRefresh } from "./live-refresh";
 import { renderLoadError } from "./modal-helpers";
 
 export const EVIDENCE_EXPLORER_VIEW_TYPE = "e2e-test-hub-evidence";
@@ -34,8 +34,7 @@ export interface EvidenceExplorerViewDeps {
  * status-filterable, paged via "Load older"; every row opens its evidence note.
  */
 export class EvidenceExplorerView extends ItemView {
-  private readonly subscriptions: Unsubscribe[] = [];
-  private readonly scheduler = new RenderScheduler(() => this.render());
+  private readonly live: LiveRefresh;
   // Each render re-reads history fresh (same pattern as the other explorers);
   // visibleLimit only remembers how far "Load older" has extended the page.
   private visibleLimit = EVIDENCE_PAGE_SIZE;
@@ -46,6 +45,7 @@ export class EvidenceExplorerView extends ItemView {
     private readonly deps: EvidenceExplorerViewDeps,
   ) {
     super(leaf);
+    this.live = new LiveRefresh(deps.eventBus, () => this.render());
   }
 
   getViewType(): string {
@@ -61,18 +61,11 @@ export class EvidenceExplorerView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
-    this.subscriptions.push(
-      this.deps.eventBus.subscribe("evidence.generated", () => this.scheduler.schedule()),
-    );
-    await this.scheduler.schedule();
+    await this.live.open(["evidence.generated"]);
   }
 
   async onClose(): Promise<void> {
-    // Unsubscribe BEFORE disposing the scheduler so a handler firing
-    // mid-teardown can't schedule() on a disposed scheduler (PRES-M1 ordering).
-    for (const unsubscribe of this.subscriptions) unsubscribe();
-    this.subscriptions.length = 0;
-    this.scheduler.dispose();
+    this.live.close();
   }
 
   private async render(): Promise<void> {
@@ -87,7 +80,7 @@ export class EvidenceExplorerView extends ItemView {
         container,
         `Could not load run history: ${result.error.message}`,
         "Retry loading the run history",
-        () => void this.scheduler.schedule(),
+        () => void this.live.schedule(),
       );
       return;
     }
@@ -116,7 +109,7 @@ export class EvidenceExplorerView extends ItemView {
       });
       button.addEventListener("click", () => {
         this.visibleLimit += EVIDENCE_PAGE_SIZE;
-        void this.scheduler.schedule();
+        void this.live.schedule();
       });
     }
   }
@@ -140,7 +133,7 @@ export class EvidenceExplorerView extends ItemView {
     select.addEventListener("change", () => {
       // The value space is exactly EVIDENCE_STATUS_FILTERS (options above).
       this.filter = select.value as EvidenceStatusFilter;
-      void this.scheduler.schedule();
+      void this.live.schedule();
     });
   }
 

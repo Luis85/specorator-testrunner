@@ -8,6 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The six event-driven views now share one `LiveRefresh` helper for the
+  subscribe/coalesce/teardown lifecycle instead of six hand-copied
+  implementations; V2's new views build on the same helper.
 - `runInitialization` is decomposed into per-phase step methods (behaviour
   unchanged), retiring the known complexity hot spot that tripped the
   blocking quality gate on any edit to `initialization-service.ts`.
