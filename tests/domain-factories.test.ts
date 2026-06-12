@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createFeatureSpecification } from "../src/domain/entities/specification";
+import {
+  createFeatureSpecification,
+  isScenarioOutline,
+} from "../src/domain/entities/specification";
 import { createSuite } from "../src/domain/entities/suite";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
@@ -105,5 +108,14 @@ describe("createSuite (ADR-0011 tag expression is the source of truth)", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect("description" in result.value).toBe(false);
+  });
+});
+
+describe("isScenarioOutline (TD-005)", () => {
+  const base = { name: "S", tags: [], steps: [] };
+  it("is true for the keyword, true for attached Examples, false for a plain scenario", () => {
+    expect(isScenarioOutline({ ...base, keyword: "Scenario Outline" })).toBe(true);
+    expect(isScenarioOutline({ ...base, examples: [] })).toBe(true);
+    expect(isScenarioOutline(base)).toBe(false);
   });
 });

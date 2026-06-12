@@ -14,7 +14,7 @@ import type {
   GherkinStep,
   ScenarioSpecification,
 } from "../../domain/entities/specification";
-import { stepDocString, stepTable } from "../../domain/entities/specification";
+import { isScenarioOutline, stepDocString, stepTable } from "../../domain/entities/specification";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import {
   addExamplesColumn,
@@ -443,7 +443,7 @@ export class FeatureEditorView extends TextFileView {
     this.renderTagEditor(card, scenario.tags, "Scenario tags");
     this.renderStepList(card, scenario.steps);
 
-    if ((scenario.keyword ?? "Scenario") === "Scenario Outline") {
+    if (isScenarioOutline(scenario)) {
       const blocks = (scenario.examples ??= []);
       blocks.forEach((block, blockIndex) => this.renderExamples(card, blocks, block, blockIndex));
       const addBlock = card.createEl("button", { text: "+ Examples block" });

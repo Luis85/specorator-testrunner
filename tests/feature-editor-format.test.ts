@@ -55,6 +55,20 @@ describe("projectValidation", () => {
       'warning:Scenario Outline "O" has no Examples rows.',
     ]);
   });
+
+  it("warns about a rowless Outline implied only by attached Examples (TD-005 lenient predicate)", () => {
+    const items = projectValidation({
+      path: vp("Specifications/features/UC-001-implied.feature"),
+      useCaseId: "UC-001",
+      featureName: "F",
+      tags: [],
+      // No "Scenario Outline" keyword — but parsed Examples are attached.
+      scenarios: [{ name: "S", tags: [], steps: [{ keyword: "Given", text: "x" }], examples: [] }],
+    });
+    expect(items).toEqual([
+      { level: "warning", message: 'Scenario Outline "S" has no Examples rows.' },
+    ]);
+  });
 });
 
 describe("guided keyword flow", () => {

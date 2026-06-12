@@ -5,6 +5,7 @@ import type {
   FeatureSpecification,
   ScenarioSpecification,
 } from "../../domain/entities/specification";
+import { isScenarioOutline } from "../../domain/entities/specification";
 import {
   matchesTags,
   parseTagExpression,
@@ -88,7 +89,7 @@ export const effectiveScenarioTagSets = (
   scenario: ScenarioSpecification,
 ): string[][] => {
   const base = effectiveScenarioTags(feature, scenario);
-  const isOutline = scenario.keyword === "Scenario Outline" || scenario.examples !== undefined;
+  const isOutline = isScenarioOutline(scenario);
   if (!isOutline) return [base];
   const runnable = (scenario.examples ?? []).filter((block) => block.rows.length > 0);
   return runnable.map((block) => [...base, ...block.tags]);

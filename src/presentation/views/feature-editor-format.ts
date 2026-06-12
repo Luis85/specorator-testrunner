@@ -13,6 +13,7 @@ import type {
   GherkinStep,
   ScenarioSpecification,
 } from "../../domain/entities/specification";
+import { isScenarioOutline } from "../../domain/entities/specification";
 
 /**
  * Pure helpers for the Feature Editor (the `.feature` file handler's
@@ -34,7 +35,7 @@ export const projectValidation = (specification: FeatureSpecification): Validati
     if (scenario.name.trim() === "") {
       items.push({ level: "warning", message: "A scenario has no name." });
     }
-    if (scenario.keyword === "Scenario Outline") {
+    if (isScenarioOutline(scenario)) {
       const hasRows = (scenario.examples ?? []).some((block) => block.rows.length > 0);
       if (!hasRows) {
         items.push({

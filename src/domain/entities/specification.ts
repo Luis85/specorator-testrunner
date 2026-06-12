@@ -58,6 +58,19 @@ export interface ScenarioSpecification {
   examples?: ExamplesBlock[];
 }
 
+/**
+ * THE "is this scenario an Outline" predicate (TD-005). Deliberately
+ * LENIENT: the `Scenario Outline` keyword OR attached `Examples:` blocks
+ * count. The lenient parser attaches Examples to a plain `Scenario:`
+ * (malformed Gherkin Cucumber rejects); treating it as an Outline keeps
+ * suite/tag match counts, the editor's Examples grid, and V2 scenario
+ * identity (`::row-N`, US-056) in agreement instead of hiding the blocks.
+ * Parse-time keyword normalisation was considered and rejected for now: it
+ * would change round-trip behaviour for malformed files.
+ */
+export const isScenarioOutline = (scenario: ScenarioSpecification): boolean =>
+  scenario.keyword === "Scenario Outline" || scenario.examples !== undefined;
+
 export interface FeatureSpecification {
   path: VaultPath;
   useCaseId: UseCaseId; // required per ADR-0012; orphan features are a validation error
