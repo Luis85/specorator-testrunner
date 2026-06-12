@@ -32,12 +32,12 @@ describe("projectValidation", () => {
     if (VALID) expect(projectValidation(VALID)).toEqual([]);
   });
 
-  it("warns about an orphan filename (ADR-0012)", () => {
+  it("flags an orphan filename as an ERROR (ADR-0012 — both surfaces agree now)", () => {
     const orphan = parseFeature("Feature: F\n\n  Scenario: S\n    Given x\n", vp("orphan.feature"));
     if (!orphan) return;
     const items = projectValidation(orphan);
     expect(items).toHaveLength(1);
-    expect(items[0].level).toBe("warning");
+    expect(items[0].level).toBe("error");
     expect(items[0].message).toContain("orphan");
   });
 

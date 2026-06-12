@@ -11,6 +11,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - A Gherkin step's argument is modelled as a sum type (data table OR text
   block, TD-002): the serializer can no longer emit a step with both, which
   Cucumber — and the V2 playwright-bdd runner — refuse to parse.
+- Structural Feature validation has one implementation shared by the
+  Validate action and the editor's live strip (TD-003); whitespace-only
+  feature names are now flagged on both surfaces, and an orphan filename is
+  consistently an error (ADR-0012).
 - Command registration is covered by a smoke test (unique ids, full surface,
   callbacks invocable), and the vault adapter's existence checks now resolve
   through the Vault API first, keeping adapter access to the documented

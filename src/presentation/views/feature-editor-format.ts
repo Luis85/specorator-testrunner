@@ -1,4 +1,8 @@
-import { isPlainDescriptionLine, useCaseIdFromPath } from "../../application/content/gherkin";
+import {
+  structuralIssues,
+  type ValidationItem,
+} from "../../application/content/feature-validation";
+import { isPlainDescriptionLine } from "../../application/content/gherkin";
 import {
   isStepDefined,
   type StepDefinitionPattern,
@@ -16,40 +20,19 @@ import type {
  * unit-testable, following the test-console-format.ts pattern.
  */
 
-export interface ValidationItem {
-  level: "error" | "warning";
-  message: string;
-}
+export type { ValidationItem } from "../../application/content/feature-validation";
 
 /**
- * Live structural validation over the in-memory spec — the same rules as
- * `SpecificationService.validate` (name, ≥1 scenario, steps per scenario,
- * ADR-0012 filename prefix) so the editor strip and the Validate action
- * agree, plus editor-only hints (unnamed scenario, Outline without Examples
- * rows) for content that is still being typed.
+ * Live validation for the editor strip: the shared structural rules
+ * (TD-003) plus editor-only typing-time hints (unnamed scenario, rowless
+ * Outline) for content that is still being typed.
  */
-// fallow-ignore-next-line complexity
 export const projectValidation = (specification: FeatureSpecification): ValidationItem[] => {
-  const items: ValidationItem[] = [];
-  if (useCaseIdFromPath(specification.path) === null) {
-    items.push({
-      level: "warning",
-      message: 'No "UC-NNN-" filename prefix — this Feature is an orphan (ADR-0012).',
-    });
-  }
-  if (specification.featureName.trim() === "") {
-    items.push({ level: "error", message: "Feature has no name." });
-  }
-  if (specification.scenarios.length === 0) {
-    items.push({ level: "error", message: "Feature has no scenarios." });
-  }
+  const items = structuralIssues(specification);
   for (const scenario of specification.scenarios) {
     const label = scenario.name.trim() === "" ? "(unnamed)" : scenario.name;
     if (scenario.name.trim() === "") {
       items.push({ level: "warning", message: "A scenario has no name." });
-    }
-    if (scenario.steps.length === 0) {
-      items.push({ level: "error", message: `Scenario "${label}" has no steps.` });
     }
     if (scenario.keyword === "Scenario Outline") {
       const hasRows = (scenario.examples ?? []).some((block) => block.rows.length > 0);
