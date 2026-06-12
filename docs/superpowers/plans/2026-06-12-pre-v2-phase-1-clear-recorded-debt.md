@@ -42,7 +42,7 @@
 
 `runInitialization` (cognitive 23) is a 147-line method: 9 sequential phases, each with its own `onProgress` bracketing and `if (!x.ok) return fail(...)`, plus nested optionals (documentation, demo, dependencies→browsers). Extract each phase into a private step method over a shared context; the orchestrator becomes a loop. Public API, events, progress reports, and error semantics are unchanged — the existing test suite is the safety net and must pass untouched.
 
-- [ ] **Step 1: Add the context type and the failure helper**
+- [x] **Step 1: Add the context type and the failure helper**
 
 In `initialization-service.ts`, above the service class (module scope, not exported), add:
 
@@ -83,7 +83,7 @@ private async failStep(
 
 (Import `AppError` if not already imported in this file.)
 
-- [ ] **Step 2: Extract the eight step methods**
+- [x] **Step 2: Extract the eight step methods**
 
 Each is a verbatim transplant of one numbered phase from the current body, rewritten against `ctx`. Add as private methods:
 
@@ -204,7 +204,7 @@ private async validateEnvironmentStep(ctx: InitializationContext): Promise<Resul
 }
 ```
 
-- [ ] **Step 3: Collapse `runInitialization` to the pipeline**
+- [x] **Step 3: Collapse `runInitialization` to the pipeline**
 
 Replace the entire current body (keep the existing leading doc comments about `vaultPath` and the correlation id — move them onto the matching lines):
 
@@ -274,7 +274,7 @@ private async runInitialization(
 }
 ```
 
-- [ ] **Step 4: Verify behaviour is unchanged and the hot spot is gone**
+- [x] **Step 4: Verify behaviour is unchanged and the hot spot is gone**
 
 Run: `npm run lint && npm run typecheck && npm test`
 Expected: all green, `tests/initialization-service.test.ts` untouched and passing.
@@ -282,7 +282,7 @@ Expected: all green, `tests/initialization-service.test.ts` untouched and passin
 Run: `npx fallow audit --base origin/main`
 Expected: verdict `pass` with **no complexity finding** on `initialization-service.ts` — this proves the recorded TD-006 caveat ("edits to `initialization-service.ts` will trip the gate until refactored") is retired.
 
-- [ ] **Step 5: Update the TD-006 caveat record + CHANGELOG**
+- [x] **Step 5: Update the TD-006 caveat record + CHANGELOG**
 
 In `.fallowrc.jsonc`, replace the caveat sentence inside the CI-gate comment:
 
@@ -314,7 +314,7 @@ In `CHANGELOG.md` under `## [Unreleased]` add (creating the heading):
   blocking quality gate on any edit to `initialization-service.ts`.
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/application/services/initialization-service.ts .fallowrc.jsonc CHANGELOG.md
@@ -331,7 +331,7 @@ git commit -m "refactor: decompose runInitialization into step methods (pre-V2 1
 - Modify: `src/application/services/settings-service.ts:95-112` (the `persistChain` + `serialize` block) and its `save()`/`reset()` callers
 - Modify: `src/application/services/post-run-coordinator.ts:82-85,197-205` (the `evidenceChain` + `enqueue` block) and its callers
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/serial-queue.test.ts`:
 
@@ -428,12 +428,12 @@ describe("KeyedSerialQueue", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `npx vitest run tests/serial-queue.test.ts`
 Expected: FAIL — cannot resolve `../src/shared/async/serial-queue`.
 
-- [ ] **Step 3: Implement the module**
+- [x] **Step 3: Implement the module**
 
 Create `src/shared/async/serial-queue.ts`:
 
@@ -497,12 +497,12 @@ export class KeyedSerialQueue {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/serial-queue.test.ts`
 Expected: PASS (5 tests).
 
-- [ ] **Step 5: Migrate `SettingsService`**
+- [x] **Step 5: Migrate `SettingsService`**
 
 In `settings-service.ts`, delete the `persistChain` field and the `serialize()` method (lines 95–112 including their doc comments) and replace with:
 
@@ -523,7 +523,7 @@ In `save()` and `reset()`, change `return this.serialize(async () => {` to `retu
 import { SerialQueue } from "../../shared/async/serial-queue";
 ```
 
-- [ ] **Step 6: Migrate `PostRunCoordinator`**
+- [x] **Step 6: Migrate `PostRunCoordinator`**
 
 In `post-run-coordinator.ts`, delete the `evidenceChain` field and the `enqueue()` method (with their doc comments) and replace the field with:
 
@@ -542,12 +542,12 @@ return this.postRunQueue.whenSettled();
 
 Add the same `SerialQueue` import.
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green (in particular `settings-service.test.ts`'s F2 interleaving test and `post-run-coordinator.test.ts` unchanged and passing); audit `pass`.
 
-- [ ] **Step 8: CHANGELOG + commit**
+- [x] **Step 8: CHANGELOG + commit**
 
 Under `## [Unreleased]` → `### Changed` add:
 
@@ -573,7 +573,7 @@ git commit -m "refactor: extract shared SerialQueue from settings/post-run chain
 
 UC notes have three read-modify-write writers (post-run linking via `EvidenceGenerationService → update()`, the edit modal via `updateMetadata()`, feature linking via `update()`) that can interleave across awaits. Key a `KeyedSerialQueue` by note path and wrap each method's read→transform→write(→publish) section.
 
-- [ ] **Step 1: Write the failing interleaving test**
+- [x] **Step 1: Write the failing interleaving test**
 
 Add to `tests/use-case-service.test.ts` (reuse the existing `build()` helper; adapt the create-request shape and `UseCaseMetadataChanges` fields to the ones used by the neighbouring tests in that file):
 
@@ -618,14 +618,14 @@ it("serializes overlapping writes to the same note so read-modify-write can't in
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run tests/use-case-service.test.ts -t "serializes overlapping writes"`
 Expected: FAIL — the gated first read lets the second call's read+write land first, so the tail is not `read,write,read,write` (typically `read,read,write,write` or the gated read finishing last).
 
 If it unexpectedly passes, the gate placement needs tightening (e.g. gate inside the *second* RMW read) — make it fail before implementing; a test that can't fail proves nothing.
 
-- [ ] **Step 3: Add the keyed queue and wrap the writers**
+- [x] **Step 3: Add the keyed queue and wrap the writers**
 
 In `use-case-service.ts`:
 
@@ -654,12 +654,12 @@ const created = await this.noteWrites.run(path, () =>
 - In `update()`: wrap the whole existing read→build→write(→publish) body from the `this.fs.readFile(useCase.path)` line through the event publish in `return this.noteWrites.run(useCase.path, async () => { ... existing code ... });` so the publish stays ordered with the write it reports.
 - In `updateMetadata()`: keep the lookup (`findById`/validation) outside, then wrap from the `this.fs.readFile(existing.path)` line through write + publish + return in `return this.noteWrites.run(existing.path, async () => { ... existing code ... });`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/use-case-service.test.ts`
 Expected: PASS, including the new interleaving test and all pre-existing tests.
 
-- [ ] **Step 5: Verify, CHANGELOG, commit**
+- [x] **Step 5: Verify, CHANGELOG, commit**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green; audit `pass`.
@@ -688,7 +688,7 @@ git commit -m "fix: serialize Use Case note writes per path (pre-V2 1.1)"
 
 `testrun.output.received` publishes are fire-and-forget (`void this.publish(...)`); an async subscriber can still be processing a line when `testrun.completed` lands — late-line-after-banner. Chain output publishes per run and await the tail inside `terminal()` (EPIC-014 scenario attribution needs deterministic ordering).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `tests/test-execution-service.test.ts`, following that file's existing builder/run-execution helpers (it already scripts `FakeChildProcessRunner` output lines and a recording bus — mirror the closest existing "publishes testrun.output.received" test's setup):
 
@@ -714,12 +714,12 @@ it("publishes the terminal event only after every streamed output event has been
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run tests/test-execution-service.test.ts -t "only after every streamed output"`
 Expected: FAIL — with fire-and-forget publishes the slow output handler resolves after the terminal handler, so `sequence` ends with `"output"`.
 
-- [ ] **Step 3: Chain the publishes and drain in `terminal()`**
+- [x] **Step 3: Chain the publishes and drain in `terminal()`**
 
 In `test-execution-service.ts`:
 
@@ -766,12 +766,12 @@ await this.publish(type, activeRun.run.id, payload);
 
 If `activeRun` is in scope of the streaming callback (check the surrounding `execute()` body), additionally guard the callback with `if (activeRun.terminated) return;` so a line racing a cancel cannot enqueue after the drain; if it is not in scope, skip this guard and note it in the task report (the review records the race as low-impact).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/test-execution-service.test.ts`
 Expected: PASS — new test green, and the existing run-lifecycle/EN-2 tests unchanged and green (the drain must not reorder `suite.executed`, snapshot, or cancel semantics; those publishes are awaited and unaffected).
 
-- [ ] **Step 5: Verify, CHANGELOG, commit**
+- [x] **Step 5: Verify, CHANGELOG, commit**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green; audit `pass`. (`test-execution-service.ts` is large — if the audit surfaces a pre-existing finding pulled into scope by this edit, fix it in this task or report it; do not suppress.)
@@ -799,7 +799,7 @@ git commit -m "fix: drain chained output events before the terminal run event (p
 
 `load()` already repairs paths, `logging.level`, runner env inputs, and the `sut` shape; `ci.*` and `automation.*` scalars pass through `mergeWithDefaults` unscreened, so a tampered/synced `data.json` can crash `.trim()` call sites (`ci.nodeVersion.trim()` in `validate()`) or flip automation behaviour with truthy garbage. V2 adds settings (workers, browsers, retention, MCP toggle) — the posture must exist before the surface grows.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/settings-service.test.ts` (reuse the file's `FakeDataStore` / `DefaultPathSafetyPolicy` / bus setup; pass the logger spy the same way the existing repair tests do — check the constructor's logger parameter position):
 
@@ -857,12 +857,12 @@ describe("scalar shape repair (ci.* / automation.*)", () => {
 
 (`buildServiceWith(store)` = the file's existing service construction with the custom store; add a tiny local helper if one doesn't exist.)
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `npx vitest run tests/settings-service.test.ts -t "scalar shape repair"`
 Expected: the two tampered-value tests FAIL (the garbage values pass through); the valid-values test passes.
 
-- [ ] **Step 3: Implement `sanitizeScalarShapes`**
+- [x] **Step 3: Implement `sanitizeScalarShapes`**
 
 In `settings-service.ts`, add module-level (next to `LOG_LEVELS`):
 
@@ -954,12 +954,12 @@ async load(): Promise<TestHubSettings> {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/settings-service.test.ts`
 Expected: PASS — new tests green, all existing repair/F2 tests unchanged and green.
 
-- [ ] **Step 5: Verify, CHANGELOG, commit**
+- [x] **Step 5: Verify, CHANGELOG, commit**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green; audit `pass`.
@@ -990,7 +990,7 @@ git commit -m "fix: repair ci.* and automation.* settings scalars on load (pre-V
 
 The migration and the MCP server (later) both mint paths from these two helpers; close the gaps before new callers appear.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/vault-path.test.ts`:
 
@@ -1040,12 +1040,12 @@ it("getVaultBasePath strips trailing separators once at the source", async () =>
 
 (Write the body against the file's actual mock plumbing — the mock class is defined at `tests/node-absolute-file-system.test.ts:22`; give it a constructor/static field for the base path if it doesn't have one.)
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `npx vitest run tests/vault-path.test.ts tests/node-absolute-file-system.test.ts`
 Expected: the throw-cases and trailing-separator test FAIL (current code neither validates nor strips).
 
-- [ ] **Step 3: Implement both guards**
+- [x] **Step 3: Implement both guards**
 
 `src/shared/utils/vault-path.ts` — replace `joinVaultPath` (keep its existing doc comment, append the new paragraph):
 
@@ -1091,17 +1091,17 @@ async getVaultBasePath(): Promise<Result<string>> {
 }
 ```
 
-- [ ] **Step 4: Audit the callers**
+- [x] **Step 4: Audit the callers**
 
 Run: `grep -rn "joinVaultPath(" src/ | grep -v vault-path.ts`
 For each caller confirm no argument can be a `relativeVaultPath()` result, a raw user string, or an absolute path (they should all be branded `VaultPath`s or literals). Expected from the repo survey: callers in `use-case-service`, `specification-service`, `suite-service`, `demo-content-service`, `documentation-generation-service`, `step-definition-service`, `evidence-generation-service`, `report-import-service`, `test-execution-service`, `runner-template-writer`, views/modals — all settings-derived branded paths + literals. If any caller violates this, fix the caller (screen through `vaultPath()`), not the guard.
 
-- [ ] **Step 5: Run the full suite to prove no caller trips the guard**
+- [x] **Step 5: Run the full suite to prove no caller trips the guard**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green (the whole suite exercises every joinVaultPath call path); audit `pass`.
 
-- [ ] **Step 6: CHANGELOG + commit**
+- [x] **Step 6: CHANGELOG + commit**
 
 Under `### Fixed` add:
 
@@ -1128,7 +1128,7 @@ git commit -m "fix: harden joinVaultPath and vault base path normalization (pre-
 
 All six views repeat the identical `subscriptions[] + RenderScheduler + onOpen subscribe-loop + onClose unsubscribe-before-dispose` boilerplate (PRES-M1/M2). V2 adds three more views (triage, readiness, step library) — extract once, copy never again.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/live-refresh.test.ts` (use the same event-construction helpers the existing view/service tests use — `recordingEventBus()` / `createEvent` from `tests/fakes.ts` and `src/domain/events/`; match an event type + payload that actually exists, e.g. `dashboard.refreshed` or `evidence.generated`, to whatever payload shape `createEvent` requires):
 
@@ -1176,12 +1176,12 @@ describe("LiveRefresh", () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `npx vitest run tests/live-refresh.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `LiveRefresh`**
+- [x] **Step 3: Implement `LiveRefresh`**
 
 Create `src/presentation/views/live-refresh.ts` (check the exact `RenderScheduler` constructor signature in `render-scheduler.ts` and the `DomainEventType` import path before writing):
 
@@ -1233,12 +1233,12 @@ export class LiveRefresh {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run tests/live-refresh.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Migrate the six views**
+- [x] **Step 5: Migrate the six views**
 
 For each of the six views, the same mechanical change (shown here for `use-case-dashboard-view.ts`; repeat identically in the other five, keeping each view's own event list and any extra `onOpen` work):
 
@@ -1278,7 +1278,7 @@ Per-view notes:
 
 Verify the sweep: `grep -rn "new RenderScheduler" src/presentation/views/` must list only `live-refresh.ts` and `initialization-wizard-modal.ts` (deliberately untouched — modal lifecycle, no event subscriptions of this shape).
 
-- [ ] **Step 6: Verify, CHANGELOG, commit**
+- [x] **Step 6: Verify, CHANGELOG, commit**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green (views are coverage-excluded; `live-refresh.ts` is NOT `*-view.ts` so it counts toward coverage — its test from Step 1 covers it); audit `pass` (the duplication detector should also stop seeing six clones of the boilerplate).
@@ -1306,7 +1306,7 @@ git commit -m "refactor: extract LiveRefresh from the six live views (pre-V2 1.6
 
 Two halves: (a) a smoke test so V2's new commands can't silently break registration; (b) reduce `vault.adapter` reliance to exactly the unindexed-path cases, each with a justifying comment (community-review bots flag bare adapter usage; the indefinitely-deferred marketplace option stays open at zero cost).
 
-- [ ] **Step 1: Write the smoke test**
+- [x] **Step 1: Write the smoke test**
 
 Create `tests/register-commands.test.ts`. Build a fake `Plugin` that records `addCommand` calls and a `TestHubCommandDeps` stub where every service method is a `vi.fn()` returning the matching ok-shape (`ok(...)` / arrays / typed outcomes — mirror the deps interface at `src/presentation/commands/register-commands.ts:~50-75` and the outcome types its callbacks switch on):
 
@@ -1363,12 +1363,12 @@ describe("registerCommands (smoke)", () => {
 
 Notes for the implementer: the `Notice` constructor comes from `tests/__stubs__/obsidian.ts` (already a no-op); commands using `checkCallback`/modals — follow what the recorded command object actually carries and stub modal `open()` if a callback constructs one (the obsidian stub's `Modal` is already inert). Pin the *count* with `toBeGreaterThanOrEqual` (46 today), not equality — the test should catch *loss* of registration, not block additions.
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `npx vitest run tests/register-commands.test.ts`
 Expected: PASS once the deps stub is complete (iterate on the stub until green — every red is a real coupling the smoke test now documents). `register-commands.ts` stays in the vitest coverage `exclude` list — do not remove it (the smoke test runs regardless; including the file would distort the coverage thresholds with unexecuted command bodies).
 
-- [ ] **Step 3: Vault-API-first existence checks in `ObsidianVaultAdapter`**
+- [x] **Step 3: Vault-API-first existence checks in `ObsidianVaultAdapter`**
 
 In `obsidian-vault-adapter.ts`, for each `await this.app.vault.adapter.exists(...)` call site (~lines 17, 29, 72, 84, 129): try the index first, keep the adapter as the unindexed fallback. Pattern (shown for the `exists()` port method at line 17):
 
@@ -1385,7 +1385,7 @@ async exists(path: VaultPath): Promise<boolean> {
 
 Apply the same two-line pattern inline at the other four sites (ancestor check in recursive create, read fallback, list guard, idempotent-delete guard), adjusting to each site's local variable names. The remaining bare adapter calls (`read` at 73, `list` at 89/112, `rmdir` at 142) each get a one-line justification comment of the form `// adapter API: <path kind> is not in Obsidian's index`. Do not migrate them — they are the intended API for unindexed files (Decision 8).
 
-- [ ] **Step 4: Verify, CHANGELOG, commit**
+- [x] **Step 4: Verify, CHANGELOG, commit**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green (`src/infrastructure/obsidian/**` is coverage-excluded; the change is exercised by the e2e smoke workflow at PR time); audit `pass`.
@@ -1416,7 +1416,7 @@ git commit -m "test: register-commands smoke test; Vault-API-first exists (pre-V
 
 One escape rule at the parse/serialize boundary replaces three lossy layers. The playwright-bdd migration hands these files to the official Gherkin parser: files using the standard `\|` escape must round-trip, and the editor must stop silently rewriting user pipes to `/`.
 
-- [ ] **Step 1: Update the pinned tests + add the escape tests (failing first)**
+- [x] **Step 1: Update the pinned tests + add the escape tests (failing first)**
 
 In `tests/gherkin.test.ts`:
 
@@ -1483,7 +1483,7 @@ it("sanitizeCell trims only — pipes are handled by the serializer's escape (TD
 Run: `npx vitest run tests/gherkin.test.ts tests/feature-editor-format.test.ts`
 Expected: the new/updated tests FAIL against the current substitution behaviour.
 
-- [ ] **Step 2: Implement the escape at the boundary**
+- [x] **Step 2: Implement the escape at the boundary**
 
 In `gherkin.ts`, replace `parseTableRow`:
 
@@ -1565,12 +1565,12 @@ In `feature-editor-format.ts`, replace `sanitizeCell` and its doc comment:
 export const sanitizeCell = (value: string): string => value.trim();
 ```
 
-- [ ] **Step 3: Run the suites to verify everything passes**
+- [x] **Step 3: Run the suites to verify everything passes**
 
 Run: `npx vitest run tests/gherkin.test.ts tests/feature-editor-format.test.ts` then the full `npm test`.
 Expected: PASS — including every pre-existing round-trip corpus test (they pin that unescaped tables still canonicalize identically).
 
-- [ ] **Step 4: Close TD-001, CHANGELOG, commit**
+- [x] **Step 4: Close TD-001, CHANGELOG, commit**
 
 `docs/tech-debt/TD-001.md`: `status: resolved` + append:
 
@@ -1618,7 +1618,7 @@ git commit -m "fix: official escaped-pipe support in Gherkin table cells (TD-001
 
 Make the invalid state (table **and** doc string on one step) unrepresentable before the runner migration makes the resulting invalid Gherkin a suite failure.
 
-- [ ] **Step 1: Reshape the domain type**
+- [x] **Step 1: Reshape the domain type**
 
 In `specification.ts`, replace the `GherkinStep` interface:
 
@@ -1648,7 +1648,7 @@ export const stepDocString = (step: GherkinStep): DocString | undefined =>
   step.argument?.kind === "docString" ? step.argument.docString : undefined;
 ```
 
-- [ ] **Step 2: Update the parser and serializer**
+- [x] **Step 2: Update the parser and serializer**
 
 In `gherkin.ts` — table-row attach (~line 234), replace `(lastStep.dataTable ??= []).push(cells);` with:
 
@@ -1695,7 +1695,7 @@ const pushStep = (lines: string[], step: GherkinStep, indent: string): void => {
 };
 ```
 
-- [ ] **Step 3: Sweep every other consumer**
+- [x] **Step 3: Sweep every other consumer**
 
 Run: `grep -rn "dataTable\|docString" src/ tests/ --include="*.ts" -l`
 Update each hit (expected surface, from the repo survey):
@@ -1716,12 +1716,12 @@ it("a file with both a table and a doc string on one step fails the round-trip g
 
 Also update the Task 9 escape tests from `steps[0].dataTable` to `stepTable(spec!.scenarios[0].steps[0])`.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green. Typecheck is the real proof here — zero remaining references to `.dataTable`/`.docString` on steps outside the domain module (`grep -rn "\.dataTable\b\|\.docString\b" src/` returns only `specification.ts` internals, i.e. the `StepArgument` definition and accessors).
 
-- [ ] **Step 5: Close TD-002, CHANGELOG, commit**
+- [x] **Step 5: Close TD-002, CHANGELOG, commit**
 
 `docs/tech-debt/TD-002.md`: `status: resolved` + append:
 
@@ -1767,7 +1767,7 @@ git commit -m "refactor: one-argument-per-step sum type on GherkinStep (TD-002, 
 
 The service and the editor already drifted on empty-name semantics. V2's scenario quality lint (US-074) layers new rules on this — build it on one implementation.
 
-- [ ] **Step 1: Write the failing tests for the shared module**
+- [x] **Step 1: Write the failing tests for the shared module**
 
 Create `tests/feature-validation.test.ts`:
 
@@ -1822,7 +1822,7 @@ describe("structuralIssues (TD-003 single source)", () => {
 
 Run: `npx vitest run tests/feature-validation.test.ts` → FAIL (module not found).
 
-- [ ] **Step 2: Implement the shared module**
+- [x] **Step 2: Implement the shared module**
 
 Create `src/application/content/feature-validation.ts`:
 
@@ -1869,7 +1869,7 @@ export const structuralIssues = (specification: FeatureSpecification): Validatio
 
 Run: `npx vitest run tests/feature-validation.test.ts` → PASS.
 
-- [ ] **Step 3: Consume it from the service**
+- [x] **Step 3: Consume it from the service**
 
 In `specification-service.ts` `validate()`, replace the inline rule block (the orphan check + the `feature === null` / name / scenarios / steps checks) with:
 
@@ -1890,7 +1890,7 @@ if (feature === null) {
 
 (Keep everything after the rule block — result assembly, events — unchanged. Remove the now-redundant standalone orphan check that ran before parsing.)
 
-- [ ] **Step 4: Consume it from the editor**
+- [x] **Step 4: Consume it from the editor**
 
 In `feature-editor-format.ts`: delete the local `ValidationItem` interface and re-export the shared one (`export type { ValidationItem } from "../../application/content/feature-validation";` — keep the editor's `"ok"`-level display row local to `refreshValidation`/`render`, typed as its own literal, since "ok" is presentation, not validation). Replace `projectValidation` with:
 
@@ -1923,7 +1923,7 @@ export const projectValidation = (specification: FeatureSpecification): Validati
 
 (Task 12 swaps the `keyword === "Scenario Outline"` condition for `isScenarioOutline` — leave it literal here.)
 
-- [ ] **Step 5: Update the consuming tests**
+- [x] **Step 5: Update the consuming tests**
 
 - `tests/feature-editor-format.test.ts`: the orphan test now expects `level: "error"` (was warning), and the combined nameless/stepless/rowless test's expected array re-orders to structural-first:
 
@@ -1951,7 +1951,7 @@ it("flags a whitespace-only feature name (trim semantics, TD-003)", async () => 
 });
 ```
 
-- [ ] **Step 6: Verify, close TD-003, CHANGELOG, commit**
+- [x] **Step 6: Verify, close TD-003, CHANGELOG, commit**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green (the fallow duplication detector also stops seeing the twin rule blocks); audit `pass`.
@@ -2000,7 +2000,7 @@ git commit -m "refactor: single-source structural Feature validation (TD-003, pr
 
 Scenario Reference (US-056) keys Outline examples as `::row-N` — identity and suite-match counts must agree on what an Outline *is* before history lands.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/feature-editor-format.test.ts`:
 
@@ -2035,7 +2035,7 @@ describe("isScenarioOutline (TD-005)", () => {
 
 Run them → FAIL (`isScenarioOutline` doesn't exist; the editor-format test sees no warning).
 
-- [ ] **Step 2: Export the predicate and update the three sites**
+- [x] **Step 2: Export the predicate and update the three sites**
 
 In `specification.ts`:
 
@@ -2059,7 +2059,7 @@ Three call sites:
 - `feature-editor-format.ts` `projectValidation`: `if (isScenarioOutline(scenario)) {` (was keyword-only — behaviour change pinned by Step 1's test).
 - `feature-editor-view.ts` `renderScenarioCard`: the Examples-grid condition `if ((scenario.keyword ?? "Scenario") === "Scenario Outline")` becomes `if (isScenarioOutline(scenario))` — a plain scenario with round-tripped Examples now shows its grid. The keyword `<select>` keeps rendering from `scenario.keyword ?? "Scenario"` (it edits the keyword, not the predicate).
 
-- [ ] **Step 3: Verify, close TD-005, CHANGELOG, commit**
+- [x] **Step 3: Verify, close TD-005, CHANGELOG, commit**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green; the pre-existing `feature-insight-service` tests pin that tag matching didn't change.
@@ -2107,7 +2107,7 @@ git commit -m "refactor: unify the isScenarioOutline predicate (TD-005, pre-V2 1
 
 Make re-rendering safe instead of avoidable: `commit()` always re-renders and restores focus/caret via stable `data-focus-key` attributes, so the per-call-site structural/field classification — and its stale-DOM/focus-steal failure modes — disappears. Field edits fire on `change` (verified), so re-render frequency is per-commit, not per-keystroke.
 
-- [ ] **Step 1: Write the failing tests for the focus helpers**
+- [x] **Step 1: Write the failing tests for the focus helpers**
 
 Create `tests/focus-restore.test.ts` (the helpers are duck-typed so they're testable in the node environment — no DOM globals):
 
@@ -2174,7 +2174,7 @@ describe("restoreFocus", () => {
 
 Run: `npx vitest run tests/focus-restore.test.ts` → FAIL (module not found).
 
-- [ ] **Step 2: Implement the helpers**
+- [x] **Step 2: Implement the helpers**
 
 Create `src/presentation/views/focus-restore.ts`:
 
@@ -2237,7 +2237,7 @@ export const restoreFocus = (root: FocusRootLike, snapshot: FocusSnapshot | null
 
 Run: `npx vitest run tests/focus-restore.test.ts` → PASS.
 
-- [ ] **Step 3: Flagless `commit()` + the mechanical call-site sweep**
+- [x] **Step 3: Flagless `commit()` + the mechanical call-site sweep**
 
 In `feature-editor-view.ts` replace `commit`:
 
@@ -2260,7 +2260,7 @@ private commit(): void {
 
 Sweep every call site: `grep -n "this.commit(" src/presentation/views/feature-editor-view.ts` (32 hits pre-plan) — replace all `this.commit(true)` / `this.commit(false)` with `this.commit()`. After the sweep, if `refreshValidation()` has no remaining callers (render rebuilds the strip), delete it — the fallow dead-code gate enforces this; keep `validationEl` only if `render()` still writes through it.
 
-- [ ] **Step 4: Key every structured-mode control**
+- [x] **Step 4: Key every structured-mode control**
 
 Add `data-focus-key` to every interactive element the structured render path creates. Scheme (positional, matching the TD's proposal):
 
@@ -2305,7 +2305,7 @@ const text = row.createEl("input", {
 
 - Completeness check when done: every `createEl("input"`, `createEl("textarea"`, `createEl("select"`, and `createEl("button"` in the **structured** render path of `feature-editor-view.ts` carries a `data-focus-key` (raw-mode's single textarea keeps focus naturally — keying it is optional but harmless). Verify with `grep -n 'createEl("input"\|createEl("textarea"\|createEl("select"\|createEl("button"' src/presentation/views/feature-editor-view.ts` against `grep -c "data-focus-key"`.
 
-- [ ] **Step 5: Verify, close TD-004, CHANGELOG, commit**
+- [x] **Step 5: Verify, close TD-004, CHANGELOG, commit**
 
 Run: `npm run lint && npm run typecheck && npm test && npx fallow audit --base origin/main`
 Expected: all green; audit `pass`. (`feature-editor-view.ts` is coverage-excluded view wiring; the helpers are covered by Step 1's tests. Real-DOM focus behaviour is validated manually in Obsidian / by the e2e smoke at PR time — note this in the task report.)
@@ -2351,21 +2351,21 @@ git commit -m "refactor: focus-preserving re-render replaces commit(structureCha
 **Files:**
 - Verify only (plus this plan's checkboxes and any final CHANGELOG proofread)
 
-- [ ] **Step 1: Full PR gate locally**
+- [x] **Step 1: Full PR gate locally**
 
 Run: `npm run lint && npm run format:check && npm run typecheck && npm run build && npm run test:coverage`
 Expected: all green; coverage thresholds (93/93/93/80) hold — the new shared modules (`serial-queue`, `live-refresh`, `feature-validation`, `focus-restore`) all carry their own tests. If `format:check` flags plan/doc files, run `npm run format` and amend.
 
-- [ ] **Step 2: Final fallow audit**
+- [x] **Step 2: Final fallow audit**
 
 Run: `npx fallow audit --base origin/main`
 Expected: verdict `pass`. This increment deletes duplication (six view copies, twin validation blocks) and the known complexity hot spot — the audit should be cleaner than baseline, not just passing. If any finding appears, fix it now (it is by definition introduced by this changeset).
 
-- [ ] **Step 3: Tech-debt register sanity check**
+- [x] **Step 3: Tech-debt register sanity check**
 
 `docs/tech-debt/README.md` **Open items** table must now be empty (TD-001…TD-005 all moved to **Resolved items** alongside TD-006). If the empty table reads awkwardly, replace the table body with a single italic line: `*No open items.*` (keep the heading and lifecycle docs).
 
-- [ ] **Step 4: Push and open the PR**
+- [x] **Step 4: Push and open the PR**
 
 ```bash
 git push -u origin claude/specorator-v2-increment-g137m7
@@ -2379,7 +2379,7 @@ Pre-V2 Phase 1: clear recorded debt V2 builds on (items 1.1–1.12 + runInitiali
 
 Body summary: one bullet per task group (concurrency/serialization 1.1–1.3, settings/path hardening 1.4–1.5, presentation extraction 1.6–1.7, Gherkin debt TD-001/002/003/005, editor re-render TD-004, the `runInitialization` complexity refactor), the decisions list from this plan's header, and a note that the blocking quality gate + (if triggered) e2e smoke validate the increment. Link the plan file.
 
-- [ ] **Step 5: Watch CI**
+- [x] **Step 5: Watch CI**
 
 Subscribe to PR activity; the blocking `quality` job (fallow audit) and the standard CI matrix must go green. This PR does **not** touch the runner-template surface, so the e2e smoke auto-trigger is not expected.
 
@@ -2387,11 +2387,11 @@ Subscribe to PR activity; the blocking `quality` job (fallow audit) and the stan
 
 ## Phase 1 exit criteria (from the proposal §9)
 
-- [ ] Use Case note writes serialize per path; settings/post-run/output flows share `SerialQueue` (1.1–1.3)
-- [ ] `ci.*`/`automation.*` scalars repaired on load; `joinVaultPath`/`getVaultBasePath` hardened (1.4–1.5)
-- [ ] `LiveRefresh` extracted; six views migrated; `register-commands` smoke-tested; existence checks Vault-API-first (1.6–1.7)
-- [ ] TD-001, TD-002, TD-003, TD-005, TD-004 resolved and closed in the register (1.8–1.12)
-- [ ] `runInitialization` no longer trips the blocking gate on edit (TD-006 caveat retired)
-- [ ] Open tech-debt register is empty; CHANGELOG documents the increment; blocking quality gate green on the PR
+- [x] Use Case note writes serialize per path; settings/post-run/output flows share `SerialQueue` (1.1–1.3)
+- [x] `ci.*`/`automation.*` scalars repaired on load; `joinVaultPath`/`getVaultBasePath` hardened (1.4–1.5)
+- [x] `LiveRefresh` extracted; six views migrated; `register-commands` smoke-tested; existence checks Vault-API-first (1.6–1.7)
+- [x] TD-001, TD-002, TD-003, TD-005, TD-004 resolved and closed in the register (1.8–1.12)
+- [x] `runInitialization` no longer trips the blocking gate on edit (TD-006 caveat retired)
+- [x] Open tech-debt register is empty; CHANGELOG documents the increment; blocking quality gate green on the PR
 
 **Next increment after this gate:** §9 Phase 2 ("Foundations the V2 epics assume", items 2.1–2.4: settings/data versioning, versioned `.testrunner` manifest + repair upgrades, `ReportParser` port, V2 ADRs), then the Phase 3 playwright-bdd migration — only after which V2.0 feature work begins.

@@ -17,6 +17,7 @@ commit/PR in the item before closing).
 
 | Id | Title | Area | Effort |
 | --- | --- | --- | --- |
+| [[TD-007]] | gherkin.ts parser/serializer complexity is suppressed, not solved | gherkin | large |
 
 ## Resolved items
 
