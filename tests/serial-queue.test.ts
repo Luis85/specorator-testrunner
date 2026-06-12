@@ -45,16 +45,29 @@ describe("SerialQueue", () => {
     const queue = new SerialQueue();
     let done = false;
     const gate = deferred<undefined>();
-    void queue.run(async () => {
-      await gate.promise;
-      throw new Error("still counts as settled");
-    });
+    // Fire-and-forget callers own their rejections (see SerialQueue.run docs).
+    queue
+      .run(async () => {
+        await gate.promise;
+        throw new Error("still counts as settled");
+      })
+      .catch(() => undefined);
     void queue.run(async () => {
       done = true;
     });
     const settled = queue.whenSettled().then(() => done);
     gate.resolve(undefined);
     await expect(settled).resolves.toBe(true);
+  });
+
+  it("a queued task never observes the previous task's value or rejection", async () => {
+    const queue = new SerialQueue();
+    void queue.run(async () => "leaky value");
+    const observed: unknown[] = [];
+    await queue.run(async (...args: unknown[]) => {
+      observed.push(...args);
+    });
+    expect(observed).toEqual([]);
   });
 });
 

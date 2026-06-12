@@ -4,8 +4,9 @@
  * failure still reaches that task's own caller).
  *
  * Extracted (2026-06-11 review §4) from `SettingsService.serialize()` and
- * `PostRunCoordinator.enqueue()` when the per-path Use Case note mutex became
- * the third user. Documented constraint carried over from both originals: a
+ * `PostRunCoordinator.enqueue()`; the per-path Use Case note mutex and the
+ * per-run output-event chain (same increment) are the third and fourth
+ * users. Documented constraint carried over from both originals: a
  * bus subscriber that AWAITS a queued operation from inside a handler whose
  * publish the queued operation itself awaits would deadlock the chain — keep
  * queued tasks free of such re-entrant awaits (none exists today).
@@ -13,9 +14,15 @@
 export class SerialQueue {
   private chain: Promise<unknown> = Promise.resolve();
 
-  /** Queues `task` behind every previously queued task. */
+  /**
+   * Queues `task` behind every previously queued task. The returned promise
+   * rejects if the task fails — fire-and-forget callers (`void queue.run(…)`)
+   * must attach their own `.catch()` or the rejection goes unhandled.
+   */
   run<T>(task: () => Promise<T>): Promise<T> {
-    const result = this.chain.then(task);
+    // `() => task()` (not `.then(task)`) so the task can never observe the
+    // chain's internal fulfilment value.
+    const result = this.chain.then(() => task());
     // Track only settlement (never the value, never the rejection) so the
     // chain survives a failed task; the failure still reaches `result`'s
     // caller.
@@ -50,7 +57,12 @@ export class KeyedSerialQueue {
     return this.queues.get(key)?.whenSettled() ?? Promise.resolve();
   }
 
-  /** Drops the queue for `key` (call when the keyed lifecycle ends). */
+  /**
+   * Drops the queue for `key`. Only call once the keyed lifecycle has ended
+   * AND `whenSettled(key)` has resolved: deleting with tasks still in flight
+   * lets a later `run(key, …)` mint a fresh queue that executes concurrently
+   * with the old one, silently defeating the serialization.
+   */
   delete(key: string): void {
     this.queues.delete(key);
   }
