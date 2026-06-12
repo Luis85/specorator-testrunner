@@ -19,9 +19,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `manifest.json` and runs lint/typecheck/tests before publishing;
   `versions.json` consistency is asserted by the release-validation suite.
 - Quality harness: fallow codebase intelligence as a devDependency with
-  repo-tuned config (`.fallowrc.jsonc`), `quality:*` npm scripts, an advisory
-  changed-code audit job in CI, and agent-facing surfaces (`.mcp.json` MCP
-  server, `.claude/skills/fallow` pointer skill, `AGENTS.md`).
+  repo-tuned config (`.fallowrc.jsonc`), `quality:*` npm scripts, a
+  changed-code audit job in CI (advisory at launch; now blocking — see
+  Changed/TD-006), and agent-facing surfaces (`.mcp.json` MCP server,
+  `.claude/skills/fallow` pointer skill, `AGENTS.md`).
 - Quality harness: ESLint upgraded to v10 with the `eslint-plugin-obsidianmd`
   plugin-guideline rules scoped to `src/`; the sentence-case rule is
   configured with the CONTEXT.md glossary as brand terms so UI copy is
