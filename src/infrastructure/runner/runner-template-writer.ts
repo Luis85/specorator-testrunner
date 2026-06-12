@@ -32,7 +32,8 @@ export class RunnerTemplateWriter implements TemplateWriter {
   async writeTemplates(request: TemplateWriteRequest): Promise<Result<TemplateWriteResult>> {
     const base = await this.absoluteFs.getVaultBasePath();
     if (!base.ok) return err(base.error);
-    const root = base.value.replace(/[/\\]$/, "");
+    // getVaultBasePath() normalizes the trailing separator at the source.
+    const root = base.value;
 
     const writtenFiles: VaultPath[] = [];
     const skippedFiles: VaultPath[] = [];
