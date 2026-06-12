@@ -8,6 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Installation documentation: GitHub releases + BRAT are the official
+  distribution channel (community-marketplace submission deferred
+  indefinitely, per the V2 proposal §5.3).
 - Evidence Explorer over the partitioned run history (ADR-0016), wired to the
   ribbon, command palette, and dashboard.
 - Opt-in E2E smoke workflow (`workflow_dispatch` or the `e2e-smoke` PR label,
