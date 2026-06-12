@@ -3,6 +3,10 @@
   // scripts/e2e-smoke.mjs esbuild-bundles this entry at runtime, which the
   // package.json-based auto-detection cannot see.
   "entry": ["scripts/e2e-smoke-entry.ts"],
+  // CI gate (TD-006): the audit job in ci.yml is blocking. The verdict uses
+  // new-only attribution (fails only on findings a changeset introduces), so
+  // the launch-default thresholds need no inventory-wide tuning. Revisit the
+  // thresholds only if the blocking gate proves noisy in practice.
   "rules": {
     // Obsidian calls lifecycle/SuggestModal overrides (onChooseItem, getItems,
     // hide, getState, …) itself, so "unused" is structurally unreliable for

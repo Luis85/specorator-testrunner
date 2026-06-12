@@ -326,14 +326,14 @@ export default tseslint.config(
   {
     // Vitest test hygiene: catches the test anti-patterns agents introduce
     // most often (focused/disabled tests, assertion-free tests, misused
-    // matchers). no-focused-tests is an error — a stray `.only` silently
-    // shrinks CI coverage to one test.
+    // matchers). no-focused-tests and no-disabled-tests are errors (TD-006
+    // flip) — a stray `.only`/`.skip` silently shrinks CI coverage.
     files: ["tests/**/*.ts"],
     plugins: { vitest },
     rules: {
       ...vitest.configs.recommended.rules,
       "vitest/no-focused-tests": "error",
-      "vitest/no-disabled-tests": "warn",
+      "vitest/no-disabled-tests": "error",
       // vitest supports a failure-message second argument: expect(v, "msg").
       "vitest/valid-expect": ["error", { maxArgs: 2 }],
       // Narrowing the Result discriminated union requires asserting inside

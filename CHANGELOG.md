@@ -48,6 +48,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
   browsers are cached per OS, and the suite triggers automatically on PRs
   that change the runner-template surface (in addition to manual dispatch
   and the `e2e-smoke` label).
+- The quality gates are now blocking (TD-006): the fallow changed-code audit
+  fails CI on findings a changeset introduces (new-only attribution), and
+  `vitest/no-disabled-tests` is an error.
 - Requires Obsidian 1.13+ (`minAppVersion` 1.8.0 → 1.13.0); destructive
   buttons use the 1.13 `setDestructive()` API.
 - The settings tab is built on the Obsidian 1.13 declarative
