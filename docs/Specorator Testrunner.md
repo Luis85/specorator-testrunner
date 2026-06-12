@@ -1,4 +1,4 @@
-# Obsidian E2E Test Hub
+# Specorator Testrunner
 
 > Product Requirements Document — V1 MVP.
 
@@ -13,7 +13,7 @@
 
 ## 1. Executive Summary
 
-The Obsidian E2E Test Hub enables users to define, manage, execute, and document end-to-end tests directly from within Obsidian.
+The Specorator Testrunner enables users to define, manage, execute, and document end-to-end tests directly from within Obsidian.
 
 The plugin combines:
 

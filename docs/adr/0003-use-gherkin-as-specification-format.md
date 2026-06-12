@@ -5,7 +5,7 @@ status: accepted
 title: Use Gherkin as Specification Format
 date: 2026-05-30
 related:
-  - "[[Obsidian E2E Test Hub]]"
+  - "[[Specorator Testrunner]]"
   - "[[Solution Design]]"
 ---
 

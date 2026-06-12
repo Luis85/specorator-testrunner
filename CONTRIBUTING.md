@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in the Obsidian E2E Test Hub.
+Thanks for your interest in the Specorator Testrunner.
 
 ## Getting started
 

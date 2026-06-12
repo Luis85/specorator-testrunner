@@ -120,7 +120,7 @@ import { ConsoleLogger } from "./shared/logging/logger";
 import type { Result } from "./shared/result/result";
 
 /**
- * Composition root for the E2E Test Hub plugin. Instantiates the layered
+ * Composition root for the Specorator Testrunner plugin. Instantiates the layered
  * graph (Shared Kernel → Domain → Application → Infrastructure → Presentation)
  * and registers the Obsidian surfaces.
  */

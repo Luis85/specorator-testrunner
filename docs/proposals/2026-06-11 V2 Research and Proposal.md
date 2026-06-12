@@ -1,4 +1,4 @@
-# Obsidian E2E Test Hub — V2 Research & Proposal
+# Specorator Testrunner — V2 Research & Proposal
 
 _Date: 2026-06-11. Synthesized from a five-track research effort: (1) technical
 capability & limitations review of the V1 codebase, (2) product-docs review
@@ -211,9 +211,11 @@ verification system of record for AI-built software.*
 
 Numbering continues V1: epics from EPIC-013, features indicated per epic,
 stories from US-051, use cases from UC-025. Stories follow the house format
-(persona, want, so-that, acceptance criteria); they are embedded here for
-review and should be split into `docs/issues/` / `docs/use-cases/` notes once
-the proposal is accepted.
+(persona, want, so-that, acceptance criteria); they were originally embedded
+here for review and have since been **carved out into dedicated notes** —
+epics, features, and stories under `docs/issues/`, use cases under
+`docs/use-cases/`. The notes are the canonical text; this section is the
+index.
 
 > **Priority key** — P1: core of V2.0; P2: fast follow (V2.1); P3: V2.x
 > opportunistic.
@@ -224,7 +226,7 @@ the proposal is accepted.
 > workflows that publish events are teachable by construction, and onboarding
 > must not drift from the product.
 
-### EPIC-013 — Playwright-Native Runner *(P1, foundation)*
+### [[EPIC-013]] — Playwright-Native Runner *(P1, foundation)*
 
 > Replace cucumber-js-as-runner with playwright-bdd: Gherkin compiles to
 > native `@playwright/test` specs. Revisits ADR-0004/AD-5/AD-6/AD-7; requires
@@ -232,64 +234,14 @@ the proposal is accepted.
 > for existing `.testrunner` projects (repair regenerates managed files; user
 > steps are preserved and adapted with guidance).
 
-**US-051 Migrate the runner to playwright-bdd** —
-As a **QA Engineer**, I want the `.testrunner` to execute Gherkin through the
-native Playwright runner, so that traces, retries, fixtures, and reports work
-without bolt-on wiring.
-*AC:* `bddgen` + `npx playwright test` replaces the cucumber-js invocation;
-existing `.feature` files run unmodified; Cucumber JSON/Messages still emitted
-for the import pipeline; `Repair installation` migrates a V1 `.testrunner`
-non-destructively and reports what changed; demo test passes post-migration.
+- Stories: [[US-051]] Migrate the runner to playwright-bdd · [[US-052]] Typed
+  step definitions · [[US-053]] Run a single scenario · [[US-054]] Parallel
+  execution & retries · [[US-055]] Browser matrix · [[US-080]] Open Playwright
+  UI mode & trace viewer
+- Features: [[FEAT-029]] Optional Check Libraries *(P3, V2.x, stories on
+  acceptance — visual regression, accessibility checks, API-setup steps)*
 
-**US-052 Typed step definitions** —
-As a **Developer**, I want generated step definitions to be typed
-playwright-bdd steps receiving Playwright fixtures, so that I get
-autocomplete, go-to-definition, and no regex glue.
-*AC:* `Generate step definitions` emits `createBdd()`-style typed stubs;
-missing-step detection delegates to `bddgen` diagnostics instead of the
-regex-scraping heuristic (closing its documented false-positive gaps);
-existing hand-written steps are never overwritten.
-
-**US-053 Run a single scenario** —
-As a **Developer**, I want to run one scenario from the Use Case detail view,
-so that my feedback loop is seconds, not the whole feature.
-*AC:* each scenario row offers Run; scope `scenario` appears in Test Console
-and Evidence; re-run preserves scenario scope. *(Depends on US-056 Scenario
-Reference.)*
-
-**US-054 Parallel execution & retries** —
-As a **QA Engineer**, I want configurable workers and retries, so that suite
-time drops and known-transient failures don't go red.
-*AC:* settings expose workers (default: Playwright default) and retries
-(default 0 locally); evidence ordering remains deterministic per scenario;
-retried-then-passed results are marked distinctly (feeds US-058 flakiness);
-supersedes AD-6 with a new AD.
-
-**US-055 Browser matrix** —
-As a **QA Engineer**, I want to run suites against Chromium, Firefox, and
-WebKit, so that cross-browser coverage is real.
-*AC:* environments/suites can declare target browsers as Playwright projects;
-install flow offers additional browsers (Chromium stays the only default —
-preserves the <5-min demo); per-browser results are distinguishable in report
-import and evidence; supersedes AD-5.
-
-**FEAT (V2.x, stories on acceptance): optional check libraries** *(P3)* —
-the native runner makes three high-demand additions cheap, each as an opt-in
-step/template library: visual regression (`toHaveScreenshot` with baselines
-stored in the vault as visual evidence; tolerance controls to avoid the
-documented false-positive trap), accessibility checks (axe-core steps — the
-European Accessibility Act is law since June 2025), and API-setup steps
-(Playwright `request` fixture for 3–4x faster data setup before UI flows).
-
-**US-080 Open Playwright UI mode & trace viewer** —
-As a **Developer**, I want one-click "Open in UI mode" and "Open trace" from
-the Test Hub, so that debugging happens in the best available tool.
-*AC:* Test Console toolbar gains "UI mode" (spawns `playwright test --ui`
-scoped to the current target, subject to CommandSafetyPolicy); failed
-scenarios in Evidence link to their trace.zip with an "Open trace viewer"
-action; documented fallback when the browser/trace is absent.
-
-### EPIC-014 — Scenario Identity, History & Flakiness *(P1)*
+### [[EPIC-014]] — Scenario Identity, History & Flakiness *(P1)*
 
 > Implements the deferred Scenario Reference (CONTEXT.md), replaces the
 > ADR-0017 status "floor" with real per-scenario history, and makes
@@ -297,103 +249,23 @@ action; documented fallback when the browser/trace is absent.
 > store (append-only NDJSON run log under `Test Evidence/` — also resolves
 > the Event Catalog §16 V2 candidate).
 
-**US-056 Scenario Reference** —
-As a **QA Engineer**, I want every scenario to have a stable identity
-(`<featurePath>::<scenarioName>[::row-N]`), so that runs, history, and
-evidence attach to scenarios, not whole features.
-*AC:* identity computed at parse time and stamped into generated specs
-(ID write-back, testomat.io pattern) so report results map back
-deterministically; rename detection warns that history will detach.
+- Stories: [[US-056]] Scenario Reference · [[US-057]] Per-scenario run
+  history · [[US-058]] Flakiness score & quarantine · [[US-059]] Failure
+  triage view
 
-**US-057 Per-scenario run history** —
-As a **Delivery Manager**, I want each scenario's last-N results retained,
-so that the dashboard reflects actual state without the prior-status floor.
-*AC:* append-only history (configurable depth, default 50 runs) stored as
-NDJSON partitioned per ADR-0016; Use Case rollup derives from scenario
-history (ADR-0017 floor logic removed); history survives plugin reloads and
-is git-mergeable.
-
-**US-058 Flakiness score & quarantine** —
-As a **QA Engineer**, I want scenarios flagged flaky (status flips,
-retry-passes) and a quarantine workflow with owner and fix-by date, so that
-flakiness is managed instead of eroding trust.
-*AC:* stability score per scenario over the history window; `@quarantine`
-tag excludes from KPI (like `@wip`) but still runs; quarantine note records
-owner + deadline; dashboard shows quarantined count and oldest deadline;
-quarantined >cap (default 5% of scenarios) raises a warning.
-
-**US-059 Failure triage view** —
-As a **QA Engineer**, I want failures grouped by error signature across the
-run, so that one root cause isn't fifty rows.
-*AC:* Evidence note and Test Console group failed scenarios by normalized
-error message; each group links scenarios, screenshots, and traces.
-
-### EPIC-015 — Audit-Grade Evidence & Release Readiness *(P1)*
+### [[EPIC-015]] — Audit-Grade Evidence & Release Readiness *(P1)*
 
 > Evidence grows from "links + counts" into the compliance and client-report
 > backbone. Auditors accept git/Markdown evidence **iff** it carries
 > timestamps, commit SHA, environment, and approver identity (FDA CSA, IEC
 > 62304, SOC 2 evidence research).
 
-**US-060 Audit-grade evidence stamps** —
-As a **Business Analyst**, I want every Evidence note to record run
-timestamp (UTC), git commit SHA of the vault and (if resolvable) of the SUT,
-active environment + base URL, runner/browser versions, and result
-counts per scenario, so that a regulator-grade record exists per run.
-*AC:* stamps render in frontmatter (machine-readable) and body
-(human-readable); absence of git info degrades gracefully; secrets never
-appear (existing redaction posture applies).
+- Stories: [[US-060]] Audit-grade evidence stamps · [[US-061]] Traceability
+  matrix note · [[US-062]] Release readiness (GO/NO-GO) · [[US-063]] Release
+  sign-off note · [[US-064]] Client/stakeholder report export · [[US-065]]
+  Audit export bundle · [[US-066]] Evidence retention sweep
 
-**US-061 Traceability matrix note** —
-As a **Delivery Manager**, I want a generated requirement→feature→scenario→
-latest-result matrix, so that coverage questions and audits are answered by
-one artifact.
-*AC:* "Generate traceability matrix" command + dashboard action; matrix is a
-Markdown note (table) derived purely from links/frontmatter — never
-hand-maintained; uncovered Use Cases and orphan features are listed
-explicitly; regeneration is idempotent and diff-friendly.
-
-**US-062 Release readiness (GO/NO-GO)** —
-As a **Delivery Manager**, I want a release-readiness view computing a
-verdict from configurable thresholds (min pass rate, max quarantined, zero
-failing on `@critical`, evidence present), so that ship decisions are
-defensible.
-*AC:* thresholds in settings with sensible defaults; verdict + per-threshold
-breakdown rendered in dashboard and exportable as a note; every number
-drills down to underlying scenarios/runs.
-
-**US-063 Release sign-off note** —
-As a **Product Owner**, I want a sign-off note generated for a release
-(scope, readiness verdict, deferred defects, named approver, decision,
-timestamp), so that approval is a durable record instead of an email.
-*AC:* template-driven; approver fills decision in Obsidian; the note links
-the readiness snapshot and evidence; git history provides the audit trail.
-
-**US-064 Client/stakeholder report export** —
-As a **Freelancer**, I want a polished, self-contained report (standalone
-HTML, printable to PDF) for a run, suite, or date range, so that I can hand
-clients proof of testing.
-*AC:* export bundles summary, scenario table, embedded screenshots; no
-Obsidian required to read it; optional title/logo/footer fields (white-label);
-written inside the vault under `Test Evidence/exports/`.
-
-**US-065 Audit export bundle** —
-As a **Business Analyst**, I want a date-range export of evidence notes,
-matrix, and artifacts as one folder/zip, so that audit requests don't become
-a screenshot scramble.
-*AC:* date-range picker; bundle contains evidence notes (Markdown), the
-traceability matrix snapshot, and referenced artifacts; an index note lists
-contents with hashes.
-
-**US-066 Evidence retention sweep** —
-As a **User**, I want `evidenceRetentionDays` to actually work, so that old
-runs stop growing the vault forever.
-*AC:* implements the existing dead setting; sweep is explicit
-(command + optional prompt), dry-run lists what would be removed; emits the
-reserved `evidence.swept` event; never touches exports or signed-off
-releases.
-
-### EPIC-016 — Agent Integration via Local MCP *(opt-in, last on the roadmap)*
+### [[EPIC-016]] — Agent Integration via Local MCP *(opt-in, last on the roadmap)*
 
 > The plugin's **only** AI surface: one opt-in, local MCP server the user can
 > activate. No AI chat, no bundled or BYO-API-key model calls, no AI-generated
@@ -406,163 +278,26 @@ releases.
 > skills expose a stabilized V2 feature set instead of chasing a moving API.
 > New ADR: "Opt-in local MCP exposure; no in-plugin AI runtime."
 
-**US-067 Local MCP server for the Test Hub** —
-As a **Developer**, I want an opt-in local MCP server exposing the plugin's
-most important use cases as tools — list/read Use Cases, Features, and
-Suites; validate a Feature; detect missing steps; run a scope (suite,
-feature, scenario); fetch run results and failure context incl. evidence and
-trace paths; create/update Feature drafts and step-definition files — so
-that my own coding agent can author and verify against the SUT through the
-hub.
-*AC:* **off by default**, activated explicitly in settings; stdio-based and
-local-only (no network listener), generated into `.testrunner` so it also
-works without Obsidian running (CI/agent use); mutations restricted to the
-vault's testing folders (path-safety policy applies); run access respects
-ADR-0018 single-run semantics; tool surface is derived from the V1/V2 use
-case catalog (UC-006/007/010/011…014/016) so agents work the same loop a
-human does; ships with a documented agent-skill/prompt ("plan in Use Cases,
-formulate in Features, verify by running Suites").
+- Stories: [[US-067]] Local MCP server for the Test Hub · [[US-068]] Agent
+  context generation · [[US-069]] Step implementation through the MCP ·
+  [[US-070]] Failure triage through the MCP · [[US-071]] Repair-time healing
+  through the MCP · [[US-089]] Installable agent skills with provider
+  selection
 
-**US-068 Agent context generation** —
-As a **Developer**, I want generated `AGENTS.md`/`CLAUDE.md` context pointing
-agents at the vault's Use Cases, features, step library, run commands, and —
-when activated — the MCP server, so that any coding agent picks up the spec
-layer with zero setup.
-*AC:* generation command (opt-in); static content only — no model calls;
-content reflects actual vault paths/settings; regeneration idempotent.
-
-**US-069 Step implementation through the MCP** —
-As a **QA Engineer**, I want my agent to implement undefined steps via the
-MCP (fetch missing steps with feature context, write a step-file draft), so
-that the glue-code tax disappears without the plugin embedding any AI.
-*AC:* MCP exposes missing-step detection results and step-file write access
-(testing folders only); drafts land as reviewable changes — never
-auto-committed; the documented agent prompt covers this workflow.
-
-**US-070 Failure triage through the MCP** —
-As a **Delivery Manager**, I want my team's agent to read a run's failure
-context (result counts, error texts, artifact/trace paths) via the MCP and
-append a clearly-marked triage summary to the Evidence note, so that
-non-engineers understand a red run — with the plugin itself never calling a
-model.
-*AC:* MCP provides structured failure context; Evidence notes accept an
-agent-authored, explicitly-labeled summary section; redaction posture
-applies to everything the MCP serves.
-
-**US-071 Repair-time healing through the MCP** —
-As a **QA Engineer**, I want my agent to pull a failing scenario's spec, step
-code, error, and trace path via the MCP and propose a patch, so that
-selector rot is fixed at repair time — never silently at runtime.
-*AC:* MCP exposes the failing-scenario bundle; output is a reviewable diff;
-healing never changes `.feature` business wording without explicit
-confirmation; compatible with Playwright's healer-agent pattern.
-
-**US-089 Installable agent skills with provider selection** —
-As a **Developer**, I want the plugin to ship a set of dedicated agent
-skills (plan a Use Case, formulate Features, implement steps, run & triage,
-heal a failing scenario — the workflows behind US-067/069–071) that I can
-optionally install for the providers I actually use, so that my agent picks
-up the Test Hub's workflows in its native format instead of me hand-writing
-prompts.
-*AC:* opt-in "Install agent skills" flow with a **provider picker**
-(multi-select — e.g. Claude Code `.claude/skills/`, AGENTS.md-based agents,
-GitHub Copilot instructions, Cursor rules; the provider list is data-driven
-so new formats are additions, not rework); the same skill content is
-rendered per provider format from one source of truth; generation is static
-content only — no model calls (the in-plugin-AI non-goal stands); installed
-files live in the vault/repo, are listed for the user, and are regenerated
-idempotently (user edits are not silently overwritten); skills reference the
-MCP server (US-067) where the provider supports it and degrade to documented
-command workflows where it doesn't; uninstall removes exactly what was
-installed. Precedent: Playwright's `init-agents`, playwright-bdd's agent
-skill, and this repo's own fallow skill — shipping skills with the tool is
-the 2026 distribution pattern.
-
-### EPIC-017 — Discovery & Non-Technical Collaboration *(P2)*
+### [[EPIC-017]] — Discovery & Non-Technical Collaboration *(P2)*
 
 > Meet POs/BAs where they are: they review, not write, Gherkin. Bridge
 > discovery (Example Mapping) → formulation (features) → checklists →
 > automation. No competitor connects an example map to executable scenarios.
 
-**US-072 Example Map notes** —
-As a **Product Owner**, I want an Example Map note type (rules, examples,
-questions) attached to a Use Case, so that discovery output lives next to the
-requirement.
-*AC:* template + command; sections for Rules / Examples / Questions; open
-questions surface on the Use Case detail view.
+- Stories: [[US-072]] Example Map notes · [[US-073]] Generate scenarios from
+  an Example Map · [[US-074]] Scenario quality lint · [[US-075]] Checklist
+  on-ramp · [[US-081]] Step Library with autocomplete · [[US-082]] Use Case
+  Editor · [[US-083]] Linked entity notes (Actors and shared concepts)
+- Features: [[FEAT-030]] Exploratory Session Notes *(P3, V2.x, stories on
+  acceptance)*
 
-**US-073 Generate scenarios from an Example Map** —
-As a **Business Analyst**, I want each rule/example pair convertible into a
-draft Gherkin scenario in the Use Case's feature, so that formulation starts
-from agreed examples instead of a blank file.
-*AC:* per-example "Draft scenario" action appends a tagged `@draft` scenario;
-nothing is overwritten; the draft links back to the map entry.
-
-**US-074 Scenario quality lint** —
-As a **Business Analyst**, I want warnings for anti-pattern scenarios (too
-many steps, UI-mechanical wording, multiple When/Then cycles, missing
-Examples on outlines), so that specs stay business-readable.
-*AC:* lint runs on validate and in the Use Case detail view; rules follow
-BRIEF guidance; each warning links a short explanation; severities
-configurable; lint never blocks running.
-
-**US-075 Checklist on-ramp** —
-As a **Solo Developer**, I want a Markdown checklist note (e.g. a pre-launch
-list) where individual items can be promoted to scenarios over time, so that
-adoption is gradual instead of all-in BDD.
-*AC:* checklist template with per-item "Promote to scenario"; promoted items
-keep a link to their origin; unpromoted items can be recorded as manual-test
-results in evidence (manual pass/fail capture); evaluate reusing the Guided
-Tour's event-observed checklist infrastructure (ADR-0020) so promoted items
-auto-tick when their scenario first passes.
-
-**US-081 Step Library with autocomplete** —
-As a **Business Analyst**, I want a browsable Step Library (every implemented
-step, its parameters, and where it's used) and step autocomplete while
-editing a feature, so that I reuse the team's vocabulary instead of inventing
-near-duplicate steps.
-*AC:* library indexed from `.testrunner` step definitions; a Step Library
-view lists steps with usage counts and dead steps; editing a Feature in the
-Feature Editor offers existing-step suggestions; this is the
-testomat.io-style authoring aid the competitive research ranked as the single
-best non-technical-authoring feature in the market — and it directly attacks
-the #1 BDD abandonment cause (authoring friction and step duplication).
-
-**US-082 Use Case Editor** —
-As a **Product Owner**, I want a guided Use Case Editor — structured fields
-for title, description, domain, actor, preconditions, main-success-scenario
-steps, postconditions, and linked Features — so that creating a well-formed
-Use Case doesn't require knowing the frontmatter schema or the UC-NNN house
-format.
-*AC:* follows the shipped Feature Editor pattern: structured view with
-round-trip parse/serialize of frontmatter + body sections, raw-mode fallback
-when a note doesn't round-trip, and a live validation strip (missing
-title/actor, empty success scenario, broken Feature links); creates notes in
-the existing UC-001 format so hand-written Use Cases open without loss;
-reuses the focus-preserving re-render foundation from §9 item 1.12 (TD-004).
-
-**US-083 Linked entity notes (Actors and shared concepts)** —
-As a **Business Analyst**, I want actors — and similar shared concepts such
-as domains — created as their **own frontmatter + Markdown notes** that Use
-Cases reference via wikilinks, so that "who uses this" and "what belongs to
-this domain" are answered by backlinks and the graph view instead of
-duplicated free-text strings.
-*AC:* the Use Case Editor's actor/domain fields are **pick-or-create**:
-autocomplete over existing entity notes, and creating inline scaffolds a new
-note with typed frontmatter (`type: actor` / `type: domain`) in a dedicated
-folder; Use Case frontmatter stores the wikilink, so every entity note's
-backlinks list the Use Cases it participates in; a one-shot, non-destructive
-migration command converts existing free-text `actor:`/`domain:` values into
-entity notes + links; all properties stay plain YAML (Bases-queryable per
-US-076).
-
-**FEAT (V2.x, stories on acceptance): exploratory session notes** *(P3)* —
-a timed exploratory-testing session template (charter, notes, findings,
-screenshots) that joins the same evidence/traceability graph — closes the
-manual+exploratory parity gap with Testmo/Qase and matches how QA
-practitioners already use Obsidian by hand.
-
-### EPIC-018 — Obsidian-Native Experience *(P2)*
+### [[EPIC-018]] — Obsidian-Native Experience *(P2)*
 
 > Ride the platform — mobile read access, graph hygiene, queryable metadata —
 > while the Test Hub's dashboards remain our **own custom views**. Building
@@ -571,126 +306,50 @@ practitioners already use Obsidian by hand.
 > Bases views (`registerBasesView`) are explicitly out of scope and may be
 > revisited later.
 
-**US-076 Bases-friendly metadata** —
-As an **Obsidian power user**, I want all Use Case, run, and traceability
-metadata kept in clean frontmatter properties, so that I can query and
-display it with my own Bases — `.base` files whose YAML-configured filters,
-formulas, and views operate on exactly those note properties — without the
-plugin needing to provide any views.
-*AC:* run/scenario/use-case metadata lives in frontmatter properties (no
-inline metadata, no plugin-proprietary formats, property types chosen so
-Bases filters/formulas and summaries work on them — dates as dates, counts
-as numbers, links as links); property names are documented and stable across
-releases; the documentation includes example `.base` snippets (filters and
-formulas over the documented properties) that users can paste — the plugin
-itself ships and registers no Bases views; the plugin's own views read the
-same properties (one source of truth); no dependency on Bases or Dataview.
+- Stories: [[US-076]] Bases-friendly metadata · [[US-077]] Mobile read-only
+  degradation · [[US-078]] Vault & chrome hygiene
 
-**US-077 Mobile read-only degradation** —
-As a **Delivery Manager**, I want dashboards, evidence, and specs readable on
-Obsidian mobile, so that sync users aren't punished by `isDesktopOnly`.
-*AC:* investigate splitting execution (desktop) from reading (everywhere);
-at minimum: all generated artifacts are plain Markdown that renders on
-mobile; document sync behavior; stretch: plugin loads on mobile with
-execution affordances hidden.
-
-**US-078 Vault & chrome hygiene** —
-As an **Obsidian power user**, I want evidence artifacts contained and plugin
-chrome minimal, so that search, graph, and sidebar stay clean.
-*AC:* the ribbon trim itself lands pre-V2 with the V1 release (§9 Phase 0.1
-— not re-planned here); this story covers the remaining hygiene: all
-artifacts stay under the configured evidence/`.testrunner` folders;
-documented `.gitignore` / Obsidian-exclude guidance; no stray files at vault
-root; new V2 views (triage, readiness, step library, …) register without
-adding default ribbon icons.
-
-### EPIC-019 — Interop & Open Formats *(P2–P3)*
+### [[EPIC-019]] — Interop & Open Formats *(P2–P3)*
 
 > Be a good citizen of the 2026 toolchain; make leaving (and arriving) easy.
 
-**US-079 Cucumber Messages + Allure/JUnit export** *(P2)* —
-As a **QA Engineer**, I want runs to emit Cucumber Messages (NDJSON) and the
-runner to support Allure and JUnit reporters, so that existing report
-tooling consumes our runs for free.
-*AC:* report import consumes Messages (primary) with cucumber JSON fallback;
-generated CI uploads the chosen report format; documented Allure setup.
+- Stories: [[US-079]] Cucumber Messages + Allure/JUnit export *(P2)*
+- Features: [[FEAT-031]] Report-Parser Port & Importers *(P3, V2.x, stories
+  on acceptance)* · [[FEAT-032]] Headless Traceability CLI *(P3, V2.x)*
 
-**FEAT (V2.x, stories on acceptance): report-parser port & importers** *(P3)* —
-pluggable `ReportParser` chain (Playwright JSON, JUnit XML) so externally-run
-suites can feed evidence ("bring your own report"); CSV/Markdown importers
-from TestRail/Xray/Zephyr exports to capture switchers (the research shows
-export pain is a real switching trigger).
+### [[EPIC-020]] — Trust, Security & CI Depth *(P2–P3)*
 
-**FEAT (V2.x): headless traceability CLI** *(P3)* —
-a small CLI in `.testrunner` that lints the vault's traceability graph
-(orphan requirements, uncovered scenarios, broken links, stale matrix) and
-fails CI — the OpenFastTrace pattern; makes the vault a source of truth even
-outside Obsidian.
+> Deepen the security posture and CI generation: credentials out of
+> plaintext, session reuse, sharded and multi-environment pipelines, and a
+> second pipeline provider.
 
-### EPIC-020 — Trust, Security & CI Depth *(P2–P3)*
-
-**US-084 Credential storage upgrade** *(P2)* —
-As a **QA Engineer**, I want credentials in the OS keychain (Electron
-`safeStorage`) instead of plaintext `data.json`, so that a synced vault never
-leaks secrets.
-*AC:* transparent migration with explicit user consent; fallback to current
-behavior where keychain is unavailable (documented); export/repair never
-prints values; supersedes AD-9 with a new ADR.
-
-**US-085 Session/auth reuse (storageState)** *(P2)* —
-As a **QA Engineer**, I want optional Playwright `storageState` support in
-the generated runner (login once per run, reuse the session), so that suites
-stop re-logging-in per scenario.
-*AC:* template includes a documented setup-project pattern; storage state
-file is git-ignored and excluded from evidence; env-var transport (ADR-0014)
-remains the credential source.
-
-**US-086 Sharded CI generation** *(P2)* —
-As a **QA Engineer**, I want the generated GitHub Actions workflow to
-support sharding, so that CI suite time scales with the suite instead of
-serially compounding.
-*AC:* optional shard matrix with blob-report merge job and sensible artifact
-retention defaults; per-OS Playwright browser caching in the generated
-workflow; the CI readiness check validates the sharded variant.
-
-**US-087 Multi-environment CI matrix** *(P3)* —
-As a **QA Engineer**, I want to run a suite against multiple named
-Environments in one CI run, so that cross-environment regressions surface
-together.
-*AC:* workflow matrix over selected Environments; per-environment secrets
-follow the existing `E2E_*` convention; results import and evidence remain
-attributable per environment.
-
-**US-088 GitLab CI provider** *(P3)* —
-As a **Developer**, I want GitLab CI as a second pipeline provider behind
-the existing provider seam, so that non-GitHub teams get CI generation too
-(research found GitLab demand comparable to Azure DevOps; PRD §14's Azure
-DevOps remains reserved).
-*AC:* provider selection in settings; the generated `.gitlab-ci.yml` passes
-the same command-safety and YAML screening as the GitHub template; CI
-readiness checks adapt per provider.
+- Stories: [[US-084]] Credential storage upgrade *(P2)* · [[US-085]]
+  Session/auth reuse (storageState) *(P2)* · [[US-086]] Sharded CI generation
+  *(P2)* · [[US-087]] Multi-environment CI matrix *(P3)* · [[US-088]] GitLab
+  CI provider *(P3)*
 
 ---
 
 ## 7. New use cases (UC-025…037)
 
-One line each; full notes to be authored on acceptance, in the UC-001 format.
+One line each; carved out as stub notes in `docs/use-cases/` — full notes to
+be elaborated on acceptance, in the UC-001 format.
 
 | ID | Title | Primary actor | Epic |
 | --- | --- | --- | --- |
-| UC-025 | Run a single Scenario from a Use Case | Developer | EPIC-013 |
-| UC-026 | Debug a failed Scenario via Playwright trace | Developer | EPIC-013 |
-| UC-027 | Run a Suite across multiple browsers | QA Engineer | EPIC-013 |
-| UC-028 | Review and quarantine a flaky Scenario | QA Engineer | EPIC-014 |
-| UC-029 | Triage a failed run by error group | QA Engineer | EPIC-014 |
-| UC-030 | Generate the traceability matrix | Delivery Manager | EPIC-015 |
-| UC-031 | Evaluate release readiness and record sign-off | Product Owner | EPIC-015 |
-| UC-032 | Export a client-facing test report | Freelancer | EPIC-015 |
-| UC-033 | Assemble an audit evidence bundle | Business Analyst | EPIC-015 |
-| UC-034 | Drive the Test Hub from a coding agent via MCP | Developer | EPIC-016 |
-| UC-035 | Facilitate discovery with an Example Map | Product Owner | EPIC-017 |
-| UC-036 | Promote a checklist item to an automated Scenario | Solo Developer | EPIC-017 |
-| UC-037 | Author a Use Case with the guided editor (incl. linked Actor notes) | Product Owner | EPIC-017 |
+| [[UC-025]] | Run a single Scenario from a Use Case | Developer | [[EPIC-013]] |
+| [[UC-026]] | Debug a failed Scenario via Playwright trace | Developer | [[EPIC-013]] |
+| [[UC-027]] | Run a Suite across multiple browsers | QA Engineer | [[EPIC-013]] |
+| [[UC-028]] | Review and quarantine a flaky Scenario | QA Engineer | [[EPIC-014]] |
+| [[UC-029]] | Triage a failed run by error group | QA Engineer | [[EPIC-014]] |
+| [[UC-030]] | Generate the traceability matrix | Delivery Manager | [[EPIC-015]] |
+| [[UC-031]] | Evaluate release readiness and record sign-off | Product Owner | [[EPIC-015]] |
+| [[UC-032]] | Export a client-facing test report | Freelancer | [[EPIC-015]] |
+| [[UC-033]] | Assemble an audit evidence bundle | Business Analyst | [[EPIC-015]] |
+| [[UC-034]] | Drive the Test Hub from a coding agent via MCP | Developer | [[EPIC-016]] |
+| [[UC-035]] | Facilitate discovery with an Example Map | Product Owner | [[EPIC-017]] |
+| [[UC-036]] | Promote a checklist item to an automated Scenario | Solo Developer | [[EPIC-017]] |
+| [[UC-037]] | Author a Use Case with the guided editor (incl. linked Actor notes) | Product Owner | [[EPIC-017]] |
 
 ---
 
