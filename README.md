@@ -31,14 +31,16 @@ Auto-update Tool). Submission to the Obsidian community marketplace is
 deliberately deferred — this repository is the source of truth.
 
 1. Install **BRAT** from the Obsidian community plugin store and enable it.
-2. In BRAT: **Add beta plugin** → enter `Luis85/specorator-testrunner` →
-   pick the latest release.
+2. In BRAT: **Add beta plugin** → enter `Luis85/specorator-testrunner` — BRAT
+   installs the latest release.
 3. Enable **E2E Test Hub** under _Settings → Community plugins_.
 
-BRAT auto-updates the plugin on new releases. The plugin is desktop-only
-(it spawns Node child processes to run tests; see
+BRAT checks for new releases (on startup; configurable in BRAT's settings) and
+updates the plugin automatically. The plugin is desktop-only (it spawns Node
+child processes to run tests; see
 [What this plugin does on your machine](#what-this-plugin-does-on-your-machine)).
-Requires Node.js and npm available on your `PATH` for the test runner.
+Requires Obsidian 1.13+, and Node.js and npm available on your `PATH` for the
+test runner.
 
 ## Working from the UI
 
