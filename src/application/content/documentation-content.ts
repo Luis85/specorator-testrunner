@@ -70,7 +70,7 @@ Obsidian.
 
 > Requirements → Specification → Automation → Execution → Evidence → CI
 
-1. **Initialize** the Test Hub (ribbon flask icon or **Initialize Test Hub**).
+1. **Initialize** the Test Hub (the **Initialize Test Hub** command, or the dashboard's call to action).
 2. **Create a Use Case** and **Generate a Feature** from it.
 3. **Run** a suite, use case, or feature.
 4. **Review evidence** under \`${settings.paths.evidencePath}/\` and the live

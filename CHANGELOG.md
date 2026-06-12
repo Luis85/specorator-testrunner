@@ -51,6 +51,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - The quality gates are now blocking (TD-006): the fallow changed-code audit
   fails CI on findings a changeset introduces (new-only attribution), and
   `vitest/no-disabled-tests` is an error.
+- Default ribbon chrome trimmed from six icons to two — Dashboard and Test
+  Console (2026-06-11 review §4 product call). All other views remain
+  reachable via the command palette and the dashboard's quick actions.
 - Requires Obsidian 1.13+ (`minAppVersion` 1.8.0 → 1.13.0); destructive
   buttons use the 1.13 `setDestructive()` API.
 - The settings tab is built on the Obsidian 1.13 declarative
