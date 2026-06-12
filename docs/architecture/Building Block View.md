@@ -1,11 +1,11 @@
-# Building Block View — Obsidian E2E Test Hub
+# Building Block View — Specorator Testrunner
 
 > Arc42 building block view. Drills the [Solution Design](./Solution%20Design.md)'s layered architecture into concrete views, services, adapters, and runner modules. Locked architectural decisions (AD-1…AD-8) referenced inline.
 
 - **Version:** 1.0
 - **Status:** Draft
 - **Architecture Stage:** Solution Design / Arc42 §5 (Building Blocks)
-- **Companion documents:** [[Obsidian E2E Test Hub]], [[Solution Design]], [[Runtime View]], [[Technical Interface Specification]], [[Event Catalog]]
+- **Companion documents:** [[Specorator Testrunner]], [[Solution Design]], [[Runtime View]], [[Technical Interface Specification]], [[Event Catalog]]
 
 ---
 
@@ -26,7 +26,7 @@ The plugin orchestrates; the vault holds business data; the runner executes. Eac
 ## 2. Level 1 — System building blocks
 
 ```
-Obsidian E2E Test Hub
+Specorator Testrunner
 ├─ Obsidian Plugin
 ├─ Vault Artifacts
 └─ .testrunner

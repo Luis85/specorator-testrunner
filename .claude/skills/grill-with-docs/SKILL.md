@@ -72,7 +72,7 @@ When the user states how something works, check whether the code and the design 
 In this project, the design docs are the primary record. Cross-reference against:
 
 - `CONTEXT.md` (glossary; root).
-- `docs/Obsidian E2E Test Hub.md` (PRD; source of truth for scope).
+- `docs/Specorator Testrunner.md` (PRD; source of truth for scope).
 - `docs/architecture/Solution Design.md` (architecture of record; AD-1…AD-N).
 - `docs/architecture/Building Block View.md` (Arc42 §5 — services, adapters, runner internals).
 - `docs/architecture/Runtime View.md` (Arc42 §6 — sequence diagrams).

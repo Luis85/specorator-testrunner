@@ -171,7 +171,7 @@ export class InitializationWizardModal extends Modal {
           ? `${summary} Open Getting Started for a walkthrough.`
           : summary,
     });
-    new Notice("E2E Test Hub initialized.");
+    new Notice("Specorator Testrunner initialized.");
 
     const actions = new Setting(contentEl);
     if (this.deps.openGuidedTour) {

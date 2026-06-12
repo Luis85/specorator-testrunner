@@ -1,11 +1,11 @@
-# Runtime View — Obsidian E2E Test Hub
+# Runtime View — Specorator Testrunner
 
 > Arc42 §6 runtime view. Sequence diagrams and step-by-step traces for the critical V1 scenarios, showing which services collaborate, which adapters they call, and which domain events fire in which order.
 
 - **Version:** 1.0
 - **Status:** Draft
 - **Architecture Stage:** Solution Design / Arc42 §6 (Runtime View)
-- **Companion documents:** [[Obsidian E2E Test Hub]], [[Solution Design]], [[Building Block View]], [[Technical Interface Specification]], [[Event Catalog]]
+- **Companion documents:** [[Specorator Testrunner]], [[Solution Design]], [[Building Block View]], [[Technical Interface Specification]], [[Event Catalog]]
 
 ---
 

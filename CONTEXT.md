@@ -1,4 +1,4 @@
-# Obsidian E2E Test Hub
+# Specorator Testrunner
 
 Markdown-native, local-first BDD workbench inside Obsidian: define Use Cases, write Gherkin specifications, execute Playwright tests via a self-contained `.testrunner`, and review evidence — all without leaving the vault.
 

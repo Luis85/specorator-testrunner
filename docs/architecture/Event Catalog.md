@@ -1,12 +1,12 @@
-# Event Catalog — Obsidian E2E Test Hub
+# Event Catalog — Specorator Testrunner
 
 > V1 domain event catalog: envelope, payloads, use-case mapping, EventBus contract, correlation rules.
 
-- **Product:** Obsidian E2E Test Hub
+- **Product:** Specorator Testrunner
 - **Version:** 1.0
 - **Stage:** MVP / V1
 - **Type:** Domain Event Catalog
-- **Companion documents:** [[Obsidian E2E Test Hub]], [[Solution Design]], [[Building Block View]], [[Runtime View]], [[Technical Interface Specification]]
+- **Companion documents:** [[Specorator Testrunner]], [[Solution Design]], [[Building Block View]], [[Runtime View]], [[Technical Interface Specification]]
 
 This catalog supersedes the compact event list in Solution Design §13.
 

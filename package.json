@@ -2,7 +2,7 @@
   "name": "obsidian-e2e-test-hub",
   "version": "0.0.1",
   "private": true,
-  "description": "Obsidian E2E Test Hub — define, manage, execute, and document end-to-end tests directly inside your vault.",
+  "description": "Specorator Testrunner — define, manage, execute, and document end-to-end tests directly inside your vault.",
   "license": "MIT",
   "engines": {
     "node": ">=20"
