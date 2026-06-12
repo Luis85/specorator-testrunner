@@ -1,7 +1,9 @@
-# Opt-in E2E smoke: installs the generated .testrunner for real and runs the
-# demo test (scripts/e2e-smoke.mjs). Heavier than CI (npm install + Chromium
-# download per OS), so it only runs on demand: manual dispatch or the
-# `e2e-smoke` label on a PR.
+# E2E smoke: installs the generated .testrunner for real and runs the demo
+# test (scripts/e2e-smoke.mjs). Heavier than CI (npm install per OS; Chromium
+# is cached), so it runs on demand — manual dispatch or the `e2e-smoke` PR
+# label — and automatically on PRs that touch the runner-template surface
+# (pre-V2 plan items 0.2a/0.2b: this is the pre-release gate the
+# playwright-bdd migration will be validated against).
 name: E2E Smoke
 
 on:
@@ -29,6 +31,10 @@ jobs:
       (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'e2e-smoke'))
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      # One cacheable browser location on both OSes; the smoke script's child
+      # processes (npm install / playwright install / test run) inherit it.
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +49,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .pw-browsers
+          # The template source pins the runner's Playwright version; hashing it
+          # invalidates the cache whenever that pin can change. restore-keys
+          # keeps partial reuse (playwright install skips present revisions).
+          key: playwright-${{ runner.os }}-${{ hashFiles('src/infrastructure/runner/templates/runner-templates.ts') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
 
       - name: Install plugin dependencies
         run: npm ci
