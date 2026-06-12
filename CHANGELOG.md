@@ -22,6 +22,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Settings repair on load now also screens `ci.*` and `automation.*` scalars
+  (provider/workflow/node-version strings, automation booleans, evidence
+  retention), so a tampered or synced `data.json` falls back to defaults
+  instead of crashing or silently flipping automation behaviour.
 - Concurrent writers to the same Use Case note (post-run evidence linking,
   the edit modal, feature linking) are now serialized per note path, so
   overlapping read-modify-write updates can no longer drop each other's

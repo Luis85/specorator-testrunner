@@ -4,6 +4,9 @@ import type { PathSafetyPolicy } from "../../domain/policies/path-safety-policy"
 import {
   authEnvKeyProblem,
   DEFAULT_SETTINGS,
+  type AutomationSettings,
+  type CiProvider,
+  type CiSettings,
   type OnboardingSequenceProgress,
   type OnboardingSettings,
   type SutEnvironment,
@@ -77,6 +80,13 @@ const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
 /** Runtime mirror of LoggingSettings["level"] for tamper repair on load. */
 const LOG_LEVELS: ReadonlySet<string> = new Set(["debug", "info", "warn", "error"]);
 
+/** Runtime mirror of {@link CiProvider} union for tamper repair on load. */
+const CI_PROVIDERS: ReadonlySet<string> = new Set([
+  "github-actions",
+  "azure-devops",
+  "none",
+] satisfies CiProvider[]);
+
 /** Shallow-by-section merge of persisted data over defaults. */
 const mergeWithDefaults = (raw: unknown): TestHubSettings => {
   const data = (raw ?? {}) as Partial<TestHubSettings>;
@@ -115,10 +125,75 @@ export class DefaultSettingsService implements SettingsService {
   private readonly persistQueue = new SerialQueue();
 
   async load(): Promise<TestHubSettings> {
-    const settings = this.sanitizeRunnerEnvInputs(
-      this.sanitizePaths(mergeWithDefaults(await this.store.load())),
+    const settings = this.sanitizeScalarShapes(
+      this.sanitizeRunnerEnvInputs(this.sanitizePaths(mergeWithDefaults(await this.store.load()))),
     );
     return { ...settings, onboarding: repairOnboardingShape(settings.onboarding) };
+  }
+
+  /**
+   * Repairs `ci.*` / `automation.*` scalars with the same log-and-fallback
+   * posture as {@link sanitizePaths} (review §4): a tampered/synced data.json
+   * must not crash `.trim()` call sites or flip automation behaviour with
+   * truthy garbage. V2 grows both sections; new scalars get screened here.
+   */
+  private sanitizeScalarShapes(settings: TestHubSettings): TestHubSettings {
+    const repair = <T>(field: string, value: unknown, valid: boolean, fallback: T): T => {
+      if (valid) return value as T;
+      this.logger.error(
+        `Configured "${field}" has an invalid value; falling back to the default.`,
+        undefined,
+        { field, value, fallback },
+      );
+      return fallback;
+    };
+    const booleanFlag = (field: keyof AutomationSettings): boolean =>
+      repair(
+        `automation.${field}`,
+        settings.automation[field],
+        typeof settings.automation[field] === "boolean",
+        DEFAULT_SETTINGS.automation[field] as boolean,
+      );
+    const retention = settings.automation.evidenceRetentionDays;
+    return {
+      ...settings,
+      ci: {
+        provider: repair(
+          "ci.provider",
+          settings.ci.provider,
+          typeof settings.ci.provider === "string" && CI_PROVIDERS.has(settings.ci.provider),
+          DEFAULT_SETTINGS.ci.provider,
+        ),
+        workflowPath: repair(
+          "ci.workflowPath",
+          settings.ci.workflowPath,
+          typeof settings.ci.workflowPath === "string",
+          DEFAULT_SETTINGS.ci.workflowPath,
+        ),
+        nodeVersion: repair(
+          "ci.nodeVersion",
+          settings.ci.nodeVersion,
+          typeof settings.ci.nodeVersion === "string",
+          DEFAULT_SETTINGS.ci.nodeVersion,
+        ),
+      } satisfies CiSettings,
+      automation: {
+        autoCreateFolders: booleanFlag("autoCreateFolders"),
+        autoCreateDocumentation: booleanFlag("autoCreateDocumentation"),
+        autoCreateDemoContent: booleanFlag("autoCreateDemoContent"),
+        updateUseCaseFrontmatterAfterRun: booleanFlag("updateUseCaseFrontmatterAfterRun"),
+        generateEvidenceMarkdown: booleanFlag("generateEvidenceMarkdown"),
+        openDashboardAfterInitialization: booleanFlag("openDashboardAfterInitialization"),
+        // undefined = keep forever (the V1 default) — also the repair fallback.
+        evidenceRetentionDays: repair<number | undefined>(
+          "automation.evidenceRetentionDays",
+          retention,
+          retention === undefined ||
+            (typeof retention === "number" && Number.isFinite(retention) && retention > 0),
+          undefined,
+        ),
+      } satisfies AutomationSettings,
+    };
   }
 
   /**
