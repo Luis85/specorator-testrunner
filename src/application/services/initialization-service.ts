@@ -69,9 +69,10 @@ export type InitializationStep =
 
 export class DefaultInitializationService implements InitializationService {
   /**
-   * Re-entrancy guard (entry-point review): two wizards (ribbon + palette) or a
-   * double Retry must not run two init flows concurrently — both would rewrite
-   * `.testrunner` templates and run `npm install` in the same directory.
+   * Re-entrancy guard (entry-point review): two wizards (dashboard CTA +
+   * palette) or a double Retry must not run two init flows concurrently — both
+   * would rewrite `.testrunner` templates and run `npm install` in the same
+   * directory.
    * Synchronous flag, set before the first await, so there is no check-then-act
    * window.
    */
