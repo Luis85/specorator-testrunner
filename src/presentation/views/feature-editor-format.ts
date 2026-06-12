@@ -1,8 +1,4 @@
-import {
-  isPlainDescriptionLine,
-  serialiseCell,
-  useCaseIdFromPath,
-} from "../../application/content/gherkin";
+import { isPlainDescriptionLine, useCaseIdFromPath } from "../../application/content/gherkin";
 import {
   isStepDefined,
   type StepDefinitionPattern,
@@ -47,6 +43,7 @@ const flagDoubleArguments = (
  * agree, plus editor-only hints (unnamed scenario, Outline without Examples
  * rows) for content that is still being typed.
  */
+// fallow-ignore-next-line complexity
 export const projectValidation = (specification: FeatureSpecification): ValidationItem[] => {
   const items: ValidationItem[] = [];
   if (useCaseIdFromPath(specification.path) === null) {
@@ -146,11 +143,8 @@ export const normalizeTag = (value: string): string | null => {
   return joined === "" ? null : `@${joined}`;
 };
 
-/**
- * Keeps a table cell round-trippable via the serializer's own cell encoding
- * (one policy, two surfaces), trimmed for tidy editor input.
- */
-export const sanitizeCell = (value: string): string => serialiseCell(value).trim();
+/** Tidies editor cell input; pipes/backslashes are escaped by the serializer (TD-001). */
+export const sanitizeCell = (value: string): string => value.trim();
 
 /** Picks a doc-string fence the body cannot terminate early. */
 export const fenceFor = (lines: readonly string[]): '"""' | "```" =>

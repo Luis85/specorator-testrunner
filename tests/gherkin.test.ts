@@ -313,9 +313,9 @@ describe("serialiseFeature / roundTripsLosslessly", () => {
     expect(roundTripsLosslessly(feature, path)).toBe(false);
   });
 
-  it("fails the guard for escaped-pipe table cells (not modelled)", () => {
+  it("round-trips escaped-pipe table cells (official Gherkin escape, TD-001)", () => {
     const escaped = RICH.replace("| a    | 1     |", String.raw`| a\|b | 1     |`);
-    expect(roundTripsLosslessly(escaped, path)).toBe(false);
+    expect(roundTripsLosslessly(escaped, path)).toBe(true);
   });
 
   it("preserves blank paragraph breaks inside descriptions", () => {
@@ -342,16 +342,37 @@ describe("serialiseFeature / roundTripsLosslessly", () => {
     expect(roundTripsLosslessly(feature, path)).toBe(false);
   });
 
-  it("sanitises literal pipes in model cells (table shape is the invariant)", () => {
+  it("escapes literal pipes in model cells (table shape is the invariant)", () => {
     const spec = parseFeature(RICH, path);
     expect(spec).not.toBeNull();
     if (!spec) return;
     spec.scenarios[1].examples?.[0].rows.push(["a|b", "2", "3"]);
     const text = serialiseFeature(spec);
-    expect(text).toContain("| a/b | 2 | 3 |");
+    expect(text).toContain(String.raw`| a\|b | 2 | 3 |`);
     const reparsed = parseFeature(text, path);
     expect(reparsed?.scenarios[1].examples?.[0].rows).toHaveLength(3);
-    expect(reparsed?.scenarios[1].examples?.[0].rows[2]).toEqual(["a/b", "2", "3"]);
+    expect(reparsed?.scenarios[1].examples?.[0].rows[2]).toEqual(["a|b", "2", "3"]);
+  });
+});
+
+describe("table cell escapes (TD-001, official Gherkin: \\|, \\\\, \\n)", () => {
+  const path = vp("Specifications/features/UC-001-escapes.feature");
+  const featureWith = (row: string) =>
+    `Feature: F\n\n  Scenario: S\n    Given a table\n      | col |\n      ${row}\n`;
+
+  it("parses the three official escapes into literal cell values", () => {
+    const spec = parseFeature(featureWith(String.raw`| a\|b\\c\nd |`), path);
+    expect(spec?.scenarios[0].steps[0].dataTable).toEqual([["col"], ["a|b\\c\nd"]]);
+  });
+
+  it("re-escapes on serialization so escaped cells round-trip losslessly", () => {
+    const text = featureWith(String.raw`| a\|b |`);
+    expect(roundTripsLosslessly(text, path)).toBe(true);
+  });
+
+  it("leaves an unknown backslash sequence verbatim (lenient parse)", () => {
+    const spec = parseFeature(featureWith(String.raw`| a\b |`), path);
+    expect(spec?.scenarios[0].steps[0].dataTable).toEqual([["col"], [String.raw`a\b`]]);
   });
 });
 

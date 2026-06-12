@@ -29,6 +29,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Gherkin table cells support the official escapes (`\|`, `\\`, `\n`): a
+  literal pipe in table data round-trips through the structured editor
+  instead of being silently rewritten to `/`, and files already using the
+  standard escape are no longer locked out of structured mode (TD-001).
 - Path plumbing hardening: the vault base path is normalized (no trailing
   separator) at its single source, and `joinVaultPath` rejects absolute and
   `..` segments outright — closing the gaps before the V2 migration and MCP

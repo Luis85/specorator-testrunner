@@ -145,8 +145,8 @@ describe("sanitizers", () => {
     expect(normalizeTag("@")).toBeNull();
   });
 
-  it("sanitizeCell strips pipes (they would break the row syntax)", () => {
-    expect(sanitizeCell(" a | b ")).toBe("a / b");
+  it("sanitizeCell trims only — pipes are handled by the serializer's escape (TD-001)", () => {
+    expect(sanitizeCell(" a | b ")).toBe("a | b");
   });
 
   it("fenceFor avoids the fence the body contains", () => {
