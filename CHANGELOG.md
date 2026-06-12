@@ -15,6 +15,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `PostRunCoordinator` now share one `SerialQueue` utility
   (`src/shared/async/serial-queue.ts`), extracted now that per-note Use Case
   write serialization is its third user.
+- `SettingsService`'s repair/validation hot spots (`repairSutShape`,
+  `validate`, `sanitizeRunnerEnvInputs`, `detectSiblingTestHub`) are
+  decomposed into focused helpers, clearing the remaining complexity findings
+  the blocking quality gate would attribute to any future edit of the file.
 
 ## [1.0.0] — 2026-06-12
 
