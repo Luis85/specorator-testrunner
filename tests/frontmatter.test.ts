@@ -50,7 +50,10 @@ describe("buildFrontmatter", () => {
 describe("joinVaultPath", () => {
   it("joins, collapses duplicate slashes, and drops empty segments", () => {
     expect(joinVaultPath("Test Hub", "Getting Started.md")).toBe("Test Hub/Getting Started.md");
-    expect(joinVaultPath("a/", "/b", "", "c")).toBe("a/b/c");
+    // Leading slashes within a segment were previously silently collapsed, but since
+    // joinVaultPath now rejects absolute segments (ADR-0019 / ADR-0008), use
+    // vault-relative segments; the collapsing and empty-drop behaviour is unchanged.
+    expect(joinVaultPath("a/", "b", "", "c")).toBe("a/b/c");
   });
 });
 

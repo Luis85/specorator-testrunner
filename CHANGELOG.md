@@ -22,6 +22,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Path plumbing hardening: the vault base path is normalized (no trailing
+  separator) at its single source, and `joinVaultPath` rejects absolute and
+  `..` segments outright — closing the gaps before the V2 migration and MCP
+  server mint new paths.
 - Settings repair on load now also screens `ci.*` and `automation.*` scalars
   (provider/workflow/node-version strings, automation booleans, evidence
   retention), so a tampered or synced `data.json` falls back to defaults

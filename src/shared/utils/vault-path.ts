@@ -10,13 +10,31 @@ import type { VaultPath } from "../../domain/value-objects/identifiers";
  * rather than re-validated (P3-4 / ADR-0008). This `shared` util cannot import
  * the domain `unsafeVaultPath` brander without inverting the layering, so the
  * cast lives here and is part of the same auditable trusted surface.
+ *
+ * Guard (review §4): segments must be vault-relative and traversal-free —
+ * an absolute or `..` segment reaching this trusted brander is a programmer
+ * error (ADR-0019), not user input (user paths are screened upstream by the
+ * `vaultPath()` smart constructor / PathSafetyPolicy), so it throws.
  */
-export const joinVaultPath = (...segments: (string | VaultPath)[]): VaultPath =>
-  segments
+export const joinVaultPath = (...segments: (string | VaultPath)[]): VaultPath => {
+  for (const segment of segments) {
+    if (segment.startsWith("/") || segment.startsWith("\\")) {
+      throw new Error(
+        `joinVaultPath: absolute segment "${segment}" — vault paths are vault-relative (ADR-0008).`,
+      );
+    }
+    if (/(^|[\\/])\.\.([\\/]|$)/.test(segment)) {
+      throw new Error(
+        `joinVaultPath: traversal segment "${segment}" — ".." is never a vault path part.`,
+      );
+    }
+  }
+  return segments
     .filter((segment) => segment !== "")
     .join("/")
     .replace(/\/+/g, "/")
     .replace(/\/$/, "") as VaultPath;
+};
 
 /**
  * POSIX relative path from one vault folder to another (both vault-relative).
