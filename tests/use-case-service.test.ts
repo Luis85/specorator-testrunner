@@ -521,9 +521,21 @@ describe("DefaultUseCaseService", () => {
     expect((await first).ok).toBe(true);
     expect((await second).ok).toBe(true);
 
-    // Each writer must complete its own read→write before the next one reads.
-    // The findAll reads happen outside the lock; assert only the trailing
-    // locked RMW windows — those four ops must alternate read,write,read,write.
-    expect(order.slice(-4)).toEqual(["read", "write", "read", "write"]);
+    // Serialized sequence (8 ops total):
+    //   [0] Writer 1 pre-lock findById → findAll → readFile (outside lock)
+    //   [1] Writer 2 pre-lock findById → findAll → readFile (outside lock; gate is
+    //       already released so no blocking occurs — the gate only adds a microtask
+    //       tick to make scheduling deterministic in the unserialized case)
+    //   [2] Writer 1 inside lock: locked findById → findAll → readFile
+    //   [3] Writer 1 inside lock: readFile for frontmatter update
+    //   [4] Writer 1 inside lock: writeFile
+    //   [5] Writer 2 inside lock: locked findById → findAll → readFile
+    //   [6] Writer 2 inside lock: readFile for frontmatter update
+    //   [7] Writer 2 inside lock: writeFile
+    // Without the noteWrites.run wrapper, both writers' reads land before either
+    // write (observed: read,read,read,read,read,read,write,write) — the second
+    // write clobbers the first writer's change. Fix 1 moves findById inside the
+    // lock, adding two more recorded reads (one per writer) vs. the original four.
+    expect(order).toEqual(["read", "read", "read", "read", "write", "read", "read", "write"]);
   });
 });

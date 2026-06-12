@@ -66,7 +66,9 @@ export class DefaultUseCaseService implements UseCaseService {
   // UC notes have three read-modify-write writers (post-run evidence linking,
   // edit modal, feature linking) that can interleave across awaits (review §4);
   // serialize all note I/O per path. V2 adds more writers (history rollups,
-  // evidence stamps, sign-off links) on top of this same mutex.
+  // evidence stamps, sign-off links) on top of this same mutex. The keyed map
+  // is bounded by the vault's UC note count (one lightweight queue per path)
+  // and entries are never dropped — fine at vault scale.
   private readonly noteWrites = new KeyedSerialQueue();
 
   constructor(
@@ -187,6 +189,9 @@ export class DefaultUseCaseService implements UseCaseService {
         ...(useCase.evidence.length > 0 ? ["evidence"] : []),
         ...(useCase.lastTestRun ? ["lastTestRun"] : []),
       ];
+      // Subscribers are read-only today (render schedulers / tour service's own
+      // queue); a subscriber that re-entered noteWrites.run for the same path
+      // would deadlock (see SerialQueue docs).
       await this.eventBus.publish(
         createEvent("usecase.updated", {
           useCaseId: useCase.id,
@@ -226,24 +231,40 @@ export class DefaultUseCaseService implements UseCaseService {
       return err(appError("VALIDATION_FAILED", `Invalid Use Case status: ${changes.status}.`));
     }
 
-    const found = await this.findById(id);
-    if (!found.ok) return err(found.error);
-    if (found.value === null) {
+    // Pre-lock lookup resolves the lock key only; the locked re-read below is
+    // authoritative. The note path is stable per id — title edits rewrite the
+    // heading in place; no file move is ever performed.
+    const preLock = await this.findById(id);
+    if (!preLock.ok) return err(preLock.error);
+    if (preLock.value === null) {
       return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
     }
-    const existing = found.value;
+    const notePath = preLock.value.path;
 
-    const nextTitle = title ?? existing.title;
-    const nextStatus = changes.status ?? existing.status;
-    const changedFields = [
-      ...(nextTitle !== existing.title ? ["title"] : []),
-      ...(nextStatus !== existing.status ? ["status"] : []),
-    ];
-    // No-op: nothing changed, so neither write nor publish (subscribers would
-    // otherwise re-render for a phantom edit).
-    if (changedFields.length === 0) return ok(existing);
+    return this.noteWrites.run(notePath, async () => {
+      // Re-read inside the lock so the no-op guard and changedFields are always
+      // computed against the latest on-disk state, not a stale pre-lock snapshot.
+      // Two concurrent calls sending the same change would otherwise both pass the
+      // no-op guard and each produce a phantom second write + usecase.updated event.
+      const fresh = await this.findById(id);
+      if (!fresh.ok) return err(fresh.error);
+      if (fresh.value === null) {
+        // Another writer cannot delete the note today, but keep the guard for
+        // forward-compatibility (matches the not-found error shape above).
+        return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
+      }
+      const existing = fresh.value;
 
-    return this.noteWrites.run(existing.path, async () => {
+      const nextTitle = title ?? existing.title;
+      const nextStatus = changes.status ?? existing.status;
+      const changedFields = [
+        ...(nextTitle !== existing.title ? ["title"] : []),
+        ...(nextStatus !== existing.status ? ["status"] : []),
+      ];
+      // No-op: nothing changed, so neither write nor publish (subscribers would
+      // otherwise re-render for a phantom edit).
+      if (changedFields.length === 0) return ok(existing);
+
       const read = await this.fs.readFile(existing.path);
       if (!read.ok) return err(read.error);
       let content = updateNoteFrontmatter(read.value, { title: nextTitle, status: nextStatus });
@@ -263,6 +284,9 @@ export class DefaultUseCaseService implements UseCaseService {
       const written = await this.fs.writeFile(existing.path, content);
       if (!written.ok) return err(written.error);
 
+      // Subscribers are read-only today (render schedulers / tour service's own
+      // queue); a subscriber that re-entered noteWrites.run for the same path
+      // would deadlock (see SerialQueue docs).
       await this.eventBus.publish(
         createEvent(
           "usecase.updated",
