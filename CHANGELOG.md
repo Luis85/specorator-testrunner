@@ -33,6 +33,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `validate`, `sanitizeRunnerEnvInputs`, `detectSiblingTestHub`) are
   decomposed into focused helpers, clearing the remaining complexity findings
   the blocking quality gate would attribute to any future edit of the file.
+- The Feature Editor always re-renders on commit and restores focus/caret
+  via stable control keys (TD-004): edit handlers no longer classify
+  changes as structural vs field-level, eliminating the stale-DOM and
+  focus-steal bug class the flag invited.
 
 ### Fixed
 
