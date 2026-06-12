@@ -579,32 +579,20 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     );
 
     // Ribbon icons stay in the composition root (they are plugin chrome, not
-    // command bodies).
-    this.addRibbonIcon("flask-conical", "Initialize Test Hub", () => this.openWizard());
-    this.addRibbonIcon(
-      "list-checks",
-      "Open Use Cases",
-      () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
-    );
-    this.addRibbonIcon(
-      "layers",
-      "Open Test Suites",
-      () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
-    );
-    this.addRibbonIcon(
-      "terminal",
-      "Open Test Console",
-      () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
-    );
+    // command bodies). Default chrome is deliberately minimal (2026-06-11
+    // review §4 product call): Dashboard + Test Console only — the dashboard
+    // is the hub (incl. the Initialize call to action when uninitialized);
+    // every other surface stays reachable via the command palette and the
+    // dashboard's quick actions.
     this.addRibbonIcon(
       "gauge",
       "Open Test Hub dashboard",
       () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
     );
     this.addRibbonIcon(
-      "history",
-      "Open Evidence Explorer",
-      () => void this.workspaceAdapter.openView(EVIDENCE_EXPLORER_VIEW_TYPE),
+      "terminal",
+      "Open Test Console",
+      () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
     );
 
     // Command-palette surface (P2-7): the command bodies live in

@@ -119,6 +119,44 @@ export class TestHubSettingTab extends PluginSettingTab {
     this.pendingTimeouts.length = 0;
   }
 
+  /**
+   * Pre-1.13 Obsidian apps (reachable via BRAT, which does not enforce
+   * `minAppVersion`) call `display()` directly when opening the settings tab.
+   * Without this override they crash with `e.display is not a function` because
+   * the base class `SettingTab.display()` does not exist in those versions.
+   *
+   * On Obsidian 1.13+ the concrete base `display()` bridges to
+   * `getSettingDefinitions()`, so we delegate to it rather than duplicating the
+   * render logic. On pre-1.13 builds the base prototype has no `display` at all
+   * — we detect that at runtime (not via typings) and render a plain upgrade
+   * notice into `containerEl` instead.
+   */
+  // fallow-ignore-next-line unused-class-member
+  display(): void {
+    // Runtime detection: on pre-1.13 Obsidian builds `SettingTab.display` does
+    // not exist on the base prototype at all. Anchor to PluginSettingTab
+    // explicitly (not Object.getPrototypeOf) so an intermediate class in the
+    // hierarchy can never change which display() this delegates to; narrow to
+    // the call signature before using it.
+    const baseProto: unknown = PluginSettingTab.prototype;
+    const baseDisplay =
+      baseProto !== null &&
+      typeof baseProto === "object" &&
+      "display" in baseProto &&
+      typeof baseProto.display === "function"
+        ? (baseProto as { display: () => void }).display
+        : undefined;
+    if (baseDisplay !== undefined) {
+      baseDisplay.call(this);
+      return;
+    }
+    // Pre-1.13 fallback: no declarative API available — show a simple notice.
+    this.containerEl.empty();
+    this.containerEl.createEl("p", {
+      text: "Specorator Testrunner requires Obsidian 1.13 or newer. Update Obsidian to use this settings tab.",
+    });
+  }
+
   hide(): void {
     // Closing the dialog must NOT cancel a save still inside the 600ms persist
     // window — that would silently lose the last edit. Flush (run) pending

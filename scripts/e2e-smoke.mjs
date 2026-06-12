@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Opt-in E2E smoke test (run by .github/workflows/e2e-smoke.yml, or locally):
+ * E2E smoke test (run by .github/workflows/e2e-smoke.yml — on demand or on
+ * runner-template changes — or locally):
  * proves a `.testrunner` generated from the ACTUAL templates installs and the
  * demo test passes on a real OS — the class of failure unit tests can't catch
  * (npm.cmd quoting, cucumber config wiring, playwright install).
@@ -14,7 +15,7 @@
 import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
@@ -66,6 +67,10 @@ try {
   // 3. Install + run, using only the templates' own package scripts so the
   //    smoke run cannot drift from what the plugin generates.
   run("npm install", runnerRoot);
+  // Typecheck the generated runner with its own tsc: the IDE experience.
+  // Catches config/source drift that tsx tolerates at runtime (e.g. the
+  // NodeNext-vs-extensionless-imports ts2835 squiggles found in the field).
+  run("npx tsc --noEmit", runnerRoot);
   run("npm run install:browsers:ci", runnerRoot);
   run("npm run test:ci", runnerRoot);
 
@@ -89,6 +94,58 @@ try {
     );
   }
   console.log(`\nE2E smoke PASSED: ${scenarios.length} scenario(s), all steps passed.`);
+
+  // 5. The Test Console's scoped invocation shape (feature path as CLI arg,
+  //    `--profile scoped` so config paths don't merge — that merge is a
+  //    deprecation): must pass and the JSON report must show 1 passing scenario.
+  //    This run OVERWRITES reports/cucumber-report.json, so it runs AFTER the
+  //    assertions on step 4's report above.
+  const featureFilePath = join(
+    vaultRoot,
+    DEFAULT_SETTINGS.paths.featureFilesPath,
+    DEMO_FEATURE_FILE_NAME,
+  );
+  // Compute the path relative to the runner root and normalise to forward
+  // slashes so cucumber-js glob expansion is cross-platform (Windows sep is \).
+  const relativeFeaturePath = relative(runnerRoot, featureFilePath).split(sep).join("/");
+  const scopedCommand = `npm run test -- --profile scoped ${relativeFeaturePath}`;
+  console.log(`\n$ ${scopedCommand}`);
+  // Cucumber emits its deprecation warning on STDERR; merge it into stdout
+  // (`2>&1` works in both sh and cmd.exe) so the assertion below can see it —
+  // execSync's return value carries stdout only. The try/catch surfaces the
+  // captured output on failure, which execSync's bare error message omits.
+  let scopedOutput = "";
+  try {
+    scopedOutput = execSync(`${scopedCommand} 2>&1`, { cwd: runnerRoot, encoding: "utf8" });
+  } catch (error) {
+    const captured = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+    fail(`scoped run failed:\n${captured}\n${error.message}`);
+  }
+
+  // Assert the scoped report: exactly 1 scenario, all steps passed.
+  const scopedReport = JSON.parse(readFileSync(reportPath, "utf8"));
+  const scopedScenarios = scopedReport.flatMap((feature) =>
+    (feature.elements ?? []).filter((element) => element.type === "scenario"),
+  );
+  if (scopedScenarios.length !== 1) {
+    fail(`scoped run: expected exactly 1 scenario, got ${scopedScenarios.length}`);
+  }
+  const scopedFailingSteps = scopedScenarios
+    .flatMap((scenario) => scenario.steps ?? [])
+    .filter((step) => step.result?.status !== "passed");
+  if (scopedFailingSteps.length > 0) {
+    fail(
+      `scoped run: ${scopedFailingSteps.length} step(s) did not pass: ` +
+        scopedFailingSteps
+          .map((step) => `${step.name ?? "(hook)"} → ${step.result?.status}`)
+          .join(", "),
+    );
+  }
+  // The merged output must not carry the paths-merge deprecation warning.
+  if (scopedOutput.includes("specified paths in both")) {
+    fail("scoped run: cucumber printed the paths-merge deprecation warning");
+  }
+  console.log(`\nE2E smoke scoped-run PASSED: 1 scenario, all steps passed.`);
 } catch (error) {
   console.error(`\nE2E smoke FAILED: ${error instanceof Error ? error.message : String(error)}`);
   // exitCode (not process.exit) lets the finally cleanup complete first.

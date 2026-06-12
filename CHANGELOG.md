@@ -6,12 +6,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-06-12
+
 ### Added
 
-- Evidence Explorer over the partitioned run history (ADR-0016), wired to the
-  ribbon, command palette, and dashboard.
-- Opt-in E2E smoke workflow (`workflow_dispatch` or the `e2e-smoke` PR label,
-  ubuntu + windows) over the real runner templates.
+- Installation documentation: GitHub releases + BRAT are the official
+  distribution channel (community-marketplace submission deferred
+  indefinitely, per the V2 proposal §5.3).
+- Evidence Explorer over the partitioned run history (ADR-0016), wired to
+  the command palette and dashboard (its default ribbon icon was later
+  trimmed — see Changed).
+- E2E smoke workflow (`workflow_dispatch` or the `e2e-smoke` PR label,
+  ubuntu + windows) over the real runner templates (later extended to
+  auto-trigger on runner-template changes — see Changed).
 - Run-execution hardening: SIGTERM→SIGKILL escalation for stuck runners,
   terminal `testrun.failed` event on unexpected faults, child-process cleanup
   on plugin unload.
@@ -19,9 +26,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `manifest.json` and runs lint/typecheck/tests before publishing;
   `versions.json` consistency is asserted by the release-validation suite.
 - Quality harness: fallow codebase intelligence as a devDependency with
-  repo-tuned config (`.fallowrc.jsonc`), `quality:*` npm scripts, an advisory
-  changed-code audit job in CI, and agent-facing surfaces (`.mcp.json` MCP
-  server, `.claude/skills/fallow` pointer skill, `AGENTS.md`).
+  repo-tuned config (`.fallowrc.jsonc`), `quality:*` npm scripts, a
+  changed-code audit job in CI (advisory at launch; now blocking — see
+  Changed/TD-006), and agent-facing surfaces (`.mcp.json` MCP server,
+  `.claude/skills/fallow` pointer skill, `AGENTS.md`).
 - Quality harness: ESLint upgraded to v10 with the `eslint-plugin-obsidianmd`
   plugin-guideline rules scoped to `src/`; the sentence-case rule is
   configured with the CONTEXT.md glossary as brand terms so UI copy is
@@ -44,6 +52,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The plugin is now named **Specorator Testrunner** (formerly "E2E Test
+  Hub") — manifest name, docs, and UI brand terms renamed; the plugin id
+  (`e2e-test-hub`) is unchanged, so existing installs keep their settings.
+- The E2E smoke workflow is now a dependable pre-release gate: Playwright
+  browsers are cached per OS, and the suite triggers automatically on PRs
+  that change the runner-template surface (in addition to manual dispatch
+  and the `e2e-smoke` label).
+- The quality gates are now blocking (TD-006): the fallow changed-code audit
+  fails CI on findings a changeset introduces (new-only attribution), and
+  `vitest/no-disabled-tests` is an error.
+- Default ribbon chrome trimmed from six icons to two — Dashboard and Test
+  Console (2026-06-11 review §4 product call). All other views remain
+  reachable via the command palette and the dashboard's quick actions.
 - Requires Obsidian 1.13+ (`minAppVersion` 1.8.0 → 1.13.0); destructive
   buttons use the 1.13 `setDestructive()` API.
 - The settings tab is built on the Obsidian 1.13 declarative
@@ -75,6 +96,29 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Numerous Test Hub UX fixes: confirmation for "Reset Test Hub", retry buttons
   on error states, accessible run-history tables, Notices for failed
   note-opens, mid-run Test Console state, and glossary-consistent copy.
+- The generated runner sets a 60s cucumber timeout: the Before hook launches
+  Chromium, and a cold first launch (notably on Windows) blew the 5s default,
+  failing the demo test on first run.
+- Scoped runs (single Feature / Use Case) select a `scoped` cucumber profile
+  instead of merging CLI paths with the config glob, removing cucumber's
+  deprecation warning from the Test Console output; the e2e-smoke workflow now
+  exercises the scoped invocation shape. Runners generated before this version
+  don't define the profile yet — the Test Hub detects that and omits it (the
+  old warning remains) until Repair installation regenerates the config.
+- The generated `.testrunner` typechecks cleanly in IDEs: `tsconfig.json`
+  uses `Preserve`/`Bundler` module resolution (tsx resolves extensionless
+  imports like a bundler; `NodeNext` flagged every generated relative import
+  with ts2835) and `@types/node` is now a declared devDependency instead of
+  leaking in from a parent `node_modules`; the e2e-smoke workflow typechecks
+  the generated runner to keep IDE parity locked.
+- The settings tab no longer crashes (`display is not a function`) on Obsidian
+  apps older than 1.13 (reachable via BRAT, which does not enforce
+  `minAppVersion`): it now shows a "requires Obsidian 1.13+" notice instead.
+
+### Security
+
+- `release.yml` (the only workflow with `contents: write`) pins its actions to
+  full commit SHAs instead of tags; Dependabot keeps the pins current.
 
 ## [0.0.1] — unreleased development version
 

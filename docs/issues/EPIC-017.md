@@ -15,6 +15,7 @@ stories:
   - "[[US-082]]"
   - "[[US-083]]"
   - "[[US-093]]"
+  - "[[US-097]]"
 use-cases:
   - "[[UC-035]]"
   - "[[UC-036]]"
@@ -54,6 +55,7 @@ all-in BDD.
 | [[US-081]] | Step Library with autocomplete | P2 | V2.1 |
 | [[US-082]] | Use Case Editor | P2 | V2.1 |
 | [[US-083]] | Linked entity notes (Actors and shared concepts) | P2 | V2.1 |
+| [[US-097]] | Runner transparency — show the files behind a Use Case | P2 | V2.x |
 
 ## Features
 

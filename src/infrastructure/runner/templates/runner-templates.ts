@@ -36,6 +36,7 @@ const PACKAGE_JSON = `{
   },
   "devDependencies": {
     "@cucumber/cucumber": "^12.0.0",
+    "@types/node": "^22.0.0",
     "playwright": "^1.60.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
@@ -43,11 +44,16 @@ const PACKAGE_JSON = `{
 }
 `;
 
+// "Preserve"/"Bundler" (not NodeNext): the runner executes through tsx, which
+// resolves extensionless relative imports like a bundler. NodeNext made every
+// generated relative import an IDE error (ts2835: "needs explicit .js
+// extension") even though the suite ran fine — found via real-IDE validation;
+// the e2e-smoke script now typechecks the generated runner to lock IDE parity.
 const TSCONFIG_JSON = `{
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -73,9 +79,10 @@ const TSCONFIG_JSON = `{
 // the WHOLE config: no step imports (every demo step ran "Undefined"), no
 // json report (evidence import found nothing). Found via the first real
 // testvault demo run.
-const cucumberMjs = (featuresGlob: string): string => `export default {
+// Named exports are treated as cucumber profiles; selecting `--profile scoped`
+// resolves the `scoped` export so config `paths` don't merge with CLI paths.
+const cucumberMjs = (featuresGlob: string): string => `const base = {
   import: ["src/support/**/*.ts", "src/steps/**/*.ts"],
-  paths: [${JSON.stringify(featuresGlob)}],
   format: [
     "progress",
     "json:reports/cucumber-report.json",
@@ -85,6 +92,13 @@ const cucumberMjs = (featuresGlob: string): string => `export default {
   // unknown options, so it must not be emitted here (P4-5).
   parallel: 0,
 };
+
+export default { ...base, paths: [${JSON.stringify(featuresGlob)}] };
+
+// Scoped runs (the Test Hub passing explicit feature paths as CLI arguments)
+// select this profile so the config \`paths\` glob does not merge with the CLI
+// paths — that merge is deprecated and prints a warning into the Test Console.
+export const scoped = { ...base };
 `;
 
 const WORLD_TS = `import { World, setWorldConstructor } from "@cucumber/cucumber";
@@ -111,8 +125,13 @@ export class TestWorld extends World {
 setWorldConstructor(TestWorld);
 `;
 
-const HOOKS_TS = `import { After, Before, Status } from "@cucumber/cucumber";
+const HOOKS_TS = `import { After, Before, Status, setDefaultTimeout } from "@cucumber/cucumber";
 import { TestWorld } from "./world";
+
+// Cucumber's 5s default is too tight for E2E: a cold Chromium launch in the
+// Before hook (first run, AV-scanned Windows) regularly exceeds it, and real
+// SUT page loads need headroom too.
+setDefaultTimeout(60_000);
 
 Before(async function (this: TestWorld) {
   await this.openBrowser();

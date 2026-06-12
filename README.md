@@ -5,7 +5,8 @@ end-to-end tests** directly inside their vault — combining Use Cases, Gherkin
 specifications, test suites, Playwright execution, evidence, and CI/CD into a
 single Markdown-native, local-first workflow.
 
-> **Status:** In development; the V1 feature set is implemented end to end.
+> **Status:** V1 released (1.0.0) — distributed via GitHub releases + BRAT
+> (see [Installation](#installation)).
 > The product direction is captured in the
 > [PRD](./docs/Specorator%20Testrunner.md). Implemented:
 > **EPIC-001/002 (Foundation & Initialization)** — the layered plugin skeleton,
@@ -22,6 +23,25 @@ single Markdown-native, local-first workflow.
 > **EPIC-009 (Dashboard)** — KPI roll-up, quick actions, and recent runs; and
 > **EPIC-010 (CI/CD)** — GitHub Actions workflow generation and CI-readiness
 > checks.
+
+## Installation
+
+The plugin is distributed via **GitHub releases** and installed with
+[BRAT](https://github.com/TfTHacker/obsidian42-brat) (Beta Reviewer's
+Auto-update Tool). Submission to the Obsidian community marketplace is
+deliberately deferred — this repository is the source of truth.
+
+1. Install **BRAT** from the Obsidian community plugin store and enable it.
+2. In BRAT: **Add beta plugin** → enter `Luis85/specorator-testrunner` — BRAT
+   installs the latest release.
+3. Enable **Specorator Testrunner** under _Settings → Community plugins_.
+
+BRAT checks for new releases (on startup; configurable in BRAT's settings) and
+updates the plugin automatically. The plugin is desktop-only (it spawns Node
+child processes to run tests; see
+[What this plugin does on your machine](#what-this-plugin-does-on-your-machine)).
+Requires Obsidian 1.13+, and Node.js and npm available on your `PATH` for the
+test runner.
 
 ## Working from the UI
 
@@ -201,7 +221,8 @@ Vault
 │   └── NOTICE-superpowers.txt            # Upstream attribution + MIT license
 └── .github/workflows/
     ├── ci.yml                     # Lint, format, typecheck, build, coverage
-    ├── e2e-smoke.yml              # Opt-in E2E smoke over the real runner
+    ├── e2e-smoke.yml              # E2E smoke over the real runner (on demand
+    │                              #   + auto-run on runner-template changes)
     └── release.yml                # Tag-triggered release with plugin assets
 ```
 

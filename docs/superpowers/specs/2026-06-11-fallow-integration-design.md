@@ -44,6 +44,8 @@ enforcement; two sources of truth for boundaries is a maintenance trap).
    blocks remain the single authority for the hexagonal layering.
 2. **CI is advisory.** The audit job can never fail the build; a follow-up may
    flip it to gating once signal quality is observed on a few PRs.
+   _Update (2026-06-12): flipped to blocking in the pre-V2 Phase 0 increment
+   (TD-006, PR #33)._
 3. **No ADR.** Reversible, tactical tooling choice — AD-N territory at most.
 4. **No paid runtime-intelligence features.**
 

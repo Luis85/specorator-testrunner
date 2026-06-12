@@ -29,6 +29,20 @@ const waitForActive = async (service: TestExecutionService): Promise<void> => {
   }
 };
 
+/**
+ * Absolute path to the runner's managed cucumber.mjs (vault base `/vault` +
+ * default testRunnerPath `.testrunner`).
+ */
+const CUCUMBER_MJS_PATH = "/vault/.testrunner/cucumber.mjs";
+
+/** Minimal cucumber.mjs content that defines the `scoped` profile. */
+const MODERN_CUCUMBER_MJS = "export const scoped = { paths: [] };";
+
+/** Seeds the modern cucumber.mjs so scopedProfileArgs returns profile args. */
+const seedModernCucumberMjs = (absoluteFs: FakeAbsoluteFileSystem): void => {
+  absoluteFs.seed(CUCUMBER_MJS_PATH, MODERN_CUCUMBER_MJS);
+};
+
 const FIXED_NOW = new Date("2026-06-01T10:00:00.000Z");
 
 const build = () => {
@@ -195,7 +209,20 @@ describe("DefaultTestExecutionService", () => {
   it("resolves the all command", async () => {
     const { service } = build();
     const result = await service.execute({ scope: "all", target: "all" });
+    // Bare-glob branch (no deprecated UCs): no explicit CLI paths, so the
+    // `scoped` profile is NOT selected — the config glob runs unmodified.
     expect(result.ok && result.value.command).toBe("npm run test");
+  });
+
+  it("demo and suite scopes do not select the scoped profile (no CLI feature paths)", async () => {
+    const { service, childProcess, fs } = build();
+    seedSuite(fs, "regression", "@regression");
+
+    await service.execute({ scope: "demo", target: "demo" });
+    expect(childProcess.calls[0].args).not.toContain("--profile");
+
+    await service.execute({ scope: "suite", target: "regression" });
+    expect(childProcess.calls[1].args).not.toContain("--profile");
   });
 
   it("clears any prior Cucumber report before running (no stale import)", async () => {
@@ -333,7 +360,8 @@ describe("DefaultTestExecutionService", () => {
   });
 
   it("resolves the feature command relative to the runner cwd", async () => {
-    const { service, childProcess } = build();
+    const { service, childProcess, absoluteFs } = build();
+    seedModernCucumberMjs(absoluteFs);
     const result = await service.execute({
       scope: "feature",
       target: "Specifications/features/checkout.feature",
@@ -345,16 +373,19 @@ describe("DefaultTestExecutionService", () => {
       "run",
       "test",
       "--",
+      "--profile",
+      "scoped",
       "../Specifications/features/checkout.feature",
     ]);
     // No spaces → no display quoting.
     expect(result.value.command).toBe(
-      "npm run test -- ../Specifications/features/checkout.feature",
+      "npm run test -- --profile scoped ../Specifications/features/checkout.feature",
     );
   });
 
   it("passes a feature path with $, &, and spaces as a literal argv entry (no shell, no escaping)", async () => {
-    const { service, childProcess } = build();
+    const { service, childProcess, absoluteFs } = build();
+    seedModernCucumberMjs(absoluteFs);
     // PR #7: under shell: false these are literal args — never interpolated or
     // word-split, and no longer false-rejected by CommandSafetyPolicy.
     const result = await service.execute({
@@ -369,16 +400,19 @@ describe("DefaultTestExecutionService", () => {
       "run",
       "test",
       "--",
+      "--profile",
+      "scoped",
       "../Specifications/features/R&D Price $5.feature",
     ]);
     // Display quotes only because the arg contains spaces (readability only).
     expect(result.value.command).toBe(
-      'npm run test -- "../Specifications/features/R&D Price $5.feature"',
+      'npm run test -- --profile scoped "../Specifications/features/R&D Price $5.feature"',
     );
   });
 
   it("resolves a feature path with shell metacharacters and runs (no COMMAND_DISALLOWED)", async () => {
-    const { service } = build();
+    const { service, absoluteFs } = build();
+    seedModernCucumberMjs(absoluteFs);
     // R&D.feature would be false-rejected/expanded under the old shell:true
     // policy; with argv arrays it is a literal arg and runs cleanly (PR #7).
     const result = await service.execute({
@@ -388,19 +422,23 @@ describe("DefaultTestExecutionService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("passed");
-    expect(result.value.command).toBe("npm run test -- ../Specifications/features/R&D.feature");
+    expect(result.value.command).toBe(
+      "npm run test -- --profile scoped ../Specifications/features/R&D.feature",
+    );
   });
 
   it("resolves the use-case command as a feature glob when the UC is unknown", async () => {
-    const { service } = build();
+    const { service, absoluteFs } = build();
+    seedModernCucumberMjs(absoluteFs);
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- ../Specifications/features/UC-001-*.feature",
+      "npm run test -- --profile scoped ../Specifications/features/UC-001-*.feature",
     );
   });
 
   it("targets a Use Case's declared featureFiles in order (UC-011)", async () => {
-    const { service, fs } = build();
+    const { service, fs, absoluteFs } = build();
+    seedModernCucumberMjs(absoluteFs);
     fs.files.set(
       "Use Cases/UC-001 Demo.md",
       buildNote(
@@ -418,12 +456,41 @@ describe("DefaultTestExecutionService", () => {
     );
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- ../Specifications/features/UC-001-happy-path.feature ../Specifications/features/UC-001-edge.feature",
+      "npm run test -- --profile scoped ../Specifications/features/UC-001-happy-path.feature ../Specifications/features/UC-001-edge.feature",
     );
   });
 
+  // A pre-upgrade runner whose cucumber.mjs has no scoped export (and is never
+  // rewritten outside init/repair/reset) must fall back to the old path-only
+  // argv: the run keeps working (deprecation warning, not a hard fail on an
+  // unknown profile). Table-driven over the path-scoped run scopes.
+  it.each([
+    {
+      scope: "feature" as const,
+      target: "Specifications/features/checkout.feature",
+      expectedPathArg: "../Specifications/features/checkout.feature",
+    },
+    {
+      scope: "use-case" as const,
+      target: "UC-002",
+      expectedPathArg: "../Specifications/features/UC-002-*.feature",
+    },
+  ])(
+    "legacy runner (no scoped export): $scope-scoped run omits --profile but keeps the path",
+    async ({ scope, target, expectedPathArg }) => {
+      const { service, childProcess, absoluteFs } = build();
+      // Do NOT seed cucumber.mjs → readAbsolute returns err → profileArgs = [].
+      expect(absoluteFs.written.has(CUCUMBER_MJS_PATH)).toBe(false);
+      const result = await service.execute({ scope, target });
+      expect(result.ok).toBe(true);
+      expect(childProcess.calls[0].args).not.toContain("--profile");
+      expect(childProcess.calls[0].args).toContain(expectedPathArg);
+    },
+  );
+
   it("excludes deprecated Use Cases' features from Run All (ADR-0012)", async () => {
-    const { service, fs } = build();
+    const { service, fs, absoluteFs } = build();
+    seedModernCucumberMjs(absoluteFs);
     fs.files.set(
       "Use Cases/UC-001 Active.md",
       buildNote(
@@ -450,8 +517,9 @@ describe("DefaultTestExecutionService", () => {
       ),
     );
     const result = await service.execute({ scope: "all", target: "all" });
+    // Explicit file list: scoped profile selected so config paths don't merge.
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- ../Specifications/features/UC-001-happy.feature",
+      "npm run test -- --profile scoped ../Specifications/features/UC-001-happy.feature",
     );
   });
 
