@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-06-12
+
 ### Added
 
 - Installation documentation: GitHub releases + BRAT are the official

@@ -5,7 +5,8 @@ end-to-end tests** directly inside their vault — combining Use Cases, Gherkin
 specifications, test suites, Playwright execution, evidence, and CI/CD into a
 single Markdown-native, local-first workflow.
 
-> **Status:** In development; the V1 feature set is implemented end to end.
+> **Status:** V1 released (1.0.0) — distributed via GitHub releases + BRAT
+> (see [Installation](#installation)).
 > The product direction is captured in the
 > [PRD](./docs/Obsidian%20E2E%20Test%20Hub.md). Implemented:
 > **EPIC-001/002 (Foundation & Initialization)** — the layered plugin skeleton,

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-e2e-test-hub",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "description": "Obsidian E2E Test Hub — define, manage, execute, and document end-to-end tests directly inside your vault.",
   "license": "MIT",
