@@ -17,6 +17,7 @@ import type { Logger } from "../../shared/logging/logger";
 import { parseFrontmatter, updateNoteFrontmatter } from "../../shared/utils/frontmatter";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath } from "../../shared/utils/vault-path";
+import { KeyedSerialQueue } from "../../shared/async/serial-queue";
 
 export interface CreateUseCaseRequest {
   title: string;
@@ -62,6 +63,12 @@ export const nextUseCaseId = (existing: UseCase[]): UseCaseId => {
 };
 
 export class DefaultUseCaseService implements UseCaseService {
+  // UC notes have three read-modify-write writers (post-run evidence linking,
+  // edit modal, feature linking) that can interleave across awaits (review §4);
+  // serialize all note I/O per path. V2 adds more writers (history rollups,
+  // evidence stamps, sign-off links) on top of this same mutex.
+  private readonly noteWrites = new KeyedSerialQueue();
+
   constructor(
     private readonly settingsService: SettingsService,
     private readonly fs: VaultFileSystem,
@@ -99,7 +106,9 @@ export class DefaultUseCaseService implements UseCaseService {
       path,
     };
 
-    const created = await this.fs.createFile(path, buildUseCaseNote(useCase));
+    const created = await this.noteWrites.run(path, () =>
+      this.fs.createFile(path, buildUseCaseNote(useCase)),
+    );
     if (!created.ok) return err(created.error);
 
     await this.eventBus.publish(
@@ -144,48 +153,50 @@ export class DefaultUseCaseService implements UseCaseService {
    * the file does not exist yet (UC-005 / UC-006 supporting).
    */
   async update(useCase: UseCase): Promise<Result<void>> {
-    const existing = await this.fs.readFile(useCase.path);
-    const content = existing.ok
-      ? updateNoteFrontmatter(existing.value, {
-          type: "use-case",
-          id: useCase.id,
-          title: useCase.title,
-          status: useCase.status,
-          automation_status: useCase.automationStatus,
-          description: useCase.description,
-          feature_files: useCase.featureFiles.length > 0 ? useCase.featureFiles : undefined,
-          // Drop the legacy singular key: parse() reads both, so leaving it
-          // would duplicate the feature once it's also in feature_files.
-          feature_file: undefined,
-          suites: useCase.suites.length > 0 ? useCase.suites : undefined,
-          evidence: useCase.evidence.length > 0 ? useCase.evidence : undefined,
-          // lastTestRun (TestRunSummary) flattened — the frontmatter serialiser
-          // only handles scalars/arrays, not nested objects (US-031).
-          last_run_id: useCase.lastTestRun?.runId,
-          last_run_status: useCase.lastTestRun?.status,
-          last_run_date: useCase.lastTestRun?.date,
-          last_run_evidence: useCase.lastTestRun?.evidencePath,
-          last_run_scope: useCase.lastTestRun?.scope,
-        })
-      : buildUseCaseNote(useCase);
+    return this.noteWrites.run(useCase.path, async () => {
+      const existing = await this.fs.readFile(useCase.path);
+      const content = existing.ok
+        ? updateNoteFrontmatter(existing.value, {
+            type: "use-case",
+            id: useCase.id,
+            title: useCase.title,
+            status: useCase.status,
+            automation_status: useCase.automationStatus,
+            description: useCase.description,
+            feature_files: useCase.featureFiles.length > 0 ? useCase.featureFiles : undefined,
+            // Drop the legacy singular key: parse() reads both, so leaving it
+            // would duplicate the feature once it's also in feature_files.
+            feature_file: undefined,
+            suites: useCase.suites.length > 0 ? useCase.suites : undefined,
+            evidence: useCase.evidence.length > 0 ? useCase.evidence : undefined,
+            // lastTestRun (TestRunSummary) flattened — the frontmatter serialiser
+            // only handles scalars/arrays, not nested objects (US-031).
+            last_run_id: useCase.lastTestRun?.runId,
+            last_run_status: useCase.lastTestRun?.status,
+            last_run_date: useCase.lastTestRun?.date,
+            last_run_evidence: useCase.lastTestRun?.evidencePath,
+            last_run_scope: useCase.lastTestRun?.scope,
+          })
+        : buildUseCaseNote(useCase);
 
-    const written = await this.fs.writeFile(useCase.path, content);
-    if (!written.ok) return err(written.error);
+      const written = await this.fs.writeFile(useCase.path, content);
+      if (!written.ok) return err(written.error);
 
-    const changedFields = [
-      ...(useCase.featureFiles.length > 0 ? ["featureFiles"] : []),
-      ...(useCase.evidence.length > 0 ? ["evidence"] : []),
-      ...(useCase.lastTestRun ? ["lastTestRun"] : []),
-    ];
-    await this.eventBus.publish(
-      createEvent("usecase.updated", {
-        useCaseId: useCase.id,
-        path: useCase.path,
-        changedFields,
-      }),
-    );
-    this.logger.info("Use Case updated", { id: useCase.id, path: useCase.path });
-    return ok(undefined);
+      const changedFields = [
+        ...(useCase.featureFiles.length > 0 ? ["featureFiles"] : []),
+        ...(useCase.evidence.length > 0 ? ["evidence"] : []),
+        ...(useCase.lastTestRun ? ["lastTestRun"] : []),
+      ];
+      await this.eventBus.publish(
+        createEvent("usecase.updated", {
+          useCaseId: useCase.id,
+          path: useCase.path,
+          changedFields,
+        }),
+      );
+      this.logger.info("Use Case updated", { id: useCase.id, path: useCase.path });
+      return ok(undefined);
+    });
   }
 
   /**
@@ -232,43 +243,45 @@ export class DefaultUseCaseService implements UseCaseService {
     // otherwise re-render for a phantom edit).
     if (changedFields.length === 0) return ok(existing);
 
-    const read = await this.fs.readFile(existing.path);
-    if (!read.ok) return err(read.error);
-    let content = updateNoteFrontmatter(read.value, { title: nextTitle, status: nextStatus });
-    if (nextTitle !== existing.title) {
-      // create() writes the body H1 as `# <id> <title>`; mirror that exact
-      // format on retitle so heading and frontmatter don't drift. Only the
-      // FIRST matching H1 is touched (no /g): hand-written headings stay.
-      // The replacement is a FUNCTION so a title containing `$&`/`$$`/`$1`
-      // is inserted literally instead of being interpreted as a
-      // String.replace substitution pattern (review: data corruption).
-      const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      content = content.replace(
-        new RegExp(`^# ${escapedId} .*$`, "m"),
-        () => `# ${id} ${nextTitle}`,
-      );
-    }
-    const written = await this.fs.writeFile(existing.path, content);
-    if (!written.ok) return err(written.error);
+    return this.noteWrites.run(existing.path, async () => {
+      const read = await this.fs.readFile(existing.path);
+      if (!read.ok) return err(read.error);
+      let content = updateNoteFrontmatter(read.value, { title: nextTitle, status: nextStatus });
+      if (nextTitle !== existing.title) {
+        // create() writes the body H1 as `# <id> <title>`; mirror that exact
+        // format on retitle so heading and frontmatter don't drift. Only the
+        // FIRST matching H1 is touched (no /g): hand-written headings stay.
+        // The replacement is a FUNCTION so a title containing `$&`/`$$`/`$1`
+        // is inserted literally instead of being interpreted as a
+        // String.replace substitution pattern (review: data corruption).
+        const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        content = content.replace(
+          new RegExp(`^# ${escapedId} .*$`, "m"),
+          () => `# ${id} ${nextTitle}`,
+        );
+      }
+      const written = await this.fs.writeFile(existing.path, content);
+      if (!written.ok) return err(written.error);
 
-    await this.eventBus.publish(
-      createEvent(
-        "usecase.updated",
-        { useCaseId: id, path: existing.path, changedFields },
-        { correlationId: id },
-      ),
-    );
-    if (nextStatus !== existing.status) {
       await this.eventBus.publish(
         createEvent(
-          "usecase.status.changed",
-          { useCaseId: id, previousStatus: existing.status, nextStatus },
+          "usecase.updated",
+          { useCaseId: id, path: existing.path, changedFields },
           { correlationId: id },
         ),
       );
-    }
-    this.logger.info("Use Case metadata updated", { id, changedFields });
-    return ok({ ...existing, title: nextTitle, status: nextStatus });
+      if (nextStatus !== existing.status) {
+        await this.eventBus.publish(
+          createEvent(
+            "usecase.status.changed",
+            { useCaseId: id, previousStatus: existing.status, nextStatus },
+            { correlationId: id },
+          ),
+        );
+      }
+      this.logger.info("Use Case metadata updated", { id, changedFields });
+      return ok({ ...existing, title: nextTitle, status: nextStatus });
+    });
   }
 
   /** Maps a note's frontmatter to a {@link UseCase}; returns null if it is not one. */

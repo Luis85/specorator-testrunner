@@ -20,6 +20,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
   decomposed into focused helpers, clearing the remaining complexity findings
   the blocking quality gate would attribute to any future edit of the file.
 
+### Fixed
+
+- Concurrent writers to the same Use Case note (post-run evidence linking,
+  the edit modal, feature linking) are now serialized per note path, so
+  overlapping read-modify-write updates can no longer drop each other's
+  frontmatter changes.
+
 ## [1.0.0] — 2026-06-12
 
 ### Added
