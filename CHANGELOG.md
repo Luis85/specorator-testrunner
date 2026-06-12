@@ -76,6 +76,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   on error states, accessible run-history tables, Notices for failed
   note-opens, mid-run Test Console state, and glossary-consistent copy.
 
+### Security
+
+- `release.yml` (the only workflow with `contents: write`) pins its actions to
+  full commit SHAs instead of tags; Dependabot keeps the pins current.
+
 ## [0.0.1] — unreleased development version
 
 Initial V1 feature set: Initialization Wizard, `.testrunner` generation and
