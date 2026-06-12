@@ -215,14 +215,19 @@ export class DefaultFeatureInsightService implements FeatureInsightService {
       if (!read.ok) continue; // best-effort: skip unreadable files
       const feature = parseFeature(read.value, entry.path);
       if (feature === null) continue; // not valid Gherkin — skip
-      for (const tag of feature.tags) tags.add(tag);
-      for (const scenario of feature.scenarios) {
-        for (const tag of scenario.tags) tags.add(tag);
-        for (const block of scenario.examples ?? []) {
-          for (const tag of block.tags) tags.add(tag);
-        }
-      }
+      collectFeatureTags(feature, tags);
     }
     return ok([...tags].sort());
   }
 }
+
+/** Adds every feature/scenario/Examples-block tag of `feature` to `tags`. */
+const collectFeatureTags = (feature: FeatureSpecification, tags: Set<string>): void => {
+  for (const tag of feature.tags) tags.add(tag);
+  for (const scenario of feature.scenarios) {
+    for (const tag of scenario.tags) tags.add(tag);
+    for (const block of scenario.examples ?? []) {
+      for (const tag of block.tags) tags.add(tag);
+    }
+  }
+};
