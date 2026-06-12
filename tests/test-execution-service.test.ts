@@ -195,7 +195,20 @@ describe("DefaultTestExecutionService", () => {
   it("resolves the all command", async () => {
     const { service } = build();
     const result = await service.execute({ scope: "all", target: "all" });
+    // Bare-glob branch (no deprecated UCs): no explicit CLI paths, so the
+    // `scoped` profile is NOT selected — the config glob runs unmodified.
     expect(result.ok && result.value.command).toBe("npm run test");
+  });
+
+  it("demo and suite scopes do not select the scoped profile (no CLI feature paths)", async () => {
+    const { service, childProcess, fs } = build();
+    seedSuite(fs, "regression", "@regression");
+
+    await service.execute({ scope: "demo", target: "demo" });
+    expect(childProcess.calls[0].args).not.toContain("--profile");
+
+    await service.execute({ scope: "suite", target: "regression" });
+    expect(childProcess.calls[1].args).not.toContain("--profile");
   });
 
   it("clears any prior Cucumber report before running (no stale import)", async () => {
@@ -345,11 +358,13 @@ describe("DefaultTestExecutionService", () => {
       "run",
       "test",
       "--",
+      "--profile",
+      "scoped",
       "../Specifications/features/checkout.feature",
     ]);
     // No spaces → no display quoting.
     expect(result.value.command).toBe(
-      "npm run test -- ../Specifications/features/checkout.feature",
+      "npm run test -- --profile scoped ../Specifications/features/checkout.feature",
     );
   });
 
@@ -369,11 +384,13 @@ describe("DefaultTestExecutionService", () => {
       "run",
       "test",
       "--",
+      "--profile",
+      "scoped",
       "../Specifications/features/R&D Price $5.feature",
     ]);
     // Display quotes only because the arg contains spaces (readability only).
     expect(result.value.command).toBe(
-      'npm run test -- "../Specifications/features/R&D Price $5.feature"',
+      'npm run test -- --profile scoped "../Specifications/features/R&D Price $5.feature"',
     );
   });
 
@@ -388,14 +405,16 @@ describe("DefaultTestExecutionService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("passed");
-    expect(result.value.command).toBe("npm run test -- ../Specifications/features/R&D.feature");
+    expect(result.value.command).toBe(
+      "npm run test -- --profile scoped ../Specifications/features/R&D.feature",
+    );
   });
 
   it("resolves the use-case command as a feature glob when the UC is unknown", async () => {
     const { service } = build();
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- ../Specifications/features/UC-001-*.feature",
+      "npm run test -- --profile scoped ../Specifications/features/UC-001-*.feature",
     );
   });
 
@@ -418,7 +437,7 @@ describe("DefaultTestExecutionService", () => {
     );
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- ../Specifications/features/UC-001-happy-path.feature ../Specifications/features/UC-001-edge.feature",
+      "npm run test -- --profile scoped ../Specifications/features/UC-001-happy-path.feature ../Specifications/features/UC-001-edge.feature",
     );
   });
 
@@ -450,8 +469,9 @@ describe("DefaultTestExecutionService", () => {
       ),
     );
     const result = await service.execute({ scope: "all", target: "all" });
+    // Explicit file list: scoped profile selected so config paths don't merge.
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- ../Specifications/features/UC-001-happy.feature",
+      "npm run test -- --profile scoped ../Specifications/features/UC-001-happy.feature",
     );
   });
 

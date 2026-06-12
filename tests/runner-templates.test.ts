@@ -124,13 +124,65 @@ describe("buildRunnerTemplates", () => {
     expect(config.paths).toEqual(["../Specifications/features/**/*.feature"]);
     expect(config.format).toContain("json:reports/cucumber-report.json");
   });
+
+  it("emits a `scoped` named export with no paths (used by --profile scoped to avoid merge warning)", () => {
+    // The `scoped` profile is selected by scoped runs (feature/use-case) so
+    // the config `paths` glob does not merge with the CLI paths and produce a
+    // deprecation warning in the Test Console.
+    const source = cucumberFor(DEFAULT_SETTINGS);
+    expect(source).toContain("export const scoped");
+    // The scoped export must NOT carry paths — the whole point is to let the
+    // CLI paths be the sole source.
+    const scoped = evalScopedExport(source);
+    expect(scoped).not.toHaveProperty("paths");
+    // But it must keep the import globs and format so step definitions load
+    // and the JSON report is written.
+    expect(scoped.import).toEqual(["src/support/**/*.ts", "src/steps/**/*.ts"]);
+    expect(scoped.format).toContain("json:reports/cucumber-report.json");
+  });
+
+  it("hooks template sets a 60 s cucumber timeout before the Before hook", () => {
+    const hooks = byPath.get("src/support/hooks.ts")?.content ?? "";
+    expect(hooks).toContain("setDefaultTimeout(60_000)");
+    // Must be imported alongside the hook lifecycle exports.
+    expect(hooks).toContain("setDefaultTimeout");
+    // The setDefaultTimeout call must appear BEFORE the Before hook registration.
+    const timeoutIdx = hooks.indexOf("setDefaultTimeout(60_000)");
+    const beforeIdx = hooks.indexOf("Before(");
+    expect(timeoutIdx).toBeGreaterThan(-1);
+    expect(timeoutIdx).toBeLessThan(beforeIdx);
+  });
 });
 
 /** Evaluates the generated `export default { … }` module body in isolation. */
 const evalModule = (
   source: string,
 ): { paths: unknown[]; import?: unknown[]; format?: unknown[] } => {
-  const body = source.replace(/^export default/, "return").replace(/^\/\/.*$/gm, "");
+  // Strip ES module export keywords so the source runs inside a plain function body:
+  //   export default { … }  → return { … }
+  //   export const foo = …  → const foo = …  (named profile exports, dead after return)
+  const body = source
+    .replace(/^export default\b/m, "return")
+    .replace(/^export const /gm, "const ")
+    .replace(/^\/\/.*$/gm, "");
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   return new Function(body)() as { paths: unknown[]; import?: unknown[]; format?: unknown[] };
+};
+
+/**
+ * Evaluates the generated `export const scoped = { … }` expression and
+ * returns the value of the `scoped` binding.
+ */
+const evalScopedExport = (
+  source: string,
+): { paths?: unknown[]; import?: unknown[]; format?: unknown[] } => {
+  // Strip the default export line entirely, then turn `export const scoped = …`
+  // into a return so new Function can evaluate it.
+  const body = source
+    .replace(/^export default\b[^\n]*/m, "")
+    .replace(/^export const scoped\s*=/m, "return")
+    .replace(/^export const /gm, "const ")
+    .replace(/^\/\/.*$/gm, "");
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  return new Function(body)() as { paths?: unknown[]; import?: unknown[]; format?: unknown[] };
 };

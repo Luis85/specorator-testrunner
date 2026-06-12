@@ -96,6 +96,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Numerous Test Hub UX fixes: confirmation for "Reset Test Hub", retry buttons
   on error states, accessible run-history tables, Notices for failed
   note-opens, mid-run Test Console state, and glossary-consistent copy.
+- The generated runner sets a 60s cucumber timeout: the Before hook launches
+  Chromium, and a cold first launch (notably on Windows) blew the 5s default,
+  failing the demo test on first run.
+- Scoped runs (single Feature / Use Case) select a `scoped` cucumber profile
+  instead of merging CLI paths with the config glob, removing cucumber's
+  deprecation warning from the Test Console output; the e2e-smoke workflow now
+  exercises the scoped invocation shape.
+- The settings tab no longer crashes (`display is not a function`) on Obsidian
+  apps older than 1.13 (reachable via BRAT, which does not enforce
+  `minAppVersion`): it now shows a "requires Obsidian 1.13+" notice instead.
 
 ### Security
 

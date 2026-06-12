@@ -73,18 +73,26 @@ const TSCONFIG_JSON = `{
 // the WHOLE config: no step imports (every demo step ran "Undefined"), no
 // json report (evidence import found nothing). Found via the first real
 // testvault demo run.
-const cucumberMjs = (featuresGlob: string): string => `export default {
+// Named exports are treated as cucumber profiles; selecting `--profile scoped`
+// resolves the `scoped` export so config `paths` don't merge with CLI paths.
+const cucumberMjs = (featuresGlob: string): string => `const base = {
   import: ["src/support/**/*.ts", "src/steps/**/*.ts"],
-  paths: [${JSON.stringify(featuresGlob)}],
   format: [
     "progress",
     "json:reports/cucumber-report.json",
   ],
-  // NOTE: the deprecated \`publishQuiet\` option was REMOVED in Cucumber 12
+  // NOTE: the deprecated \\\`publishQuiet\\\` option was REMOVED in Cucumber 12
   // (the publish banner it suppressed no longer exists). Cucumber 12 rejects
   // unknown options, so it must not be emitted here (P4-5).
   parallel: 0,
 };
+
+export default { ...base, paths: [${JSON.stringify(featuresGlob)}] };
+
+// Scoped runs (the Test Hub passing explicit feature paths as CLI arguments)
+// select this profile so the config \\\`paths\\\` glob does not merge with the CLI
+// paths — that merge is deprecated and prints a warning into the Test Console.
+export const scoped = { ...base };
 `;
 
 const WORLD_TS = `import { World, setWorldConstructor } from "@cucumber/cucumber";
@@ -111,8 +119,13 @@ export class TestWorld extends World {
 setWorldConstructor(TestWorld);
 `;
 
-const HOOKS_TS = `import { After, Before, Status } from "@cucumber/cucumber";
+const HOOKS_TS = `import { After, Before, Status, setDefaultTimeout } from "@cucumber/cucumber";
 import { TestWorld } from "./world";
+
+// Cucumber's 5s default is too tight for E2E: a cold Chromium launch in the
+// Before hook (first run, AV-scanned Windows) regularly exceeds it, and real
+// SUT page loads need headroom too.
+setDefaultTimeout(60_000);
 
 Before(async function (this: TestWorld) {
   await this.openBrowser();

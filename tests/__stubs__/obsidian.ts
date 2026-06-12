@@ -18,3 +18,82 @@ export class Notice {
 export const setIcon = (_el: unknown, _icon: string): void => {
   // No-op: icon rendering is not exercised in unit tests.
 };
+
+/**
+ * Minimal Modal stub for unit tests. Only the class shape is needed; no
+ * behaviour is exercised by the settings-tab tests (Modal is imported by
+ * AddEnvironmentModal which settings-tab.ts transitively imports).
+ */
+export class Modal {
+  constructor(public readonly app: unknown) {}
+  open(): void {}
+  close(): void {}
+}
+
+/**
+ * Minimal Setting stub for unit tests.
+ */
+export class Setting {
+  settingEl: HTMLElement = {} as HTMLElement;
+  // eslint-disable-next-line @typescript-eslint/no-useless-constructor
+  constructor(_containerEl: unknown) {}
+  addText(_cb: (text: unknown) => void): this {
+    return this;
+  }
+  addButton(_cb: (btn: unknown) => void): this {
+    return this;
+  }
+  addExtraButton(_cb: (btn: unknown) => void): this {
+    return this;
+  }
+  addDropdown(_cb: (dd: unknown) => void): this {
+    return this;
+  }
+  setName(_name: string): this {
+    return this;
+  }
+  setDesc(_desc: string): this {
+    return this;
+  }
+  settingEl_: HTMLElement = {} as HTMLElement;
+}
+
+/**
+ * Minimal debounce stub — returns a no-op function with cancel/run.
+ */
+export const debounce = <T extends (...args: unknown[]) => void>(
+  fn: T,
+  _ms: number,
+  _immediate?: boolean,
+): T & { cancel(): void; run(): void } => {
+  const wrapped = fn as T & { cancel(): void; run(): void };
+  wrapped.cancel = (): void => {};
+  wrapped.run = (): void => {};
+  return wrapped;
+};
+
+/**
+ * Minimal PluginSettingTab stub for unit tests. The real class ships with
+ * Obsidian 1.13+ and provides a concrete `display()` that delegates to
+ * `getSettingDefinitions()`. This stub models that: it has a concrete
+ * `display()` so tests can verify the 1.13+ delegation path. Tests that
+ * simulate the pre-1.13 legacy path must remove `display` from this
+ * prototype in a beforeEach (and restore it in afterEach).
+ */
+export class PluginSettingTab {
+  containerEl: HTMLElement = { empty: () => {}, createEl: () => ({}) } as unknown as HTMLElement;
+
+  constructor(
+    public readonly app: unknown,
+    public readonly plugin: unknown,
+  ) {}
+
+  /** Obsidian 1.13+ concrete bridge — calls getSettingDefinitions(). */
+  display(): void {
+    // In the real app this triggers a declarative render; in tests it is a no-op
+    // unless the test overrides it.
+  }
+
+  hide(): void {}
+  update(): void {}
+}

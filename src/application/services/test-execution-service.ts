@@ -168,6 +168,16 @@ export const appendScopedArgs = (base: string[], scoped: string[]): string[] =>
   base.includes("--") ? [...base, ...scoped] : [...base, "--", ...scoped];
 
 /**
+ * Prepended to CLI feature-path args so cucumber-js selects the `scoped`
+ * profile from `cucumber.mjs` instead of the default. The default profile
+ * includes a `paths` glob; when CLI paths are also passed, cucumber merges
+ * them with the config glob and prints a deprecation warning into the Test
+ * Console. The `scoped` profile has no `paths`, so the CLI paths are the sole
+ * source — no merge, no warning.
+ */
+const SCOPED_PROFILE_ARGS = ["--profile", "scoped"] as const;
+
+/**
  * A test-execution command must be an `npm run <script>` form (TIS §13.2).
  * CommandSafetyPolicy also accepts install/probe commands (`npm install`,
  * `node --version`, `npx playwright install …`) because validation/maintenance
@@ -273,6 +283,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
     return this.active?.completion ?? Promise.resolve();
   }
 
+  // fallow-ignore-next-line complexity
   async execute(request: ExecuteTestRequest): Promise<Result<TestRun>> {
     // Maintenance (reset/repair) and runs are mutually exclusive (security L1).
     // Read the lock SYNCHRONOUSLY here — before reserving the slot below and
@@ -581,6 +592,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
    * under shell: false they are passed through as-is, so a path with `$`, `&`,
    * or spaces survives unchanged (the PR #7 decision to rework to argv arrays).
    */
+  // fallow-ignore-next-line complexity
   private async resolveCommand(
     request: ExecuteTestRequest,
     settings: TestHubSettings,
@@ -625,11 +637,14 @@ export class DefaultTestExecutionService implements TestExecutionService {
             .filter((uc) => uc.status !== "deprecated")
             .flatMap((uc) => uc.featureFiles);
           if (activeFiles.length > 0) {
+            // Explicit file list: select the `scoped` profile so the config
+            // `paths` glob does not merge with these CLI paths (deprecation
+            // warning; same treatment as `feature` and `use-case` scopes).
             return ok(
-              appendScopedArgs(
-                base,
-                activeFiles.map((path) => this.featureArg(settings, path)),
-              ),
+              appendScopedArgs(base, [
+                ...SCOPED_PROFILE_ARGS,
+                ...activeFiles.map((path) => this.featureArg(settings, path)),
+              ]),
             );
           }
           // Every non-deprecated UC is unautomated (or all UCs are deprecated):
@@ -637,6 +652,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
           // feature instead of falling back to the all-features glob.
           return ok(
             appendScopedArgs(base, [
+              ...SCOPED_PROFILE_ARGS,
               `${this.featurePrefix(settings)}/__no_active_features__.feature`,
             ]),
           );
@@ -647,28 +663,41 @@ export class DefaultTestExecutionService implements TestExecutionService {
         const tags = await this.suiteService.resolveTagExpression(request.target);
         if (!tags.ok) return err(tags.error);
         // Verbatim tag expression as a single literal arg (AD-4, no quoting).
+        // Tag-based: no CLI feature paths, so no profile-merge deprecation.
         return ok(appendScopedArgs(base, ["--tags", tags.value]));
       }
       case "feature":
         // Literal feature path arg; no shell, so no escaping needed.
-        return ok(appendScopedArgs(base, [this.featureArg(settings, request.target)]));
+        // Select `scoped` profile so the config `paths` glob does not merge
+        // with this CLI path and produce a deprecation warning.
+        return ok(
+          appendScopedArgs(base, [
+            ...SCOPED_PROFILE_ARGS,
+            this.featureArg(settings, request.target),
+          ]),
+        );
       case "use-case": {
         // UC-011: target the Use Case's declared featureFiles in order, each as
         // a separate literal arg. Falls back to the <UC-id>-*.feature glob when
         // the UC or its links can't be resolved (e.g. a brand-new UC with the
         // standard naming); the glob is expanded by cucumber-js, not a shell.
+        // Select `scoped` profile so the config `paths` glob does not merge
+        // with the CLI paths and produce a deprecation warning.
         const found = await this.useCaseService.findById(request.target);
         const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
         if (featureFiles.length > 0) {
           return ok(
-            appendScopedArgs(
-              base,
-              featureFiles.map((path) => this.featureArg(settings, path)),
-            ),
+            appendScopedArgs(base, [
+              ...SCOPED_PROFILE_ARGS,
+              ...featureFiles.map((path) => this.featureArg(settings, path)),
+            ]),
           );
         }
         return ok(
-          appendScopedArgs(base, [`${this.featurePrefix(settings)}/${request.target}-*.feature`]),
+          appendScopedArgs(base, [
+            ...SCOPED_PROFILE_ARGS,
+            `${this.featurePrefix(settings)}/${request.target}-*.feature`,
+          ]),
         );
       }
     }
