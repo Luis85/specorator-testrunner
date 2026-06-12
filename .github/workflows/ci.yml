@@ -80,6 +80,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The audit's CRAP gating consumes the Istanbul dump (fallow matches
+      # ./coverage automatically). Without it CRAP is ESTIMATED and tested
+      # functions in changed files get false over-threshold findings — the
+      # local gate always runs with coverage present, so CI must too.
+      - name: Generate coverage for CRAP matching
+        run: npm run test:coverage
+
       - name: Fallow audit
         run: |
           set -o pipefail

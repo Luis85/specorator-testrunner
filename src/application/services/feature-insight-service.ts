@@ -84,7 +84,7 @@ export const effectiveScenarioTags = (
  * tags) — a rowless block, or an Outline with no usable Examples at all,
  * executes nothing and must not match any expression.
  */
-export const effectiveScenarioTagSets = (
+const effectiveScenarioTagSets = (
   feature: FeatureSpecification,
   scenario: ScenarioSpecification,
 ): string[][] => {
