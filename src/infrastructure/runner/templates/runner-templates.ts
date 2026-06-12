@@ -36,6 +36,7 @@ const PACKAGE_JSON = `{
   },
   "devDependencies": {
     "@cucumber/cucumber": "^12.0.0",
+    "@types/node": "^22.0.0",
     "playwright": "^1.60.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
@@ -43,11 +44,16 @@ const PACKAGE_JSON = `{
 }
 `;
 
+// "Preserve"/"Bundler" (not NodeNext): the runner executes through tsx, which
+// resolves extensionless relative imports like a bundler. NodeNext made every
+// generated relative import an IDE error (ts2835: "needs explicit .js
+// extension") even though the suite ran fine — found via real-IDE validation;
+// the e2e-smoke script now typechecks the generated runner to lock IDE parity.
 const TSCONFIG_JSON = `{
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

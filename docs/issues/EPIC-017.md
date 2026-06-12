@@ -29,6 +29,7 @@ Proposed in the [V2 Research and Proposal](../proposals/2026-06-11%20V2%20Resear
 - [[US-081]] — Step Library with autocomplete
 - [[US-082]] — Use Case Editor
 - [[US-083]] — Linked entity notes (Actors and shared concepts)
+- [[US-090]] — Runner transparency — show the files behind a Use Case
 
 ## Use cases
 

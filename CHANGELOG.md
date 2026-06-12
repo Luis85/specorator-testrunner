@@ -105,6 +105,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
   exercises the scoped invocation shape. Runners generated before this version
   don't define the profile yet — the Test Hub detects that and omits it (the
   old warning remains) until Repair installation regenerates the config.
+- The generated `.testrunner` typechecks cleanly in IDEs: `tsconfig.json`
+  uses `Preserve`/`Bundler` module resolution (tsx resolves extensionless
+  imports like a bundler; `NodeNext` flagged every generated relative import
+  with ts2835) and `@types/node` is now a declared devDependency instead of
+  leaking in from a parent `node_modules`; the e2e-smoke workflow typechecks
+  the generated runner to keep IDE parity locked.
 - The settings tab no longer crashes (`display is not a function`) on Obsidian
   apps older than 1.13 (reachable via BRAT, which does not enforce
   `minAppVersion`): it now shows a "requires Obsidian 1.13+" notice instead.

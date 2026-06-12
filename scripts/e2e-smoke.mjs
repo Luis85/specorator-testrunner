@@ -67,6 +67,10 @@ try {
   // 3. Install + run, using only the templates' own package scripts so the
   //    smoke run cannot drift from what the plugin generates.
   run("npm install", runnerRoot);
+  // Typecheck the generated runner with its own tsc: the IDE experience.
+  // Catches config/source drift that tsx tolerates at runtime (e.g. the
+  // NodeNext-vs-extensionless-imports ts2835 squiggles found in the field).
+  run("npx tsc --noEmit", runnerRoot);
   run("npm run install:browsers:ci", runnerRoot);
   run("npm run test:ci", runnerRoot);
 
