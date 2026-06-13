@@ -13,8 +13,8 @@
 **Decisions locked in by this plan** (from the design spec; flag in review if any should change):
 
 1. **`schemaVersion` is a persistence-envelope key, not a `TestHubSettings` field.** It lives in the saved `data.json` blob alongside the settings fields, handled entirely in `SettingsService.load`/`save`. The domain `TestHubSettings` type stays clean (it is the user-facing settings shape, not metadata).
-2. **A present, *different* version resets; an absent version is forward-compatible.** Absent `data.json` (`raw === undefined`) → defaults, no log (normal first run). A blob carrying a `schemaVersion` that **differs** from the code → reset to defaults **and** `logger.error` a clear report (beta break, no migration). A blob with **no** `schemaVersion` (a pre-versioning V1 blob) **or** a matching version → merge + sanitize as today. V2 settings changes are additive so far, so forward-compatible data is preserved rather than nuked, and the reset is reserved for a genuine future incompatible bump. (This also keeps the existing unversioned settings fixtures valid — raised by the codex review on PR #38.)
-3. **`DATA_SCHEMA_VERSION = 1` and `TESTRUNNER_MANIFEST_VERSION = 1`.** The first stamped versions. For `data.json`, an *absent* version means a forward-compatible V1 blob (merged, per Decision 2) — not a reset. For the `.testrunner` **manifest**, an absent/older version means an old runner → a Repair signal (Task 5); the manifest has no additive-merge story, so absence there is treated as outdated.
+2. **A present blob whose *effective* version differs from the code resets; first run is silent.** Absent `data.json` (`raw === undefined`) → defaults, no log (normal first run). For a present blob the **effective version** is its `schemaVersion` if numeric, else **1** (a pre-versioning V1 blob is treated as the version this envelope shipped at — *not* as "forever current"). Effective version **differs** from the code → reset to defaults **and** `logger.error` (beta break, no migration); effective version **matches** → merge + sanitize as today. So at v1 an unversioned blob still merges (keeping the existing unversioned fixtures valid), but when `DATA_SCHEMA_VERSION` is later bumped for an incompatible change those unversioned blobs correctly reset rather than merge as if current. (Both points raised by the codex review on PR #38.)
+3. **`DATA_SCHEMA_VERSION = 1` and `TESTRUNNER_MANIFEST_VERSION = 1`.** The first stamped versions. For `data.json`, an *absent* version is treated as the envelope's introduction version (1, per Decision 2): merged while the code is at v1, reset once the code bumps past 1. For the `.testrunner` **manifest**, an absent/older/newer version means a version-mismatched runner → a Repair signal (Task 5); the manifest has no additive-merge story, so any non-equal version there is treated as outdated.
 4. **The manifest file is `.testrunner/testrunner-manifest.json`**, content `{ "manifestVersion": <n> }`, generated like every other managed file (`overwrite: true`). It is validation-relevant but **not** added to `VALIDATED_RUNNER_FILES` (whose absence hard-fails a run); a missing/old manifest is a *repair* signal, not a run-blocker.
 5. **The `ReportParser` port owns `ScenarioResult` and a new `ParsedReport`;** `ImportedReport` becomes `ParsedReport & { runId }`. The parser is pure (string in, `Result<ParsedReport>` out); all filesystem I/O and event emission stay in `DefaultReportImportService`.
 
@@ -479,7 +479,7 @@ describe("schemaVersion envelope (2.1)", () => {
 });
 ```
 
-(Adapt `buildServiceWith` / `recordingLogger` to the file's existing helpers — if the logger spy is shaped differently, match it; the assertion is "an error was logged mentioning schema".) The existing unversioned settings fixtures (scalar/sut/path repair, F2 serialization) stay green unchanged: an absent version is forward-compatible, so they flow through merge + sanitize exactly as today.
+(Adapt `buildServiceWith` / `recordingLogger` to the file's existing helpers — if the logger spy is shaped differently, match it; the assertion is "an error was logged mentioning schema".) The existing unversioned settings fixtures (scalar/sut/path repair, F2 serialization) stay green unchanged: an absent version is treated as v1, which equals the current `DATA_SCHEMA_VERSION`, so they flow through merge + sanitize exactly as today.
 
 - [ ] **Step 2: Run them to verify they fail**
 
@@ -505,11 +505,11 @@ Rewrite `load()` so the version gate runs before merge:
 ```ts
 async load(): Promise<TestHubSettings> {
   const raw = await this.store.load();
-  // A blob carrying a DIFFERENT schemaVersion than the code → beta reset (log
-  // + defaults, no migration). An ABSENT version (pre-versioning V1 blob) or a
-  // matching version → merge + sanitize as before: V2 settings changes are
-  // additive, so forward-compatible data is preserved, not nuked. First run
-  // (no data.json) falls through to defaults silently.
+  // A present blob whose EFFECTIVE version differs from the code → beta reset
+  // (log + defaults, no migration). A present-but-unversioned blob is treated
+  // as v1 (the version this envelope shipped at), so at v1 it still merges,
+  // but a future incompatible bump resets it instead of merging stale data.
+  // First run (no data.json) falls through to defaults silently.
   if (this.schemaVersionIsStale(raw)) {
     this.logger.error(
       "data.json schemaVersion differs from this build; resetting settings to defaults (beta: no migration).",
@@ -525,14 +525,20 @@ async load(): Promise<TestHubSettings> {
 }
 
 /**
- * True only for a present blob carrying a schemaVersion DIFFERENT from the
- * code. An absent version = a pre-versioning V1 blob (forward-compatible via
- * the additive merge), not stale; `undefined` raw = first run, not stale.
+ * True for a present blob whose EFFECTIVE schema version differs from the
+ * code. A present-but-unversioned (or non-numeric) blob predates the
+ * envelope, so it is treated as version 1 — the version this envelope shipped
+ * at, fixed forever, NOT `DATA_SCHEMA_VERSION` which moves on each bump. Thus
+ * an unversioned blob merges while the code is at v1, but resets once the code
+ * bumps past 1. `undefined` raw = first run, not stale.
  */
 private schemaVersionIsStale(raw: unknown): boolean {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return false;
   const version = (raw as Record<string, unknown>).schemaVersion;
-  return version !== undefined && version !== DATA_SCHEMA_VERSION;
+  // 1 = the schema version at which this envelope shipped (a constant, not
+  // DATA_SCHEMA_VERSION); a pre-envelope blob is effectively v1.
+  const effective = typeof version === "number" ? version : 1;
+  return effective !== DATA_SCHEMA_VERSION;
 }
 ```
 
