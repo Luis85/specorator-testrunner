@@ -272,6 +272,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       runnerInstall,
       eventBus,
       this.logger,
+      // V1→V2 clean-cut migration deletes cucumber-era files under `.testrunner`
+      // (outside the vault index) through the absolute FS port.
+      absoluteFs,
       {
         activeRunId: () => this.testExecutionService.activeRunId(),
         whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),

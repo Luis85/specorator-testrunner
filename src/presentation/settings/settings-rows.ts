@@ -73,6 +73,19 @@ export const repairRows = (result: RepairResult): ChecklistRow[] => [
   result.reinstalledBrowsers
     ? checklistRow("ok", "Verified the Chromium browser installation.")
     : checklistRow("info", "Browser installation was not re-run."),
+  // A V1→V2 migration deletes legacy cucumber files and the user may have custom
+  // V1 steps that no longer run — surface it (a warning, not just a log) so they
+  // know to re-author them.
+  ...(result.migratedFromV1
+    ? [
+        checklistRow(
+          "warning",
+          `Migrated the runner from the V1 Cucumber engine to playwright-bdd (removed ${result.removedFiles.length} legacy ${
+            result.removedFiles.length === 1 ? "file" : "files"
+          }). Any custom V1 step files must be re-authored as createBdd steps.`,
+        ),
+      ]
+    : []),
 ];
 
 /** Maps a failed repair to a single explanatory ✗ row. */
