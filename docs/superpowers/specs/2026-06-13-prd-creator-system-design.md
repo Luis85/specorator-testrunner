@@ -236,7 +236,7 @@ The **PRD Builder** is a multi-step modal that guides users through PRD creation
 - **Input:** Checkbox list of existing Use Cases, filtered by the domains selected in Step 1
 - **UI:** Checkbox list with UC titles; count shown
 - **Guidance:** "Which existing Use Cases implement this PRD? Leave empty if this is a new PRD with UCs to be written."
-- **Note:** This step can be skipped; UCs can be linked later via Use Case editor
+- **Note:** This step can be skipped; UCs can be linked later via the Use Case editor, which gains a **Parent PRD** selector (backed by `assignUseCaseToPrd`) so non-markdown users can assign the required parent PRD outside the builder. This is required work, not just the breadcrumb in §4.4.
 - **Output:** Update each selected UC's `prd-id: PRD-NNN` frontmatter
 
 ### Step 7: Review & Create
@@ -251,10 +251,10 @@ The **PRD Builder** is a multi-step modal that guides users through PRD creation
 - **UI:** Form with preview of final markdown
 - **Guidance:** "Review the PRD structure below. Adjust title or status if needed."
 - **Output:** 
-  - Create folder `docs/prds/PRD-NNN-slug/`
-  - Write `docs/prds/PRD-NNN-slug/PRD-NNN-slug.md`
+  - Create folder `<prdsPath>/PRD-NNN-slug/` (respects `settings.paths.prdsPath`)
+  - Write `<prdsPath>/PRD-NNN-slug/PRD-NNN-slug.md`
   - Update all linked Use Cases' `prd-id` field
-  - Emit domain event: `prd.created` with payload `{ prd-id, parent-prd, uc-count }`
+  - Emit domain event: `prd.created` with payload `{ prdId, title, path, parentPrdId }` (camelCase, mirrors `usecase.created`; `parentPrdId` absent for the root)
 
 ---
 
@@ -276,7 +276,7 @@ The PRD system surfaces at three entry points (explorer, dashboard, modal), supp
 - **Right-click node:** Context menu
   - "Create sub-PRD" → open builder with `parent-prd` pre-filled
   - "Edit" → open builder with existing fields populated
-  - "Delete" (if no child PRDs or UCs) → confirm, then delete only the generated `PRD-NNN-*.md` note. If the folder contains other user-authored files (diagrams, attachments), leave them and the folder in place and surface a notice ("PRD note removed; N other files preserved in folder"); never recursively delete a folder with non-PRD content.
+  - "Delete" (disabled for the root PRD-000, and only enabled when the PRD has no child PRDs and no linked UCs) → confirm, then delete only the generated `PRD-NNN-*.md` note. If the folder contains other user-authored files (diagrams, attachments), leave them and the folder in place and surface a notice ("PRD note removed; N other files preserved in folder"); never recursively delete a folder with non-PRD content. The root PRD-000 is never deletable — it is the single tree anchor the Explorer and Dashboard render.
   - "Open in file explorer" → reveal folder in OS file system
 - **Drag-to-reorder:** Reorder sub-PRDs within same parent (maintains immutable PRD-NNN IDs; updates `display_order` frontmatter field for tree rendering)
 - **Search:** Filter PRDs by title or domain (e.g., search "dashboard" shows all PRDs tagged with dashboard domain)
@@ -479,7 +479,7 @@ npm run migrate:link-ucs-to-prds
 
 If the migration goes wrong:
 - Restore `docs/Specorator Testrunner.md.backup` → `docs/Specorator Testrunner.md`
-- Delete `docs/prds/` folder
+- Delete the configured PRD folder (`settings.paths.prdsPath`, default `PRDs/` — the same path migration wrote to), not a hard-coded `docs/prds/`, so a retry does not see stale PRD files
 - Restore Use Cases from git (no `prd-id` field)
 - Restart migration
 
@@ -615,7 +615,7 @@ This design introduces architecture-shaping decisions and new product terminolog
    - **Domain:** Research/discovery context (solution-agnostic). Separate from PRD.
    - **display_order:** Frontmatter field managing sibling PRD ordering without mutating immutable IDs.
 
-3. **Event Catalog + typed payloads:** This design emits a new `prd.created` domain event. Before publishing it, add it to `docs/architecture/Event Catalog.md` and to the typed `EventPayloads` map (so the publisher cannot drift from the catalogued shape). Payload: `{ prdId, parentPrd, ucCount }`. Catalog any further PRD events (e.g. `prd.updated`, `prd.deleted`) introduced during implementation the same way.
+3. **Event Catalog + typed payloads:** This design emits a new `prd.created` domain event. Before publishing it, add it to `docs/architecture/Event Catalog.md` and to the typed `EventPayloads` map (so the publisher cannot drift from the catalogued shape). Payload: `{ prdId, title, path, parentPrdId }` (camelCase, mirrors `usecase.created`; `parentPrdId` is absent for the root). Catalog any further PRD events (e.g. `prd.updated`, `prd.deleted`) introduced during implementation the same way.
 
 These updates ensure the design is formally recorded and product language is consistent across the codebase.
 
