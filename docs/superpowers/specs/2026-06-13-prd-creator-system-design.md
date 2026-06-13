@@ -542,10 +542,17 @@ This design supports a progression toward richer traceability and visualization.
 
 ---
 
-## 10. Open Questions & Notes
+## 10. Design Decisions & Implementation Notes
 
-- **Slug generation:** Should PRD slugs be auto-generated (title → kebab-case) or user-provided? Recommend auto-generated with user override option.
-- **PRD numbering:** Should PRD IDs be auto-incremented (PRD-001, PRD-002) or user-assigned? Recommend auto-increment to prevent collisions.
-- **Domain vs. PRD conflict:** If a Use Case's `domain` doesn't match any domain in its PRD's `domains` list, should validation warn? Recommend warning (signals potential scope misalignment).
-- **Research artifacts storage:** V1 uses free text for synthesis; V1.5 adds artifact links. Where should domain research live? Recommend `docs/domains/<domain-name>/` with nested research notes.
+**Slug generation (DECIDED):**
+PRD slugs are auto-generated from title (title → kebab-case) with optional user override in Step 7. This prevents collisions while allowing customization.
+
+**PRD numbering (DECIDED):**
+PRD IDs are auto-incremented (`PRD-001`, `PRD-002`, etc.) by scanning existing PRD files and incrementing the highest ID found. PRD-000 is reserved for system vision. User cannot manually assign IDs to prevent collisions.
+
+**Domain vs. PRD alignment (DECIDED):**
+If a Use Case's `domain` doesn't match any domain in its PRD's `domains` list, the PRD detail view shows a warning badge: "Misaligned domain metadata". This signals potential scope issues without blocking linking. User can edit either field to align.
+
+**Research artifacts storage (DEFERRED to V1.5):**
+V1 uses free-text synthesis in the "Research Summary" section. In V1.5, add optional `research-notes: []` field linking to `docs/domains/<domain-name>/research.md` files. Storage location TBD in V1.5 design.
 
