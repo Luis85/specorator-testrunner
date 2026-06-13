@@ -6,7 +6,7 @@
 - **Status:** Draft
 - **Stage:** Discovery
 - **Target Platform:** Obsidian Desktop
-- **Technology Stack:** TypeScript, Obsidian Plugin API, Playwright, Cucumber-JS, Node.js
+- **Technology Stack:** TypeScript, Obsidian Plugin API, Playwright, playwright-bdd, @playwright/test, Node.js
 - **Companion documents:** [[Solution Design]], [[Building Block View]], [[Runtime View]], [[Technical Interface Specification]], [[Event Catalog]]
 
 ---
@@ -106,7 +106,7 @@ Obsidian Plugin
             ▼
 .testrunner
 ├── Playwright
-├── Cucumber
+├── playwright-bdd
 ├── TypeScript
 ├── Reports
 ├── Screenshots
@@ -190,7 +190,7 @@ Supported:
 
 ### FR-005 Test Suite Management
 
-The system shall allow grouping scenarios into suites via Cucumber tag expressions (see SDD AD-4).
+The system shall allow grouping scenarios into suites via tag expressions, processed by playwright-bdd (see SDD AD-4).
 
 Default suites — created automatically by the init wizard:
 

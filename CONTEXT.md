@@ -11,7 +11,7 @@ The plugin's user-facing workbench inside Obsidian. Encompasses the dashboard, e
 _Avoid_: Plugin UI, frontend, workbench.
 
 **.testrunner**:
-The self-contained Node project generated into the vault root by the plugin. Holds the Playwright + Cucumber-JS runtime so tests execute identically inside Obsidian and inside CI.
+The self-contained Node project generated into the vault root by the plugin. Holds the Playwright + playwright-bdd runtime (`bddgen` + `@playwright/test`) so tests execute identically inside Obsidian and inside CI.
 _Avoid_: Runner folder, test directory, test harness.
 
 **Vault**:
@@ -29,19 +29,19 @@ A business-facing description of a single capability the System Under Test must 
 _Avoid_: Story, requirement, scenario, ticket.
 
 **Feature Specification**:
-A `.feature` file in Gherkin that makes part of a Use Case executable. Each Feature belongs to exactly one Use Case; the back-reference is encoded both in the filename (`<UC-id>-<slug>.feature`) and in the Feature's frontmatter. Sharing test logic across Use Cases is done via step definitions and Cucumber `Background`, never via shared Feature files.
+A `.feature` file in Gherkin that makes part of a Use Case executable. Each Feature belongs to exactly one Use Case; the back-reference is encoded both in the filename (`<UC-id>-<slug>.feature`) and in the Feature's frontmatter. Sharing test logic across Use Cases is done via step definitions (`createBdd()` steps) and Gherkin `Background`, never via shared Feature files.
 _Avoid_: Feature file (informal), spec file, BDD file.
 
 **Test Suite**:
-A named collection of scenarios defined by a Cucumber **Tag Expression**. Membership is by tag, never by explicit scenario list.
+A named collection of scenarios defined by a **Tag Expression**. Membership is by tag, never by explicit scenario list.
 _Avoid_: Test group, test set, test pack.
 
 **Tag Expression**:
-A Cucumber tag-expression string such as `@smoke and not @wip` that determines which scenarios a Test Suite includes. The single source of truth for suite membership.
+A tag-expression string (Gherkin/BDD standard) such as `@smoke and not @wip` that determines which scenarios a Test Suite includes, evaluated by playwright-bdd at generation. The single source of truth for suite membership.
 _Avoid_: Tag list, tag query, filter.
 
 **`@wip` Tag**:
-The conventional Cucumber tag for "work in progress." A Feature tagged `@wip` is excluded from the dashboard's KPI roll-up (per ADR-0017) so half-built work does not drag the dashboard red. Granularity is the Feature, not the scenario.
+The conventional BDD tag for "work in progress." A Feature tagged `@wip` is excluded from the dashboard's KPI roll-up (per ADR-0017) so half-built work does not drag the dashboard red. Granularity is the Feature, not the scenario.
 _Avoid_: Draft tag, todo tag, skip tag.
 
 **Test Run**:
@@ -49,7 +49,7 @@ A single invocation of the runner against some scope. Identified as `RUN-<timest
 _Avoid_: Test execution, run instance, job.
 
 **Scenario Reference** _(accepted for V2 — see ADR-0022; not yet in code)_:
-The natural key for a Cucumber scenario: `<featurePath>::<scenarioName>` (and `::row-<index>` for a Scenario Outline example). For the key to be collision-free, scenario names must be unique within a Feature **and must not contain the reserved `::` delimiter** (both enforced by structural validation, per ADR-0022); the `::row-<index>` suffix is positional and provisional (a reorder-stable row key is deferred to EPIC-014). Stable across runs but **not** across renames — renaming a scenario mints a new Scenario Reference and drops prior history once. It is the unit of scenario-level identity and history (EPIC-014); until that lands, the executable unit of identity remains the **Feature** (see _Feature Specification_), not the scenario.
+The natural key for a Gherkin scenario: `<featurePath>::<scenarioName>` (and `::row-<index>` for a Scenario Outline example). For the key to be collision-free, scenario names must be unique within a Feature **and must not contain the reserved `::` delimiter** (both enforced by structural validation, per ADR-0022); the `::row-<index>` suffix is positional and provisional (a reorder-stable row key is deferred to EPIC-014). Stable across runs but **not** across renames — renaming a scenario mints a new Scenario Reference and drops prior history once. It is the unit of scenario-level identity and history (EPIC-014); until that lands, the executable unit of identity remains the **Feature** (see _Feature Specification_), not the scenario.
 _Avoid_: Scenario id, scenario key, test id.
 
 **Evidence**:
@@ -71,7 +71,7 @@ The first-run modal that scaffolds the vault, generates documentation, creates d
 _Avoid_: Onboarding flow, setup screen, first-launch dialog.
 
 **Guided Tour**:
-The event-observed onboarding checklist: a persistent sidebar view that walks a user through the full V1 loop (Use Case → Feature → Gherkin → step definitions → Suite → Run → Evidence → CI) by observing domain events as the user performs each real action. Distinct from the Initialization Wizard — the wizard scaffolds, the tour teaches. Completing it leaves the user with a self-authored test (the `@tour` greeting scenario against the extended fixture).
+The event-observed onboarding checklist: a persistent sidebar view that walks a user through the full V1 loop (Use Case → Feature → Gherkin → step definitions (`createBdd()`) → Suite → Run → Evidence → CI) by observing domain events as the user performs each real action. Distinct from the Initialization Wizard — the wizard scaffolds, the tour teaches. Completing it leaves the user with a self-authored test (the `@tour` greeting scenario against the extended fixture).
 _Avoid_: Tutorial, walkthrough, onboarding wizard.
 
 **System Under Test (SUT)**:

@@ -110,7 +110,7 @@ Obsidian Plugin
             ▼
 .testrunner
 ├── Playwright
-├── Cucumber
+├── playwright-bdd
 ├── TypeScript
 ├── Reports
 ├── Screenshots
@@ -118,8 +118,8 @@ Obsidian Plugin
 ```
 
 The Obsidian plugin authors and orchestrates. The `.testrunner` folder in the
-vault holds a self-contained Node project that runs Playwright + Cucumber-JS
-and can also be executed standalone from CI.
+vault holds a self-contained Node project that runs Playwright with playwright-bdd
+(`bddgen` + `@playwright/test`) and can also be executed standalone from CI.
 
 ## What this plugin does on your machine
 
@@ -131,7 +131,8 @@ Markdown. They are disclosed here in line with Obsidian's Developer Policies:
   the browser, validate the environment, and run your tests. These executables
   must already be available on your system.
 - **Downloads software over the network.** Installing the runner downloads npm
-  packages (Playwright, Cucumber-JS, and their dependencies) and a Chromium
+  packages (Playwright, playwright-bdd, `@playwright/test`, and their
+  dependencies) and a Chromium
   browser via `playwright install`. This is the only network activity and it
   happens only when you trigger an install/repair; the plugin itself does not
   phone home.
