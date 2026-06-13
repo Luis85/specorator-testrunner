@@ -237,8 +237,17 @@ query it directly during a session.
 }
 ```
 
-The MCP server is read-only and version-matched to whichever `fallow` version
-is installed in `node_modules`. No additional configuration needed.
+The MCP server is version-matched to whichever `fallow` version is installed
+in `node_modules`. It exposes both read-only analysis tools (health, dead-code,
+duplication, audit) and a write-capable `fix_apply` tool that can apply
+auto-fixable findings directly to the working tree (`fallow fix --yes`).
+
+**Agent auto-fix:** When an agent uses `fix_apply`, it writes to your files.
+This is intentional — it is how agents act on `auto_fixable` findings without
+manual intervention. Review the diff before committing, exactly as you would
+for any agent-generated change. If your team's policy is that agents must never
+write to the repo unsupervised, configure your agent's tool permissions to
+block `fix_apply` (e.g. in Claude Code's `.claude/settings.json` deny list).
 
 ---
 
