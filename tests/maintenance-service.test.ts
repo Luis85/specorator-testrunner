@@ -217,6 +217,23 @@ describe("DefaultMaintenanceService", () => {
     expect(await absoluteFs.existsAbsolute("/vault/.testrunner/cucumber.mjs")).toBe(true);
   });
 
+  it("does NOT clean-cut a runner with a NEWER manifest (downgrade/Sync), leaving files intact (codex P2)", async () => {
+    const { service, absoluteFs } = build();
+    seedHealthyRunner(absoluteFs);
+    // A runner from a future plugin: validation flags RUNNER_MANIFEST_OUTDATED
+    // (any non-equal version), but it's NEWER than v2 — NOT a V1 runner.
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 99}');
+    absoluteFs.seed("/vault/.testrunner/cucumber.mjs", "must survive — not a V1 clean-cut target");
+
+    const result = await service.repair();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.migratedFromV1).toBe(false);
+    expect(result.value.removedFiles).toEqual([]);
+    expect(await absoluteFs.existsAbsolute("/vault/.testrunner/cucumber.mjs")).toBe(true);
+  });
+
   it("does not clean-cut a healthy V2 runner: deletes nothing and reports no migration", async () => {
     const { service, absoluteFs, templates } = build();
     seedHealthyRunner(absoluteFs);

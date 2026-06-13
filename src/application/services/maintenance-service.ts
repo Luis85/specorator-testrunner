@@ -6,6 +6,8 @@ import type { SettingsService } from "./settings-service";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import { resolveRunnerCwd } from "./runner-paths";
+import { TESTRUNNER_MANIFEST_FILE, TESTRUNNER_MANIFEST_VERSION } from "../content/runner-manifest";
+import { parseManifestVersion } from "../content/runner-manifest-version";
 import { appError } from "../../shared/errors/errors";
 import { DEFAULT_SETTINGS } from "../../domain/settings/settings";
 import type { TestHubSettings } from "../../domain/settings/settings";
@@ -179,9 +181,11 @@ export class DefaultMaintenanceService implements MaintenanceService {
       //    ExamplePage) is recreated at V2 by the createRunner pass below (its
       //    templates are overwrite:false → CREATE when absent). Guarded so a
       //    healthy V2 repair (no mismatch) deletes nothing.
-      const migrated = manifestMismatch ? await this.migrateV1Runner(settings) : ok([]);
-      if (!migrated.ok) return err(migrated.error);
-      const removedFiles = migrated.value;
+      const migration = manifestMismatch
+        ? await this.migrateV1Runner(settings)
+        : ok({ migrated: false, removed: [] as VaultPath[] });
+      if (!migration.ok) return err(migration.error);
+      const removedFiles = migration.value.removed;
 
       // 3. Re-sync the managed template files; user-authored steps/pages are
       //    preserved because their templates declare overwrite:false (RV-8). On a
@@ -213,7 +217,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
       await this.validation.validateEnvironment();
 
       const repairedFiles = recreated.value.createdFiles;
-      const migratedFromV1 = manifestMismatch;
+      const migratedFromV1 = migration.value.migrated;
       await this.eventBus.publish(createEvent("testrunner.repaired", { repairedFiles }));
       this.logger.info("Runner repaired", {
         files: repairedFiles.length,
@@ -400,17 +404,28 @@ export class DefaultMaintenanceService implements MaintenanceService {
    * Resolves the absolute runner cwd (the runner runtime lives outside the vault
    * index) and removes each V1-incompatible file that is actually present. When
    * the cwd cannot be resolved we skip the deletions rather than guess a path.
-   * Returns the relative paths that EXISTED and were removed, so the change
-   * report lists only real deletions — not idempotent no-ops for files a given
-   * V1 runner never had. MUST run BEFORE createRunner so the deleted demo is
-   * recreated at V2. A delete that actually FAILS (locked/read-only stale file)
-   * returns `err` and fails the repair: the demo files are recreated
-   * `overwrite:false`, so a surviving V1 `@cucumber`/World file would leave the
-   * runner un-loadable while Repair falsely reported success.
+   * `migrated` is true only for an OLDER/unversioned (V1-era) runner; a NEWER
+   * runner (a downgrade / Obsidian Sync from a future plugin) is left untouched
+   * — its files are NOT V1 cucumber, so deleting them would corrupt it.
+   * `removed` lists the paths that EXISTED and were deleted, so the change report
+   * shows only real deletions — not idempotent no-ops for files a given V1 runner
+   * never had. MUST run BEFORE createRunner so the deleted demo is recreated at
+   * V2. A delete that actually FAILS (locked/read-only stale file) returns `err`
+   * and fails the repair: the demo files are recreated `overwrite:false`, so a
+   * surviving V1 `@cucumber`/World file would leave the runner un-loadable while
+   * Repair falsely reported success.
    */
-  private async migrateV1Runner(settings: TestHubSettings): Promise<Result<VaultPath[]>> {
+  private async migrateV1Runner(
+    settings: TestHubSettings,
+  ): Promise<Result<{ migrated: boolean; removed: VaultPath[] }>> {
     const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
-    if (!cwd.ok) return ok([]);
+    if (!cwd.ok) return ok({ migrated: false, removed: [] });
+    const manifest = await this.absoluteFs.readAbsolute(`${cwd.value}/${TESTRUNNER_MANIFEST_FILE}`);
+    const version = parseManifestVersion(manifest.ok ? manifest.value : undefined);
+    // Clean-cut only an OLDER/unversioned runner. A newer manifest is NOT V1.
+    if (version !== null && version >= TESTRUNNER_MANIFEST_VERSION) {
+      return ok({ migrated: false, removed: [] });
+    }
     const removed: VaultPath[] = [];
     for (const relPath of V1_INCOMPATIBLE_FILES) {
       const abs = `${cwd.value}/${relPath}`;
@@ -422,6 +437,6 @@ export class DefaultMaintenanceService implements MaintenanceService {
       if (!deleted.ok) return err(deleted.error);
       removed.push(unsafeVaultPath(relPath));
     }
-    return ok(removed);
+    return ok({ migrated: true, removed });
   }
 }
