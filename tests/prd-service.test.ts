@@ -19,6 +19,11 @@ const build = () => {
 describe("DefaultPrdService.create", () => {
   it("creates a sub-PRD folder + note and emits prd.created", async () => {
     const { service, fs, types, events } = build();
+    // The root must already exist for a sub-PRD to reference it as parent.
+    fs.files.set(
+      "PRDs/PRD-000-vision/PRD-000-vision.md",
+      "---\nid: PRD-000\ntype: prd\nparent-prd:\n---\n",
+    );
 
     const result = await service.create({
       title: "Dashboard & KPI Tracking",
@@ -159,6 +164,91 @@ describe("DefaultPrdService.create id allocation", () => {
       scopeOut: ["b"],
     });
     expect(result.ok && result.value.id).toBe("PRD-001");
+  });
+});
+
+describe("DefaultPrdService.create parent validation", () => {
+  const seedRoot = (fs: FakeVaultFileSystem) =>
+    fs.files.set(
+      "PRDs/PRD-000-vision/PRD-000-vision.md",
+      ["---", "id: PRD-000", "type: prd", "title: V", "parent-prd:", "---", ""].join("\n"),
+    );
+
+  it("rejects an explicit parent that does not exist", async () => {
+    const { service } = build();
+    const result = await service.create({
+      title: "Orphan",
+      parentPrdId: "PRD-999",
+      domains: ["d"],
+      vision: "v",
+      scopeIn: ["a"],
+      scopeOut: ["b"],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("PRD-999");
+  });
+
+  it("defaults an omitted parent under the root instead of creating a second root", async () => {
+    const { service, fs, events } = build();
+    seedRoot(fs);
+
+    const result = await service.create({
+      // No parentPrdId, but a root already exists → must become its child.
+      title: "Reporting",
+      domains: ["reporting"],
+      vision: "v",
+      scopeIn: ["a"],
+      scopeOut: ["b"],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.id).toBe("PRD-001");
+    expect(result.value.parentPrdId).toBe("PRD-000");
+    // The event payload carries the resolved parent, not the (omitted) request value.
+    expect(events.find((e) => e.type === "prd.created")?.payload).toMatchObject({
+      prdId: "PRD-001",
+      parentPrdId: "PRD-000",
+    });
+  });
+
+  it("requires a domain when an omitted parent resolves to a sub-PRD", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+
+    const result = await service.create({
+      title: "No domain",
+      domains: [],
+      vision: "v",
+      scopeIn: ["a"],
+      scopeOut: ["b"],
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("DefaultPrdService.create normalization", () => {
+  it("collapses a multiline vision into a single-line frontmatter scalar", async () => {
+    const { service, fs } = build();
+
+    const result = await service.create({
+      title: "Vision Test",
+      domains: [],
+      vision: "Line one\nLine two\n  with   spaces",
+      scopeIn: ["a"],
+      scopeOut: ["b"],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The root gets PRD-000; its note's frontmatter vision must be one line.
+    expect(result.value.vision).toBe("Line one Line two with spaces");
+    const note = fs.files.get(result.value.path) ?? "";
+    expect(note).toContain("vision: Line one Line two with spaces");
+    // And it round-trips through the read model unchanged.
+    const reloaded = await service.findAll();
+    expect(reloaded.ok && reloaded.value[0]?.vision).toBe("Line one Line two with spaces");
   });
 });
 

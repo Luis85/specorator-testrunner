@@ -4,27 +4,11 @@ import type { UseCase } from "../../domain/entities/use-case";
 import type { CreatePrdRequest, PrdService } from "../../application/services/prd-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { PrdBuilderState } from "../../application/services/prd-builder";
-import { prdBuilderStepTitle } from "../../application/services/prd-builder";
-
-/**
- * Resolve the parent for a new PRD. An explicit parent (Explorer "＋ sub-PRD")
- * always wins. Otherwise, when PRDs already exist the new PRD defaults to a child
- * of the root (PRD-000 if present, else the first parentless PRD) so it is never
- * accidentally created as a second root; with no PRDs yet it stays parentless
- * (it becomes the root product vision).
- */
-export const resolveParentPrdId = (
-  explicit: string | undefined,
-  prds: Prd[],
-): string | undefined => {
-  if (explicit !== undefined) return explicit;
-  if (prds.length === 0) return undefined;
-  return (
-    prds.find((p) => p.id === "PRD-000")?.id ??
-    prds.find((p) => p.parentPrdId === undefined)?.id ??
-    prds[0]?.id
-  );
-};
+import {
+  addDomainOption,
+  prdBuilderStepTitle,
+  resolveParentPrdId,
+} from "../../application/services/prd-builder";
 
 /**
  * Dependencies for {@link PrdBuilderModal}. Mirrors the narrow-contract pattern
@@ -187,6 +171,12 @@ export class PrdBuilderModal extends Modal {
 
     this.renderError(contentEl, "selectedDomains");
     contentEl.createEl("p", { text: "Select the domain(s) this prd covers:" });
+    if (this.domains.length === 0) {
+      contentEl.createEl("p", {
+        text: "No domains found in existing Use Cases yet — add one below.",
+        cls: "setting-item-description",
+      });
+    }
 
     this.renderCheckboxList(
       contentEl,
@@ -201,6 +191,47 @@ export class PrdBuilderModal extends Modal {
         };
       },
     );
+
+    this.renderAddDomain(contentEl);
+  }
+
+  /**
+   * Free-text domain entry. The checkbox options above are derived from existing
+   * Use Cases, so a PRD-first vault — or a brand-new domain not yet used by any
+   * Use Case — would otherwise leave the required selection unfillable and block
+   * sub-PRD creation. An added domain joins the list above, pre-selected.
+   */
+  private renderAddDomain(contentEl: HTMLElement): void {
+    let inputEl: HTMLInputElement | null = null;
+    const commit = (): void => {
+      if (!inputEl) return;
+      const { available, selected } = addDomainOption(
+        this.domains,
+        this.state.selectedDomains,
+        inputEl.value,
+      );
+      // addDomainOption returns the same references on a no-op (blank/duplicate);
+      // skip the re-render when nothing actually changed.
+      if (available === this.domains && selected === this.state.selectedDomains) return;
+      this.domains = available;
+      this.state = { ...this.state, selectedDomains: selected };
+      this.render();
+    };
+
+    new Setting(contentEl)
+      .setName("Add a domain")
+      .setDesc("Add a new domain for a prd-first vault or a brand-new area.")
+      .addText((text) => {
+        text.setPlaceholder("New domain name");
+        inputEl = text.inputEl;
+        text.inputEl.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          }
+        });
+      })
+      .addButton((button) => button.setButtonText("Add").onClick(() => commit()));
   }
 
   /**

@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
 import type { PrdBuilderState } from "../src/application/services/prd-builder";
-import { prdBuilderStepTitle } from "../src/application/services/prd-builder";
+import {
+  addDomainOption,
+  prdBuilderStepTitle,
+  resolveParentPrdId,
+} from "../src/application/services/prd-builder";
+import type { Prd } from "../src/domain/entities/prd";
+import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
+
+const prd = (id: string, parent: string | undefined): Prd => ({
+  id,
+  title: id,
+  status: "draft",
+  parentPrdId: parent,
+  domains: [],
+  vision: "",
+  scopeIn: [],
+  scopeOut: [],
+  displayOrder: 0,
+  path: unsafeVaultPath(`PRDs/${id}/${id}.md`),
+});
 
 describe("PrdBuilderState pure state machine", () => {
   const initialState = (): PrdBuilderState => ({
@@ -130,6 +149,65 @@ describe("PrdBuilderState pure state machine", () => {
 
     it("returns step 7 title: Review", () => {
       expect(prdBuilderStepTitle(7)).toBe("Review");
+    });
+  });
+});
+
+describe("resolveParentPrdId", () => {
+  const tree = [prd("PRD-000", undefined), prd("PRD-001", "PRD-000")];
+
+  it("returns undefined for the first PRD (it becomes the root)", () => {
+    expect(resolveParentPrdId(undefined, [])).toBeUndefined();
+  });
+
+  it("defaults an omitted parent under PRD-000 once PRDs exist", () => {
+    expect(resolveParentPrdId(undefined, tree)).toBe("PRD-000");
+  });
+
+  it("respects an explicit parent (Explorer ＋ sub-PRD)", () => {
+    expect(resolveParentPrdId("PRD-001", tree)).toBe("PRD-001");
+  });
+
+  it("falls back to the first parentless PRD when PRD-000 is absent", () => {
+    expect(resolveParentPrdId(undefined, [prd("PRD-007", undefined)])).toBe("PRD-007");
+  });
+});
+
+describe("addDomainOption", () => {
+  it("adds and selects a brand-new domain (PRD-first vault)", () => {
+    expect(addDomainOption([], [], "billing")).toEqual({
+      available: ["billing"],
+      selected: ["billing"],
+    });
+  });
+
+  it("keeps the available list sorted", () => {
+    expect(addDomainOption(["api", "dashboard"], [], "billing").available).toEqual([
+      "api",
+      "billing",
+      "dashboard",
+    ]);
+  });
+
+  it("selects an existing option without duplicating it", () => {
+    expect(addDomainOption(["api"], [], "api")).toEqual({
+      available: ["api"],
+      selected: ["api"],
+    });
+  });
+
+  it("does not re-add an already-selected domain", () => {
+    expect(addDomainOption(["api"], ["api"], "api")).toEqual({
+      available: ["api"],
+      selected: ["api"],
+    });
+  });
+
+  it("trims input and ignores blanks", () => {
+    expect(addDomainOption(["api"], [], "  billing  ").selected).toEqual(["billing"]);
+    expect(addDomainOption(["api"], ["api"], "   ")).toEqual({
+      available: ["api"],
+      selected: ["api"],
     });
   });
 });

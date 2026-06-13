@@ -1,27 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { UseCaseService } from "../src/application/services/use-case-service";
 import type { PrdService } from "../src/application/services/prd-service";
-import {
-  PrdBuilderModal,
-  resolveParentPrdId,
-  type PrdBuilderDeps,
-} from "../src/presentation/views/prd-builder-modal";
-import type { Prd } from "../src/domain/entities/prd";
-import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
+import { PrdBuilderModal, type PrdBuilderDeps } from "../src/presentation/views/prd-builder-modal";
 import type { App } from "obsidian";
-
-const prd = (id: string, parent: string | undefined): Prd => ({
-  id,
-  title: id,
-  status: "draft",
-  parentPrdId: parent,
-  domains: [],
-  vision: "",
-  scopeIn: [],
-  scopeOut: [],
-  displayOrder: 0,
-  path: unsafeVaultPath(`PRDs/${id}/${id}.md`),
-});
 
 // Type alias for accessing private members in tests
 type ModalWithPrivates = Record<string, unknown>;
@@ -225,18 +206,6 @@ describe("PrdBuilderModal", () => {
 
     // Linking is owned by UseCaseService (the note's owner), keyed by UC id.
     expect(mockUseCaseService.assignToPrd).toHaveBeenCalledWith("UC-001", "PRD-001");
-  });
-
-  it("resolveParentPrdId defaults new PRDs under the root and respects explicit parents", () => {
-    const tree = [prd("PRD-000", undefined), prd("PRD-001", "PRD-000")];
-    // No PRDs yet → the new PRD is the root (parentless).
-    expect(resolveParentPrdId(undefined, [])).toBeUndefined();
-    // PRDs exist, no explicit parent → default under PRD-000.
-    expect(resolveParentPrdId(undefined, tree)).toBe("PRD-000");
-    // Explicit parent (Explorer "＋ sub-PRD") always wins.
-    expect(resolveParentPrdId("PRD-001", tree)).toBe("PRD-001");
-    // Root resolution falls back to the first parentless PRD when PRD-000 is absent.
-    expect(resolveParentPrdId(undefined, [prd("PRD-007", undefined)])).toBe("PRD-007");
   });
 
   it("closes modal after successful PRD creation", async () => {

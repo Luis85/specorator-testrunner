@@ -1,3 +1,5 @@
+import type { Prd } from "../../domain/entities/prd";
+
 /**
  * Pure state machine capturing the 7-step PRD builder wizard state.
  * Steps: 1=domains, 2=research, 3=vision, 4=scope, 5=success, 6=assign-UCs, 7=review
@@ -48,3 +50,46 @@ export function prdBuilderStepTitle(step: number): string {
       return "Unknown Step";
   }
 }
+
+/**
+ * Resolves the parent for a new PRD, shared by the builder UI and
+ * {@link DefaultPrdService.create} so both agree on the single-root invariant
+ * (ADR-0026). An explicit parent (e.g. the Explorer's "＋ sub-PRD" action) always
+ * wins. Otherwise, when PRDs already exist the new PRD defaults to a child of the
+ * root (PRD-000 if present, else the first parentless PRD) so it can never be
+ * accidentally created as a second root; with no PRDs yet it stays parentless and
+ * becomes the root product vision. Pure: no I/O.
+ */
+export const resolveParentPrdId = (
+  explicit: string | undefined,
+  prds: Prd[],
+): string | undefined => {
+  if (explicit !== undefined) return explicit;
+  if (prds.length === 0) return undefined;
+  return (
+    prds.find((p) => p.id === "PRD-000")?.id ??
+    prds.find((p) => p.parentPrdId === undefined)?.id ??
+    prds[0]?.id
+  );
+};
+
+/**
+ * Adds a user-entered domain to the available options (deduped, sorted) and marks
+ * it selected. This keeps the Domains step usable in a PRD-first vault — or for a
+ * brand-new domain — where the option list derived from existing Use Cases would
+ * otherwise be empty and block the required selection. A blank value is a no-op.
+ * Pure: no I/O.
+ */
+export const addDomainOption = (
+  available: string[],
+  selected: string[],
+  raw: string,
+): { available: string[]; selected: string[] } => {
+  const value = raw.trim();
+  if (value === "") return { available, selected };
+  const nextAvailable = available.includes(value)
+    ? available
+    : [...available, value].sort((a, b) => a.localeCompare(b));
+  const nextSelected = selected.includes(value) ? selected : [...selected, value];
+  return { available: nextAvailable, selected: nextSelected };
+};

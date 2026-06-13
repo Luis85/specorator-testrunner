@@ -1,6 +1,7 @@
 import { buildPrdNote, prdFolderName } from "../content/prd-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
+import { resolveParentPrdId } from "./prd-builder";
 import type { Prd, PrdId } from "../../domain/entities/prd";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
@@ -81,12 +82,34 @@ export class DefaultPrdService implements PrdService {
       const existing = await this.findAll();
       if (!existing.ok) return existing;
 
-      // The first root PRD claims the reserved PRD-000 (the product vision);
-      // every other PRD takes the next sequential id. A sub-PRD never becomes
-      // PRD-000 even in an empty vault.
-      const isRoot = request.parentPrdId === undefined;
-      const hasRoot = existing.value.some((p) => p.id === "PRD-000" || p.parentPrdId === undefined);
-      const id = isRoot && !hasRoot ? "PRD-000" : this.nextId(existing.value.map((p) => p.id));
+      // An explicit parent must reference an existing PRD; a dangling parent would
+      // render as an orphan root and break the single-root tree (ADR-0026).
+      if (
+        request.parentPrdId !== undefined &&
+        !existing.value.some((p) => p.id === request.parentPrdId)
+      ) {
+        return err(appError("VALIDATION_FAILED", `Unknown parent PRD: ${request.parentPrdId}.`));
+      }
+
+      // Resolve the effective parent (the same rule the builder UI uses): an
+      // omitted parent defaults under the root once one exists, so a second root
+      // can never be created by accident. It stays undefined only for the very
+      // first PRD in an empty vault.
+      const parentPrdId = resolveParentPrdId(request.parentPrdId, existing.value);
+
+      // Any non-root PRD must name at least one domain (invariant from ADR-0026).
+      // Checked here, not in validateAndNormalize, because whether this PRD is a
+      // sub-PRD depends on the resolved parent above.
+      if (parentPrdId !== undefined && domains.length === 0) {
+        return err(
+          appError("VALIDATION_FAILED", "Sub-PRDs must be linked to at least one domain."),
+        );
+      }
+
+      // The first PRD (no parent, empty vault) claims the reserved PRD-000 (the
+      // product vision); every other PRD takes the next sequential id.
+      const id =
+        parentPrdId === undefined ? "PRD-000" : this.nextId(existing.value.map((p) => p.id));
       const folder = prdFolderName(id, title);
       const path = joinVaultPath(settings.paths.prdsPath, folder, `${folder}.md`);
 
@@ -94,7 +117,7 @@ export class DefaultPrdService implements PrdService {
         id,
         title,
         status: "draft",
-        parentPrdId: request.parentPrdId,
+        parentPrdId,
         domains,
         vision,
         scopeIn,
@@ -113,7 +136,7 @@ export class DefaultPrdService implements PrdService {
       await this.eventBus.publish(
         createEvent(
           "prd.created",
-          { prdId: prd.id, title, path: String(prd.path), parentPrdId: request.parentPrdId },
+          { prdId: prd.id, title, path: String(prd.path), parentPrdId },
           { correlationId: prd.id },
         ),
       );
@@ -139,7 +162,10 @@ export class DefaultPrdService implements PrdService {
       return err(appError("VALIDATION_FAILED", "A PRD title is required."));
     }
 
-    const vision = request.vision.trim();
+    // Vision is a single-line frontmatter scalar; collapse newlines/whitespace
+    // runs so a multiline textarea value can't break the YAML or be truncated on
+    // read (mirrors how UseCaseService normalizes `description`).
+    const vision = request.vision.replace(/\s+/g, " ").trim();
     if (vision === "") {
       return err(appError("VALIDATION_FAILED", "PRD vision statement is required."));
     }
@@ -154,10 +180,9 @@ export class DefaultPrdService implements PrdService {
       return err(appError("VALIDATION_FAILED", "At least one item must be out of scope."));
     }
 
+    // The sub-PRD "≥1 domain" rule depends on the resolved parent, so it lives in
+    // create() (after parent resolution); here we only normalize the list.
     const domains = (request.domains || []).filter((d) => d.trim() !== "");
-    if (request.parentPrdId && domains.length === 0) {
-      return err(appError("VALIDATION_FAILED", "Sub-PRDs must be linked to at least one domain."));
-    }
 
     return ok({ title, vision, scopeIn, scopeOut, domains });
   }
@@ -177,7 +202,7 @@ export class DefaultPrdService implements PrdService {
     for (const path of listed.value) {
       if (!String(path).endsWith(".md")) continue;
       const read = await this.fs.readFile(path);
-      if (!read.ok) continue;
+      if (!read.ok) continue; // index is best-effort; skip unreadable notes (matches UseCaseService)
       const parsed = this.parse(read.value, path);
       if (parsed) prds.push(parsed);
     }
