@@ -549,6 +549,28 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
     );
     // Runner-relative path → bddgen parses only this feature, not the whole vault.
     expect(bddgenCall?.env?.BDD_FEATURES).toBe("../Specifications/features/UC-001-demo.feature");
+    // BDD_TAGS is cleared so an ambient tag filter can't make bddgen skip steps
+    // and under-report what's missing (codex P2).
+    expect(bddgenCall?.env?.BDD_TAGS).toBe("");
+  });
+
+  it("preserves a nested subfolder segment in detection's BDD_FEATURES (codex P2)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/auth/UC-009-login.feature");
+    fs.files.set(path, "Feature: Login\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    await service.detectMissingSteps(path);
+
+    const bddgenCall = childProcess.calls.find((c) =>
+      c.args.some((a) => a.includes("playwright-bdd")),
+    );
+    // The `auth/` segment must survive — a `.pop()` basename would scope bddgen
+    // to the wrong (or no) feature.
+    expect(bddgenCall?.env?.BDD_FEATURES).toBe(
+      "../Specifications/features/auth/UC-009-login.feature",
+    );
   });
 
   it("runs bddgen with the configured Node executable, not a hard-coded `node`", async () => {

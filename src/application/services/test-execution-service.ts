@@ -182,6 +182,18 @@ const isNpmRun = (argv: string[]): boolean => {
   return program === "npm" && argv[1] === "run";
 };
 
+/**
+ * The neutral state of BOTH playwright-bdd scope controls. Every scoped spawn
+ * spreads this first and overrides only the variable it owns, so a scope that
+ * sets just `BDD_TAGS` (suite/demo) or just `BDD_FEATURES` (feature/all/use-case)
+ * still passes an explicit empty value for the other. The runner merges
+ * `process.env` into each spawn, so without this an ambient `BDD_FEATURES`/
+ * `BDD_TAGS` inherited from the shell that launched Obsidian (or a CI env) would
+ * leak in and silently re-scope the run; the generated config reads `""` as
+ * "no filter" (`process.env.X ? … : default` / `process.env.X || undefined`).
+ */
+const CLEARED_BDD_SCOPE: Readonly<Record<string, string>> = { BDD_FEATURES: "", BDD_TAGS: "" };
+
 /** UTC `RUN-YYYY-MM-DD-HHMMSS` id (TIS §3.3). */
 const runId = (now: Date): RunId => {
   const iso = now.toISOString(); // 2026-06-01T10:00:00.000Z
@@ -639,7 +651,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
       case "feature":
         return ok({
           args: [...base],
-          env: { BDD_FEATURES: this.featurePath(settings, request.target) },
+          env: { ...CLEARED_BDD_SCOPE, BDD_FEATURES: this.featurePath(settings, request.target) },
         });
       case "use-case":
         return ok(await this.useCaseScopeCommand(base, settings, request.target));
@@ -662,7 +674,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
         ),
       );
     }
-    return ok({ args: smoke, env: { BDD_TAGS: "@smoke" } });
+    return ok({ args: smoke, env: { ...CLEARED_BDD_SCOPE, BDD_TAGS: "@smoke" } });
   }
 
   /**
@@ -681,19 +693,26 @@ export class DefaultTestExecutionService implements TestExecutionService {
   ): Promise<ResolvedCommand> {
     const all = await this.useCaseService.findAll();
     if (!(all.ok && all.value.some((uc) => uc.status === "deprecated"))) {
-      return { args: [...base] };
+      // Whole-vault glob: still clear both controls so no ambient scope leaks in.
+      return { args: [...base], env: { ...CLEARED_BDD_SCOPE } };
     }
     const activeFiles = all.value
       .filter((uc) => uc.status !== "deprecated")
       .flatMap((uc) => uc.featureFiles);
     if (activeFiles.length > 0) {
-      return { args: [...base], env: { BDD_FEATURES: this.bddFeatures(settings, activeFiles) } };
+      return {
+        args: [...base],
+        env: { ...CLEARED_BDD_SCOPE, BDD_FEATURES: this.bddFeatures(settings, activeFiles) },
+      };
     }
     // No active coverage: scope generation to a path that matches no feature →
     // zero tests (a clean pass with `--pass-with-no-tests`).
     return {
       args: [...base],
-      env: { BDD_FEATURES: `${this.featurePrefix(settings)}/__no_active_features__.feature` },
+      env: {
+        ...CLEARED_BDD_SCOPE,
+        BDD_FEATURES: `${this.featurePrefix(settings)}/__no_active_features__.feature`,
+      },
     };
   }
 
@@ -708,7 +727,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
   ): Promise<Result<ResolvedCommand>> {
     const tags = await this.suiteService.resolveTagExpression(target);
     if (!tags.ok) return err(tags.error);
-    return ok({ args: [...base], env: { BDD_TAGS: tags.value } });
+    return ok({ args: [...base], env: { ...CLEARED_BDD_SCOPE, BDD_TAGS: tags.value } });
   }
 
   /**
@@ -725,11 +744,17 @@ export class DefaultTestExecutionService implements TestExecutionService {
     const found = await this.useCaseService.findById(target);
     const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
     if (featureFiles.length > 0) {
-      return { args: [...base], env: { BDD_FEATURES: this.bddFeatures(settings, featureFiles) } };
+      return {
+        args: [...base],
+        env: { ...CLEARED_BDD_SCOPE, BDD_FEATURES: this.bddFeatures(settings, featureFiles) },
+      };
     }
     return {
       args: [...base],
-      env: { BDD_FEATURES: `${this.featurePrefix(settings)}/${target}-*.feature` },
+      env: {
+        ...CLEARED_BDD_SCOPE,
+        BDD_FEATURES: `${this.featurePrefix(settings)}/${target}-*.feature`,
+      },
     };
   }
 

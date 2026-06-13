@@ -169,6 +169,10 @@ const keepFeatureSteps = (
   const seen = new Set<string>();
   const kept: string[] = [];
   for (const text of featureTexts) {
+    // `isStepDefined` tests "does this text match any of these patterns?"; here
+    // the patterns ARE bddgen's MISSING expressions, so a match means the step
+    // IS missing and we keep it (the function's usual "has a definition" sense
+    // is inverted by the pattern set, not by the call).
     if (!seen.has(text) && isStepDefined(text, missingPatterns)) {
       seen.add(text);
       kept.push(text);
@@ -377,11 +381,14 @@ export class DefaultSpecificationService implements SpecificationService {
 
     // Scope bddgen to THIS feature (same BDD_FEATURES env the generated config
     // reads) so a malformed/unrelated feature elsewhere can't make detection
-    // fail and report RUNNER_NOT_INSTALLED.
+    // fail and report RUNNER_NOT_INSTALLED. BDD_TAGS is cleared explicitly: the
+    // runner spawn inherits `process.env`, so an ambient tag filter from the
+    // shell that launched Obsidian would otherwise make bddgen skip steps and
+    // under-report what's missing.
     const ran = await this.childProcess.run({
       args: [settings.runner.nodeExecutable, BDDGEN_CLI],
       cwd: cwd.value,
-      env: { BDD_FEATURES: this.runnerRelativeFeature(settings, featurePath) },
+      env: { BDD_FEATURES: this.runnerRelativeFeature(settings, featurePath), BDD_TAGS: "" },
     });
     // bddgen exits 0 even when steps are missing, so a real failure is a spawn
     // error or a non-zero exit WITHOUT the missing-steps report.

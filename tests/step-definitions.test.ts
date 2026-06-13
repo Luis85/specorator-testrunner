@@ -245,4 +245,24 @@ describe("buildAppendedStubs", () => {
     expect(block).not.toContain("createBdd();");
     expect(block).toContain('Given("a fresh step"');
   });
+
+  it("preserves a nested-call createBdd argument without truncating at the inner paren (P2)", () => {
+    // `[^)]*` would have stopped at the inner `)`, yielding an unbalanced
+    // `createBdd(makeTest({ headless: true })` that fails to compile.
+    const existing =
+      'import { createBdd } from "playwright-bdd";\nconst { When } = createBdd(makeTest({ headless: true }));\n\nWhen("x", async () => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).toContain("const { Given } = createBdd(makeTest({ headless: true }));");
+  });
+
+  it("adds the createBdd import when playwright-bdd is imported but createBdd isn't locally bound (P2)", () => {
+    // Importing only `test` (or `createBdd as bdd`) from playwright-bdd does NOT
+    // bind the local name `createBdd`, so the appended `createBdd()` call would
+    // be undefined unless the import is added.
+    const existing = 'import { test } from "playwright-bdd";\n\ntest("x", () => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).toContain('import { createBdd } from "playwright-bdd";');
+    expect(block).toContain("const { Given } = createBdd();");
+    expect(block).toContain('Given("a fresh step"');
+  });
 });

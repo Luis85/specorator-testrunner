@@ -220,12 +220,28 @@ const CREATE_BDD_DESTRUCTURE = `const { Given, When, Then } = createBdd();`;
  * `test` (`const { When } = createBdd(test)`), so an appended `Given` must reuse
  * those SAME arguments — a default `createBdd()` would register the stubs
  * against Playwright's base fixtures and the implementations would never see the
- * custom fixtures the rest of the file uses. Matches the first call's argument
- * text up to the closing paren; the demo's bare `createBdd()` yields `""`.
+ * custom fixtures the rest of the file uses. The capture tolerates one level of
+ * nested parens (`createBdd(makeTest({ headless: true }))`) so the binding it
+ * builds stays balanced; the demo's bare `createBdd()` yields `""`.
  */
 const existingCreateBddArgs = (source: string): string => {
-  const match = /\bcreateBdd\s*\(([^)]*)\)/.exec(source);
+  const match = /\bcreateBdd\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)/.exec(source);
   return match ? match[1].trim() : "";
+};
+
+/**
+ * True when the source binds the local name `createBdd` via a named import (from
+ * playwright-bdd OR a custom-fixtures module that re-exports it). An alias
+ * (`createBdd as bdd`) binds a DIFFERENT local name, so it does NOT count — the
+ * generated binding calls `createBdd(...)` literally, so omitting the import
+ * when only an alias (or an unrelated specifier like `test`) is imported would
+ * leave `createBdd` undefined and the appended file would fail to load.
+ */
+const bindsCreateBdd = (source: string): boolean => {
+  for (const match of source.matchAll(/import\s*\{([^}]*)\}\s*from/g)) {
+    if (match[1].split(",").some((spec) => spec.trim() === "createBdd")) return true;
+  }
+  return false;
 };
 
 /** The minimal createBdd binding an appended stub block needs (it only calls `Given`). */
@@ -270,16 +286,20 @@ export const buildStepDefinitionStubFile = (missingSteps: string[]): string =>
  *    destructure that does NOT clash with an existing `{ When, Then }` one),
  *    reusing the file's own `createBdd(...)` arguments so custom-fixture stubs
  *    register against the same `test`, and the `import { createBdd }` too when
- *    playwright-bdd is not yet imported.
+ *    the local `createBdd` name is not yet bound.
  * Checking the actual `Given` binding (not merely that `createBdd()` is called)
  * is what keeps a hand-edited file that only destructured `{ When, Then }` from
- * getting Given-less stubs that fail to load (bddgen/typecheck).
+ * getting Given-less stubs that fail to load (bddgen/typecheck). The import is
+ * gated on a real local `createBdd` binding — not merely "imports from
+ * playwright-bdd" — so an aliased/partial import doesn't leave `createBdd`
+ * undefined.
  */
 export const buildAppendedStubs = (existingSource: string, missingSteps: string[]): string => {
   const blocks = buildStepDefinitionStubBlocks(missingSteps);
   if (bindsGiven(existingSource)) return `${blocks}\n`;
-  const importsPlaywrightBdd = /from\s*["']playwright-bdd["']/.test(existingSource);
   const givenBinding = createBddGiven(existingCreateBddArgs(existingSource));
-  const header = importsPlaywrightBdd ? givenBinding : `${CREATE_BDD_IMPORT}\n${givenBinding}`;
+  const header = bindsCreateBdd(existingSource)
+    ? givenBinding
+    : `${CREATE_BDD_IMPORT}\n${givenBinding}`;
   return `${header}\n\n${blocks}\n`;
 };

@@ -192,7 +192,7 @@ const failedAttemptTerminals: readonly TourEventRule[] = [
  * The scenario the user authors in step 4. The three greeting steps are NEW —
  * they deliberately do not collide with the shipped `example.steps.ts`
  * patterns (that file is user-owned, `overwrite: false`, and duplicate
- * Cucumber patterns would be ambiguous); only the Given is reused.
+ * step-definition patterns would be ambiguous); only the Given is reused.
  */
 const TOUR_GHERKIN_SNIPPET = `@tour
 Feature: Greet the visitor

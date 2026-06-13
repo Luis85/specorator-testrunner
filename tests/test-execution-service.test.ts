@@ -386,6 +386,42 @@ describe("DefaultTestExecutionService", () => {
     expect(childProcess.calls[0].env?.BDD_FEATURES).toBe("../Specifications/features/R&D.feature");
   });
 
+  it("preserves a nested subfolder segment in BDD_FEATURES (not just the basename)", async () => {
+    const { service, childProcess } = build();
+    const result = await service.execute({
+      scope: "feature",
+      target: "Specifications/features/auth/login.feature",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The `auth/` segment must survive — a `.pop()` basename simplification would
+    // drop it and bddgen would scope to the wrong (or no) feature.
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
+      "../Specifications/features/auth/login.feature",
+    );
+  });
+
+  it("clears the unowned BDD control var on every scope so ambient env can't leak in (P2)", async () => {
+    // The runner spawn inherits process.env; a scope that sets only one of
+    // BDD_FEATURES/BDD_TAGS must explicitly clear the other to "" (no filter),
+    // or an ambient value from Obsidian's launch shell would re-scope the run.
+    const feature = build();
+    await feature.service.execute({
+      scope: "feature",
+      target: "Specifications/features/checkout.feature",
+    });
+    expect(feature.childProcess.calls[0].env?.BDD_TAGS).toBe(""); // feature owns BDD_FEATURES
+
+    const suite = build();
+    seedSuite(suite.fs, "smoke", "@smoke");
+    await suite.service.execute({ scope: "suite", target: "smoke" });
+    expect(suite.childProcess.calls[0].env?.BDD_FEATURES).toBe(""); // suite owns BDD_TAGS
+
+    const demo = build();
+    await demo.service.execute({ scope: "demo", target: "demo" });
+    expect(demo.childProcess.calls[0].env?.BDD_FEATURES).toBe(""); // demo owns BDD_TAGS
+  });
+
   it("scopes an unknown use-case run to the <UC-id>-*.feature glob via BDD_FEATURES", async () => {
     const { service, childProcess } = build();
     const result = await service.execute({ scope: "use-case", target: "UC-001" });

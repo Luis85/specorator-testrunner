@@ -142,6 +142,46 @@ try {
     );
   }
   console.log(`\nE2E smoke scoped-run PASSED: 1 scenario, all steps passed.`);
+
+  // 6. The Test Hub's "Run demo test" scope (the very first Guided Tour step):
+  //    `npm run test:smoke` with BDD_TAGS=@smoke. This is the highest-traffic,
+  //    first-impression path AND the only one exercising playwright-bdd's tag
+  //    filtering (BDD_TAGS scopes `bddgen`; `--grep @smoke` scopes the run), so
+  //    it gets its own real-OS leg — unit tests can't prove the tag actually
+  //    selects the @smoke-tagged demo. Overwrites the report, so it runs last.
+  const demoCommand = `npm run test:smoke`;
+  console.log(`\n$ BDD_TAGS=@smoke ${demoCommand}`);
+  try {
+    execSync(`${demoCommand} 2>&1`, {
+      cwd: runnerRoot,
+      encoding: "utf8",
+      env: { ...process.env, BDD_TAGS: "@smoke" },
+    });
+  } catch (error) {
+    const captured = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+    fail(`demo @smoke run failed:\n${captured}\n${error.message}`);
+  }
+
+  // Assert the demo report: exactly 1 scenario (the @smoke demo), all steps passed.
+  const demoReport = JSON.parse(readFileSync(reportPath, "utf8"));
+  const demoScenarios = demoReport.flatMap((feature) =>
+    (feature.elements ?? []).filter((element) => element.type === "scenario"),
+  );
+  if (demoScenarios.length !== 1) {
+    fail(`demo @smoke run: expected exactly 1 scenario, got ${demoScenarios.length}`);
+  }
+  const demoFailingSteps = demoScenarios
+    .flatMap((scenario) => scenario.steps ?? [])
+    .filter((step) => step.result?.status !== "passed");
+  if (demoFailingSteps.length > 0) {
+    fail(
+      `demo @smoke run: ${demoFailingSteps.length} step(s) did not pass: ` +
+        demoFailingSteps
+          .map((step) => `${step.name ?? "(hook)"} → ${step.result?.status}`)
+          .join(", "),
+    );
+  }
+  console.log(`\nE2E smoke demo @smoke run PASSED: 1 scenario, all steps passed.`);
 } catch (error) {
   console.error(`\nE2E smoke FAILED: ${error instanceof Error ? error.message : String(error)}`);
   // exitCode (not process.exit) lets the finally cleanup complete first.
