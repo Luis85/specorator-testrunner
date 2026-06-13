@@ -44,6 +44,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   is recorded as explicit debt (TD-007) behind visible audit suppressions;
   its resolution rides the V2 playwright-bdd parser replacement rather than
   a throwaway decomposition now.
+- The settings tab now renders a fully usable legacy UI on Obsidian builds
+  older than 1.13 (reachable via BRAT, which does not enforce `minAppVersion`
+  while 1.13 is still in development) instead of the "requires Obsidian 1.13+"
+  notice added in 1.0.0. `minAppVersion` stays 1.13.0; the 1.13 declarative
+  `getSettingDefinitions()` implementation is unchanged for 1.13+, and the
+  legacy path renders those same definitions through the imperative `Setting`
+  API, so the two cannot drift. Destructive buttons fall back from the 1.13
+  `setDestructive()` to `setWarning()` when the newer API is absent.
 
 ### Fixed
 
