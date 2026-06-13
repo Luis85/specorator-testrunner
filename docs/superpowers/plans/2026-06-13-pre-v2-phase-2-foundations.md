@@ -649,9 +649,10 @@ git commit -m "feat: schemaVersion envelope on data.json with beta reset-on-mism
 - Modify: `src/infrastructure/runner/templates/runner-templates.ts` (generate the manifest file)
 - Create: `src/application/content/runner-manifest-version.ts` (pure reader)
 - Modify: `src/application/services/environment-validation-service.ts` (flag any version-mismatched manifest)
+- Modify: `src/application/services/maintenance-service.ts` (force a dependency reinstall when Repair runs against a version-mismatched manifest)
 - Modify: `src/presentation/settings/settings-rows.ts` (surface advisory issues even when the runner is valid)
 - Modify: `src/presentation/commands/register-commands.ts` (mention advisories in the validate notice)
-- Test: `tests/runner-manifest-version.test.ts`, `tests/runner-templates.test.ts`, `tests/settings-rows.test.ts`, `tests/environment-validation-service.test.ts`
+- Test: `tests/runner-manifest-version.test.ts`, `tests/runner-templates.test.ts`, `tests/settings-rows.test.ts`, `tests/environment-validation-service.test.ts`, `tests/maintenance-service.test.ts`
 
 Stamp a version into the generated runner and let validation detect a version-mismatched/missing one — the rail Phase 3 uses to recognise a pre-playwright-bdd `.testrunner`. The signal is a non-blocking **warning** (the runner still runs), so it must be surfaced where validation results are shown even when `valid === true`.
 
@@ -794,7 +795,38 @@ export const runnerValidationRows = (result: RunnerValidationResult): ChecklistR
 
 In `register-commands.ts`, where the validate command surfaces its `Notice`, when `result.valid` but `result.issues` contains warnings, append a hint (e.g. `"Environment ready (N advisory: run Repair installation)."`) instead of a bare "ready" — match the file's existing Notice idiom. (`register-commands.ts` is coverage-excluded; the behaviour is pinned by the projection test below, and the command smoke test from PR #38 still passes.)
 
-- [ ] **Step 6: Pin the generation, validation, and surfacing in tests**
+- [ ] **Step 6: Make Repair reinstall dependencies on a manifest-version mismatch**
+
+The advisory tells the user to run Repair, but `DefaultMaintenanceService.repair()` (`src/application/services/maintenance-service.ts`) only reinstalls dependencies when the pre-repair validation reports them missing:
+
+```ts
+if (!before.dependenciesInstalled || !before.playwrightAvailable) {
+  const deps = await this.runnerInstall.installDependencies(settings);
+  // ...
+}
+```
+
+A future manifest bump made for **changed package versions** would have `repair()` rewrite `package.json` (via `createRunner`) and stamp the new manifest while leaving stale `node_modules` installed (the old markers still resolve, so `before.dependenciesInstalled` is `true`). A manifest version mismatch means the runtime shape changed, so it must force a reinstall. Read the manifest version in `repair()` (reuse `parseManifestVersion` + `TESTRUNNER_MANIFEST_FILE`) **before** `createRunner` overwrites it, and widen the reinstall condition:
+
+```ts
+// Read the on-disk manifest version BEFORE createRunner overwrites it.
+const manifestRead = await /* the service's runner-file reader */ (
+  joinVaultPath(settings.paths.testRunnerPath, TESTRUNNER_MANIFEST_FILE)
+);
+const manifestMismatch =
+  parseManifestVersion(manifestRead.ok ? manifestRead.value : undefined) !==
+  TESTRUNNER_MANIFEST_VERSION;
+// ... after createRunner ...
+if (!before.dependenciesInstalled || !before.playwrightAvailable || manifestMismatch) {
+  const deps = await this.runnerInstall.installDependencies(settings);
+  if (!deps.ok) return err(deps.error);
+  reinstalledPackages = true;
+}
+```
+
+(Match the service's actual file-system reader and the `RepairResult`/event shape; the browser installer below already runs unconditionally, so no change there.)
+
+- [ ] **Step 7: Pin the generation, validation, and surfacing in tests**
 
 Add to `tests/runner-templates.test.ts` (the file already asserts generated templates):
 
@@ -810,6 +842,8 @@ it("generates testrunner-manifest.json carrying the current manifest version", (
 Add validation tests to `tests/environment-validation-service.test.ts` (match its existing setup), covering all three mismatch directions and the equal case: manifest **absent** → warning present; manifest **older** (e.g. `manifestVersion: 0`) → warning present; manifest **newer** (e.g. `manifestVersion: 99`) → warning present; manifest at the **current** version → no manifest warning. (Mirror the file's existing "missing required file" warning test for shape.)
 
 **First, fix the existing healthy fixture:** the file's `markFullyInstalled` helper seeds only `VALIDATED_RUNNER_FILES`, and the manifest is deliberately *not* in that list — so once an absent manifest is a warning, every existing "healthy environment has no issues" assertion would start failing with the absent-manifest warning. Update `markFullyInstalled` (or the healthy setup) to also seed a current `testrunner-manifest.json` body (`testrunnerManifestContent()`) before those assertions, so the only test that sees the manifest warning is the one that deliberately omits/staledates it.
+
+Add a `tests/maintenance-service.test.ts` case for the Step 6 reinstall: a runner whose dependency markers are present (so `before.dependenciesInstalled` is `true`) but whose `testrunner-manifest.json` carries a *mismatched* version → `repair()` still calls `installDependencies` (assert via the `FakeRunnerInstallationService`/spy the file already uses). Mirror it with a control case: markers present **and** manifest current → no reinstall. (The fixture must seed the manifest read before `createRunner`; match the test's existing repair setup.)
 
 Add a projection test to `tests/settings-rows.test.ts` proving the advisory is surfaced when valid:
 
@@ -833,7 +867,7 @@ it("still shows only the ready row when valid with no advisories", () => {
 
 (Adapt the `RunnerValidationResult` literal to the type's required fields and the `ChecklistRow` shape — read `settings-rows.ts` and its existing tests; the row's text field may be `label` or `text`.)
 
-- [ ] **Step 7: Verify, CHANGELOG, commit**
+- [ ] **Step 8: Verify, CHANGELOG, commit**
 
 Run: `npm run lint && npm run typecheck && npm test && npm run format:check && npm run test:coverage && npx fallow audit --base origin/main`
 Expected: all green; audit exit 0. (Note: adding a generated file means the `e2e-smoke` surface — `runner-templates.ts` — changed, so that workflow auto-triggers on the eventual PR; the new file is inert at runtime, so the smoke run stays green.)
@@ -844,12 +878,12 @@ Under `### Added` add:
 - The generated `.testrunner` carries a versioned `testrunner-manifest.json`;
   environment validation flags a runner produced by a different Test Hub
   version for Repair (surfaced as an advisory even when the runner is
-  otherwise ready) — the detection rail the V2 playwright-bdd migration keys
-  on.
+  otherwise ready), and Repair reinstalls dependencies on a manifest-version
+  mismatch — the detection rail the V2 playwright-bdd migration keys on.
 ```
 
 ```bash
-git add src/application/content/runner-manifest.ts src/application/content/runner-manifest-version.ts src/infrastructure/runner/templates/runner-templates.ts src/application/services/environment-validation-service.ts src/presentation/settings/settings-rows.ts src/presentation/commands/register-commands.ts tests/runner-manifest-version.test.ts tests/runner-templates.test.ts tests/environment-validation-service.test.ts tests/settings-rows.test.ts CHANGELOG.md
+git add src/application/content/runner-manifest.ts src/application/content/runner-manifest-version.ts src/infrastructure/runner/templates/runner-templates.ts src/application/services/environment-validation-service.ts src/application/services/maintenance-service.ts src/presentation/settings/settings-rows.ts src/presentation/commands/register-commands.ts tests/runner-manifest-version.test.ts tests/runner-templates.test.ts tests/environment-validation-service.test.ts tests/settings-rows.test.ts tests/maintenance-service.test.ts CHANGELOG.md
 git commit -m "feat: versioned .testrunner manifest + advisory outdated-runner validation (pre-V2 2.2)"
 ```
 

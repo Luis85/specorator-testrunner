@@ -49,7 +49,7 @@ A single invocation of the runner against some scope. Identified as `RUN-<timest
 _Avoid_: Test execution, run instance, job.
 
 **Scenario Reference** _(accepted for V2 — see ADR-0022; not yet in code)_:
-The natural key for a Cucumber scenario: `<featurePath>::<scenarioName>` (and `::row-<index>` for a Scenario Outline example). Scenario names are unique within a Feature, so the key is collision-free. Stable across runs but **not** across renames — renaming a scenario mints a new Scenario Reference and drops prior history once. It is the unit of scenario-level identity and history (EPIC-014); until that lands, the executable unit of identity remains the **Feature** (see _Feature Specification_), not the scenario.
+The natural key for a Cucumber scenario: `<featurePath>::<scenarioName>` (and `::row-<index>` for a Scenario Outline example). For the key to be collision-free, scenario names must be unique within a Feature **and must not contain the reserved `::` delimiter** (both enforced by structural validation, per ADR-0022); the `::row-<index>` suffix is positional and provisional (a reorder-stable row key is deferred to EPIC-014). Stable across runs but **not** across renames — renaming a scenario mints a new Scenario Reference and drops prior history once. It is the unit of scenario-level identity and history (EPIC-014); until that lands, the executable unit of identity remains the **Feature** (see _Feature Specification_), not the scenario.
 _Avoid_: Scenario id, scenario key, test id.
 
 **Evidence**:
