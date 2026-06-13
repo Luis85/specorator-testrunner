@@ -31,3 +31,7 @@ The mitigation is **structural, not a second runner**: nothing in the plugin dep
 - The generated `.testrunner` gains a playwright-bdd config and typed step stubs (US-051/US-052); the V1 regex step-matching heuristics are subsumed by playwright-bdd's own diagnostics.
 - The **ReportParser port (2.3) is a hard dependency**: its first implementation wraps the current cucumber-JSON parser; Cucumber Messages is added per [[0022-scenario-identity-and-history-store]].
 - The Phase 3 migration (proposal §9 3.1–3.3) is where this lands in code; it is validated by the `e2e-smoke` gate on POSIX and Windows before V2.0 feature work begins.
+
+## Validation
+
+Confirmed by the **Phase 3.1 executable spike** (2026-06-13, see [[2026-06-13-phase3-1-playwright-bdd-spike-findings]]): existing Gherkin runs unchanged, playwright-bdd's `cucumberReporter('json', { skipAttachments: false })` emits classic cucumber-JSON that the shipped `CucumberJsonReportParser` ingests with no parser changes (the US-052 fallback), and evidence / single-run / cancel are tractable. Two implementation constraints surfaced for 3.2: `skipAttachments: false` is mandatory (its default drops all evidence), and cancel must signal the runner's process group (not the `npx` wrapper) to reap browser children.
