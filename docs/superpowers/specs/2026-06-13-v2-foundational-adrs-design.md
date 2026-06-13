@@ -123,7 +123,10 @@ deliberately when a Suite needs it.
 stable across renames — a rename mints a new identity and drops prior history
 once (accepted, per CONTEXT.md). This activates the currently-deferred
 Scenario Reference concept and gives EPIC-014 its unit of identity below the
-Feature.
+Feature. Because the key is name-based, scenario names must be unique within a
+Feature; the collision is closed by validation (a duplicate-name
+`structuralIssues` error, TD-003), not by a positional disambiguator — raised
+by the codex review on PR #38.
 
 **Decision — report format.** The runner emits **Cucumber Messages** (the
 NDJSON message stream), not just cucumber-JSON. JSON is lossy for outline-row
