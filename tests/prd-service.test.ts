@@ -348,4 +348,26 @@ describe("DefaultPrdService.deletePrd", () => {
     expect(result.ok).toBe(false);
     expect(fs.files.has("PRDs/PRD-000-vision/PRD-000-vision.md")).toBe(true);
   });
+
+  it("fails closed: refuses to delete when a linked Use Case note can't be read", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    const ucPath = "Use Cases/UC-001.md";
+    fs.files.set(
+      ucPath,
+      ["---", "id: UC-001", "type: use-case", "title: A", "prd-id: PRD-001", "---", ""].join("\n"),
+    );
+    // Simulate a transient read error on the linked Use Case note.
+    const realRead = fs.readFile.bind(fs);
+    fs.readFile = (path) =>
+      String(path) === ucPath
+        ? Promise.resolve({ ok: false as const, error: { code: "INIT_FAILED", message: "locked" } })
+        : realRead(path);
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok).toBe(false);
+    // The PRD note must survive — we couldn't prove it had no linked Use Cases.
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(true);
+  });
 });

@@ -280,7 +280,11 @@ export class DefaultPrdService implements PrdService {
     for (const path of listed.value) {
       if (!String(path).endsWith(".md")) continue;
       const read = await this.fs.readFile(path);
-      if (!read.ok) continue;
+      // Unlike findAll's best-effort indexing, this guards a DESTRUCTIVE delete:
+      // a skipped unreadable note could still carry `prd-id: <this>`, so treating
+      // it as unlinked could trash a PRD that a Use Case still points at. Fail
+      // closed — propagate the read error so deletePrd aborts.
+      if (!read.ok) return read;
       const { frontmatter: fm } = parseNote(read.value);
       if (typeof fm["prd-id"] === "string" && fm["prd-id"].trim() === prdId) count++;
     }
