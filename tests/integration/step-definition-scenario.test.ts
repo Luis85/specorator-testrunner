@@ -4,6 +4,7 @@ import { DefaultSpecificationService } from "../../src/application/services/spec
 import { DefaultStepDefinitionService } from "../../src/application/services/step-definition-service";
 import { DefaultUseCaseService } from "../../src/application/services/use-case-service";
 import { DefaultPathSafetyPolicy } from "../../src/domain/policies/path-safety-policy";
+import { DefaultCommandSafetyPolicy } from "../../src/domain/policies/command-safety-policy";
 import { unsafeVaultPath as vp } from "../../src/domain/value-objects/vault-path";
 import {
   FakeAbsoluteFileSystem,
@@ -63,6 +64,7 @@ const build = () => {
     silentLogger,
     childProcess,
     absoluteFs,
+    new DefaultCommandSafetyPolicy(),
   );
   const stepDefinitions = new DefaultStepDefinitionService(settings, fs, bus, silentLogger);
   return { specification, stepDefinitions, fs, absoluteFs, childProcess, events, types };

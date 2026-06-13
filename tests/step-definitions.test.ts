@@ -232,4 +232,17 @@ describe("buildAppendedStubs", () => {
     expect(block).not.toContain("createBdd");
     expect(block).toContain('Given("a fresh step"');
   });
+
+  it("preserves the existing createBdd(test) fixture argument in the new Given binding (P2)", () => {
+    // A custom-fixtures file binds verbs to a project `test`:
+    // `const { When } = createBdd(test)`. The appended Given binding must reuse
+    // `test` so the stubs register against the same fixtures — a default
+    // `createBdd()` would give them Playwright's base fixtures instead.
+    const existing =
+      'import { test } from "../fixtures";\nimport { createBdd } from "playwright-bdd";\nconst { When } = createBdd(test);\n\nWhen("x", async ({ page }) => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).toContain("const { Given } = createBdd(test);");
+    expect(block).not.toContain("createBdd();");
+    expect(block).toContain('Given("a fresh step"');
+  });
 });

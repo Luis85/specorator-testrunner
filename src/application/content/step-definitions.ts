@@ -213,8 +213,23 @@ const renderStub = (stepText: string): string => {
  */
 const CREATE_BDD_IMPORT = `import { createBdd } from "playwright-bdd";`;
 const CREATE_BDD_DESTRUCTURE = `const { Given, When, Then } = createBdd();`;
+
+/**
+ * The argument list of the file's existing `createBdd(...)` call, or `""` when
+ * none is present. A custom-fixtures setup binds the BDD verbs to a project
+ * `test` (`const { When } = createBdd(test)`), so an appended `Given` must reuse
+ * those SAME arguments — a default `createBdd()` would register the stubs
+ * against Playwright's base fixtures and the implementations would never see the
+ * custom fixtures the rest of the file uses. Matches the first call's argument
+ * text up to the closing paren; the demo's bare `createBdd()` yields `""`.
+ */
+const existingCreateBddArgs = (source: string): string => {
+  const match = /\bcreateBdd\s*\(([^)]*)\)/.exec(source);
+  return match ? match[1].trim() : "";
+};
+
 /** The minimal createBdd binding an appended stub block needs (it only calls `Given`). */
-const CREATE_BDD_GIVEN = `const { Given } = createBdd();`;
+const createBddGiven = (args: string): string => `const { Given } = createBdd(${args});`;
 
 /** Import header every generated steps module needs (playwright-bdd `createBdd`). */
 const STEP_DEFINITION_IMPORTS = `${CREATE_BDD_IMPORT}\n${CREATE_BDD_DESTRUCTURE}`;
@@ -251,9 +266,11 @@ export const buildStepDefinitionStubFile = (missingSteps: string[]): string =>
  * Builds the content to APPEND to an existing steps file: the stub blocks, plus
  * exactly the binding the stubs need. The stubs call `Given(...)`, so:
  *  - if the file already binds `Given` from createBdd → append blocks only;
- *  - else prepend `const { Given } = createBdd();` (a separate destructure that
- *    does NOT clash with an existing `{ When, Then }` one), and the
- *    `import { createBdd }` too when playwright-bdd is not yet imported.
+ *  - else prepend `const { Given } = createBdd(<existing args>);` (a separate
+ *    destructure that does NOT clash with an existing `{ When, Then }` one),
+ *    reusing the file's own `createBdd(...)` arguments so custom-fixture stubs
+ *    register against the same `test`, and the `import { createBdd }` too when
+ *    playwright-bdd is not yet imported.
  * Checking the actual `Given` binding (not merely that `createBdd()` is called)
  * is what keeps a hand-edited file that only destructured `{ When, Then }` from
  * getting Given-less stubs that fail to load (bddgen/typecheck).
@@ -262,8 +279,7 @@ export const buildAppendedStubs = (existingSource: string, missingSteps: string[
   const blocks = buildStepDefinitionStubBlocks(missingSteps);
   if (bindsGiven(existingSource)) return `${blocks}\n`;
   const importsPlaywrightBdd = /from\s*["']playwright-bdd["']/.test(existingSource);
-  const header = importsPlaywrightBdd
-    ? CREATE_BDD_GIVEN
-    : `${CREATE_BDD_IMPORT}\n${CREATE_BDD_GIVEN}`;
+  const givenBinding = createBddGiven(existingCreateBddArgs(existingSource));
+  const header = importsPlaywrightBdd ? givenBinding : `${CREATE_BDD_IMPORT}\n${givenBinding}`;
   return `${header}\n\n${blocks}\n`;
 };

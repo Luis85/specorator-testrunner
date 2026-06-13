@@ -8,6 +8,7 @@ import {
 import { parseFeature } from "../src/application/content/gherkin";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
+import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
@@ -65,6 +66,7 @@ const build = (
     silentLogger,
     childProcess,
     absoluteFs,
+    new DefaultCommandSafetyPolicy(),
     opts?.activeRunId ?? (() => null),
   );
   return { service, useCases, fs, absoluteFs, childProcess, events, types };
@@ -429,6 +431,14 @@ Use snippets above to create missing steps.
     const stdout = `Missing step definitions: 0\n\nUse snippets above to create missing steps.\n`;
     expect(parseBddgenMissingSteps(stdout)).toEqual([]);
   });
+
+  it("unescapes an escaped quote in a step text so it matches the raw feature (codex P2)", () => {
+    // For `Given I can't log in`, bddgen emits the JS literal `'I can\'t log in'`.
+    // The escaped quote must not terminate the capture, and the backslash must be
+    // stripped so the result equals the feature's raw `I can't log in`.
+    const stdout = `Missing step definitions: 1\n\nGiven('I can\\'t log in', async ({}) => {});\n`;
+    expect(parseBddgenMissingSteps(stdout)).toEqual(["I can't log in"]);
+  });
 });
 
 describe("DefaultSpecificationService.detectMissingSteps", () => {
@@ -562,6 +572,47 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
       "/opt/managed/node",
       "node_modules/playwright-bdd/dist/cli/index.js",
     ]);
+  });
+
+  it("rejects a non-node executable before spawning bddgen (codex P2)", async () => {
+    // `runner.nodeExecutable` accepts any absolute path (settings sanitisation
+    // only blocks control chars/`..`/relative-with-separators), so detection
+    // must screen the basename against the ADR-0010 allowlist — a synced
+    // `/bin/rm` would otherwise be spawned with the bddgen path as its argument.
+    const { service, fs, absoluteFs, childProcess } = build({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, nodeExecutable: "/bin/rm" },
+    });
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+
+    const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("COMMAND_DISALLOWED");
+    // The dangerous program must never have been spawned.
+    expect(childProcess.calls).toHaveLength(0);
+  });
+
+  it("returns a step whose text contains an apostrophe bddgen escaped (codex P2)", async () => {
+    // End-to-end: bddgen escapes the quote in its snippet; detection must
+    // unescape it so the raw feature step `I can't log in` is matched and kept.
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given I can't log in\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      `Missing step definitions: 1\n\nGiven('I can\\'t log in', async ({}) => {});\n`,
+    );
+
+    const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.missingSteps).toEqual(["I can't log in"]);
   });
 
   it("bddgen reports no missing steps → empty missingSteps, event still published", async () => {

@@ -14,6 +14,7 @@ import {
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { VaultFileSystem } from "../ports/vault-file-system";
+import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
 import { resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { TestHubSettings } from "../../domain/settings/settings";
@@ -129,16 +130,27 @@ const BDDGEN_MISSING_HEADER = "Missing step definitions:";
 export const parseBddgenMissingSteps = (stdout: string): string[] => {
   if (!stdout.includes(BDDGEN_MISSING_HEADER)) return [];
   const results: string[] = [];
-  // bddgen controls snippet emission and quotes each step text, so the
-  // non-greedy capture stops at the snippet's own closing quote — an inner
-  // quote inside the step text does not arise in the emitted format.
-  const re = /^(?:Given|When|Then|And|But)\(\s*['"](.+?)['"]\s*,/gm;
+  // bddgen emits each step text as a JS string literal, so a step containing the
+  // quote char is escaped: `Given I can't log in` prints `Given('I can\'t log
+  // in', …)`. The non-greedy capture therefore consumes up to the snippet's own
+  // (unescaped) closing quote, and `\\.` lets an escaped quote sit inside the
+  // text without terminating it early.
+  const re = /^(?:Given|When|Then|And|But)\(\s*(['"])((?:\\.|(?!\1).)*)\1\s*,/gm;
   let match: RegExpExecArray | null;
   while ((match = re.exec(stdout)) !== null) {
-    results.push(match[1]);
+    results.push(unescapeJsString(match[2]));
   }
   return results;
 };
+
+/**
+ * Reverses the JS-string escaping bddgen applies to a snippet's step text, so
+ * the result compares equal to the raw feature step. Only `\\` and an escaped
+ * quote/backslash arise in bddgen's emitted format (feature step text has no
+ * real newlines/tabs); a single pass over `\<char>` unescapes them without
+ * double-processing a literal backslash.
+ */
+const unescapeJsString = (value: string): string => value.replace(/\\(.)/g, "$1");
 
 /**
  * The requested feature's RAW step texts that bddgen reported missing,
@@ -174,6 +186,16 @@ export class DefaultSpecificationService implements SpecificationService {
     private readonly logger: Logger,
     private readonly childProcess: ChildProcessRunner,
     private readonly absoluteFs: AbsoluteFileSystem,
+    /**
+     * Screens the configured Node executable's basename against the ADR-0010
+     * allowlist before bddgen is spawned. `runner.nodeExecutable` accepts any
+     * absolute path (settings sanitisation only rejects control chars, `..`,
+     * and relative paths-with-separators), so a synced/tampered setting could
+     * point it at an arbitrary binary (e.g. `/bin/rm`). Validation and test
+     * execution already screen their spawns through this policy; detection now
+     * does too (codex P2).
+     */
+    private readonly commandSafety: CommandSafetyPolicy,
     /**
      * Probes the in-flight run id (null when idle). `detectMissingSteps` runs
      * `bddgen` in the shared `.testrunner` cwd, which clears and regenerates
@@ -344,6 +366,14 @@ export class DefaultSpecificationService implements SpecificationService {
     if (!cwd.ok || !(await this.absoluteFs.existsAbsolute(cwd.value))) {
       return err(appError("RUNNER_NOT_INSTALLED", "Install the runner to detect missing steps."));
     }
+
+    // Screen the configured Node executable before spawning. The bddgen script
+    // path is a hard-coded constant (not attacker-controllable), so the only
+    // settings-derived part of the argv is `nodeExecutable` — validating it via
+    // the canonical `<node> --version` probe shape rejects a basename outside
+    // the ADR-0010 allowlist (e.g. `/bin/rm`) without running the program.
+    const safeNode = this.commandSafety.assertSafe([settings.runner.nodeExecutable, "--version"]);
+    if (!safeNode.ok) return err(safeNode.error);
 
     // Scope bddgen to THIS feature (same BDD_FEATURES env the generated config
     // reads) so a malformed/unrelated feature elsewhere can't make detection

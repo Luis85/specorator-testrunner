@@ -305,6 +305,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       this.logger,
       childProcess,
       absoluteFs,
+      // Screens the configured Node executable before detection spawns bddgen
+      // (the same ADR-0010 allowlist validation/execution use).
+      commandSafety,
       // bddgen diagnostics regenerate `.features-gen` under the shared runner
       // cwd, so detection refuses while a run is active. The execution service
       // is built further down — probe lazily through `this` (null until then,
