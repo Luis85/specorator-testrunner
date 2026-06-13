@@ -5,7 +5,14 @@ import { DefaultStepDefinitionService } from "../../src/application/services/ste
 import { DefaultUseCaseService } from "../../src/application/services/use-case-service";
 import { DefaultPathSafetyPolicy } from "../../src/domain/policies/path-safety-policy";
 import { unsafeVaultPath as vp } from "../../src/domain/value-objects/vault-path";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "../fakes";
+import {
+  FakeAbsoluteFileSystem,
+  FakeChildProcessRunner,
+  FakeDataStore,
+  FakeVaultFileSystem,
+  recordingEventBus,
+  silentLogger,
+} from "../fakes";
 
 /**
  * RV-4 / UC-010 — Generate Step Definition Stub (command path).
@@ -22,8 +29,25 @@ import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } f
 const FEATURE = vp("Specifications/features/UC-001-demo.feature");
 const STEP_FILE = ".testrunner/src/steps/UC-001-demo.steps.ts";
 
+const BDDGEN_TWO_MISSING = `Missing step definitions: 2
+
+Given('I open the local example page', async ({}) => {
+  // Step: Given I open the local example page
+  // From: features/UC-001-demo.feature:3:5
+});
+
+Then('I have not implemented this', async ({}) => {
+  // Step: Then I have not implemented this
+  // From: features/UC-001-demo.feature:5:5
+});
+
+Use snippets above to create missing steps.
+`;
+
 const build = () => {
   const fs = new FakeVaultFileSystem();
+  const absoluteFs = new FakeAbsoluteFileSystem();
+  const childProcess = new FakeChildProcessRunner();
   const { bus, events, types } = recordingEventBus();
   const settings = new DefaultSettingsService(
     new FakeDataStore(),
@@ -31,14 +55,22 @@ const build = () => {
     bus,
   );
   const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger);
-  const specification = new DefaultSpecificationService(settings, useCases, fs, bus, silentLogger);
+  const specification = new DefaultSpecificationService(
+    settings,
+    useCases,
+    fs,
+    bus,
+    silentLogger,
+    childProcess,
+    absoluteFs,
+  );
   const stepDefinitions = new DefaultStepDefinitionService(settings, fs, bus, silentLogger);
-  return { specification, stepDefinitions, fs, events, types };
+  return { specification, stepDefinitions, fs, absoluteFs, childProcess, events, types };
 };
 
 describe("UC-010 generate-step-definitions command path", () => {
   it("detects then stubs the undefined steps, chaining causationId", async () => {
-    const { specification, stepDefinitions, fs, events, types } = build();
+    const { specification, stepDefinitions, fs, absoluteFs, childProcess, events, types } = build();
     fs.files.set(
       FEATURE,
       `Feature: Demo
@@ -48,11 +80,10 @@ describe("UC-010 generate-step-definitions command path", () => {
     Then I have not implemented this
 `,
     );
-    // One of the three steps is already defined by hand.
-    fs.files.set(
-      ".testrunner/src/steps/example.steps.ts",
-      `When("I click the {string} button", async () => {});`,
-    );
+    // Runner folder must exist for detectMissingSteps to proceed.
+    absoluteFs.existing.add("/vault/.testrunner");
+    // bddgen says two steps are missing (the "When" is already defined).
+    childProcess.stdouts.set("playwright-bdd", BDDGEN_TWO_MISSING);
 
     // Step 1 — detection (as the command does first).
     const detected = await specification.detectMissingSteps(FEATURE);
@@ -89,15 +120,23 @@ describe("UC-010 generate-step-definitions command path", () => {
   });
 
   it("re-running the command is non-destructive once stubs are implemented", async () => {
-    const { specification, stepDefinitions, fs, types } = build();
+    const { specification, stepDefinitions, fs, absoluteFs, childProcess, types } = build();
     fs.files.set(FEATURE, "Feature: Demo\n  Scenario: S\n    Given a step to define\n");
+    absoluteFs.existing.add("/vault/.testrunner");
+    // First pass: one missing step.
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      `Missing step definitions: 1\n\nGiven('a step to define', async ({}) => {});\n`,
+    );
 
     const first = await specification.detectMissingSteps(FEATURE);
     expect(first.ok && first.value.missingSteps).toEqual(["a step to define"]);
     if (!first.ok) return;
     await stepDefinitions.generate(FEATURE, first.value.missingSteps, first.value.detectionEventId);
 
-    // The generated stub now satisfies the step, so a second pass finds nothing.
+    // Second pass: bddgen now reports nothing missing (stub implemented).
+    childProcess.stdouts.set("playwright-bdd", "BDD generator started\nAll defined.\n");
+
     const second = await specification.detectMissingSteps(FEATURE);
     expect(second.ok && second.value.missingSteps).toEqual([]);
     if (!second.ok) return;

@@ -300,6 +300,8 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       vault,
       eventBus,
       this.logger,
+      childProcess,
+      absoluteFs,
     );
     // Wave F insight: composes listFeatures (discovery stays defined once) with
     // the shared Gherkin parser to answer "how many scenarios does this Tag

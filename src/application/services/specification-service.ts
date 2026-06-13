@@ -6,12 +6,11 @@ import {
   serialiseFeature,
   useCaseIdFromPath,
 } from "../content/gherkin";
-import {
-  findMissingSteps,
-  parseStepDefinitions,
-  type StepDefinitionPattern,
-} from "../content/step-definitions";
+import { parseStepDefinitions, type StepDefinitionPattern } from "../content/step-definitions";
+import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
+import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { VaultFileSystem } from "../ports/vault-file-system";
+import { resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { UseCaseService } from "./use-case-service";
 import {
@@ -25,6 +24,8 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath } from "../../shared/utils/vault-path";
+
+const BDDGEN_ARGS = ["node", "node_modules/playwright-bdd/dist/cli.js"] as const;
 
 export interface SpecificationValidationError {
   line?: number;
@@ -102,6 +103,50 @@ export interface SpecificationService {
   listStepPatterns(): Promise<Result<StepDefinitionPattern[]>>;
 }
 
+/**
+ * Parses `bddgen` stdout for undefined step texts.
+ *
+ * bddgen exits 0 whether or not steps are missing; the presence of the
+ * "Missing step definitions:" header line is the sole signal. Each missing
+ * step's text is extracted from the first quoted argument of its snippet
+ * (`Given('…', …)` → `…`), without the keyword, matching what
+ * `collectStepTexts` returns.
+ */
+/** Header bddgen prints when a run has undefined steps — the sole signal, since bddgen exits 0 regardless. */
+const BDDGEN_MISSING_HEADER = "Missing step definitions:";
+
+export const parseBddgenMissingSteps = (stdout: string): string[] => {
+  if (!stdout.includes(BDDGEN_MISSING_HEADER)) return [];
+  const results: string[] = [];
+  // bddgen controls snippet emission and quotes each step text, so the
+  // non-greedy capture stops at the snippet's own closing quote — an inner
+  // quote inside the step text does not arise in the emitted format.
+  const re = /^(?:Given|When|Then|And|But)\(\s*['"](.+?)['"]\s*,/gm;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(stdout)) !== null) {
+    results.push(match[1]);
+  }
+  return results;
+};
+
+/**
+ * The requested feature's step texts that bddgen reported missing, de-duplicated
+ * and in feature order. bddgen scans ALL features, so the result is filtered to
+ * THIS feature; `collectStepTexts` can repeat a step across scenarios, hence the
+ * `seen` guard.
+ */
+const keepFeatureSteps = (featureTexts: string[], allMissing: ReadonlySet<string>): string[] => {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const text of featureTexts) {
+    if (!seen.has(text) && allMissing.has(text)) {
+      seen.add(text);
+      kept.push(text);
+    }
+  }
+  return kept;
+};
+
 export class DefaultSpecificationService implements SpecificationService {
   constructor(
     private readonly settingsService: SettingsService,
@@ -109,6 +154,8 @@ export class DefaultSpecificationService implements SpecificationService {
     private readonly fs: VaultFileSystem,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
+    private readonly childProcess: ChildProcessRunner,
+    private readonly absoluteFs: AbsoluteFileSystem,
   ) {}
 
   /** UC-006: non-destructively create a Feature and link it back to its UC. */
@@ -247,10 +294,23 @@ export class DefaultSpecificationService implements SpecificationService {
       return err(appError("VALIDATION_FAILED", `"${featurePath}" is not a valid Feature.`));
     }
 
-    const patterns = await this.listStepPatterns();
-    const definitions = patterns.ok ? patterns.value : [];
+    const settings = await this.settingsService.load();
+    const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
+    if (!cwd.ok || !(await this.absoluteFs.existsAbsolute(cwd.value))) {
+      return err(appError("RUNNER_NOT_INSTALLED", "Install the runner to detect missing steps."));
+    }
 
-    const missingSteps = findMissingSteps(collectStepTexts(feature), definitions);
+    const ran = await this.childProcess.run({ args: [...BDDGEN_ARGS], cwd: cwd.value });
+    // bddgen exits 0 even when steps are missing, so a real failure is a spawn
+    // error or a non-zero exit WITHOUT the missing-steps report.
+    const bddgenFailed =
+      !ran.ok || (ran.value.exitCode !== 0 && !ran.value.stdout.includes(BDDGEN_MISSING_HEADER));
+    if (bddgenFailed) {
+      return err(appError("RUNNER_NOT_INSTALLED", "Install the runner to detect missing steps."));
+    }
+
+    const allMissing = new Set(parseBddgenMissingSteps(ran.value.stdout));
+    const missingSteps = keepFeatureSteps(collectStepTexts(feature), allMissing);
 
     const detectionEvent = createEvent("specification.missingSteps.detected", {
       featurePath,
