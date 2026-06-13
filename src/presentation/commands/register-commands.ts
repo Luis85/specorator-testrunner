@@ -22,6 +22,7 @@ import { RunPickerModal } from "../views/run-picker-modal";
 import { SUITE_VIEW_TYPE } from "../views/suite-dashboard-view";
 import { TEST_CONSOLE_VIEW_TYPE } from "../views/test-console-view";
 import { USE_CASE_VIEW_TYPE } from "../views/use-case-dashboard-view";
+import type { App } from "obsidian";
 
 /**
  * The narrow slice of the composition root the command palette needs: the
@@ -53,6 +54,7 @@ export interface TestHubCommandDeps {
   openWizard(): void;
   openCreateUseCase(): void;
   openCreateSuite(): void;
+  openPrdBuilder(): void;
   openDocumentation(
     documentType?: "getting-started" | "manual" | "troubleshooting" | "index",
   ): Promise<void>;
@@ -399,6 +401,11 @@ export function registerCommands(
     id: "create-test-suite",
     name: "New Test Suite",
     callback: () => deps.openCreateSuite(),
+  });
+  plugin.addCommand({
+    id: "create-prd",
+    name: "Create PRD",
+    callback: () => deps.openPrdBuilder(),
   });
   plugin.addCommand({
     id: "open-test-suites",

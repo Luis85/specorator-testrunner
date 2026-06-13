@@ -185,6 +185,7 @@ const buildDeps = (): TestHubCommandDeps => ({
   openWizard: vi.fn(() => undefined),
   openCreateUseCase: vi.fn(() => undefined),
   openCreateSuite: vi.fn(() => undefined),
+  openPrdBuilder: vi.fn(() => undefined),
   openDocumentation: vi.fn(async () => undefined),
 });
 
@@ -214,6 +215,7 @@ describe("registerCommands (smoke)", () => {
       "generate-documentation",
       "generate-step-definitions",
       "open-test-console",
+      "create-prd",
     ];
     for (const id of knownIds) {
       expect(ids, `command "${id}" missing from registered set`).toContain(id);

@@ -28,7 +28,7 @@ export interface Result<T> {
 
 /** Settings service interface for getting PRD paths. */
 export interface SettingsService {
-  load(): Promise<{ paths: { prdsPath: string } }>;
+  load(): Promise<{ paths: Record<string, string> }>;
 }
 
 /**

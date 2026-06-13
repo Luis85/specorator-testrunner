@@ -90,6 +90,7 @@ import { TestHubSettingTab, type SettingsHost } from "./presentation/settings/se
 import { CreateSuiteModal } from "./presentation/views/create-suite-modal";
 import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
+import { PrdBuilderModal } from "./presentation/views/prd-builder-modal";
 import { SUITE_VIEW_TYPE, SuiteDashboardView } from "./presentation/views/suite-dashboard-view";
 import { TEST_CONSOLE_VIEW_TYPE, TestConsoleView } from "./presentation/views/test-console-view";
 import {
@@ -116,7 +117,7 @@ import {
   FEATURE_EDITOR_VIEW_TYPE,
   FeatureEditorView,
 } from "./presentation/views/feature-editor-view";
-import { InMemoryEventBus } from "./shared/event-bus/event-bus";
+import { InMemoryEventBus, type EventBus } from "./shared/event-bus/event-bus";
 import { ConsoleLogger } from "./shared/logging/logger";
 import type { Result } from "./shared/result/result";
 
@@ -128,6 +129,7 @@ import type { Result } from "./shared/result/result";
 export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private hubSettings: TestHubSettings = DEFAULT_SETTINGS;
   private logger!: ConsoleLogger;
+  private eventBus!: EventBus;
   private hubSettingsService!: SettingsService;
   private initializationService!: InitializationService;
   private validationService!: EnvironmentValidationService;
@@ -167,9 +169,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private readonly processRunners: NodeChildProcessRunner[] = [];
 
   async onload(): Promise<void> {
-    const eventBus = new InMemoryEventBus((error) =>
+    this.eventBus = new InMemoryEventBus((error) =>
       this.logger?.error("Event handler failed", error as Error),
     );
+    const eventBus = this.eventBus;
     const pathSafety = new DefaultPathSafetyPolicy();
 
     // The logger is built first so SettingsService.load() can report a tampered
@@ -618,6 +621,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       openWizard: () => this.openWizard(),
       openCreateUseCase: () => this.openCreateUseCase(),
       openCreateSuite: () => this.openCreateSuite(),
+      openPrdBuilder: () => this.openPrdBuilder(),
       openDocumentation: (documentType) => this.openDocumentation(documentType),
     });
 
@@ -712,6 +716,16 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       suiteService: this.suiteService,
       workspace: this.workspaceAdapter,
       featureInsight: this.featureInsightService,
+    }).open();
+  }
+
+  private openPrdBuilder(): void {
+    new PrdBuilderModal(this.app, {
+      prdService: {} as any, // Stub: PrdService wired in Task 12
+      useCaseService: this.useCaseService,
+      settingsService: this.hubSettingsService as any,
+      eventBus: this.eventBus,
+      openPrdBuilder: () => this.openPrdBuilder(),
     }).open();
   }
 
