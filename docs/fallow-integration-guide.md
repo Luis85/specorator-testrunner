@@ -170,6 +170,7 @@ quality:
       run: npm run test:coverage
 
     - name: Fallow audit
+      continue-on-error: true   # advisory: warn/fail verdict visible but doesn't block the PR
       run: |
         set -o pipefail
         # GITHUB_BASE_REF is only set on pull_request events; on main pushes
@@ -183,10 +184,11 @@ quality:
 
 ### Advisory vs. blocking
 
-**Start advisory.** Do not add `continue-on-error: true` — instead, start by
-observing the audit verdict on a few PRs to confirm the signal quality. If the
-gate is noisy (lots of false positives from pre-existing inventory), tune your
-`.fallowrc.jsonc` thresholds before flipping to blocking.
+**Start advisory.** The template above includes `continue-on-error: true` on
+the audit step so a warn/fail verdict shows as a failed step annotation but the
+job (and the PR check) stays green. Use this phase to observe signal quality on
+a few PRs. If the gate is noisy (lots of false positives from pre-existing
+inventory), tune your `.fallowrc.jsonc` thresholds before flipping to blocking.
 
 The audit uses new-only attribution by default: it gates on findings *your
 changeset introduced*, not the entire historical inventory. This means
@@ -195,11 +197,11 @@ edit to a file places that file's findings in scope — pre-existing complexity
 in heavily-edited files can surface as "introduced." Revisit thresholds only if
 this proves noisy in practice.
 
-**Flip to blocking** once you trust the signal:
+**Flip to blocking** once you trust the signal — remove `continue-on-error`:
 
 ```yaml
     - name: Fallow audit
-      # Remove continue-on-error — this is now a required check.
+      # continue-on-error removed — this is now a required blocking check.
       run: |
         ...
 ```
