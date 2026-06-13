@@ -73,7 +73,7 @@ Required fields: `id`, `type`, `title`, `status`, `parent-prd`, `vision`, `scope
 Optional fields: `domains` (required for sub-PRDs, optional for root), `research-notes`, `display_order`.  
 **Note:** Root PRD (`parent-prd: null`) has `domains: []` or omitted (no domains apply to system-level vision).
 
-**Backwards compatibility:** Existing Use Cases lack `prd-id` field until migration runs. Validation must treat `prc-id` as optional until per-vault backfill completes; enforce only after migration assigns a PRD to all Use Cases.
+**Backwards compatibility:** Existing Use Cases lack `prd-id` field until migration runs. Validation must treat `prd-id` as optional until per-vault backfill completes; enforce only after migration assigns a PRD to all Use Cases.
 
 ### 2.3 Use Case Updates
 
@@ -343,7 +343,7 @@ npm run migrate:analyze-domains
 ```
 
 **What it does:**
-- Reads all Use Cases from `docs/use-cases/`
+- Reads all Use Cases from the configured `useCasesPath` (default: `"Use Cases"`, respects `settings.paths.useCasesPath`)
 - Groups by `domain` field
 - Outputs a report (console + file)
 - Example:
