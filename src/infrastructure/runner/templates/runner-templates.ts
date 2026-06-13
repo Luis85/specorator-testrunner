@@ -9,19 +9,20 @@ import { relativeVaultPath } from "../../../shared/utils/vault-path";
 
 /**
  * The `.testrunner` standalone Node project (TIS §11, honouring AD-2 npm, AD-5
- * Chromium, AD-6 serial, AD-7 tsx loader, AD-8 local fixture).
+ * Chromium, AD-8 local fixture).
  *
- * This is runtime-technology-specific Playwright/Cucumber/Node SOURCE, so it
- * lives in INFRASTRUCTURE (P3-7): the application layer must not embed runtime
- * tech. Generation is reached through the {@link TemplateWriter} port — the
- * `RunnerTemplateWriter` infra adapter exposes `buildRunnerTemplates`, and the
- * application services call the port, never this module. The plain file/dep
+ * This is runtime-technology-specific Playwright/playwright-bdd/Node SOURCE, so
+ * it lives in INFRASTRUCTURE (P3-7): the application layer must not embed
+ * runtime tech. Generation is reached through the {@link TemplateWriter} port —
+ * the `RunnerTemplateWriter` infra adapter exposes `buildRunnerTemplates`, and
+ * the application services call the port, never this module. The plain file/dep
  * MANIFEST the validators assert against stays in the application layer
  * (`application/content/runner-manifest.ts`) as contract data.
  *
- * Per TIS §11 there is intentionally NO `playwright.config.ts`: Playwright is
- * driven through the Cucumber `World` (`chromium.launch()` in `world.ts`), not
- * the Playwright Test runner.
+ * The runner is driven by the Playwright Test runner via playwright-bdd:
+ * `bddgen` generates Playwright tests from `.feature` files, then
+ * `playwright test` executes them. The entry point is `playwright.config.ts`;
+ * there is no Cucumber `World` or `hooks.ts`.
  *
  * `overwrite: false` protects user-authored automation (steps, page objects)
  * during a repair (Runtime View RV-8); managed files are re-synced.
@@ -32,27 +33,27 @@ const PACKAGE_JSON = `{
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.mjs",
-    "test:smoke": "node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.mjs --tags @smoke",
-    "test:ci": "node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.mjs --format json:reports/cucumber-report.json",
+    "test": "bddgen && playwright test",
+    "test:smoke": "bddgen && playwright test --grep @smoke",
+    "test:ci": "bddgen && playwright test",
     "install:browsers": "playwright install chromium",
     "install:browsers:ci": "playwright install --with-deps chromium"
   },
   "devDependencies": {
-    "@cucumber/cucumber": "^12.0.0",
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22.0.0",
     "playwright": "^1.60.0",
-    "tsx": "^4.19.0",
+    "playwright-bdd": "^9.0.0",
     "typescript": "^5.6.0"
   }
 }
 `;
 
-// "Preserve"/"Bundler" (not NodeNext): the runner executes through tsx, which
-// resolves extensionless relative imports like a bundler. NodeNext made every
-// generated relative import an IDE error (ts2835: "needs explicit .js
-// extension") even though the suite ran fine — found via real-IDE validation;
-// the e2e-smoke script now typechecks the generated runner to lock IDE parity.
+// "Preserve"/"Bundler" (not NodeNext): playwright-bdd resolves extensionless
+// relative imports like a bundler. NodeNext made every generated relative import
+// an IDE error (ts2835: "needs explicit .js extension") even though the suite
+// ran fine — found via real-IDE validation; the e2e-smoke script now typechecks
+// the generated runner to lock IDE parity.
 const TSCONFIG_JSON = `{
   "compilerOptions": {
     "target": "ES2022",
@@ -68,91 +69,33 @@ const TSCONFIG_JSON = `{
 }
 `;
 
-// tsx is registered via `node --import tsx` in the npm scripts (the cucumber-js
-// documented setup for tsx 4 / Node 20.6+, AD-7), so no deprecated `loader`
-// hook here. The runner runs with cwd = the runner folder, so the feature glob
-// is the path from the runner folder to the configured feature folder (ADR-0008).
+// The runner runs with cwd = the runner folder, so the feature glob is the path
+// from the runner folder to the configured feature folder (ADR-0008).
 // The glob is emitted via JSON.stringify so it is ALWAYS a safe, fully-escaped
 // JS string literal — even if a hostile `featureFilesPath` somehow reaches here
 // it cannot break out of the literal and inject code into the module Node loads
 // (defence in depth behind PathSafetyPolicy; see SEC-1 / P0-1).
-// SHAPE: the options object is the DEFAULT EXPORT ITSELF. Cucumber's ESM
-// config loading reads \`(await import(file)).default\` as the options — the
-// profile-keyed \`{ default: { … } }\` wrapper (a CJS \`module.exports\` idiom)
-// is NOT unwrapped for an ESM default export, so wrapping silently discarded
-// the WHOLE config: no step imports (every demo step ran "Undefined"), no
-// json report (evidence import found nothing). Found via the first real
-// testvault demo run.
-// Named exports are treated as cucumber profiles; selecting `--profile scoped`
-// resolves the `scoped` export so config `paths` don't merge with CLI paths.
-const cucumberMjs = (featuresGlob: string): string => `const base = {
-  import: ["src/support/**/*.ts", "src/steps/**/*.ts"],
-  format: [
-    "progress",
-    "json:reports/cucumber-report.json",
-  ],
-  // NOTE: the deprecated \`publishQuiet\` option was REMOVED in Cucumber 12
-  // (the publish banner it suppressed no longer exists). Cucumber 12 rejects
-  // unknown options, so it must not be emitted here (P4-5).
-  parallel: 0,
-};
+const PLAYWRIGHT_CONFIG = (
+  featuresGlob: string,
+): string => `import { defineConfig } from "@playwright/test";
+import { defineBddConfig, cucumberReporter } from "playwright-bdd";
 
-export default { ...base, paths: [${JSON.stringify(featuresGlob)}] };
-
-// Scoped runs (the Test Hub passing explicit feature paths as CLI arguments)
-// select this profile so the config \`paths\` glob does not merge with the CLI
-// paths — that merge is deprecated and prints a warning into the Test Console.
-export const scoped = { ...base };
-`;
-
-const WORLD_TS = `import { World, setWorldConstructor } from "@cucumber/cucumber";
-import { Browser, BrowserContext, Page, chromium } from "playwright";
-
-export class TestWorld extends World {
-  browser?: Browser;
-  context?: BrowserContext;
-  page?: Page;
-
-  async openBrowser(): Promise<void> {
-    this.browser = await chromium.launch({ headless: true });
-    this.context = await this.browser.newContext();
-    this.page = await this.context.newPage();
-  }
-
-  async closeBrowser(): Promise<void> {
-    await this.page?.close();
-    await this.context?.close();
-    await this.browser?.close();
-  }
-}
-
-setWorldConstructor(TestWorld);
-`;
-
-const HOOKS_TS = `import { After, Before, Status, setDefaultTimeout } from "@cucumber/cucumber";
-import { TestWorld } from "./world";
-
-// Cucumber's 5s default is too tight for E2E: a cold Chromium launch in the
-// Before hook (first run, AV-scanned Windows) regularly exceeds it, and real
-// SUT page loads need headroom too.
-setDefaultTimeout(60_000);
-
-Before(async function (this: TestWorld) {
-  await this.openBrowser();
+const testDir = defineBddConfig({
+  features: ${JSON.stringify(featuresGlob)},
+  steps: "src/steps/**/*.ts",
 });
 
-// On failure, capture a screenshot and attach it to the Cucumber report before
-// the browser closes. Attachments are written into the JSON report's
-// embeddings, which the Test Hub imports as screenshot evidence (US-033/034).
-After(async function (this: TestWorld, scenario) {
-  if (scenario.result?.status === Status.FAILED && this.page) {
-    try {
-      this.attach(await this.page.screenshot(), "image/png");
-    } catch {
-      // A page already crashed/closed shouldn't fail teardown.
-    }
-  }
-  await this.closeBrowser();
+export default defineConfig({
+  testDir,
+  reporter: [
+    ["list"],
+    cucumberReporter("json", {
+      outputFile: "reports/cucumber-report.json",
+      skipAttachments: false, // CRITICAL: default true drops all embeddings (ADR-0016)
+    }),
+  ],
+  use: { screenshot: "only-on-failure", trace: "retain-on-failure" },
+  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
 });
 `;
 
@@ -168,7 +111,7 @@ export const fixtureUrl = (file: string): string =>
   pathToFileURL(resolve(runnerRoot, "src", "fixtures", file)).href;
 `;
 
-const EXAMPLE_PAGE_TS = `import { Page } from "playwright";
+const EXAMPLE_PAGE_TS = `import type { Page } from "@playwright/test";
 import { fixtureUrl } from "../support/paths";
 
 export class ExamplePage {
@@ -188,32 +131,23 @@ export class ExamplePage {
 }
 `;
 
-const EXAMPLE_STEPS_TS = `import { Given, Then, When } from "@cucumber/cucumber";
-import assert from "node:assert/strict";
+const EXAMPLE_STEPS_TS = `import { expect } from "@playwright/test";
+import { createBdd } from "playwright-bdd";
 import { ExamplePage } from "../pages/ExamplePage";
-import { TestWorld } from "../support/world";
 
-Given("I open the local example page", async function (this: TestWorld) {
-  if (!this.page) throw new Error("Page not initialized");
-  const example = new ExamplePage(this.page);
-  await example.open();
+const { Given, When, Then } = createBdd();
+
+Given("I open the local example page", async ({ page }) => {
+  await new ExamplePage(page).open();
 });
 
-When("I click the {string} button", async function (this: TestWorld, label: string) {
-  if (!this.page) throw new Error("Page not initialized");
-  if (label !== "Continue") throw new Error(\`Unsupported button: \${label}\`);
-  const example = new ExamplePage(this.page);
-  await example.continue();
+When("I click the {string} button", async ({ page }, label: string) => {
+  if (label !== "Continue") throw new Error(\`Unknown button: \${label}\`);
+  await new ExamplePage(page).continue();
 });
 
-Then("I should see {string}", async function (this: TestWorld, expected: string) {
-  if (!this.page) throw new Error("Page not initialized");
-  const example = new ExamplePage(this.page);
-  for (let attempt = 0; attempt < 20; attempt++) {
-    if ((await example.resultText()) === expected) return;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  assert.equal(await example.resultText(), expected);
+Then("I should see {string}", async ({ page }, expected: string) => {
+  await expect(page.locator("#result")).toHaveText(expected);
 });
 `;
 
@@ -251,11 +185,11 @@ const EXAMPLE_HTML = `<!doctype html>
 
 const README_MD = `# .testrunner
 
-The self-contained Playwright + Cucumber-JS runtime generated by the **Obsidian
+The self-contained Playwright + playwright-bdd runtime generated by the **Obsidian
 Specorator Testrunner**. It runs identically inside Obsidian and in CI.
 
-> Managed by the plugin. \`package.json\`, \`tsconfig.json\`, \`cucumber.mjs\`, and the
-> support/fixtures files are regenerated on repair. Your step definitions
+> Managed by the plugin. \`package.json\`, \`tsconfig.json\`, \`playwright.config.ts\`,
+> and the support/fixtures files are regenerated on repair. Your step definitions
 > (\`src/steps/\`) and page objects (\`src/pages/\`) are never overwritten.
 
 ## Run locally
@@ -272,49 +206,52 @@ npm run test:smoke           # @smoke only
 \`\`\`bash
 npm ci
 npm run install:browsers:ci
-npm run test:ci              # writes reports/cucumber-report.json
+npm run test:ci              # writes reports/cucumber-report.json via playwright.config.ts
 \`\`\`
 
-Playwright is driven through the Cucumber \`World\` (\`src/support/world.ts\`), not
-the Playwright Test runner, so there is no \`playwright.config.ts\` (TIS §11).
-Tests run serially in V1 (\`parallel: 0\`, AD-6).
+The runner is driven by the Playwright Test runner via playwright-bdd: \`bddgen\`
+generates Playwright tests from \`.feature\` files, then \`playwright test\` executes
+them using \`playwright.config.ts\` as the entry point. Failure screenshots are embedded in \`reports/cucumber-report.json\`; Playwright
+traces are saved under \`test-results/\`.
 `;
 
 /** All `.testrunner` template files, paths relative to the runner root. */
-export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] => [
-  // Template paths are trusted compile-time literals relative to the runner root.
-  { path: unsafeVaultPath("package.json"), content: PACKAGE_JSON, overwrite: true },
-  {
-    path: unsafeVaultPath(TESTRUNNER_MANIFEST_FILE),
-    content: testrunnerManifestContent(),
-    overwrite: true,
-  },
-  { path: unsafeVaultPath("tsconfig.json"), content: TSCONFIG_JSON, overwrite: true },
-  {
-    path: unsafeVaultPath("cucumber.mjs"),
-    content: cucumberMjs(
-      `${relativeVaultPath(settings.paths.testRunnerPath, settings.paths.featureFilesPath)}/**/*.feature`,
-    ),
-    overwrite: true,
-  },
-  { path: unsafeVaultPath("README.md"), content: README_MD, overwrite: true },
-  { path: unsafeVaultPath("src/support/world.ts"), content: WORLD_TS, overwrite: true },
-  { path: unsafeVaultPath("src/support/hooks.ts"), content: HOOKS_TS, overwrite: true },
-  { path: unsafeVaultPath("src/support/paths.ts"), content: PATHS_TS, overwrite: true },
-  {
-    path: unsafeVaultPath("src/fixtures/example.html"),
-    content: EXAMPLE_HTML,
-    overwrite: true,
-  },
-  // User-authored automation — preserved on repair (RV-8).
-  {
-    path: unsafeVaultPath("src/pages/ExamplePage.ts"),
-    content: EXAMPLE_PAGE_TS,
-    overwrite: false,
-  },
-  {
-    path: unsafeVaultPath("src/steps/example.steps.ts"),
-    content: EXAMPLE_STEPS_TS,
-    overwrite: false,
-  },
-];
+export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] => {
+  // SEC-1 / P0-1: the glob is emitted via JSON.stringify inside PLAYWRIGHT_CONFIG
+  // so a hostile featureFilesPath cannot escape the string literal.
+  const featuresGlob = `${relativeVaultPath(settings.paths.testRunnerPath, settings.paths.featureFilesPath)}/**/*.feature`;
+
+  return [
+    // Template paths are trusted compile-time literals relative to the runner root.
+    { path: unsafeVaultPath("package.json"), content: PACKAGE_JSON, overwrite: true },
+    {
+      path: unsafeVaultPath(TESTRUNNER_MANIFEST_FILE),
+      content: testrunnerManifestContent(),
+      overwrite: true,
+    },
+    { path: unsafeVaultPath("tsconfig.json"), content: TSCONFIG_JSON, overwrite: true },
+    {
+      path: unsafeVaultPath("playwright.config.ts"),
+      content: PLAYWRIGHT_CONFIG(featuresGlob),
+      overwrite: true,
+    },
+    { path: unsafeVaultPath("README.md"), content: README_MD, overwrite: true },
+    { path: unsafeVaultPath("src/support/paths.ts"), content: PATHS_TS, overwrite: true },
+    {
+      path: unsafeVaultPath("src/fixtures/example.html"),
+      content: EXAMPLE_HTML,
+      overwrite: true,
+    },
+    // User-authored automation — preserved on repair (RV-8).
+    {
+      path: unsafeVaultPath("src/pages/ExamplePage.ts"),
+      content: EXAMPLE_PAGE_TS,
+      overwrite: false,
+    },
+    {
+      path: unsafeVaultPath("src/steps/example.steps.ts"),
+      content: EXAMPLE_STEPS_TS,
+      overwrite: false,
+    },
+  ];
+};

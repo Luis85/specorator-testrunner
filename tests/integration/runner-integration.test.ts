@@ -9,10 +9,10 @@ import { unsafeVaultPath as vp } from "../../src/domain/value-objects/vault-path
  * Wires the generated runner templates together and proves they are internally
  * coherent end-to-end: every npm script `TestExecutionService` invokes exists in
  * the generated `package.json`, the scripts point at the config
- * `buildRunnerTemplates` actually emits, and the cucumber feature glob lines up
- * with the configured feature folder. These assertions catch drift between the
+ * `buildRunnerTemplates` actually emits, and the playwright-bdd feature glob lines
+ * up with the configured feature folder. These assertions catch drift between the
  * command layer (`resolveCommand`/`DEFAULT_SETTINGS.runner`) and the template
- * layer (`package.json`/`cucumber.mjs`) before a run can fail in the wild.
+ * layer (`package.json`/`playwright.config.ts`) before a run can fail in the wild.
  */
 
 const templatesFor = (settings = DEFAULT_SETTINGS) => {
@@ -57,42 +57,48 @@ describe("US-048 runner integration: scripts the executor invokes exist", () => 
     }
   });
 
-  it("every script delegates to cucumber-js via the generated cucumber.mjs config", () => {
+  it("every script chains bddgen then playwright test, and playwright.config.ts exists", () => {
     const { byPath, packageJson } = templatesFor();
-    // cucumber.mjs must exist because the scripts pass `--config cucumber.mjs`.
-    expect(byPath.has("cucumber.mjs")).toBe(true);
+    // playwright.config.ts must exist because it is the playwright-bdd entry point.
+    expect(byPath.has("playwright.config.ts")).toBe(true);
     for (const script of SCRIPTS_INVOKED_BY_EXECUTION) {
       const body = packageJson.scripts[script];
-      expect(body, script).toContain("@cucumber/cucumber/bin/cucumber.js");
-      expect(body, script).toContain("--config cucumber.mjs");
+      expect(body, script).toContain("bddgen");
+      expect(body, script).toContain("playwright test");
     }
   });
 
-  it("the smoke script filters @smoke so the demo's smoke suite tag resolves to a run", () => {
+  it("the smoke script filters @smoke via Playwright --grep flag", () => {
     const { packageJson } = templatesFor();
-    // The demo Use Case is @smoke-only; the smoke suite tag expression is
-    // `@smoke`. The smoke script must filter on that exact tag, or the Smoke
-    // suite would run nothing the demo actually carries.
-    expect(packageJson.scripts["test:smoke"]).toContain("--tags @smoke");
+    // playwright test uses --grep for tag filtering (not --tags); the demo
+    // Use Case is @smoke-only, so the smoke script must filter on that exact tag.
+    expect(packageJson.scripts["test:smoke"]).toContain("--grep @smoke");
   });
 
   it("the ci script writes the JSON report ReportImportService later reads", () => {
-    const { byPath, packageJson } = templatesFor();
-    // test:ci must emit reports/cucumber-report.json; the cucumber.mjs default
-    // format does too — both point at the same artifact path the importer scans.
-    expect(packageJson.scripts["test:ci"]).toContain("reports/cucumber-report.json");
-    expect(byPath.get("cucumber.mjs")).toContain("json:reports/cucumber-report.json");
+    const { byPath } = templatesFor();
+    // The report path is configured in playwright.config.ts (cucumberReporter),
+    // not via a CLI flag — so we verify the config carries the artifact path.
+    const config = byPath.get("playwright.config.ts") ?? "";
+    expect(config).toContain("reports/cucumber-report.json");
+    expect(config).toContain('cucumberReporter("json"');
+    // skipAttachments: false is mandatory — the default true silently drops
+    // all embeddings (evidence), making the ingested report evidence-empty.
+    expect(config).toContain("skipAttachments: false");
   });
 
   it("declares every runtime dependency the scripts reference", () => {
     const { packageJson } = templatesFor();
-    // The scripts invoke `node --import tsx node_modules/@cucumber/cucumber/...`.
-    expect(packageJson.devDependencies["@cucumber/cucumber"]).toBeTruthy();
-    expect(packageJson.devDependencies.tsx).toBeTruthy();
+    // The scripts invoke `bddgen && playwright test` — these packages must be present.
+    expect(packageJson.devDependencies["playwright-bdd"]).toBeTruthy();
+    expect(packageJson.devDependencies["@playwright/test"]).toBeTruthy();
     expect(packageJson.devDependencies.playwright).toBeTruthy();
+    // V1 cucumber-js deps must be absent — they're no longer used.
+    expect(packageJson.devDependencies["@cucumber/cucumber"]).toBeFalsy();
+    expect(packageJson.devDependencies.tsx).toBeFalsy();
   });
 
-  it("cucumber.mjs feature glob points at the configured feature folder", () => {
+  it("playwright.config.ts feature glob points at the configured feature folder", () => {
     const settings = {
       ...DEFAULT_SETTINGS,
       paths: {
@@ -104,6 +110,7 @@ describe("US-048 runner integration: scripts the executor invokes exist", () => 
     const { byPath } = templatesFor(settings);
     // The runner runs with cwd = the runner folder, so the glob must be the
     // relative hop from that folder to the configured feature folder.
-    expect(byPath.get("cucumber.mjs")).toContain('paths: ["../../Specs/features/**/*.feature"]');
+    // The glob is inside a defineBddConfig({ features: "..." }) call in the config.
+    expect(byPath.get("playwright.config.ts")).toContain("../../Specs/features/**/*.feature");
   });
 });
