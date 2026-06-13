@@ -69,9 +69,11 @@ research-notes: []  # Reserved for V2: link to domain artifacts
 display_order: 1  # for sibling ordering in tree (optional; auto-assigned if omitted)
 ```
 
-Required fields: `id`, `type`, `title`, `status`, `parent-prc`, `vision`, `scope`.  
+Required fields: `id`, `type`, `title`, `status`, `parent-prd`, `vision`, `scope`.  
 Optional fields: `domains` (required for sub-PRDs, optional for root), `research-notes`, `display_order`.  
 **Note:** Root PRD (`parent-prd: null`) has `domains: []` or omitted (no domains apply to system-level vision).
+
+**Backwards compatibility:** Existing Use Cases lack `prd-id` field until migration runs. Validation must treat `prc-id` as optional until per-vault backfill completes; enforce only after migration assigns a PRD to all Use Cases.
 
 ### 2.3 Use Case Updates
 
@@ -378,6 +380,7 @@ npm run migrate:create-prd-0
 ```
 
 **What it does:**
+- **Backup original first:** Copies `docs/Specorator Testrunner.md` → `docs/Specorator Testrunner.md.backup` (before any rewrites)
 - Creates `<prds-path>/PRD-000-product-vision/PRD-000-product-vision.md` (respects `settings.paths.prdsPath`)
 - Copies content from `docs/Specorator Testrunner.md` and adjusts frontmatter:
   ```yaml
@@ -400,9 +403,11 @@ npm run migrate:create-prd-0
   See [[PRD-000-product-vision/PRD-000-product-vision|PRD-000: Specorator Testrunner]]
   ```
   This preserves existing `[[Specorator Testrunner]]` links in architecture docs and ADRs.
-- Outputs: "PRD-000 created; redirect note created at `docs/Specorator Testrunner.md`"
+- Outputs: "PRD-000 created; backup saved at `docs/Specorator Testrunner.md.backup`; redirect note created at `docs/Specorator Testrunner.md`"
 
-**Why:** Obsidian link resolution supports aliases, so existing `[[Specorator Testrunner]]` references in ADRs and architecture docs continue to work through the alias.
+**Why:** 
+- Obsidian link resolution supports aliases, so existing `[[Specorator Testrunner]]` references in ADRs and architecture docs continue to work through the alias
+- Backup created first ensures rollback is always possible if migration fails partway through
 
 ### Phase 4: Create Sub-PRDs
 
@@ -576,4 +581,25 @@ If a Use Case's `domain` doesn't match any domain in its PRD's `domains` list, t
 
 **Research artifacts storage (DEFERRED to V1.5):**
 V1 uses free-text synthesis in the "Research Summary" section. In V1.5, add optional `research-notes: []` field linking to `docs/domains/<domain-name>/research.md` files. Storage location TBD in V1.5 design.
+
+---
+
+## 11. Required Documentation Updates (Before Implementation)
+
+This design introduces architecture-shaping decisions and new product terminology. Per project standards, implementation must include:
+
+1. **ADR (Architectural Decision Record):** Create `docs/adr/NNNN-prd-hierarchy-artifact-model.md` documenting:
+   - Why PRDs are needed (separate from Use Cases)
+   - Three-layer model: Domain → PRD → Use Case
+   - Why PRD IDs are immutable
+   - Why domains are optional for root PRD
+
+2. **CONTEXT.md Glossary Updates:** Add entries for:
+   - **PRD (Product Requirements Document):** A synthesis artifact that defines solution scope, drawing from domain research. Each PRD owns 0..N Use Cases. Distinct from "PRD" in other contexts.
+   - **parent-prd:** The parent PRD of a sub-PRD or Use Case. Null for PRD-000 (root).
+   - **prd-id:** Frontmatter field linking a Use Case to its parent PRD (immutable once assigned).
+   - **Domain:** Research/discovery context (solution-agnostic). Separate from PRD.
+   - **display_order:** Frontmatter field managing sibling PRD ordering without mutating immutable IDs.
+
+These updates ensure the design is formally recorded and product language is consistent across the codebase.
 
