@@ -4,6 +4,7 @@ import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-poli
 import { collectCredentialValues, DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import type { Logger } from "../src/shared/logging/logger";
 
 const makeService = (initial?: unknown) => {
   const store = new FakeDataStore(initial);
@@ -36,7 +37,7 @@ describe("DefaultSettingsService", () => {
     const { service, store, types } = makeService();
     const result = await service.save(DEFAULT_SETTINGS);
     expect(result.ok).toBe(true);
-    expect(await store.load()).toEqual(DEFAULT_SETTINGS);
+    expect(await store.load()).toEqual({ schemaVersion: 1, ...DEFAULT_SETTINGS });
     expect(types()).toContain("settings.updated");
   });
 
@@ -215,7 +216,7 @@ describe("DefaultSettingsService", () => {
     const { service, store, types, events } = makeService({ logging: { level: "debug" } });
     const result = await service.reset();
     expect(result.ok).toBe(true);
-    expect(await store.load()).toEqual(DEFAULT_SETTINGS);
+    expect(await store.load()).toEqual({ schemaVersion: 1, ...DEFAULT_SETTINGS });
     expect(types()).toContain("settings.reset");
     const event = events.find((e) => e.type === "settings.reset");
     expect(event?.payload).toEqual({ profile: "default" });
@@ -887,5 +888,112 @@ describe("scalar shape repair (ci.* / automation.*)", () => {
       nodeVersion: "20",
     });
     expect(settings.automation.evidenceRetentionDays).toBe(30);
+  });
+});
+
+describe("schemaVersion envelope (2.1)", () => {
+  const recordingLogger = () => {
+    const errorCalls: string[] = [];
+    const logger: Logger = {
+      debug() {},
+      info() {},
+      warn() {},
+      error(message: string) {
+        errorCalls.push(message);
+      },
+    };
+    return { logger, errorCalls };
+  };
+
+  const buildServiceWith = (store: FakeDataStore, logger: Logger = silentLogger) =>
+    new DefaultSettingsService(
+      store,
+      new DefaultPathSafetyPolicy(),
+      recordingEventBus().bus,
+      logger,
+    );
+
+  it("stamps schemaVersion into the persisted blob on save", async () => {
+    const store = new FakeDataStore();
+    const service = buildServiceWith(store);
+    const result = await service.save(DEFAULT_SETTINGS);
+    expect(result.ok).toBe(true);
+    expect((await store.load()) as Record<string, unknown>).toMatchObject({ schemaVersion: 1 });
+  });
+
+  it("resets a present blob whose schemaVersion differs from the code, and logs it", async () => {
+    const store = new FakeDataStore();
+    await store.save({
+      schemaVersion: 0,
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "tampered" },
+    });
+    const { logger, errorCalls } = recordingLogger();
+    const service = buildServiceWith(store, logger);
+    const settings = await service.load();
+    expect(settings.ci.nodeVersion).toBe(DEFAULT_SETTINGS.ci.nodeVersion);
+    expect(errorCalls.some((m) => m.toLowerCase().includes("schema"))).toBe(true);
+    const stored = (await store.load()) as Record<string, unknown>;
+    expect(stored.schemaVersion).toBe(1);
+    expect((stored.ci as Record<string, unknown>).nodeVersion).toBe(
+      DEFAULT_SETTINGS.ci.nodeVersion,
+    );
+  });
+
+  it("save() against a stale stored blob completes without deadlocking", async () => {
+    const store = new FakeDataStore();
+    await store.save({ schemaVersion: 0, ...DEFAULT_SETTINGS });
+    const service = buildServiceWith(store);
+    const saved = await Promise.race([
+      service.save(DEFAULT_SETTINGS),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("save() deadlocked")), 1000),
+      ),
+    ]);
+    expect(saved.ok).toBe(true);
+  });
+
+  it("resets a present non-object blob once the schema advances (not just at v1)", async () => {
+    const store = new FakeDataStore();
+    await store.save([1, 2, 3]);
+    const { logger, errorCalls } = recordingLogger();
+    const service = buildServiceWith(store, logger);
+    const settings = await service.load();
+    expect(settings.ci.nodeVersion).toBe(DEFAULT_SETTINGS.ci.nodeVersion);
+    expect(errorCalls.some((m) => m.toLowerCase().includes("schema"))).toBe(false);
+  });
+
+  it("is silent and uses defaults on a fresh install (no data.json)", async () => {
+    const store = new FakeDataStore();
+    const { logger, errorCalls } = recordingLogger();
+    const service = buildServiceWith(store, logger);
+    const settings = await service.load();
+    expect(settings).toEqual(DEFAULT_SETTINGS);
+    expect(errorCalls.some((m) => m.toLowerCase().includes("schema"))).toBe(false);
+  });
+
+  it("loads a matching-version blob normally (sanitizers still run)", async () => {
+    const store = new FakeDataStore();
+    await store.save({
+      schemaVersion: 1,
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "20" },
+    });
+    const service = buildServiceWith(store);
+    const settings = await service.load();
+    expect(settings.ci.nodeVersion).toBe("20");
+  });
+
+  it("merges an unversioned (V1) blob forward-compatibly instead of resetting it", async () => {
+    const store = new FakeDataStore();
+    await store.save({
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "20" },
+    });
+    const { logger, errorCalls } = recordingLogger();
+    const service = buildServiceWith(store, logger);
+    const settings = await service.load();
+    expect(settings.ci.nodeVersion).toBe("20");
+    expect(errorCalls.some((m) => m.toLowerCase().includes("schema"))).toBe(false);
   });
 });

@@ -88,6 +88,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `data.json` now carries a `schemaVersion`; a stored blob whose version
+  doesn't match the code resets to defaults with a logged report (the
+  forward rail for V2 settings changes — pre-announcement beta deliberately
+  resets rather than migrates).
 - Installation documentation: GitHub releases + BRAT are the official
   distribution channel (community-marketplace submission deferred
   indefinitely, per the V2 proposal §5.3).
