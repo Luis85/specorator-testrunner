@@ -189,10 +189,11 @@ const PENDING_MARKER = ["TO", "DO"].join("");
 /** Renders a single step-definition stub for one missing step text. */
 const renderStub = (stepText: string): string => {
   const { expression, params } = toStubExpression(stepText);
-  const signature = ["this: TestWorld", ...params.map((p) => `${p}: string`)].join(", ");
+  const args = params.map((p) => `${p}: string`).join(", ");
+  const signature = args ? `{ page }, ${args}` : `{ page }`;
   return [
     `// ${PENDING_MARKER}: implement this step (generated stub for: ${squash(stepText)})`,
-    `Given("${escapeDoubleQuoted(expression)}", async function (${signature}) {`,
+    `Given("${escapeDoubleQuoted(expression)}", async (${signature}) => {`,
     `  throw new Error("Pending");`,
     `});`,
   ].join("\n");
@@ -201,48 +202,76 @@ const renderStub = (stepText: string): string => {
 /**
  * Builds a complete `*.steps.ts` file body for the given missing steps (RV-4).
  *
- * Each missing step becomes a `Given(...)` with `@cucumber/cucumber`, a
- * pending-work comment (see {@link PENDING_MARKER}) and a
+ * Each missing step becomes a `Given(...)` stub via playwright-bdd's `createBdd()`,
+ * a pending-work comment (see {@link PENDING_MARKER}) and a
  * `throw new Error("Pending")` body. `Given` is used uniformly:
- * `collectStepTexts` discards the Given/When/Then keyword, and cucumber-js
+ * `collectStepTexts` discards the Given/When/Then keyword, and playwright-bdd
  * matches a step definition by its TEXT regardless of which keyword decorator
  * declared it, so a `Given`-declared stub still satisfies a `When`/`Then` step.
  * Quoted literals and Scenario Outline placeholders are parameterised to
  * `{string}` so one stub can serve a family of steps.
  */
-/** The imports a generated steps module's stubs need, by LOCAL binding name. */
-const STEP_DEFINITION_IMPORT_BINDINGS: readonly { local: string; statement: string }[] = [
-  { local: "Given", statement: `import { Given } from "@cucumber/cucumber";` },
-  { local: "TestWorld", statement: `import { TestWorld } from "../support/world";` },
-];
-
-/** Import header every generated steps module needs (Cucumber `Given` + the World). */
-export const STEP_DEFINITION_IMPORTS = STEP_DEFINITION_IMPORT_BINDINGS.map((b) => b.statement).join(
-  "\n",
-);
+const CREATE_BDD_IMPORT = `import { createBdd } from "playwright-bdd";`;
+const CREATE_BDD_DESTRUCTURE = `const { Given, When, Then } = createBdd();`;
 
 /**
- * The LOCAL binding names introduced by a module's named imports, accounting for
- * aliases: `import { Given, When as w } from "x"` → {"Given", "w"}. Used to avoid
- * BOTH a duplicate binding (re-importing `Given` when it's already bound) AND a
- * missing one (the file imports `Given as defineStep`, so `Given` is NOT bound).
+ * The argument list of the file's existing `createBdd(...)` call, or `""` when
+ * none is present. A custom-fixtures setup binds the BDD verbs to a project
+ * `test` (`const { When } = createBdd(test)`), so an appended `Given` must reuse
+ * those SAME arguments — a default `createBdd()` would register the stubs
+ * against Playwright's base fixtures and the implementations would never see the
+ * custom fixtures the rest of the file uses. The capture tolerates one level of
+ * nested parens (`createBdd(makeTest({ headless: true }))`) so the binding it
+ * builds stays balanced; the demo's bare `createBdd()` yields `""`.
  */
-const namedImportLocals = (source: string): Set<string> => {
-  const locals = new Set<string>();
-  for (const match of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*["'][^"']+["']/g)) {
-    for (const raw of match[1].split(",")) {
-      const spec = raw.trim();
-      if (spec.length === 0) continue;
-      const parts = spec.split(/\s+as\s+/);
-      const local = (parts[1] ?? parts[0]).trim(); // alias target, else the name itself
-      if (local.length > 0) locals.add(local);
-    }
+const existingCreateBddArgs = (source: string): string => {
+  const match = /\bcreateBdd\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)/.exec(source);
+  return match ? match[1].trim() : "";
+};
+
+/**
+ * True when the source binds the local name `createBdd` via a named import (from
+ * playwright-bdd OR a custom-fixtures module that re-exports it). An alias
+ * (`createBdd as bdd`) binds a DIFFERENT local name, so it does NOT count — the
+ * generated binding calls `createBdd(...)` literally, so omitting the import
+ * when only an alias (or an unrelated specifier like `test`) is imported would
+ * leave `createBdd` undefined and the appended file would fail to load.
+ */
+const bindsCreateBdd = (source: string): boolean => {
+  for (const match of source.matchAll(/import\s*\{([^}]*)\}\s*from/g)) {
+    if (match[1].split(",").some((spec) => spec.trim() === "createBdd")) return true;
   }
-  return locals;
+  return false;
+};
+
+/** The minimal createBdd binding an appended stub block needs (it only calls `Given`). */
+const createBddGiven = (args: string): string => `const { Given } = createBdd(${args});`;
+
+/** Import header every generated steps module needs (playwright-bdd `createBdd`). */
+const STEP_DEFINITION_IMPORTS = `${CREATE_BDD_IMPORT}\n${CREATE_BDD_DESTRUCTURE}`;
+
+/**
+ * True when the source already binds `Given` at the top level — via a
+ * `createBdd()` destructure (`const { Given … } = createBdd()`) OR a named
+ * import (`import { Given } from '…'`, e.g. a custom-fixtures module that
+ * re-exports `createBdd(test)`). An alias rename binds a DIFFERENT local name,
+ * so `{ Given: g }` / `{ Given as g }` do NOT count. The generated stubs always
+ * call `Given(...)`, so this — not merely "createBdd is called" — decides
+ * whether the append must add its own `Given` binding (and adding one when
+ * `Given` is already bound would be a duplicate declaration that fails to load).
+ */
+const bindsGiven = (source: string): boolean => {
+  if (/\bconst\s*\{[^}]*\bGiven\b(?!\s*:)[^}]*\}\s*=\s*createBdd\s*\(/.test(source)) return true;
+  for (const match of source.matchAll(/import\s*\{([^}]*)\}\s*from/g)) {
+    // A bare `Given` specifier binds the local name `Given`; `Given as g` binds
+    // `g`, so only an exact `Given` (no `as`) counts.
+    if (match[1].split(",").some((spec) => spec.trim() === "Given")) return true;
+  }
+  return false;
 };
 
 /** Renders ONLY the step-definition stub blocks (no import header). */
-export const buildStepDefinitionStubBlocks = (missingSteps: string[]): string =>
+const buildStepDefinitionStubBlocks = (missingSteps: string[]): string =>
   missingSteps.map(renderStub).join("\n\n");
 
 /** A complete, loadable steps module: full import header + stub blocks (new files). */
@@ -251,16 +280,26 @@ export const buildStepDefinitionStubFile = (missingSteps: string[]): string =>
 
 /**
  * Builds the content to APPEND to an existing steps file: the stub blocks, plus
- * ONLY the import statements whose local binding the file does not already have.
- * This avoids a duplicate top-level binding (`Identifier 'Given' has already been
- * declared`) when the import is present, and avoids a missing `Given` when the
- * file imported it under an alias (`import { Given as defineStep }`).
+ * exactly the binding the stubs need. The stubs call `Given(...)`, so:
+ *  - if the file already binds `Given` from createBdd → append blocks only;
+ *  - else prepend `const { Given } = createBdd(<existing args>);` (a separate
+ *    destructure that does NOT clash with an existing `{ When, Then }` one),
+ *    reusing the file's own `createBdd(...)` arguments so custom-fixture stubs
+ *    register against the same `test`, and the `import { createBdd }` too when
+ *    the local `createBdd` name is not yet bound.
+ * Checking the actual `Given` binding (not merely that `createBdd()` is called)
+ * is what keeps a hand-edited file that only destructured `{ When, Then }` from
+ * getting Given-less stubs that fail to load (bddgen/typecheck). The import is
+ * gated on a real local `createBdd` binding — not merely "imports from
+ * playwright-bdd" — so an aliased/partial import doesn't leave `createBdd`
+ * undefined.
  */
 export const buildAppendedStubs = (existingSource: string, missingSteps: string[]): string => {
-  const present = namedImportLocals(existingSource);
-  const header = STEP_DEFINITION_IMPORT_BINDINGS.filter((b) => !present.has(b.local))
-    .map((b) => b.statement)
-    .join("\n");
   const blocks = buildStepDefinitionStubBlocks(missingSteps);
-  return header.length > 0 ? `${header}\n\n${blocks}\n` : `${blocks}\n`;
+  if (bindsGiven(existingSource)) return `${blocks}\n`;
+  const givenBinding = createBddGiven(existingCreateBddArgs(existingSource));
+  const header = bindsCreateBdd(existingSource)
+    ? givenBinding
+    : `${CREATE_BDD_IMPORT}\n${givenBinding}`;
+  return `${header}\n\n${blocks}\n`;
 };

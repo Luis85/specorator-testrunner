@@ -7,24 +7,37 @@ import {
   useCaseIdFromPath,
 } from "../content/gherkin";
 import {
-  findMissingSteps,
+  isStepDefined,
   parseStepDefinitions,
   type StepDefinitionPattern,
 } from "../content/step-definitions";
+import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
+import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { VaultFileSystem } from "../ports/vault-file-system";
+import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
+import { resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
+import type { TestHubSettings } from "../../domain/settings/settings";
 import type { UseCaseService } from "./use-case-service";
 import {
   createFeatureSpecification,
   type FeatureSpecification,
 } from "../../domain/entities/specification";
-import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
+import type { RunId, UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
-import { joinVaultPath } from "../../shared/utils/vault-path";
+import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
+
+// playwright-bdd v9's `bddgen` bin resolves to `dist/cli/index.js` (NOT
+// `dist/cli.js`); run it directly with the configured Node executable so the
+// invocation is shell-free and cross-platform (the `.bin/bddgen` shim is a
+// `.cmd` on Windows). The Node program is `settings.runner.nodeExecutable` —
+// the same executable the runner is launched and validated with — so a user
+// whose `node` is not on PATH still gets detection.
+const BDDGEN_CLI = "node_modules/playwright-bdd/dist/cli/index.js";
 
 export interface SpecificationValidationError {
   line?: number;
@@ -102,6 +115,72 @@ export interface SpecificationService {
   listStepPatterns(): Promise<Result<StepDefinitionPattern[]>>;
 }
 
+/**
+ * Parses `bddgen` stdout for undefined step texts.
+ *
+ * bddgen exits 0 whether or not steps are missing; the presence of the
+ * "Missing step definitions:" header line is the sole signal. Each missing
+ * step's text is extracted from the first quoted argument of its snippet
+ * (`Given('…', …)` → `…`), without the keyword, matching what
+ * `collectStepTexts` returns.
+ */
+/** Header bddgen prints when a run has undefined steps — the sole signal, since bddgen exits 0 regardless. */
+const BDDGEN_MISSING_HEADER = "Missing step definitions:";
+
+export const parseBddgenMissingSteps = (stdout: string): string[] => {
+  if (!stdout.includes(BDDGEN_MISSING_HEADER)) return [];
+  const results: string[] = [];
+  // bddgen emits each step text as a JS string literal, so a step containing the
+  // quote char is escaped: `Given I can't log in` prints `Given('I can\'t log
+  // in', …)`. The non-greedy capture therefore consumes up to the snippet's own
+  // (unescaped) closing quote, and `\\.` lets an escaped quote sit inside the
+  // text without terminating it early.
+  const re = /^(?:Given|When|Then|And|But)\(\s*(['"])((?:\\.|(?!\1).)*)\1\s*,/gm;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(stdout)) !== null) {
+    results.push(unescapeJsString(match[2]));
+  }
+  return results;
+};
+
+/**
+ * Reverses the JS-string escaping bddgen applies to a snippet's step text, so
+ * the result compares equal to the raw feature step. Only `\\` and an escaped
+ * quote/backslash arise in bddgen's emitted format (feature step text has no
+ * real newlines/tabs); a single pass over `\<char>` unescapes them without
+ * double-processing a literal backslash.
+ */
+const unescapeJsString = (value: string): string => value.replace(/\\(.)/g, "$1");
+
+/**
+ * The requested feature's RAW step texts that bddgen reported missing,
+ * de-duplicated and in feature order. bddgen prints cucumber EXPRESSIONS
+ * (`I set header for {string}`), not the feature's raw text
+ * (`I set header for "test"`), so the match must compile each reported
+ * expression and test it against the raw step — an exact string compare would
+ * drop every parameterized step. We return the raw feature texts (what the stub
+ * generator expects), keeping bddgen purely as the "is it missing?" oracle.
+ * `collectStepTexts` can repeat a step across scenarios, hence the `seen` guard.
+ */
+const keepFeatureSteps = (
+  featureTexts: string[],
+  missingPatterns: StepDefinitionPattern[],
+): string[] => {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const text of featureTexts) {
+    // `isStepDefined` tests "does this text match any of these patterns?"; here
+    // the patterns ARE bddgen's MISSING expressions, so a match means the step
+    // IS missing and we keep it (the function's usual "has a definition" sense
+    // is inverted by the pattern set, not by the call).
+    if (!seen.has(text) && isStepDefined(text, missingPatterns)) {
+      seen.add(text);
+      kept.push(text);
+    }
+  }
+  return kept;
+};
+
 export class DefaultSpecificationService implements SpecificationService {
   constructor(
     private readonly settingsService: SettingsService,
@@ -109,6 +188,28 @@ export class DefaultSpecificationService implements SpecificationService {
     private readonly fs: VaultFileSystem,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
+    private readonly childProcess: ChildProcessRunner,
+    private readonly absoluteFs: AbsoluteFileSystem,
+    /**
+     * Screens the configured Node executable's basename against the ADR-0010
+     * allowlist before bddgen is spawned. `runner.nodeExecutable` accepts any
+     * absolute path (settings sanitisation only rejects control chars, `..`,
+     * and relative paths-with-separators), so a synced/tampered setting could
+     * point it at an arbitrary binary (e.g. `/bin/rm`). Validation and test
+     * execution already screen their spawns through this policy; detection now
+     * does too (codex P2).
+     */
+    private readonly commandSafety: CommandSafetyPolicy,
+    /**
+     * Probes the in-flight run id (null when idle). `detectMissingSteps` runs
+     * `bddgen` in the shared `.testrunner` cwd, which clears and regenerates
+     * `.features-gen/**` — the very specs an in-flight `playwright test` is
+     * executing. Refusing while a run is active stops a concurrent diagnostic
+     * from corrupting the live run (codex P2). Defaults to "always idle" so
+     * constructions without an execution service (tests, headless tooling) are
+     * unaffected — same lazy-probe pattern as initialization-service.
+     */
+    private readonly activeRunId: () => RunId | null = () => null,
   ) {}
 
   /** UC-006: non-destructively create a Feature and link it back to its UC. */
@@ -247,10 +348,63 @@ export class DefaultSpecificationService implements SpecificationService {
       return err(appError("VALIDATION_FAILED", `"${featurePath}" is not a valid Feature.`));
     }
 
-    const patterns = await this.listStepPatterns();
-    const definitions = patterns.ok ? patterns.value : [];
+    // bddgen regenerates `.features-gen/**` in the shared runner cwd, so a
+    // diagnostic launched during a run would replace the specs the live
+    // `playwright test` is reading. Refuse rather than corrupt it (codex P2);
+    // the user can re-detect once the run settles.
+    const activeRunId = this.activeRunId();
+    if (activeRunId !== null) {
+      return err(
+        appError(
+          "RUN_IN_PROGRESS",
+          "Finish or cancel the test run before detecting missing steps.",
+          {
+            details: { activeRunId },
+          },
+        ),
+      );
+    }
 
-    const missingSteps = findMissingSteps(collectStepTexts(feature), definitions);
+    const settings = await this.settingsService.load();
+    const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
+    if (!cwd.ok || !(await this.absoluteFs.existsAbsolute(cwd.value))) {
+      return err(appError("RUNNER_NOT_INSTALLED", "Install the runner to detect missing steps."));
+    }
+
+    // Screen the configured Node executable before spawning. The bddgen script
+    // path is a hard-coded constant (not attacker-controllable), so the only
+    // settings-derived part of the argv is `nodeExecutable` — validating it via
+    // the canonical `<node> --version` probe shape rejects a basename outside
+    // the ADR-0010 allowlist (e.g. `/bin/rm`) without running the program.
+    const safeNode = this.commandSafety.assertSafe([settings.runner.nodeExecutable, "--version"]);
+    if (!safeNode.ok) return err(safeNode.error);
+
+    // Scope bddgen to THIS feature (same BDD_FEATURES env the generated config
+    // reads) so a malformed/unrelated feature elsewhere can't make detection
+    // fail and report RUNNER_NOT_INSTALLED. BDD_TAGS is cleared explicitly: the
+    // runner spawn inherits `process.env`, so an ambient tag filter from the
+    // shell that launched Obsidian would otherwise make bddgen skip steps and
+    // under-report what's missing.
+    const ran = await this.childProcess.run({
+      args: [settings.runner.nodeExecutable, BDDGEN_CLI],
+      cwd: cwd.value,
+      env: { BDD_FEATURES: this.runnerRelativeFeature(settings, featurePath), BDD_TAGS: "" },
+    });
+    // bddgen exits 0 even when steps are missing, so a real failure is a spawn
+    // error or a non-zero exit WITHOUT the missing-steps report.
+    const bddgenFailed =
+      !ran.ok || (ran.value.exitCode !== 0 && !ran.value.stdout.includes(BDDGEN_MISSING_HEADER));
+    if (bddgenFailed) {
+      return err(appError("RUNNER_NOT_INSTALLED", "Install the runner to detect missing steps."));
+    }
+
+    // bddgen reports cucumber EXPRESSIONS; treat each as a step-definition
+    // pattern so a parameterized feature step (`… "test"`) matches its
+    // reported expression (`… {string}`).
+    const missingPatterns: StepDefinitionPattern[] = parseBddgenMissingSteps(ran.value.stdout).map(
+      (source) => ({ kind: "expression", source }),
+    );
+    const missingSteps = keepFeatureSteps(collectStepTexts(feature), missingPatterns);
 
     const detectionEvent = createEvent("specification.missingSteps.detected", {
       featurePath,
@@ -262,6 +416,18 @@ export class DefaultSpecificationService implements SpecificationService {
       missing: missingSteps.length,
     });
     return ok({ featurePath, missingSteps, detectionEventId: detectionEvent.id });
+  }
+
+  /**
+   * A feature's path relative to the runner dir, for `BDD_FEATURES` (the
+   * generated config's `features`, resolved relative to that dir).
+   */
+  private runnerRelativeFeature(settings: TestHubSettings, featurePath: VaultPath): string {
+    const folder = settings.paths.featureFilesPath;
+    const rel = featurePath.startsWith(`${folder}/`)
+      ? featurePath.slice(folder.length + 1)
+      : (featurePath.split("/").pop() ?? featurePath);
+    return `${relativeVaultPath(settings.paths.testRunnerPath, folder)}/${rel}`;
   }
 
   /** UC-013: discover the runnable `.feature` files (see the interface doc). */

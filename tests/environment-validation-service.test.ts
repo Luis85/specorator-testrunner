@@ -143,14 +143,14 @@ describe("DefaultEnvironmentValidationService", () => {
   it("is invalid when a managed runner file is missing even if deps/browser are present", async () => {
     const { service, absoluteFs } = build();
     markFullyInstalled(absoluteFs);
-    absoluteFs.existing.delete("/vault/.testrunner/cucumber.mjs");
+    absoluteFs.existing.delete("/vault/.testrunner/playwright.config.ts");
 
     const result = await service.validateEnvironment();
 
     expect(result.valid).toBe(false);
     expect(
       result.issues.some(
-        (i) => i.code === "RUNNER_MISSING_FILE" && i.message.includes("cucumber.mjs"),
+        (i) => i.code === "RUNNER_MISSING_FILE" && i.message.includes("playwright.config.ts"),
       ),
     ).toBe(true);
   });
@@ -195,17 +195,19 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("is invalid when node_modules exists but Cucumber/tsx are missing", async () => {
+  it("is invalid when node_modules exists but playwright-bdd/Playwright are missing", async () => {
     const { service, absoluteFs } = build();
     markFullyInstalled(absoluteFs);
-    absoluteFs.existing.delete("/vault/.testrunner/node_modules/tsx");
+    absoluteFs.existing.delete("/vault/.testrunner/node_modules/playwright-bdd");
 
     const result = await service.validateEnvironment();
 
     expect(result.dependenciesInstalled).toBe(false);
     expect(result.valid).toBe(false);
     expect(
-      result.issues.some((i) => i.code === "DEPENDENCIES_MISSING" && i.message.includes("tsx")),
+      result.issues.some(
+        (i) => i.code === "DEPENDENCIES_MISSING" && i.message.includes("playwright-bdd"),
+      ),
     ).toBe(true);
   });
 
@@ -479,7 +481,7 @@ describe("DefaultEnvironmentValidationService", () => {
     ).toBe(true);
   });
 
-  it("validateCiReadiness is not ready when a managed runner file (cucumber.mjs) is missing", async () => {
+  it("validateCiReadiness is not ready when a managed runner file (playwright.config.ts) is missing", async () => {
     const { service, absoluteFs } = build();
     seedManagedRunnerFiles(absoluteFs);
     absoluteFs.seed(
@@ -488,13 +490,13 @@ describe("DefaultEnvironmentValidationService", () => {
     );
     absoluteFs.existing.add("/vault/.testrunner/package-lock.json");
     absoluteFs.existing.add(`/vault/${DEFAULT_SETTINGS.ci.workflowPath}`);
-    // A damaged runner missing the Cucumber config the test:ci script needs.
-    absoluteFs.existing.delete("/vault/.testrunner/cucumber.mjs");
+    // A damaged runner missing the Playwright config the test:ci script needs.
+    absoluteFs.existing.delete("/vault/.testrunner/playwright.config.ts");
 
     const result = await service.validateCiReadiness(DEFAULT_SETTINGS);
 
     expect(result.ready).toBe(false);
-    expect(result.missingItems.some((m) => m.includes("cucumber.mjs"))).toBe(true);
+    expect(result.missingItems.some((m) => m.includes("playwright.config.ts"))).toBe(true);
   });
 
   it("validateCiReadiness always warns to set E2E_BASE_URL even with a local base URL", async () => {

@@ -24,7 +24,8 @@ export type ErrorCode =
   // settings / validation
   | "SETTINGS_INVALID"
   | "SETTINGS_SAVE_FAILED"
-  | "VALIDATION_FAILED";
+  | "VALIDATION_FAILED"
+  | "RUNNER_NOT_INSTALLED";
 
 export interface AppError {
   code: ErrorCode;

@@ -189,7 +189,13 @@ export class FakeAbsoluteFileSystem implements AbsoluteFileSystem {
     return ok(undefined);
   }
 
+  /** Absolute paths whose deleteAbsolute should fail (e.g. locked/read-only). */
+  readonly deleteFailures = new Set<string>();
+
   async deleteAbsolute(path: string): Promise<Result<void>> {
+    if (this.deleteFailures.has(path)) {
+      return { ok: false, error: { code: "INIT_FAILED", message: `cannot delete ${path}` } };
+    }
     this.written.delete(path);
     this.existing.delete(path);
     return ok(undefined);
@@ -212,6 +218,8 @@ export class FakeChildProcessRunner implements ChildProcessRunner {
   readonly calls: RunCommandRequest[] = [];
   /** command-substring → exit code (default 0). */
   readonly exitCodes = new Map<string, number>();
+  /** command-substring → stdout string returned by {@link run}. */
+  readonly stdouts = new Map<string, string>();
   /** command substrings whose spawn should fail outright. */
   readonly spawnFailures = new Set<string>();
   /** Lines streamed via `onOutput` before a streaming run resolves. */
@@ -278,7 +286,11 @@ export class FakeChildProcessRunner implements ChildProcessRunner {
     for (const [fragment, code] of this.exitCodes) {
       if (command.includes(fragment)) exitCode = code;
     }
-    return ok({ exitCode, stdout: "", stderr: exitCode === 0 ? "" : "boom", durationMs: 1 });
+    let stdout = "";
+    for (const [fragment, out] of this.stdouts) {
+      if (command.includes(fragment)) stdout = out;
+    }
+    return ok({ exitCode, stdout, stderr: exitCode === 0 ? "" : "boom", durationMs: 1 });
   }
 }
 

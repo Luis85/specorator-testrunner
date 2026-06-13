@@ -3,9 +3,15 @@ import type { InitializationService } from "./initialization-service";
 import type { MaintenanceLock } from "./test-execution-service";
 import type { RunnerInstallationService } from "./runner-installation-service";
 import type { SettingsService } from "./settings-service";
+import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { VaultFileSystem } from "../ports/vault-file-system";
+import { resolveRunnerCwd } from "./runner-paths";
+import { TESTRUNNER_MANIFEST_FILE, TESTRUNNER_MANIFEST_VERSION } from "../content/runner-manifest";
+import { parseManifestVersion } from "../content/runner-manifest-version";
 import { appError } from "../../shared/errors/errors";
 import { DEFAULT_SETTINGS } from "../../domain/settings/settings";
+import type { TestHubSettings } from "../../domain/settings/settings";
+import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import type { RunId, VaultPath } from "../../domain/value-objects/identifiers";
 import { createEvent, newId } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -35,7 +41,36 @@ export interface RepairResult {
   repairedFiles: VaultPath[];
   reinstalledPackages: boolean;
   reinstalledBrowsers: boolean;
+  /**
+   * True when repair clean-cut a V1 (cucumber-js era) `.testrunner` to the V2
+   * playwright-bdd environment — detected via the on-disk manifest being older
+   * than the current v2 (RUNNER_MANIFEST_OUTDATED). False for a healthy V2 repair.
+   */
+  migratedFromV1: boolean;
+  /**
+   * The V1-incompatible managed/demo files deleted during the clean-cut (empty
+   * on a healthy V2 repair). The plugin-owned demo entries are recreated at V2
+   * by the subsequent createRunner pass.
+   */
+  removedFiles: VaultPath[];
 }
+
+/**
+ * V1 (cucumber-js) managed + plugin-owned demo files that import the
+ * now-removed `@cucumber/cucumber` and break the V2 runner's typecheck/run.
+ * Clean-cut deletes them BEFORE createRunner re-syncs:
+ *  - the V1-only managed files are gone for good (NOT in the V2 template set);
+ *  - the demo entries (overwrite:false in the V2 templates) are recreated at V2
+ *    once absent, so the demo passes again.
+ * Paths are relative to the resolved runner cwd.
+ */
+const V1_INCOMPATIBLE_FILES = [
+  "cucumber.mjs",
+  "src/support/world.ts",
+  "src/support/hooks.ts",
+  "src/steps/example.steps.ts",
+  "src/pages/ExamplePage.ts",
+] as const;
 
 export interface ResetResult {
   /** The folder(s) removed before re-initialization. */
@@ -80,6 +115,11 @@ export class DefaultMaintenanceService implements MaintenanceService {
     private readonly runnerInstall: RunnerInstallationService,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
+    // The `.testrunner` runtime lives outside the vault index, so the V1→V2
+    // clean-cut deletes its cucumber-era files through the absolute FS port
+    // (VaultFileSystem only deletes folders). Resolves the runner cwd the same
+    // way the specification-service does (resolveRunnerCwd).
+    private readonly absoluteFs: AbsoluteFileSystem,
     private readonly activeRun?: ActiveRunGuard,
     // reset() needs to re-initialize and to remove the regenerable runtime; the
     // maintenance lock closes the reset/run TOCTOU (security L1). All three are
@@ -124,23 +164,40 @@ export class DefaultMaintenanceService implements MaintenanceService {
       // 1. Diagnose what's broken (RV-8 step 1).
       const before = await this.validation.validateEnvironment();
 
-      // 2. Re-sync the managed template files; user-authored steps/pages are
-      //    preserved because their templates declare overwrite:false (RV-8).
-      const recreated = await this.runnerInstall.createRunner(settings);
-      if (!recreated.ok) return err(recreated.error);
-
-      // 3. Reinstall only what's missing. A present-but-unrunnable Playwright
-      //    (node_modules exists yet `npx playwright --version` fails) counts as a
-      //    broken dependency set and triggers a reinstall.
-      // A manifest-version mismatch means the generated runtime shape changed, so
-      // stale node_modules must be reinstalled even though the dependency markers
-      // still resolve. validateEnvironment() already read the manifest before
-      // createRunner overwrote it, so detect the mismatch from `before.issues`
-      // rather than re-reading — DRY and reader-consistent.
+      // A manifest-version mismatch means the on-disk runtime predates the
+      // current v2 shape. We use it for BOTH the V1→V2 clean-cut migration
+      // (below, before createRunner) AND the dependency reinstall (further down).
+      // validateEnvironment() already read the manifest before createRunner
+      // overwrites it, so detect the mismatch from `before.issues` rather than
+      // re-reading — DRY and reader-consistent.
       const manifestMismatch = before.issues.some(
         (issue) => issue.code === "RUNNER_MANIFEST_OUTDATED",
       );
 
+      // 2. V1→V2 clean-cut (US-051): when the manifest is outdated, DELETE the
+      //    cucumber-era files that import the now-removed `@cucumber/cucumber`
+      //    BEFORE re-syncing. The V1-only managed files (cucumber.mjs, world,
+      //    hooks) are gone for good; the plugin-owned demo (example.steps/
+      //    ExamplePage) is recreated at V2 by the createRunner pass below (its
+      //    templates are overwrite:false → CREATE when absent). Guarded so a
+      //    healthy V2 repair (no mismatch) deletes nothing.
+      const migration = manifestMismatch
+        ? await this.migrateV1Runner(settings)
+        : ok({ migrated: false, removed: [] as VaultPath[] });
+      if (!migration.ok) return err(migration.error);
+      const removedFiles = migration.value.removed;
+
+      // 3. Re-sync the managed template files; user-authored steps/pages are
+      //    preserved because their templates declare overwrite:false (RV-8). On a
+      //    migration this also recreates the now-deleted demo at V2.
+      const recreated = await this.runnerInstall.createRunner(settings);
+      if (!recreated.ok) return err(recreated.error);
+
+      // 4. Reinstall only what's missing. A present-but-unrunnable Playwright
+      //    (node_modules exists yet `npx playwright --version` fails) counts as a
+      //    broken dependency set and triggers a reinstall. A manifest-version
+      //    mismatch (the @cucumber→playwright-bdd swap) also forces a reinstall
+      //    even though the dependency markers still resolve.
       let reinstalledPackages = false;
       if (!before.dependenciesInstalled || !before.playwrightAvailable || manifestMismatch) {
         const deps = await this.runnerInstall.installDependencies(settings);
@@ -156,17 +213,34 @@ export class DefaultMaintenanceService implements MaintenanceService {
       if (!browsers.ok) return err(browsers.error);
       const reinstalledBrowsers = true;
 
-      // 4. Re-validate (publishes testrunner.validated, RV-8 step "validate").
+      // 5. Re-validate (publishes testrunner.validated, RV-8 step "validate").
       await this.validation.validateEnvironment();
 
       const repairedFiles = recreated.value.createdFiles;
+      const migratedFromV1 = migration.value.migrated;
       await this.eventBus.publish(createEvent("testrunner.repaired", { repairedFiles }));
       this.logger.info("Runner repaired", {
         files: repairedFiles.length,
         reinstalledPackages,
         reinstalledBrowsers,
+        migratedFromV1,
+        removedFiles: removedFiles.length,
       });
-      return ok({ repairedFiles, reinstalledPackages, reinstalledBrowsers });
+      if (migratedFromV1) {
+        // Report-only: we do NOT touch genuinely user-authored (non-demo) step
+        // files; their Cucumber-World form must be re-authored as createBdd steps.
+        this.logger.info(
+          "Migrated .testrunner from V1 (cucumber-js) to playwright-bdd: any custom V1 step " +
+            "files written against the Cucumber World must be re-authored as createBdd steps.",
+        );
+      }
+      return ok({
+        repairedFiles,
+        reinstalledPackages,
+        reinstalledBrowsers,
+        migratedFromV1,
+        removedFiles,
+      });
     } finally {
       lock?.end();
     }
@@ -325,5 +399,46 @@ export class DefaultMaintenanceService implements MaintenanceService {
       );
     }
     return ok(undefined);
+  }
+
+  /**
+   * V1→V2 clean-cut: delete the cucumber-era files that break the V2 runner.
+   * Resolves the absolute runner cwd (the runner runtime lives outside the vault
+   * index) and removes each V1-incompatible file that is actually present. When
+   * the cwd cannot be resolved we skip the deletions rather than guess a path.
+   * `migrated` is true only for an OLDER/unversioned (V1-era) runner; a NEWER
+   * runner (a downgrade / Obsidian Sync from a future plugin) is left untouched
+   * — its files are NOT V1 cucumber, so deleting them would corrupt it.
+   * `removed` lists the paths that EXISTED and were deleted, so the change report
+   * shows only real deletions — not idempotent no-ops for files a given V1 runner
+   * never had. MUST run BEFORE createRunner so the deleted demo is recreated at
+   * V2. A delete that actually FAILS (locked/read-only stale file) returns `err`
+   * and fails the repair: the demo files are recreated `overwrite:false`, so a
+   * surviving V1 `@cucumber`/World file would leave the runner un-loadable while
+   * Repair falsely reported success.
+   */
+  private async migrateV1Runner(
+    settings: TestHubSettings,
+  ): Promise<Result<{ migrated: boolean; removed: VaultPath[] }>> {
+    const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
+    if (!cwd.ok) return ok({ migrated: false, removed: [] });
+    const manifest = await this.absoluteFs.readAbsolute(`${cwd.value}/${TESTRUNNER_MANIFEST_FILE}`);
+    const version = parseManifestVersion(manifest.ok ? manifest.value : undefined);
+    // Clean-cut only an OLDER/unversioned runner. A newer manifest is NOT V1.
+    if (version !== null && version >= TESTRUNNER_MANIFEST_VERSION) {
+      return ok({ migrated: false, removed: [] });
+    }
+    const removed: VaultPath[] = [];
+    for (const relPath of V1_INCOMPATIBLE_FILES) {
+      const abs = `${cwd.value}/${relPath}`;
+      // Only act on a file that actually exists: deleteAbsolute is
+      // force-idempotent (no error on a missing path), so without this guard the
+      // change report would claim deletions a fresh-ish V1 runner never had.
+      if (!(await this.absoluteFs.existsAbsolute(abs))) continue;
+      const deleted = await this.absoluteFs.deleteAbsolute(abs);
+      if (!deleted.ok) return err(deleted.error);
+      removed.push(unsafeVaultPath(relPath));
+    }
+    return ok({ migrated: true, removed });
   }
 }

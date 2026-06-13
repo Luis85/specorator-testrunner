@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAppendedStubs,
   buildStepDefinitionStubFile,
   findMissingSteps,
   isStepDefined,
   parseStepDefinitions,
 } from "../src/application/content/step-definitions";
 
-const STEPS_SOURCE = `import { Given, When, Then } from "@cucumber/cucumber";
+// STEPS_SOURCE uses createBdd form (playwright-bdd) to reflect the generated shape.
+const STEPS_SOURCE = `import { createBdd } from "playwright-bdd";
+const { Given, When, Then } = createBdd();
 
-Given("I open the local example page", async function () {});
-When("I click the {string} button", async function (label) {});
-Then(/^I should see (\\d+) results$/, async function (count) {});
-And('a quoted single step', function () {});
+Given("I open the local example page", async ({ page }) => {});
+When("I click the {string} button", async ({ page }, label) => {});
+Then(/^I should see (\\d+) results$/, async ({ page }, count) => {});
+Given('a quoted single step', async ({ page }) => {});
 `;
 
 describe("parseStepDefinitions", () => {
@@ -131,28 +134,42 @@ describe("findMissingSteps", () => {
 });
 
 describe("buildStepDefinitionStubFile", () => {
-  it("emits a cucumber/world import header and one Given stub per step", () => {
+  it("emits a createBdd import header and one Given stub per step", () => {
     const file = buildStepDefinitionStubFile(["I open the page", "the result is shown"]);
-    expect(file).toContain(`import { Given } from "@cucumber/cucumber";`);
-    expect(file).toContain(`import { TestWorld } from "../support/world";`);
-    expect(file).toContain(`Given("I open the page", async function (this: TestWorld) {`);
-    expect(file).toContain(`Given("the result is shown", async function (this: TestWorld) {`);
+    expect(file).toContain(`import { createBdd } from "playwright-bdd";`);
+    expect(file).toContain(`const { Given, When, Then } = createBdd();`);
+    expect(file).toContain(`Given("I open the page", async ({ page }) => {`);
+    expect(file).toContain(`Given("the result is shown", async ({ page }) => {`);
     // Every stub is pending and TODO-flagged for the user to fill in.
     expect(file.match(/throw new Error\("Pending"\);/g)).toHaveLength(2);
     expect(file).toContain("// TODO: implement this step");
+    expect(file).not.toContain("@cucumber/cucumber");
+    expect(file).not.toContain("TestWorld");
+  });
+
+  it("renders a createBdd stub with page fixture and typed params", () => {
+    const file = buildStepDefinitionStubFile(['I click the "Continue" button']);
+    expect(file).toContain('import { createBdd } from "playwright-bdd";');
+    expect(file).toContain("const { Given, When, Then } = createBdd();");
+    expect(file).toContain(
+      'Given("I click the {string} button", async ({ page }, arg1: string) =>',
+    );
+    expect(file).not.toContain("@cucumber/cucumber");
+    expect(file).not.toContain("TestWorld");
+    expect(file).not.toContain("this:");
   });
 
   it("parameterises quoted literals to {string} with one typed arg each", () => {
     const file = buildStepDefinitionStubFile([`I click the "Continue" button`]);
     expect(file).toContain(
-      `Given("I click the {string} button", async function (this: TestWorld, arg1: string) {`,
+      `Given("I click the {string} button", async ({ page }, arg1: string) => {`,
     );
   });
 
   it("parameterises Scenario Outline placeholders to {string}", () => {
     const file = buildStepDefinitionStubFile(["I select <option> from <menu>"]);
     expect(file).toContain(
-      `Given("I select {string} from {string}", async function (this: TestWorld, arg1: string, arg2: string) {`,
+      `Given("I select {string} from {string}", async ({ page }, arg1: string, arg2: string) => {`,
     );
   });
 
@@ -165,5 +182,87 @@ describe("buildStepDefinitionStubFile", () => {
     const file = buildStepDefinitionStubFile([`I click the "Continue" button`]);
     const defs = parseStepDefinitions(file);
     expect(isStepDefined(`I click the "Save" button`, defs)).toBe(true);
+  });
+});
+
+describe("buildAppendedStubs", () => {
+  it("appends only the missing createBdd header to a file that already has it", () => {
+    const existing =
+      'import { createBdd } from "playwright-bdd";\nconst { Given, When, Then } = createBdd();\n\nGiven("x", async ({ page }) => {});\n';
+    const block = buildAppendedStubs(existing, ["I do a new thing"]);
+    expect(block).not.toContain("import { createBdd }");
+    expect(block).toContain('Given("I do a new thing", async ({ page }) =>');
+  });
+
+  it("prepends the import + a Given binding when appending to a file without playwright-bdd", () => {
+    const existing = `// notes, no imports here\n`;
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).toContain('import { createBdd } from "playwright-bdd";');
+    expect(block).toContain("const { Given } = createBdd();");
+    expect(block).toContain('Given("a fresh step"');
+  });
+
+  it("adds a Given binding when the file calls createBdd() but destructured only other verbs (P2)", () => {
+    // A hand-edited file that trimmed its destructure to the verbs it uses must
+    // still get a Given binding — the stubs call Given(...). No duplicate import,
+    // and `const { Given } = createBdd()` does not clash with the existing
+    // `{ When, Then }` destructure.
+    const existing =
+      'import { createBdd } from "playwright-bdd";\nconst { When, Then } = createBdd();\n\nWhen("x", async ({ page }) => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).not.toContain("import { createBdd }");
+    expect(block).toContain("const { Given } = createBdd();");
+    expect(block).toContain('Given("a fresh step"');
+  });
+
+  it("does not re-bind Given when it is already destructured from createBdd", () => {
+    const existing =
+      'import { createBdd } from "playwright-bdd";\nconst { Given, When } = createBdd();\n\nGiven("x", async ({ page }) => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).not.toContain("createBdd()"); // no new binding line
+    expect(block).toContain('Given("a fresh step"');
+  });
+
+  it("reuses a Given bound via a custom import — no duplicate binding (P2)", () => {
+    // A custom-fixtures module re-exports `createBdd(test)` and the file imports
+    // `Given` from it; the append must NOT add its own `const { Given } = …`.
+    const existing =
+      'import { Given } from "../fixtures";\n\nGiven("x", async ({ page }) => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).not.toContain("createBdd");
+    expect(block).toContain('Given("a fresh step"');
+  });
+
+  it("preserves the existing createBdd(test) fixture argument in the new Given binding (P2)", () => {
+    // A custom-fixtures file binds verbs to a project `test`:
+    // `const { When } = createBdd(test)`. The appended Given binding must reuse
+    // `test` so the stubs register against the same fixtures — a default
+    // `createBdd()` would give them Playwright's base fixtures instead.
+    const existing =
+      'import { test } from "../fixtures";\nimport { createBdd } from "playwright-bdd";\nconst { When } = createBdd(test);\n\nWhen("x", async ({ page }) => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).toContain("const { Given } = createBdd(test);");
+    expect(block).not.toContain("createBdd();");
+    expect(block).toContain('Given("a fresh step"');
+  });
+
+  it("preserves a nested-call createBdd argument without truncating at the inner paren (P2)", () => {
+    // `[^)]*` would have stopped at the inner `)`, yielding an unbalanced
+    // `createBdd(makeTest({ headless: true })` that fails to compile.
+    const existing =
+      'import { createBdd } from "playwright-bdd";\nconst { When } = createBdd(makeTest({ headless: true }));\n\nWhen("x", async () => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).toContain("const { Given } = createBdd(makeTest({ headless: true }));");
+  });
+
+  it("adds the createBdd import when playwright-bdd is imported but createBdd isn't locally bound (P2)", () => {
+    // Importing only `test` (or `createBdd as bdd`) from playwright-bdd does NOT
+    // bind the local name `createBdd`, so the appended `createBdd()` call would
+    // be undefined unless the import is added.
+    const existing = 'import { test } from "playwright-bdd";\n\ntest("x", () => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).toContain('import { createBdd } from "playwright-bdd";');
+    expect(block).toContain("const { Given } = createBdd();");
+    expect(block).toContain('Given("a fresh step"');
   });
 });

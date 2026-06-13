@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
-import { DefaultSpecificationService } from "../src/application/services/specification-service";
+import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
+import {
+  DefaultSpecificationService,
+  parseBddgenMissingSteps,
+} from "../src/application/services/specification-service";
 import { parseFeature } from "../src/application/content/gherkin";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
+import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
 import {
+  FakeAbsoluteFileSystem,
+  FakeChildProcessRunner,
   FakeDataStore,
   FakePrdLookup,
   FakeVaultFileSystem,
@@ -15,17 +22,61 @@ import {
   silentLogger,
 } from "./fakes";
 
-const build = () => {
+/** Bddgen stdout with 2 missing steps (matching the real captured format). */
+const bddgenTwoMissing = (text1: string, text2: string): string =>
+  `Missing step definitions: 2
+
+Given('${text1}', async ({}) => {
+  // Step: Given ${text1}
+  // From: features/UC-001-open-example-page.feature:13:5
+});
+
+When('${text2}', async ({}) => {
+  // Step: When ${text2}
+  // From: features/UC-001-open-example-page.feature:14:5
+});
+
+Use snippets above to create missing steps.
+`;
+
+/** Bddgen stdout when there are no missing steps. */
+const bddgenNoneMissing = (): string =>
+  `BDD generator started
+All steps are defined.
+`;
+
+const build = (
+  dataSeed?: Record<string, unknown>,
+  opts?: { activeRunId?: () => string | null },
+) => {
   const fs = new FakeVaultFileSystem();
+  const absoluteFs = new FakeAbsoluteFileSystem();
+  const childProcess = new FakeChildProcessRunner();
   const { bus, events, types } = recordingEventBus();
   const settings = new DefaultSettingsService(
-    new FakeDataStore(),
+    new FakeDataStore(dataSeed),
     new DefaultPathSafetyPolicy(),
     bus,
   );
   const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup());
-  const service = new DefaultSpecificationService(settings, useCases, fs, bus, silentLogger);
-  return { service, useCases, fs, events, types };
+  const service = new DefaultSpecificationService(
+    settings,
+    useCases,
+    fs,
+    bus,
+    silentLogger,
+    childProcess,
+    absoluteFs,
+    new DefaultCommandSafetyPolicy(),
+    opts?.activeRunId ?? (() => null),
+  );
+  return { service, useCases, fs, absoluteFs, childProcess, events, types };
+};
+
+/** Seeds the fake absolute filesystem so the runner folder appears to exist. */
+const seedRunnerFolder = (absoluteFs: FakeAbsoluteFileSystem): void => {
+  // Default basePath is "/vault"; default testRunnerPath is ".testrunner"
+  absoluteFs.existing.add("/vault/.testrunner");
 };
 
 const seedUseCase = (fs: FakeVaultFileSystem, id = "UC-001", title = "Open Example Page") => {
@@ -341,57 +392,336 @@ describe("DefaultSpecificationService.listStepPatterns", () => {
   });
 });
 
+describe("parseBddgenMissingSteps", () => {
+  it("extracts two missing step texts from the real bddgen format", () => {
+    const stdout = `Missing step definitions: 2
+
+Given('a totally undefined step', async ({}) => {
+  // Step: Given a totally undefined step
+  // From: features/UC-001-open-example-page.feature:13:5
+});
+
+When('I do something unmapped', async ({}) => {
+  // Step: When I do something unmapped
+  // From: features/UC-001-open-example-page.feature:14:5
+});
+
+Use snippets above to create missing steps.
+`;
+    expect(parseBddgenMissingSteps(stdout)).toEqual([
+      "a totally undefined step",
+      "I do something unmapped",
+    ]);
+  });
+
+  it("returns an empty array when there are no missing steps", () => {
+    const stdout = `BDD generator started\nAll steps are defined.\n`;
+    expect(parseBddgenMissingSteps(stdout)).toEqual([]);
+  });
+
+  it("returns an empty array for an empty string", () => {
+    expect(parseBddgenMissingSteps("")).toEqual([]);
+  });
+
+  it("handles double-quoted step arguments in addition to single-quoted", () => {
+    const stdout = `Missing step definitions: 1\n\nThen("an outcome step", async ({}) => {});\n`;
+    expect(parseBddgenMissingSteps(stdout)).toEqual(["an outcome step"]);
+  });
+
+  it("returns an empty array for malformed output that has the header but no snippets", () => {
+    const stdout = `Missing step definitions: 0\n\nUse snippets above to create missing steps.\n`;
+    expect(parseBddgenMissingSteps(stdout)).toEqual([]);
+  });
+
+  it("unescapes an escaped quote in a step text so it matches the raw feature (codex P2)", () => {
+    // For `Given I can't log in`, bddgen emits the JS literal `'I can\'t log in'`.
+    // The escaped quote must not terminate the capture, and the backslash must be
+    // stripped so the result equals the feature's raw `I can't log in`.
+    const stdout = `Missing step definitions: 1\n\nGiven('I can\\'t log in', async ({}) => {});\n`;
+    expect(parseBddgenMissingSteps(stdout)).toEqual(["I can't log in"]);
+  });
+});
+
 describe("DefaultSpecificationService.detectMissingSteps", () => {
-  it("reports steps not matched by any step definition", async () => {
-    const { service, fs, types } = build();
+  it("refuses while a run is active so bddgen can't regenerate the live run's specs (codex P2)", async () => {
+    // bddgen rewrites `.features-gen` in the shared runner cwd; running it
+    // during a live `playwright test` would replace the specs that run reads.
+    const { service, fs, absoluteFs, childProcess } = build(undefined, {
+      activeRunId: () => "RUN-2026-06-13-120000",
+    });
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("RUN_IN_PROGRESS");
+    expect(result.error.details?.activeRunId).toBe("RUN-2026-06-13-120000");
+    // bddgen must never have been spawned — refusal precedes the diagnostic.
+    expect(childProcess.calls).toHaveLength(0);
+  });
+
+  it("bddgen reports two missing steps → returns only the steps in THIS feature", async () => {
+    const { service, fs, absoluteFs, childProcess, types } = build();
     const path = vp("Specifications/features/UC-001-demo.feature");
     fs.files.set(
       path,
       `Feature: Demo
   Scenario: S
-    Given I open the local example page
-    When I click the "Continue" button
-    Then I have not implemented this
+    Given a totally undefined step
+    When I do something unmapped
+    Then I open the local example page
 `,
     );
-    fs.files.set(
-      ".testrunner/src/steps/example.steps.ts",
-      `Given("I open the local example page", async () => {});
-When("I click the {string} button", async () => {});`,
+    seedRunnerFolder(absoluteFs);
+    // Two of the three steps are "missing" according to bddgen.
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("a totally undefined step", "I do something unmapped"),
     );
 
     const result = await service.detectMissingSteps(path);
+
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.featurePath).toBe(path);
-    expect(result.value.missingSteps).toEqual(["I have not implemented this"]);
+    expect(result.value.missingSteps).toEqual([
+      "a totally undefined step",
+      "I do something unmapped",
+    ]);
+    expect(result.value.detectionEventId).toBeTruthy();
     expect(types()).toContain("specification.missingSteps.detected");
   });
 
-  it("finds step definitions in nested steps subfolders (recursive, matches src/steps/**)", async () => {
-    const { service, fs } = build();
-    const path = vp("Specifications/features/UC-001-nested.feature");
-    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a nested step\n");
-    fs.files.set(
-      ".testrunner/src/steps/auth/login.steps.ts",
-      `Given("a nested step", async () => {});`,
+  it("matches a bddgen {string} expression back to the feature's quoted step (codex P1)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    // The feature step carries a quoted literal; bddgen prints the cucumber
+    // EXPRESSION ({string}), which an exact compare would never match.
+    fs.files.set(path, 'Feature: Demo\n  Scenario: S\n    Given I set header for "test"\n');
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("I set header for {string}", "a step from a different feature"),
     );
 
     const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The RAW feature step is returned (the stub generator parameterizes it),
+    // and the unrelated other-feature expression is filtered out.
+    expect(result.value.missingSteps).toEqual(['I set header for "test"']);
+  });
+
+  it("invokes bddgen via the playwright-bdd v9 entrypoint (dist/cli/index.js)", async () => {
+    // playwright-bdd v9's `bddgen` bin is `dist/cli/index.js`; the non-existent
+    // `dist/cli.js` would crash node and make detection always report
+    // RUNNER_NOT_INSTALLED. (The fake matches by the "playwright-bdd" substring,
+    // so this asserts the exact argv.)
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    await service.detectMissingSteps(path);
+
+    const bddgenCall = childProcess.calls.find((c) =>
+      c.args.some((a) => a.includes("playwright-bdd")),
+    );
+    expect(bddgenCall?.args).toEqual(["node", "node_modules/playwright-bdd/dist/cli/index.js"]);
+  });
+
+  it("scopes detection's bddgen to the selected feature via BDD_FEATURES (codex P2)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    await service.detectMissingSteps(path);
+
+    const bddgenCall = childProcess.calls.find((c) =>
+      c.args.some((a) => a.includes("playwright-bdd")),
+    );
+    // Runner-relative path → bddgen parses only this feature, not the whole vault.
+    expect(bddgenCall?.env?.BDD_FEATURES).toBe("../Specifications/features/UC-001-demo.feature");
+    // BDD_TAGS is cleared so an ambient tag filter can't make bddgen skip steps
+    // and under-report what's missing (codex P2).
+    expect(bddgenCall?.env?.BDD_TAGS).toBe("");
+  });
+
+  it("preserves a nested subfolder segment in detection's BDD_FEATURES (codex P2)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/auth/UC-009-login.feature");
+    fs.files.set(path, "Feature: Login\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    await service.detectMissingSteps(path);
+
+    const bddgenCall = childProcess.calls.find((c) =>
+      c.args.some((a) => a.includes("playwright-bdd")),
+    );
+    // The `auth/` segment must survive — a `.pop()` basename would scope bddgen
+    // to the wrong (or no) feature.
+    expect(bddgenCall?.env?.BDD_FEATURES).toBe(
+      "../Specifications/features/auth/UC-009-login.feature",
+    );
+  });
+
+  it("runs bddgen with the configured Node executable, not a hard-coded `node`", async () => {
+    // A user whose bare `node` is off PATH sets runner.nodeExecutable; bddgen
+    // must use it (the runner is launched/validated with the same executable).
+    const { service, fs, absoluteFs, childProcess } = build({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, nodeExecutable: "/opt/managed/node" },
+    });
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    await service.detectMissingSteps(path);
+
+    const bddgenCall = childProcess.calls.find((c) =>
+      c.args.some((a) => a.includes("playwright-bdd")),
+    );
+    expect(bddgenCall?.args).toEqual([
+      "/opt/managed/node",
+      "node_modules/playwright-bdd/dist/cli/index.js",
+    ]);
+  });
+
+  it("rejects a non-node executable before spawning bddgen (codex P2)", async () => {
+    // `runner.nodeExecutable` accepts any absolute path (settings sanitisation
+    // only blocks control chars/`..`/relative-with-separators), so detection
+    // must screen the basename against the ADR-0010 allowlist — a synced
+    // `/bin/rm` would otherwise be spawned with the bddgen path as its argument.
+    const { service, fs, absoluteFs, childProcess } = build({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, nodeExecutable: "/bin/rm" },
+    });
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+
+    const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("COMMAND_DISALLOWED");
+    // The dangerous program must never have been spawned.
+    expect(childProcess.calls).toHaveLength(0);
+  });
+
+  it("returns a step whose text contains an apostrophe bddgen escaped (codex P2)", async () => {
+    // End-to-end: bddgen escapes the quote in its snippet; detection must
+    // unescape it so the raw feature step `I can't log in` is matched and kept.
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given I can't log in\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      `Missing step definitions: 1\n\nGiven('I can\\'t log in', async ({}) => {});\n`,
+    );
+
+    const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.missingSteps).toEqual(["I can't log in"]);
+  });
+
+  it("bddgen reports no missing steps → empty missingSteps, event still published", async () => {
+    const { service, fs, absoluteFs, childProcess, types } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    const result = await service.detectMissingSteps(path);
+
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.missingSteps).toEqual([]);
+    expect(types()).toContain("specification.missingSteps.detected");
   });
 
-  it("treats every step as missing when no steps folder exists", async () => {
+  it("runner not installed (folder absent) → returns RUNNER_NOT_INSTALLED error", async () => {
     const { service, fs } = build();
     const path = vp("Specifications/features/UC-001-demo.feature");
     fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    // absoluteFs.existing is empty — runner folder does not exist.
 
     const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("RUNNER_NOT_INSTALLED");
+  });
+
+  it("spawn fails (run returns err) → returns RUNNER_NOT_INSTALLED error", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.spawnFailures.add("playwright-bdd");
+
+    const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("RUNNER_NOT_INSTALLED");
+  });
+
+  it("bddgen exits non-zero with no parseable block → returns RUNNER_NOT_INSTALLED", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.exitCodes.set("playwright-bdd", 1);
+    // No "Missing step definitions:" header in the output.
+    childProcess.stdouts.set("playwright-bdd", "Error: config not found\n");
+
+    const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("RUNNER_NOT_INSTALLED");
+  });
+
+  it("bddgen lists a step from another feature — filtered out (per-feature contract)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given my own step\n");
+    seedRunnerFolder(absoluteFs);
+    // bddgen reports two missing steps, but only one belongs to this feature.
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("my own step", "step from another feature"),
+    );
+
+    const result = await service.detectMissingSteps(path);
+
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.missingSteps).toEqual(["a step"]);
+    // Only the step in THIS feature is kept; the other-feature step is filtered.
+    expect(result.value.missingSteps).toEqual(["my own step"]);
+  });
+
+  it("getVaultBasePath fails → returns RUNNER_NOT_INSTALLED", async () => {
+    const { service, fs, absoluteFs } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    absoluteFs.basePath = null; // causes getVaultBasePath to fail
+
+    const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("RUNNER_NOT_INSTALLED");
   });
 
   it("fails when the feature does not parse", async () => {
@@ -400,5 +730,6 @@ When("I click the {string} button", async () => {});`,
     fs.files.set(path, "no feature here\n");
     const result = await service.detectMissingSteps(path);
     expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
   });
 });

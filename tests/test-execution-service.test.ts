@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultSuiteService } from "../src/application/services/suite-service";
 import {
-  appendScopedArgs,
   DefaultTestExecutionService,
   tokenizeCommand,
   type TestExecutionService,
@@ -28,20 +27,6 @@ const waitForActive = async (service: TestExecutionService): Promise<void> => {
   for (let i = 0; i < 100 && service.activeRunId() === null; i++) {
     await Promise.resolve();
   }
-};
-
-/**
- * Absolute path to the runner's managed cucumber.mjs (vault base `/vault` +
- * default testRunnerPath `.testrunner`).
- */
-const CUCUMBER_MJS_PATH = "/vault/.testrunner/cucumber.mjs";
-
-/** Minimal cucumber.mjs content that defines the `scoped` profile. */
-const MODERN_CUCUMBER_MJS = "export const scoped = { paths: [] };";
-
-/** Seeds the modern cucumber.mjs so scopedProfileArgs returns profile args. */
-const seedModernCucumberMjs = (absoluteFs: FakeAbsoluteFileSystem): void => {
-  absoluteFs.seed(CUCUMBER_MJS_PATH, MODERN_CUCUMBER_MJS);
 };
 
 const FIXED_NOW = new Date("2026-06-01T10:00:00.000Z");
@@ -126,25 +111,6 @@ describe("tokenizeCommand", () => {
   });
 });
 
-describe("appendScopedArgs", () => {
-  it("inserts a single -- when the base has none", () => {
-    expect(appendScopedArgs(["npm", "run", "test"], ["--tags", "@x"])).toEqual([
-      "npm",
-      "run",
-      "test",
-      "--",
-      "--tags",
-      "@x",
-    ]);
-  });
-
-  it("does not add a second -- when the base already forwards args", () => {
-    expect(
-      appendScopedArgs(["npm", "run", "test", "--", "--format", "progress"], ["--tags", "@x"]),
-    ).toEqual(["npm", "run", "test", "--", "--format", "progress", "--tags", "@x"]);
-  });
-});
-
 describe("DefaultTestExecutionService maintenance lock (security L1 TOCTOU)", () => {
   it("rejects execute() while maintenance holds the lock, reserving no slot", async () => {
     const { service } = build();
@@ -210,18 +176,21 @@ describe("DefaultTestExecutionService", () => {
     expect(result.value.status).toBe("passed");
     expect(result.value.id).toBe("RUN-2026-06-01-100000");
     expect(childProcess.calls[0].args).toEqual(["npm", "run", "test:smoke"]);
+    // Scopes the bddgen step inside test:smoke to @smoke so a malformed
+    // non-@smoke feature can't fail "Run demo test" during generation.
+    expect(childProcess.calls[0].env?.BDD_TAGS).toBe("@smoke");
     expect(types()).toEqual(["testrun.requested", "testrun.started", "testrun.completed"]);
   });
 
   it("resolves the all command", async () => {
     const { service } = build();
     const result = await service.execute({ scope: "all", target: "all" });
-    // Bare-glob branch (no deprecated UCs): no explicit CLI paths, so the
-    // `scoped` profile is NOT selected — the config glob runs unmodified.
+    // Bare-glob branch (no deprecated UCs): no positional feature paths, so the
+    // config glob runs unmodified — no scope args appended.
     expect(result.ok && result.value.command).toBe("npm run test");
   });
 
-  it("demo and suite scopes do not select the scoped profile (no CLI feature paths)", async () => {
+  it("no scope passes a cucumber --profile arg (playwright-bdd has no profiles)", async () => {
     const { service, childProcess, fs } = build();
     seedSuite(fs, "regression", "@regression");
 
@@ -230,6 +199,12 @@ describe("DefaultTestExecutionService", () => {
 
     await service.execute({ scope: "suite", target: "regression" });
     expect(childProcess.calls[1].args).not.toContain("--profile");
+
+    await service.execute({
+      scope: "feature",
+      target: "Specifications/features/checkout.feature",
+    });
+    expect(childProcess.calls[2].args).not.toContain("--profile");
   });
 
   it("clears any prior Cucumber report before running (no stale import)", async () => {
@@ -346,17 +321,13 @@ describe("DefaultTestExecutionService", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Verbatim tag as a single literal argv entry (AD-4, no quoting/escaping).
-    expect(childProcess.calls[0].args).toEqual([
-      "npm",
-      "run",
-      "test",
-      "--",
-      "--tags",
-      "@smoke and not @wip",
-    ]);
-    // Display string quotes only the space-bearing arg, for readability.
-    expect(result.value.command).toBe('npm run test -- --tags "@smoke and not @wip"');
+    // Suite runs use playwright-bdd's native tag mechanism via BDD_TAGS on the
+    // spawn env (the generated config reads process.env.BDD_TAGS) — NOT a
+    // cucumber `--tags` arg. The base command is otherwise unchanged.
+    expect(childProcess.calls[0].args).toEqual(["npm", "run", "test"]);
+    expect(childProcess.calls[0].env?.BDD_TAGS).toBe("@smoke and not @wip");
+    // The display command stays the bare base — the tag goes through the env.
+    expect(result.value.command).toBe("npm run test");
     // suite.executed precedes the terminal event (UC-013).
     expect(types()).toEqual([
       "testrun.requested",
@@ -366,62 +337,52 @@ describe("DefaultTestExecutionService", () => {
     ]);
   });
 
-  it("resolves the feature command relative to the runner cwd", async () => {
-    const { service, childProcess, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
+  it("merges BDD_TAGS on top of the Active SUT env (BASE_URL + auth) for suite runs", async () => {
+    const { service, childProcess, fs } = build();
+    seedSuite(fs, "smoke", "@smoke");
+    await service.execute({ scope: "suite", target: "smoke" });
+    // The returned suite env is merged with runEnv(settings), not replacing it.
+    expect(childProcess.calls[0].env?.BDD_TAGS).toBe("@smoke");
+    expect(childProcess.calls[0].env?.BASE_URL).toBe(
+      "file://./.testrunner/src/fixtures/example.html",
+    );
+  });
+
+  it("scopes a feature run to its runner-relative path via BDD_FEATURES", async () => {
+    const { service, childProcess } = build();
     const result = await service.execute({
       scope: "feature",
       target: "Specifications/features/checkout.feature",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(childProcess.calls[0].args).toEqual([
-      "npm",
-      "run",
-      "test",
-      "--",
-      "--profile",
-      "scoped",
+    // The base command is unchanged; the scope rides BDD_FEATURES so bddgen
+    // generates ONLY this feature.
+    expect(childProcess.calls[0].args).toEqual(["npm", "run", "test"]);
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
       "../Specifications/features/checkout.feature",
-    ]);
-    // No spaces → no display quoting.
-    expect(result.value.command).toBe(
-      "npm run test -- --profile scoped ../Specifications/features/checkout.feature",
     );
+    expect(result.value.command).toBe("npm run test");
   });
 
-  it("passes a feature path with $, &, and spaces as a literal argv entry (no shell, no escaping)", async () => {
-    const { service, childProcess, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
-    // PR #7: under shell: false these are literal args — never interpolated or
-    // word-split, and no longer false-rejected by CommandSafetyPolicy.
+  it("carries a feature path with $, &, and spaces verbatim in BDD_FEATURES (env, no shell)", async () => {
+    const { service, childProcess } = build();
     const result = await service.execute({
       scope: "feature",
       target: "Specifications/features/R&D Price $5.feature",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // The path arrives verbatim as a single literal argv entry — no escaping.
-    expect(childProcess.calls[0].args).toEqual([
-      "npm",
-      "run",
-      "test",
-      "--",
-      "--profile",
-      "scoped",
+    // The path is an env value passed to the child under shell:false — literal,
+    // never interpolated or word-split.
+    expect(childProcess.calls[0].args).toEqual(["npm", "run", "test"]);
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
       "../Specifications/features/R&D Price $5.feature",
-    ]);
-    // Display quotes only because the arg contains spaces (readability only).
-    expect(result.value.command).toBe(
-      'npm run test -- --profile scoped "../Specifications/features/R&D Price $5.feature"',
     );
   });
 
-  it("resolves a feature path with shell metacharacters and runs (no COMMAND_DISALLOWED)", async () => {
-    const { service, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
-    // R&D.feature would be false-rejected/expanded under the old shell:true
-    // policy; with argv arrays it is a literal arg and runs cleanly (PR #7).
+  it("scopes a feature path with shell metacharacters and runs (no COMMAND_DISALLOWED)", async () => {
+    const { service, childProcess } = build();
     const result = await service.execute({
       scope: "feature",
       target: "Specifications/features/R&D.feature",
@@ -429,23 +390,56 @@ describe("DefaultTestExecutionService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("passed");
-    expect(result.value.command).toBe(
-      "npm run test -- --profile scoped ../Specifications/features/R&D.feature",
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe("../Specifications/features/R&D.feature");
+  });
+
+  it("preserves a nested subfolder segment in BDD_FEATURES (not just the basename)", async () => {
+    const { service, childProcess } = build();
+    const result = await service.execute({
+      scope: "feature",
+      target: "Specifications/features/auth/login.feature",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The `auth/` segment must survive — a `.pop()` basename simplification would
+    // drop it and bddgen would scope to the wrong (or no) feature.
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
+      "../Specifications/features/auth/login.feature",
     );
   });
 
-  it("resolves the use-case command as a feature glob when the UC is unknown", async () => {
-    const { service, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
+  it("clears the unowned BDD control var on every scope so ambient env can't leak in (P2)", async () => {
+    // The runner spawn inherits process.env; a scope that sets only one of
+    // BDD_FEATURES/BDD_TAGS must explicitly clear the other to "" (no filter),
+    // or an ambient value from Obsidian's launch shell would re-scope the run.
+    const feature = build();
+    await feature.service.execute({
+      scope: "feature",
+      target: "Specifications/features/checkout.feature",
+    });
+    expect(feature.childProcess.calls[0].env?.BDD_TAGS).toBe(""); // feature owns BDD_FEATURES
+
+    const suite = build();
+    seedSuite(suite.fs, "smoke", "@smoke");
+    await suite.service.execute({ scope: "suite", target: "smoke" });
+    expect(suite.childProcess.calls[0].env?.BDD_FEATURES).toBe(""); // suite owns BDD_TAGS
+
+    const demo = build();
+    await demo.service.execute({ scope: "demo", target: "demo" });
+    expect(demo.childProcess.calls[0].env?.BDD_FEATURES).toBe(""); // demo owns BDD_TAGS
+  });
+
+  it("scopes an unknown use-case run to the <UC-id>-*.feature glob via BDD_FEATURES", async () => {
+    const { service, childProcess } = build();
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
-    expect(result.ok && result.value.command).toBe(
-      "npm run test -- --profile scoped ../Specifications/features/UC-001-*.feature",
+    expect(result.ok).toBe(true);
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
+      "../Specifications/features/UC-001-*.feature",
     );
   });
 
   it("targets a Use Case's declared featureFiles in order (UC-011)", async () => {
-    const { service, fs, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
+    const { service, fs, childProcess } = build();
     fs.files.set(
       "Use Cases/UC-001 Demo.md",
       buildNote(
@@ -462,42 +456,17 @@ describe("DefaultTestExecutionService", () => {
       ),
     );
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
-    expect(result.ok && result.value.command).toBe(
-      "npm run test -- --profile scoped ../Specifications/features/UC-001-happy-path.feature ../Specifications/features/UC-001-edge.feature",
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Declared featureFiles in order, NEWLINE-separated (a vault path may hold a
+    // comma but never a newline), runner-relative.
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
+      "../Specifications/features/UC-001-happy-path.feature\n../Specifications/features/UC-001-edge.feature",
     );
   });
 
-  // A pre-upgrade runner whose cucumber.mjs has no scoped export (and is never
-  // rewritten outside init/repair/reset) must fall back to the old path-only
-  // argv: the run keeps working (deprecation warning, not a hard fail on an
-  // unknown profile). Table-driven over the path-scoped run scopes.
-  it.each([
-    {
-      scope: "feature" as const,
-      target: "Specifications/features/checkout.feature",
-      expectedPathArg: "../Specifications/features/checkout.feature",
-    },
-    {
-      scope: "use-case" as const,
-      target: "UC-002",
-      expectedPathArg: "../Specifications/features/UC-002-*.feature",
-    },
-  ])(
-    "legacy runner (no scoped export): $scope-scoped run omits --profile but keeps the path",
-    async ({ scope, target, expectedPathArg }) => {
-      const { service, childProcess, absoluteFs } = build();
-      // Do NOT seed cucumber.mjs → readAbsolute returns err → profileArgs = [].
-      expect(absoluteFs.written.has(CUCUMBER_MJS_PATH)).toBe(false);
-      const result = await service.execute({ scope, target });
-      expect(result.ok).toBe(true);
-      expect(childProcess.calls[0].args).not.toContain("--profile");
-      expect(childProcess.calls[0].args).toContain(expectedPathArg);
-    },
-  );
-
   it("excludes deprecated Use Cases' features from Run All (ADR-0012)", async () => {
-    const { service, fs, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
+    const { service, fs, childProcess } = build();
     fs.files.set(
       "Use Cases/UC-001 Active.md",
       buildNote(
@@ -524,9 +493,11 @@ describe("DefaultTestExecutionService", () => {
       ),
     );
     const result = await service.execute({ scope: "all", target: "all" });
-    // Explicit file list: scoped profile selected so config paths don't merge.
-    expect(result.ok && result.value.command).toBe(
-      "npm run test -- --profile scoped ../Specifications/features/UC-001-happy.feature",
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Scopes generation to the non-deprecated UC's feature via BDD_FEATURES.
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
+      "../Specifications/features/UC-001-happy.feature",
     );
   });
 

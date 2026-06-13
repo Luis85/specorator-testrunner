@@ -40,7 +40,7 @@ describe("DefaultStepDefinitionService.generate", () => {
     ]);
 
     const written = fs.files.get(STEP_FILE) ?? "";
-    expect(written).toContain(`import { Given } from "@cucumber/cucumber";`);
+    expect(written).toContain(`import { createBdd } from "playwright-bdd";`);
     expect(written).toContain(`Given("I open the local example page"`);
     expect(written).toContain(`Given("I have not implemented this"`);
 
@@ -117,7 +117,7 @@ describe("DefaultStepDefinitionService.generate", () => {
 
   it("appends to (never overwrites) an existing hand-edited steps file for the feature", async () => {
     const { service, fs } = build();
-    const handEdited = `import { Given } from "@cucumber/cucumber";\n\nGiven("a handwritten step", async function () {});\n`;
+    const handEdited = `import { createBdd } from "playwright-bdd";\nconst { Given, When, Then } = createBdd();\n\nGiven("a handwritten step", async ({ page }) => {});\n`;
     fs.files.set(STEP_FILE, handEdited);
 
     const result = await service.generate(FEATURE, ["a fresh step"]);
@@ -130,45 +130,47 @@ describe("DefaultStepDefinitionService.generate", () => {
     expect(written).toContain(`Given("a handwritten step"`);
     expect(written).toContain(`Given("a fresh step"`);
     expect(written.indexOf("a handwritten step")).toBeLessThan(written.indexOf("a fresh step"));
-    // The import header is NOT re-emitted: a second `import { Given }` would be a
-    // duplicate top-level binding and the module would fail to load (review).
-    const givenImports = written.match(
-      /import\s*\{[^}]*\bGiven\b[^}]*\}\s*from\s*["']@cucumber\/cucumber["']/g,
-    );
-    expect(givenImports).toHaveLength(1);
+    // The createBdd header is NOT re-emitted: a second `createBdd()` destructure
+    // would be a duplicate top-level binding and the module would fail to load.
+    const headers = written.match(/from\s*["']playwright-bdd["']/g);
+    expect(headers).toHaveLength(1);
   });
 
-  it("includes the import header when appending to a file that lacks it", async () => {
+  it("includes the createBdd header when appending to a file that lacks it", async () => {
     const { service, fs } = build();
-    // A steps file with no cucumber import (e.g. a stray fragment): the append
-    // must add the header so the resulting module still loads.
+    // A steps file with no playwright-bdd import (e.g. a stray fragment): the
+    // append must add the header so the resulting module still loads.
     fs.files.set(STEP_FILE, `// notes, no imports here\n`);
 
     const result = await service.generate(FEATURE, ["a fresh step"]);
 
     expect(result.ok).toBe(true);
     const written = fs.files.get(STEP_FILE) ?? "";
-    expect(written).toContain(`import { Given } from "@cucumber/cucumber";`);
+    expect(written).toContain(`import { createBdd } from "playwright-bdd";`);
+    // The append binds only the verb the stubs use (Given), which can't clash
+    // with a hand-edited file's own `{ When, Then }` destructure.
+    expect(written).toContain(`const { Given } = createBdd();`);
     expect(written).toContain(`Given("a fresh step"`);
   });
 
-  it("adds the Given import when the existing file only aliases it (review)", async () => {
+  it("does not duplicate the createBdd header when the file already imports it", async () => {
     const { service, fs } = build();
-    // The file imports Cucumber under an ALIAS, so there is no local `Given`
-    // binding — the appended stubs call Given(...), so the import must be added.
+    // The file already carries the playwright-bdd header, so appending must add
+    // ONLY the new stub blocks — a second `import { createBdd }` / destructure
+    // would be a duplicate top-level binding that fails to load.
     fs.files.set(
       STEP_FILE,
-      `import { Given as defineStep } from "@cucumber/cucumber";\n\ndefineStep("aliased", async function () {});\n`,
+      `import { createBdd } from "playwright-bdd";\nconst { Given, When, Then } = createBdd();\n\nGiven("existing", async ({ page }) => {});\n`,
     );
 
     const result = await service.generate(FEATURE, ["a fresh step"]);
 
     expect(result.ok).toBe(true);
     const written = fs.files.get(STEP_FILE) ?? "";
-    // The real `Given` import is added (the alias binding is a different name, so
-    // no duplicate declaration), and the user's aliased import is preserved.
-    expect(written).toContain(`import { Given } from "@cucumber/cucumber";`);
-    expect(written).toContain(`import { Given as defineStep }`);
+    // Exactly one playwright-bdd import (no duplicate header) and the user's
+    // existing step is preserved alongside the appended stub.
+    expect(written.match(/from "playwright-bdd"/g) ?? []).toHaveLength(1);
+    expect(written).toContain(`Given("existing"`);
     expect(written).toContain(`Given("a fresh step"`);
   });
 

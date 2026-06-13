@@ -70,7 +70,13 @@ const buildDeps = (): TestHubCommandDeps => ({
 
   maintenanceService: {
     repair: vi.fn(async () =>
-      ok({ repairedFiles: [], reinstalledPackages: false, reinstalledBrowsers: false }),
+      ok({
+        repairedFiles: [],
+        reinstalledPackages: false,
+        reinstalledBrowsers: false,
+        migratedFromV1: false,
+        removedFiles: [],
+      }),
     ),
     reset: vi.fn(async () => ok({ deletedFolders: [], recreatedFiles: [], correlationId: "stub" })),
   },

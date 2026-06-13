@@ -76,6 +76,7 @@ const build = () => {
     runnerInstall,
     bus,
     silentLogger,
+    absoluteFs,
     activeRun,
   );
   return { service, absoluteFs, childProcess, templates, types, activeRun };
@@ -141,6 +142,116 @@ describe("DefaultMaintenanceService", () => {
     if (!result.ok) return;
     expect(result.value.reinstalledPackages).toBe(true);
     expect(childProcess.calls.map((c) => c.args.join(" "))).toContain("npm install");
+  });
+
+  it("clean-cuts a V1 runner to V2: deletes cucumber-era files, recreates the demo, reinstalls (US-051)", async () => {
+    const { service, absoluteFs, childProcess, templates } = build();
+    seedHealthyRunner(absoluteFs);
+    // A V1 (cucumber-js era) manifest → validateEnvironment flags
+    // RUNNER_MANIFEST_OUTDATED, which repair() treats as "migrate to V2".
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 1}');
+    // Seed the V1-incompatible managed + demo files that import @cucumber/cucumber.
+    const v1Files = [
+      "cucumber.mjs",
+      "src/support/world.ts",
+      "src/support/hooks.ts",
+      "src/steps/example.steps.ts",
+      "src/pages/ExamplePage.ts",
+    ];
+    for (const rel of v1Files) {
+      absoluteFs.seed(`/vault/.testrunner/${rel}`, "// V1 cucumber-world content");
+    }
+
+    const result = await service.repair();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The 5 V1 files were deleted (clean-cut) before createRunner re-synced.
+    for (const rel of v1Files) {
+      expect(await absoluteFs.existsAbsolute(`/vault/.testrunner/${rel}`)).toBe(false);
+    }
+    expect(result.value.migratedFromV1).toBe(true);
+    expect(result.value.removedFiles).toEqual(v1Files.map((rel) => vp(rel)));
+    // The @cucumber→playwright-bdd swap forces a dependency reinstall.
+    expect(result.value.reinstalledPackages).toBe(true);
+    expect(childProcess.calls.map((c) => c.args.join(" "))).toContain("npm install");
+    // createRunner was called to re-sync (it recreates the demo at V2).
+    expect(templates.requests).toHaveLength(1);
+  });
+
+  it("reports only the V1 files that actually existed, not idempotent no-ops (US-051)", async () => {
+    const { service, absoluteFs } = build();
+    seedHealthyRunner(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 1}');
+    // A V1 runner that predates the demo page object: only 3 of the 5
+    // V1-incompatible files are present on disk.
+    const present = ["cucumber.mjs", "src/support/world.ts", "src/steps/example.steps.ts"];
+    for (const rel of present) {
+      absoluteFs.seed(`/vault/.testrunner/${rel}`, "// V1 cucumber-world content");
+    }
+
+    const result = await service.repair();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.migratedFromV1).toBe(true);
+    // removedFiles lists exactly the 3 that existed — not the absent
+    // hooks.ts / ExamplePage.ts (force-delete is a no-op for those).
+    expect(result.value.removedFiles).toEqual(present.map((rel) => vp(rel)));
+  });
+
+  it("fails the repair when a stale V1 file cannot be deleted (codex P1)", async () => {
+    const { service, absoluteFs } = build();
+    seedHealthyRunner(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 1}');
+    absoluteFs.seed("/vault/.testrunner/cucumber.mjs", "// stale V1 config");
+    // A locked/read-only stale file: its deletion fails.
+    absoluteFs.deleteFailures.add("/vault/.testrunner/cucumber.mjs");
+
+    const result = await service.repair();
+
+    // Repair must NOT report success while a V1 @cucumber file survives (the demo
+    // is recreated overwrite:false, so the broken runner would persist).
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("INIT_FAILED");
+    expect(await absoluteFs.existsAbsolute("/vault/.testrunner/cucumber.mjs")).toBe(true);
+  });
+
+  it("does NOT clean-cut a runner with a NEWER manifest (downgrade/Sync), leaving files intact (codex P2)", async () => {
+    const { service, absoluteFs } = build();
+    seedHealthyRunner(absoluteFs);
+    // A runner from a future plugin: validation flags RUNNER_MANIFEST_OUTDATED
+    // (any non-equal version), but it's NEWER than v2 — NOT a V1 runner.
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 99}');
+    absoluteFs.seed("/vault/.testrunner/cucumber.mjs", "must survive — not a V1 clean-cut target");
+
+    const result = await service.repair();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.migratedFromV1).toBe(false);
+    expect(result.value.removedFiles).toEqual([]);
+    expect(await absoluteFs.existsAbsolute("/vault/.testrunner/cucumber.mjs")).toBe(true);
+  });
+
+  it("does not clean-cut a healthy V2 runner: deletes nothing and reports no migration", async () => {
+    const { service, absoluteFs, templates } = build();
+    seedHealthyRunner(absoluteFs);
+    // The CURRENT (v2) manifest is already seeded by seedHealthyRunner.
+    // Seed files that share the V1 names to prove they are NOT deleted when V2.
+    absoluteFs.seed("/vault/.testrunner/cucumber.mjs", "should survive a healthy V2 repair");
+
+    const result = await service.repair();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.migratedFromV1).toBe(false);
+    expect(result.value.removedFiles).toEqual([]);
+    expect(result.value.reinstalledPackages).toBe(false);
+    // No deletion happened on a healthy V2 repair.
+    expect(await absoluteFs.existsAbsolute("/vault/.testrunner/cucumber.mjs")).toBe(true);
+    expect(templates.requests).toHaveLength(1);
   });
 
   it("reinstalls dependencies when Playwright is present but not runnable", async () => {
@@ -271,13 +382,14 @@ const buildReset = (
     runnerInstall,
     bus,
     silentLogger,
+    absoluteFs,
     activeRun,
     initialization,
     vault,
     lock,
     opts.whenPostRunSettled,
   );
-  return { service, vault, execution, types, events, settings };
+  return { service, vault, absoluteFs, execution, types, events, settings };
 };
 
 describe("DefaultMaintenanceService.reset (UC-024)", () => {

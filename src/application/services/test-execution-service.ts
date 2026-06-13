@@ -87,6 +87,17 @@ export interface ExecuteTestRequest {
   target: string; // id or path of the scoped entity
 }
 
+/**
+ * A resolved runner invocation: the literal argv plus any scope-specific env
+ * the spawn must carry. The suite scope drives playwright-bdd's native tag
+ * filtering through `env.BDD_TAGS` (the generated config reads it) rather than
+ * a CLI arg, so the command needs to convey env without mutating the argv.
+ */
+interface ResolvedCommand {
+  args: string[];
+  env?: Record<string, string>;
+}
+
 /** In-flight run state: the single active run per ADR-0018, plus its EN-2 guard. */
 interface ActiveRun {
   run: TestRun;
@@ -159,26 +170,6 @@ const toArgv = (command: string, fallback: string[]): string[] => {
 };
 
 /**
- * Appends scoped runner args (tags / feature paths) to a base command. npm uses
- * a single `npm run <script> [-- <args>]` separator, so if the configured base
- * already forwards args with `--`, append after it rather than inserting a
- * second `--` (npm forwards the first; a second would reach Cucumber as a
- * literal end-of-options token and swallow the following `--tags`/paths).
- */
-export const appendScopedArgs = (base: string[], scoped: string[]): string[] =>
-  base.includes("--") ? [...base, ...scoped] : [...base, "--", ...scoped];
-
-/**
- * Prepended to CLI feature-path args so cucumber-js selects the `scoped`
- * profile from `cucumber.mjs` instead of the default. The default profile
- * includes a `paths` glob; when CLI paths are also passed, cucumber merges
- * them with the config glob and prints a deprecation warning into the Test
- * Console. The `scoped` profile has no `paths`, so the CLI paths are the sole
- * source — no merge, no warning.
- */
-const SCOPED_PROFILE_ARGS = ["--profile", "scoped"] as const;
-
-/**
  * A test-execution command must be an `npm run <script>` form (TIS §13.2).
  * CommandSafetyPolicy also accepts install/probe commands (`npm install`,
  * `node --version`, `npx playwright install …`) because validation/maintenance
@@ -190,6 +181,18 @@ const isNpmRun = (argv: string[]): boolean => {
   const program = (argv[0]?.split(/[/\\]/).pop() ?? "").replace(/\.(exe|cmd)$/i, "");
   return program === "npm" && argv[1] === "run";
 };
+
+/**
+ * The neutral state of BOTH playwright-bdd scope controls. Every scoped spawn
+ * spreads this first and overrides only the variable it owns, so a scope that
+ * sets just `BDD_TAGS` (suite/demo) or just `BDD_FEATURES` (feature/all/use-case)
+ * still passes an explicit empty value for the other. The runner merges
+ * `process.env` into each spawn, so without this an ambient `BDD_FEATURES`/
+ * `BDD_TAGS` inherited from the shell that launched Obsidian (or a CI env) would
+ * leak in and silently re-scope the run; the generated config reads `""` as
+ * "no filter" (`process.env.X ? … : default` / `process.env.X || undefined`).
+ */
+const CLEARED_BDD_SCOPE: Readonly<Record<string, string>> = { BDD_FEATURES: "", BDD_TAGS: "" };
 
 /** UTC `RUN-YYYY-MM-DD-HHMMSS` id (TIS §3.3). */
 const runId = (now: Date): RunId => {
@@ -351,7 +354,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
 
       const command = await this.resolveCommand(request, settings);
       if (!command.ok) return err(command.error);
-      const argv = command.value;
+      const argv = command.value.args;
+      // Scope-specific env (BDD_TAGS for suite tag-expression runs) layered on
+      // TOP of the Active SUT env (BASE_URL + auth.env) below — never replacing
+      // it. The suite case is the only contributor today.
+      const scopeEnv = command.value.env;
 
       // Defense in depth (TIS §14.2): V1 targets come from trusted vault data;
       // validate the argv (allowed program, no control chars) before spawning.
@@ -409,7 +416,12 @@ export class DefaultTestExecutionService implements TestExecutionService {
       // no-op pass-through, so a run with no credentials keeps the hot path cheap.
       const runSecrets = new Set(collectCredentialValues(settings));
       const result = await this.childProcess.runStreaming(
-        { args: argv, cwd: cwd.value, env: this.runEnv(settings), processId: run.id },
+        {
+          args: argv,
+          cwd: cwd.value,
+          env: { ...this.runEnv(settings), ...scopeEnv },
+          processId: run.id,
+        },
         (output) => {
           if (activeRun.terminated) return;
           void this.outputPublishes
@@ -554,11 +566,6 @@ export class DefaultTestExecutionService implements TestExecutionService {
     return ok(undefined);
   }
 
-  /**
-   * Builds the runner subprocess env from the Active SUT environment
-   * (ADR-0013/0014): `BASE_URL` plus any `auth.env` credentials, injected
-   * verbatim. The host process env is merged by the ChildProcessRunner adapter.
-   */
   /** Unique run id: clean per-second base, then `-N` for same-second repeats. */
   private mintRunId(now: Date): RunId {
     const base = runId(now);
@@ -590,6 +597,12 @@ export class DefaultTestExecutionService implements TestExecutionService {
     }
   }
 
+  /**
+   * Builds the runner subprocess env from the Active SUT environment
+   * (ADR-0013/0014): `BASE_URL` plus any `auth.env` credentials, injected
+   * verbatim. The host process env is merged by the ChildProcessRunner adapter.
+   * Scope env (e.g. suite `BDD_TAGS`) is layered on top by `execute()`.
+   */
   private runEnv(settings: TestHubSettings): Record<string, string> {
     // Object.hasOwn, not a truthy index: an active named "toString"/
     // "constructor" with no such environment defined would otherwise resolve a
@@ -600,40 +613,25 @@ export class DefaultTestExecutionService implements TestExecutionService {
   }
 
   /**
-   * `--profile scoped` only when the runner's managed cucumber.mjs actually
-   * defines the profile. Runners generated before the scoped profile existed
-   * (template only re-syncs on init/repair/reset) would otherwise hard-fail
-   * on an unknown profile — strictly worse than the deprecation warning the
-   * profile avoids. Marker-based: cucumber.mjs is a managed file, so the
-   * literal `export const scoped` is stable. (Proper template versioning is
-   * the pre-V2 plan's Phase 2.2.)
+   * Resolves the runner invocation for a scope (TIS §13.2): a literal argv plus
+   * any scope env. Feature paths are appended verbatim as positional filters
+   * (AD-4, no quoting/escaping) — under shell: false they pass through as-is, so
+   * a path with `$`, `&`, or spaces survives unchanged (the PR #7 argv rework);
+   * playwright-bdd filters by path substring against the trailing
+   * `playwright test`. The suite scope instead conveys the tag expression via
+   * `env.BDD_TAGS` (the generated config's `defineBddConfig` reads it). A thin
+   * dispatch over per-scope helpers — keep it that way.
    */
-  private async scopedProfileArgs(settings: TestHubSettings): Promise<string[]> {
-    const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
-    if (!cwd.ok) return [];
-    const config = await this.absoluteFs.readAbsolute(`${cwd.value}/cucumber.mjs`);
-    return config.ok && config.value.includes("export const scoped")
-      ? [...SCOPED_PROFILE_ARGS]
-      : [];
-  }
-
-  /**
-   * Resolves the runner argv for a scope (TIS §13.2). Returns a literal argv —
-   * tags and feature paths are appended verbatim (AD-4, no quoting/escaping):
-   * under shell: false they are passed through as-is, so a path with `$`, `&`,
-   * or spaces survives unchanged (the PR #7 decision to rework to argv arrays).
-   */
-  // One branch over the cognitive threshold since the scoped-profile args
-  // (each path-scoped case prepends them); extract per-scope helpers when
-  // Phase 1 touches this area rather than splitting mid-release.
-  // fallow-ignore-next-line complexity
   private async resolveCommand(
     request: ExecuteTestRequest,
     settings: TestHubSettings,
-  ): Promise<Result<string[]>> {
+  ): Promise<Result<ResolvedCommand>> {
     // Honor the user's configured runner commands (a wrapper script, extra
-    // Cucumber flags, a different npm script). Scoped runs append their args
-    // after the configured base command's tokens (TIS §13.2).
+    // flags, a different npm script). Scoped runs convey their scope via the
+    // spawn ENV — BDD_TAGS for suites, BDD_FEATURES for feature paths — so
+    // `bddgen` generates ONLY the targeted features (the base command is
+    // unchanged). This keeps a scoped run from failing because an unrelated
+    // feature elsewhere in the vault doesn't parse.
     const base = toArgv(settings.runner.defaultRunCommand, ["npm", "run", "test"]);
     if (!isNpmRun(base)) {
       return err(
@@ -643,105 +641,142 @@ export class DefaultTestExecutionService implements TestExecutionService {
         ),
       );
     }
-    // Resolved once per call: only path-scoped branches use it, but computing
-    // it here avoids re-reading the file once per branch in the switch below.
-    const profileArgs = await this.scopedProfileArgs(settings);
     switch (request.scope) {
-      case "demo": {
-        const smoke = toArgv(settings.runner.smokeRunCommand, ["npm", "run", "test:smoke"]);
-        if (!isNpmRun(smoke)) {
-          return err(
-            appError(
-              "VALIDATION_FAILED",
-              `Configured smoke command must be "npm run <script>": "${settings.runner.smokeRunCommand}".`,
-            ),
-          );
-        }
-        return ok(smoke);
-      }
-      case "all": {
-        // ADR-0012: a Use Case with status "deprecated" excludes all of its
-        // Features from Run All. The bare `base` runs the runner's config glob
-        // over every feature file, so when any UC is deprecated we instead pass
-        // the explicit union of the NON-deprecated UCs' feature files (every
-        // feature in this system is generated from a UC, so that union is "all
-        // features minus the retired ones"). With no deprecated UCs we keep the
-        // cheap glob. If the UC index can't be read we fall back to the glob
-        // rather than silently running nothing.
-        const all = await this.useCaseService.findAll();
-        if (all.ok && all.value.some((uc) => uc.status === "deprecated")) {
-          const activeFiles = all.value
-            .filter((uc) => uc.status !== "deprecated")
-            .flatMap((uc) => uc.featureFiles);
-          if (activeFiles.length > 0) {
-            // Explicit file list: select the `scoped` profile so the config
-            // `paths` glob does not merge with these CLI paths (deprecation
-            // warning; same treatment as `feature` and `use-case` scopes).
-            return ok(
-              appendScopedArgs(base, [
-                ...profileArgs,
-                ...activeFiles.map((path) => this.featureArg(settings, path)),
-              ]),
-            );
-          }
-          // Every non-deprecated UC is unautomated (or all UCs are deprecated):
-          // there is no active coverage to run, so target a path that matches no
-          // feature instead of falling back to the all-features glob.
-          return ok(
-            appendScopedArgs(base, [
-              ...profileArgs,
-              `${this.featurePrefix(settings)}/__no_active_features__.feature`,
-            ]),
-          );
-        }
-        return ok([...base]);
-      }
-      case "suite": {
-        const tags = await this.suiteService.resolveTagExpression(request.target);
-        if (!tags.ok) return err(tags.error);
-        // Verbatim tag expression as a single literal arg (AD-4, no quoting).
-        // Tag-based: no CLI feature paths, so no profile-merge deprecation.
-        return ok(appendScopedArgs(base, ["--tags", tags.value]));
-      }
+      case "demo":
+        return this.demoScopeCommand(settings);
+      case "all":
+        return ok(await this.allScopeCommand(base, settings));
+      case "suite":
+        return this.suiteScopeCommand(base, request.target);
       case "feature":
-        // Literal feature path arg; no shell, so no escaping needed.
-        // Select `scoped` profile so the config `paths` glob does not merge
-        // with this CLI path and produce a deprecation warning.
-        return ok(
-          appendScopedArgs(base, [...profileArgs, this.featureArg(settings, request.target)]),
-        );
-      case "use-case": {
-        // UC-011: target the Use Case's declared featureFiles in order, each as
-        // a separate literal arg. Falls back to the <UC-id>-*.feature glob when
-        // the UC or its links can't be resolved (e.g. a brand-new UC with the
-        // standard naming); the glob is expanded by cucumber-js, not a shell.
-        // Select `scoped` profile so the config `paths` glob does not merge
-        // with the CLI paths and produce a deprecation warning.
-        const found = await this.useCaseService.findById(request.target);
-        const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
-        if (featureFiles.length > 0) {
-          return ok(
-            appendScopedArgs(base, [
-              ...profileArgs,
-              ...featureFiles.map((path) => this.featureArg(settings, path)),
-            ]),
-          );
-        }
-        return ok(
-          appendScopedArgs(base, [
-            ...profileArgs,
-            `${this.featurePrefix(settings)}/${request.target}-*.feature`,
-          ]),
-        );
-      }
+        return ok({
+          args: [...base],
+          env: { ...CLEARED_BDD_SCOPE, BDD_FEATURES: this.featurePath(settings, request.target) },
+        });
+      case "use-case":
+        return ok(await this.useCaseScopeCommand(base, settings, request.target));
     }
   }
 
-  /** Runner-relative path to a single Feature file (TIS §13.2 `feature`). */
-  private featureArg(settings: TestHubSettings, target: string): string {
+  /**
+   * `demo`: the configured smoke command (`npm run test:smoke`). Also sets
+   * `BDD_TAGS=@smoke` so the `bddgen` step inside that script generates ONLY
+   * @smoke features — otherwise a malformed non-@smoke feature elsewhere would
+   * fail generation before `playwright test --grep @smoke` ever filters.
+   */
+  private demoScopeCommand(settings: TestHubSettings): Result<ResolvedCommand> {
+    const smoke = toArgv(settings.runner.smokeRunCommand, ["npm", "run", "test:smoke"]);
+    if (!isNpmRun(smoke)) {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `Configured smoke command must be "npm run <script>": "${settings.runner.smokeRunCommand}".`,
+        ),
+      );
+    }
+    return ok({ args: smoke, env: { ...CLEARED_BDD_SCOPE, BDD_TAGS: "@smoke" } });
+  }
+
+  /**
+   * `all`: bare `base` (the config glob over every feature) unless a Use Case is
+   * deprecated (ADR-0012) — then scope generation (via `env.BDD_FEATURES`) to the
+   * explicit union of the NON-deprecated UCs' feature paths (every feature is
+   * generated from a UC, so that union is "all features minus the retired ones").
+   * With no deprecated UCs we keep the cheap glob; if the UC index can't be read
+   * we fall back to it rather than silently running nothing. When every
+   * non-deprecated UC is unautomated (or all UCs are deprecated) there is no
+   * active coverage, so we scope to a path that matches no feature.
+   */
+  private async allScopeCommand(
+    base: string[],
+    settings: TestHubSettings,
+  ): Promise<ResolvedCommand> {
+    const all = await this.useCaseService.findAll();
+    if (!(all.ok && all.value.some((uc) => uc.status === "deprecated"))) {
+      // Whole-vault glob: still clear both controls so no ambient scope leaks in.
+      return { args: [...base], env: { ...CLEARED_BDD_SCOPE } };
+    }
+    const activeFiles = all.value
+      .filter((uc) => uc.status !== "deprecated")
+      .flatMap((uc) => uc.featureFiles);
+    if (activeFiles.length > 0) {
+      return {
+        args: [...base],
+        env: { ...CLEARED_BDD_SCOPE, BDD_FEATURES: this.bddFeatures(settings, activeFiles) },
+      };
+    }
+    // No active coverage: scope generation to a path that matches no feature →
+    // zero tests (a clean pass with `--pass-with-no-tests`).
+    return {
+      args: [...base],
+      env: {
+        ...CLEARED_BDD_SCOPE,
+        BDD_FEATURES: `${this.featurePrefix(settings)}/__no_active_features__.feature`,
+      },
+    };
+  }
+
+  /**
+   * `suite`: resolve the tag expression and convey it via `env.BDD_TAGS` (the
+   * generated `defineBddConfig` reads it; bddgen applies the FULL cucumber tag
+   * expression at generation). NO CLI arg — the base command is unchanged.
+   */
+  private async suiteScopeCommand(
+    base: string[],
+    target: string,
+  ): Promise<Result<ResolvedCommand>> {
+    const tags = await this.suiteService.resolveTagExpression(target);
+    if (!tags.ok) return err(tags.error);
+    return ok({ args: [...base], env: { ...CLEARED_BDD_SCOPE, BDD_TAGS: tags.value } });
+  }
+
+  /**
+   * `use-case` (UC-011): scope generation (via `env.BDD_FEATURES`) to the Use
+   * Case's declared featureFiles. Falls back to the `<UC-id>-*.feature` glob when
+   * the UC or its links can't be resolved (e.g. a brand-new UC with the standard
+   * naming) — bddgen expands the glob.
+   */
+  private async useCaseScopeCommand(
+    base: string[],
+    settings: TestHubSettings,
+    target: string,
+  ): Promise<ResolvedCommand> {
+    const found = await this.useCaseService.findById(target);
+    const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
+    if (featureFiles.length > 0) {
+      return {
+        args: [...base],
+        env: { ...CLEARED_BDD_SCOPE, BDD_FEATURES: this.bddFeatures(settings, featureFiles) },
+      };
+    }
+    return {
+      args: [...base],
+      env: {
+        ...CLEARED_BDD_SCOPE,
+        BDD_FEATURES: `${this.featurePrefix(settings)}/${target}-*.feature`,
+      },
+    };
+  }
+
+  /**
+   * Newline-separated runner-relative feature paths for `env.BDD_FEATURES` (the
+   * generated config splits on `\n`). Newline — not comma — because a vault path
+   * may contain a comma but never a control character.
+   */
+  private bddFeatures(settings: TestHubSettings, targets: string[]): string {
+    return targets.map((target) => this.featurePath(settings, target)).join("\n");
+  }
+
+  /**
+   * A single Feature as a runner-relative path for `BDD_FEATURES` (the generated
+   * config's `features`, resolved relative to the runner dir). bddgen generates
+   * ONLY the features in BDD_FEATURES, so an unrelated/malformed feature
+   * elsewhere never blocks a scoped run.
+   */
+  private featurePath(settings: TestHubSettings, target: string): string {
     const prefix = settings.paths.featureFilesPath;
-    // Accept a vault path or a bare basename; reduce to the file relative to
-    // the configured features folder, then re-anchor to the runner cwd.
+    // Accept a vault path or a bare basename; reduce to the file path relative
+    // to the configured features folder, then re-anchor to the runner cwd.
     const basename = target.startsWith(`${prefix}/`)
       ? target.slice(prefix.length + 1)
       : (target.split("/").pop() ?? target);
