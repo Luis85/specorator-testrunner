@@ -141,6 +141,13 @@ describe("buildRunnerTemplates", () => {
     expect(scoped.format).toContain("json:reports/cucumber-report.json");
   });
 
+  it("generates testrunner-manifest.json carrying the current manifest version", () => {
+    const files = buildRunnerTemplates(DEFAULT_SETTINGS);
+    const manifest = files.find((f) => f.path === "testrunner-manifest.json");
+    expect(manifest).toBeDefined();
+    expect(JSON.parse(manifest?.content ?? "{}")).toEqual({ manifestVersion: 1 });
+  });
+
   it("hooks template sets a 60 s cucumber timeout before the Before hook", () => {
     const hooks = byPath.get("src/support/hooks.ts")?.content ?? "";
     expect(hooks).toContain("setDefaultTimeout(60_000)");

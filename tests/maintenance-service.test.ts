@@ -13,7 +13,10 @@ import {
   type MaintenanceLock,
 } from "../src/application/services/test-execution-service";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
-import { REQUIRED_RUNNER_DEPENDENCIES } from "../src/application/content/runner-manifest";
+import {
+  REQUIRED_RUNNER_DEPENDENCIES,
+  testrunnerManifestContent,
+} from "../src/application/content/runner-manifest";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
@@ -85,6 +88,9 @@ const seedHealthyRunner = (absoluteFs: FakeAbsoluteFileSystem) => {
     absoluteFs.existing.add(`/vault/.testrunner/${dep}`);
   }
   absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome");
+  // Seed the CURRENT manifest so validateEnvironment() does not push a stale
+  // RUNNER_MANIFEST_OUTDATED warning that would itself trigger a reinstall.
+  absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", testrunnerManifestContent());
 };
 
 describe("DefaultMaintenanceService", () => {
@@ -119,6 +125,21 @@ describe("DefaultMaintenanceService", () => {
     const commands = childProcess.calls.map((c) => c.args.join(" "));
     expect(commands).not.toContain("npm install");
     expect(commands).toContain("npx playwright install chromium");
+  });
+
+  it("reinstalls dependencies on a manifest-version mismatch even when deps are healthy", async () => {
+    const { service, absoluteFs, childProcess } = build();
+    seedHealthyRunner(absoluteFs);
+    // Overwrite the current manifest seeded above with a STALE one so
+    // validateEnvironment() flags RUNNER_MANIFEST_OUTDATED before createRunner.
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 0}');
+
+    const result = await service.repair();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.reinstalledPackages).toBe(true);
+    expect(childProcess.calls.map((c) => c.args.join(" "))).toContain("npm install");
   });
 
   it("reinstalls dependencies when Playwright is present but not runnable", async () => {

@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The generated `.testrunner` carries a versioned `testrunner-manifest.json`;
+  environment validation flags a runner produced by a different Test Hub
+  version for Repair (surfaced as an advisory even when the runner is
+  otherwise ready), and Repair reinstalls dependencies on a manifest-version
+  mismatch — the detection rail the V2 playwright-bdd migration keys on.
+
 ### Changed
 
 - Report import is now port-based: `DefaultReportImportService` delegates
