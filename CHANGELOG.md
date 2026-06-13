@@ -6,6 +6,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Report import is now port-based: `DefaultReportImportService` delegates
+  parsing to a `ReportParser` (first implementation `CucumberJsonReportParser`),
+  so the V2 runner's Cucumber Messages output and other formats slot in beside
+  it without touching the import pipeline (ADR-0021/0022; opens EPIC-019).
+
 ## [1.0.1] — 2026-06-13
 
 ### Changed

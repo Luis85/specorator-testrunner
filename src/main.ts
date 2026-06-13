@@ -29,6 +29,7 @@ import {
   DefaultFeatureInsightService,
   type FeatureInsightService,
 } from "./application/services/feature-insight-service";
+import { CucumberJsonReportParser } from "./application/services/cucumber-json-report-parser";
 import {
   DefaultReportImportService,
   type ReportImportService,
@@ -341,9 +342,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
 
     // EPIC-008 Reporting & Evidence (UC-016): import the runner's JSON report
     // and generate linked Markdown evidence once a run finishes.
+    const reportParser = new CucumberJsonReportParser();
     this.reportImportService = new DefaultReportImportService(
       this.hubSettingsService,
       absoluteFs,
+      reportParser,
       eventBus,
       this.logger,
     );
