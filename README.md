@@ -151,6 +151,9 @@ Vault
 │   ├── Getting Started.md
 │   ├── User Manual.md
 │   └── Troubleshooting.md
+├── PRDs
+│   └── PRD-000-product-vision
+├── Domains
 ├── Use Cases
 ├── Specifications
 │   └── features
@@ -158,6 +161,12 @@ Vault
 ├── Test Evidence
 └── .testrunner
 ```
+
+PRDs form a hierarchy above Use Cases: the root product vision (`PRD-000`)
+decomposes into feature-scoped sub-PRDs, each owning the Use Cases that detail
+its solution. Open the **PRDs** explorer (ribbon: _Open PRDs_) or the dashboard's
+**PRDs & roadmap** section to navigate the tree, and use **New PRD** to launch the
+builder. See `docs/adr/0026-prd-hierarchy-artifact-model.md` for the model.
 
 ## Repository layout
 

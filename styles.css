@@ -970,3 +970,95 @@
   border: none;
   background: transparent;
 }
+
+/* ── PRD Explorer + roadmap (PRD Creator) ─────────────────────────────────── */
+
+.e2e-test-hub-prd-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-3, 12px);
+  flex-wrap: wrap;
+}
+
+/* Hierarchical PRD tree: nested lists with a guide line per level. */
+.e2e-test-hub-prd-tree {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.e2e-test-hub-prd-tree .e2e-test-hub-prd-tree {
+  padding-left: var(--size-4-4, 16px);
+  border-left: 1px solid var(--background-modifier-border);
+  margin-left: var(--size-2-2, 6px);
+}
+
+.e2e-test-hub-prd-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  flex-wrap: wrap;
+  padding: var(--size-2-1, 4px) 0;
+}
+
+/* Status pill — text always present, so colour is never the only signal. */
+.e2e-test-hub-prd-status {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 var(--size-2-2, 6px);
+  border-radius: var(--radius-s, 4px);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.e2e-test-hub-prd-status[data-status="active"] {
+  color: var(--text-success);
+  border-color: var(--text-success);
+}
+
+.e2e-test-hub-prd-status[data-status="deprecated"] {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Use Case detail breadcrumb (Domain › PRD). */
+.e2e-test-hub-uc-prd-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-1, 4px);
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: var(--size-2-2, 6px);
+}
+
+/* Dashboard PRD & roadmap card. */
+.e2e-test-hub-prd-roadmap {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  padding: var(--size-4-3, 12px);
+  margin-bottom: var(--size-4-4, 16px);
+}
+
+.e2e-test-hub-prd-roadmap h4 {
+  margin: 0 0 var(--size-2-2, 6px);
+}
+
+.e2e-test-hub-prd-vision {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.e2e-test-hub-prd-roadmap-actions {
+  display: flex;
+  gap: var(--size-4-2, 8px);
+  flex-wrap: wrap;
+  margin: var(--size-2-3, 8px) 0;
+}
+
+.e2e-test-hub-prd-roadmap-list {
+  margin: 0;
+  padding-left: var(--size-4-4, 16px);
+}
