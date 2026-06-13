@@ -81,7 +81,7 @@ The existing `domain` field is retained (not replaced).
 
 ### 2.4 File Structure
 
-PRD paths respect Vault settings (like Use Cases). Default configuration shown below:
+All artifact paths respect Vault settings (prdsPath, domainsPath, useCasesPath, etc.). Default configuration shown below:
 
 ```
 PRDs folder (defaults to "PRDs", configurable via settings.paths.prdsPath)
@@ -95,11 +95,11 @@ PRDs folder (defaults to "PRDs", configurable via settings.paths.prdsPath)
 └── PRD-003-ci-integration/
     └── PRD-003-ci-integration.md
 
-Use Cases folder (existing; "Use Cases" by default)
+Use Cases folder (existing; configurable via settings.paths.useCasesPath)
 ├── UC-001.md  # References prd-id: PRD-001
 └── UC-002.md
 
-Domains folder (existing research space; "Domains" if configured)
+Domains folder (existing research space; configurable via settings.paths.domainsPath; default: "Domains")
 ├── Dashboard/
 │   ├── research.md
 │   └── ...
@@ -108,8 +108,9 @@ Domains folder (existing research space; "Domains" if configured)
 ```
 
 **Path Configuration:** 
-- PRDs use `settings.paths.prdsPath` (default: `PRDs`), matching the pattern used for useCasesPath, specificationsPath, etc.
-- Implementation creates folder under vault root, allowing users to customize via settings.
+- **PRDs:** `settings.paths.prdsPath` (default: `"PRDs"`)
+- **Domains:** `settings.paths.domainsPath` (default: `"Domains"`)
+- Both follow the same pattern as useCasesPath, specificationsPath, etc., allowing users to customize artifact locations via settings. Each domain gets its own folder under the domains path (e.g., `Domains/Dashboard/`, `Domains/Evidence/`).
 
 **Naming convention:** `PRD-NNN-slug` (kebab-case). `PRD-000` reserved for product vision (canonical root ID).
 
