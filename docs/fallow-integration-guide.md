@@ -316,7 +316,7 @@ npm run quality:dupes      # clone groups
 
 Add a section covering:
 - Which `quality:*` scripts to use and when
-- The MCP server (registered via `.mcp.json`; read-only; version-matched)
+- The MCP server (registered via `.mcp.json`; version-matched; includes write-capable `fix_apply` — review diffs before committing)
 - The version-matched skill at `node_modules/fallow/skills/fallow/SKILL.md`
 - Project-specific caveats (any warn-only rules, any false-positive categories)
 - Machine-readable JSON: `fallow <cmd> --format json --quiet`; each issue
@@ -337,6 +337,8 @@ Each issue includes an `actions` array; check `auto_fixable` before
 attempting a manual fix — fallow can apply some fixes automatically.
 
 MCP: registered in `.mcp.json`. Start with `npx fallow-mcp` (stdio).
+Includes analysis tools (read-only) and `fix_apply` (writes to the working
+tree). Review diffs before committing any auto-applied fixes.
 Agent Skill: `.claude/skills/fallow/SKILL.md` (pointer to version-matched
 upstream at `node_modules/fallow/skills/fallow/SKILL.md`).
 
