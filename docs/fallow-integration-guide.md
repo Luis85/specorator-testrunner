@@ -163,9 +163,11 @@ quality:
       run: npm ci
 
     # OPTIONAL but strongly recommended: generate coverage before the audit.
-    # Fallow uses Istanbul coverage data to compute CRAP scores on changed
-    # functions. Without it, CRAP is estimated and tested functions in changed
+    # Fallow auto-detects Istanbul coverage at ./coverage (the default output
+    # path). Without it, CRAP is estimated and tested functions in changed
     # files can produce false over-threshold findings.
+    # If your coverage lands in a non-default path, set FALLOW_COVERAGE or
+    # pass --coverage <PATH> to the audit commands below instead.
     - name: Generate coverage
       run: npm run test:coverage
 
@@ -214,9 +216,24 @@ contributors understand why the gate exists and what it gates on.
 
 ### Coverage note
 
+Fallow auto-detects Istanbul coverage at `./coverage` (the default output path
+for Jest, Vitest, NYC, and most other JS coverage tools). No explicit flag is
+needed as long as coverage lands there.
+
+If your coverage tool writes to a different path, tell fallow where to find it:
+
+```yaml
+    - name: Fallow audit
+      continue-on-error: true
+      env:
+        FALLOW_COVERAGE: ./path/to/coverage   # or pass --coverage <PATH> inline
+      run: |
+        ...
+```
+
 If your project doesn't have a `test:coverage` script, either add one or
-remove that step. Fallow still works without coverage; CRAP scores will be
-estimated rather than exact.
+remove the coverage step entirely. Fallow still works without it; CRAP scores
+will be estimated rather than exact.
 
 ---
 
