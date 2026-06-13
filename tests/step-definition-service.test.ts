@@ -147,7 +147,9 @@ describe("DefaultStepDefinitionService.generate", () => {
     expect(result.ok).toBe(true);
     const written = fs.files.get(STEP_FILE) ?? "";
     expect(written).toContain(`import { createBdd } from "playwright-bdd";`);
-    expect(written).toContain(`const { Given, When, Then } = createBdd();`);
+    // The append binds only the verb the stubs use (Given), which can't clash
+    // with a hand-edited file's own `{ When, Then }` destructure.
+    expect(written).toContain(`const { Given } = createBdd();`);
     expect(written).toContain(`Given("a fresh step"`);
   });
 

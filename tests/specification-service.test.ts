@@ -459,6 +459,25 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
     expect(types()).toContain("specification.missingSteps.detected");
   });
 
+  it("invokes bddgen via the playwright-bdd v9 entrypoint (dist/cli/index.js)", async () => {
+    // playwright-bdd v9's `bddgen` bin is `dist/cli/index.js`; the non-existent
+    // `dist/cli.js` would crash node and make detection always report
+    // RUNNER_NOT_INSTALLED. (The fake matches by the "playwright-bdd" substring,
+    // so this asserts the exact argv.)
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    await service.detectMissingSteps(path);
+
+    const bddgenCall = childProcess.calls.find((c) =>
+      c.args.some((a) => a.includes("playwright-bdd")),
+    );
+    expect(bddgenCall?.args).toEqual(["node", "node_modules/playwright-bdd/dist/cli/index.js"]);
+  });
+
   it("bddgen reports no missing steps → empty missingSteps, event still published", async () => {
     const { service, fs, absoluteFs, childProcess, types } = build();
     const path = vp("Specifications/features/UC-001-demo.feature");

@@ -25,7 +25,10 @@ import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath } from "../../shared/utils/vault-path";
 
-const BDDGEN_ARGS = ["node", "node_modules/playwright-bdd/dist/cli.js"] as const;
+// playwright-bdd v9's `bddgen` bin resolves to `dist/cli/index.js` (NOT
+// `dist/cli.js`); spawn it directly with node so the invocation is shell-free
+// and cross-platform (the `.bin/bddgen` shim is a `.cmd` on Windows).
+const BDDGEN_ARGS = ["node", "node_modules/playwright-bdd/dist/cli/index.js"] as const;
 
 export interface SpecificationValidationError {
   line?: number;

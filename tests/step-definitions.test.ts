@@ -194,11 +194,32 @@ describe("buildAppendedStubs", () => {
     expect(block).toContain('Given("I do a new thing", async ({ page }) =>');
   });
 
-  it("prepends the header when appending to a file without a playwright-bdd import", () => {
+  it("prepends the import + a Given binding when appending to a file without playwright-bdd", () => {
     const existing = `// notes, no imports here\n`;
     const block = buildAppendedStubs(existing, ["a fresh step"]);
     expect(block).toContain('import { createBdd } from "playwright-bdd";');
-    expect(block).toContain("const { Given, When, Then } = createBdd();");
+    expect(block).toContain("const { Given } = createBdd();");
+    expect(block).toContain('Given("a fresh step"');
+  });
+
+  it("adds a Given binding when the file calls createBdd() but destructured only other verbs (P2)", () => {
+    // A hand-edited file that trimmed its destructure to the verbs it uses must
+    // still get a Given binding — the stubs call Given(...). No duplicate import,
+    // and `const { Given } = createBdd()` does not clash with the existing
+    // `{ When, Then }` destructure.
+    const existing =
+      'import { createBdd } from "playwright-bdd";\nconst { When, Then } = createBdd();\n\nWhen("x", async ({ page }) => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).not.toContain("import { createBdd }");
+    expect(block).toContain("const { Given } = createBdd();");
+    expect(block).toContain('Given("a fresh step"');
+  });
+
+  it("does not re-bind Given when it is already destructured from createBdd", () => {
+    const existing =
+      'import { createBdd } from "playwright-bdd";\nconst { Given, When } = createBdd();\n\nGiven("x", async ({ page }) => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).not.toContain("createBdd()"); // no new binding line
     expect(block).toContain('Given("a fresh step"');
   });
 });

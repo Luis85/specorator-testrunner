@@ -213,9 +213,20 @@ const renderStub = (stepText: string): string => {
  */
 const CREATE_BDD_IMPORT = `import { createBdd } from "playwright-bdd";`;
 const CREATE_BDD_DESTRUCTURE = `const { Given, When, Then } = createBdd();`;
+/** The minimal createBdd binding an appended stub block needs (it only calls `Given`). */
+const CREATE_BDD_GIVEN = `const { Given } = createBdd();`;
 
 /** Import header every generated steps module needs (playwright-bdd `createBdd`). */
 const STEP_DEFINITION_IMPORTS = `${CREATE_BDD_IMPORT}\n${CREATE_BDD_DESTRUCTURE}`;
+
+/**
+ * True when the source already binds `Given` from a `createBdd()` destructure
+ * (`const { Given … } = createBdd()`), excluding an alias rename (`{ Given: g }`).
+ * The generated stubs always call `Given(...)`, so this — not merely "createBdd
+ * is called" — decides whether the append needs its own `Given` binding.
+ */
+const bindsGiven = (source: string): boolean =>
+  /\bconst\s*\{[^}]*\bGiven\b(?!\s*:)[^}]*\}\s*=\s*createBdd\s*\(/.test(source);
 
 /** Renders ONLY the step-definition stub blocks (no import header). */
 const buildStepDefinitionStubBlocks = (missingSteps: string[]): string =>
@@ -227,16 +238,21 @@ export const buildStepDefinitionStubFile = (missingSteps: string[]): string =>
 
 /**
  * Builds the content to APPEND to an existing steps file: the stub blocks, plus
- * the playwright-bdd header ONLY if the file does not already import from it.
- * This avoids a duplicate top-level binding when the import is already present.
+ * exactly the binding the stubs need. The stubs call `Given(...)`, so:
+ *  - if the file already binds `Given` from createBdd → append blocks only;
+ *  - else prepend `const { Given } = createBdd();` (a separate destructure that
+ *    does NOT clash with an existing `{ When, Then }` one), and the
+ *    `import { createBdd }` too when playwright-bdd is not yet imported.
+ * Checking the actual `Given` binding (not merely that `createBdd()` is called)
+ * is what keeps a hand-edited file that only destructured `{ When, Then }` from
+ * getting Given-less stubs that fail to load (bddgen/typecheck).
  */
 export const buildAppendedStubs = (existingSource: string, missingSteps: string[]): string => {
-  // Detect the `createBdd()` destructure that provides the Given/When/Then
-  // bindings the stubs call — not merely a "playwright-bdd" import substring,
-  // which could appear in a comment or an unrelated import and wrongly skip the
-  // load-bearing header. A file the generator wrote (or any file already calling
-  // createBdd()) keeps its single header; one lacking the bindings gets it.
-  const hasHeader = /createBdd\s*\(/.test(existingSource);
   const blocks = buildStepDefinitionStubBlocks(missingSteps);
-  return hasHeader ? `${blocks}\n` : `${STEP_DEFINITION_IMPORTS}\n\n${blocks}\n`;
+  if (bindsGiven(existingSource)) return `${blocks}\n`;
+  const importsPlaywrightBdd = /from\s*["']playwright-bdd["']/.test(existingSource);
+  const header = importsPlaywrightBdd
+    ? CREATE_BDD_GIVEN
+    : `${CREATE_BDD_IMPORT}\n${CREATE_BDD_GIVEN}`;
+  return `${header}\n\n${blocks}\n`;
 };
