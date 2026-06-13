@@ -16,7 +16,7 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { redactSecrets } from "../../shared/logging/redact";
 import { err, ok, type Result } from "../../shared/result/result";
-import { joinVaultPath } from "../../shared/utils/vault-path";
+import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
 
 /** Test execution contract (TIS §8.10). */
@@ -168,16 +168,6 @@ const toArgv = (command: string, fallback: string[]): string[] => {
   const parts = tokenizeCommand(command);
   return parts.length > 0 ? parts : fallback;
 };
-
-/**
- * Appends scoped runner args (tags / feature paths) to a base command. npm uses
- * a single `npm run <script> [-- <args>]` separator, so if the configured base
- * already forwards args with `--`, append after it rather than inserting a
- * second `--` (npm forwards the first; a second would reach Cucumber as a
- * literal end-of-options token and swallow the following `--tags`/paths).
- */
-export const appendScopedArgs = (base: string[], scoped: string[]): string[] =>
-  base.includes("--") ? [...base, ...scoped] : [...base, "--", ...scoped];
 
 /**
  * A test-execution command must be an `npm run <script>` form (TIS §13.2).
@@ -625,8 +615,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
     settings: TestHubSettings,
   ): Promise<Result<ResolvedCommand>> {
     // Honor the user's configured runner commands (a wrapper script, extra
-    // flags, a different npm script). Scoped runs append their positional filter
-    // args after the configured base command's tokens (TIS §13.2).
+    // flags, a different npm script). Scoped runs convey their scope via the
+    // spawn ENV — BDD_TAGS for suites, BDD_FEATURES for feature paths — so
+    // `bddgen` generates ONLY the targeted features (the base command is
+    // unchanged). This keeps a scoped run from failing because an unrelated
+    // feature elsewhere in the vault doesn't parse.
     const base = toArgv(settings.runner.defaultRunCommand, ["npm", "run", "test"]);
     if (!isNpmRun(base)) {
       return err(
@@ -644,7 +637,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
       case "suite":
         return this.suiteScopeCommand(base, request.target);
       case "feature":
-        return ok({ args: appendScopedArgs(base, [this.featureArg(settings, request.target)]) });
+        return ok({
+          args: [...base],
+          env: { BDD_FEATURES: this.featurePath(settings, request.target) },
+        });
       case "use-case":
         return ok(await this.useCaseScopeCommand(base, settings, request.target));
     }
@@ -666,13 +662,13 @@ export class DefaultTestExecutionService implements TestExecutionService {
 
   /**
    * `all`: bare `base` (the config glob over every feature) unless a Use Case is
-   * deprecated (ADR-0012) — then pass the explicit positional union of the
-   * NON-deprecated UCs' feature paths (every feature is generated from a UC, so
-   * that union is "all features minus the retired ones"). With no deprecated UCs
-   * we keep the cheap glob; if the UC index can't be read we fall back to it
-   * rather than silently running nothing. When every non-deprecated UC is
-   * unautomated (or all UCs are deprecated) there is no active coverage, so we
-   * target a path that matches no feature instead of the all-features glob.
+   * deprecated (ADR-0012) — then scope generation (via `env.BDD_FEATURES`) to the
+   * explicit union of the NON-deprecated UCs' feature paths (every feature is
+   * generated from a UC, so that union is "all features minus the retired ones").
+   * With no deprecated UCs we keep the cheap glob; if the UC index can't be read
+   * we fall back to it rather than silently running nothing. When every
+   * non-deprecated UC is unautomated (or all UCs are deprecated) there is no
+   * active coverage, so we scope to a path that matches no feature.
    */
   private async allScopeCommand(
     base: string[],
@@ -686,17 +682,13 @@ export class DefaultTestExecutionService implements TestExecutionService {
       .filter((uc) => uc.status !== "deprecated")
       .flatMap((uc) => uc.featureFiles);
     if (activeFiles.length > 0) {
-      return {
-        args: appendScopedArgs(base, [
-          ...activeFiles.map((path) => this.featureArg(settings, path)),
-        ]),
-      };
+      return { args: [...base], env: { BDD_FEATURES: this.bddFeatures(settings, activeFiles) } };
     }
-    // featuresRoot-relative sentinel that matches no generated spec → zero tests
-    // run (with `--pass-with-no-tests` that is a clean pass): there is no active
-    // coverage to run.
+    // No active coverage: scope generation to a path that matches no feature →
+    // zero tests (a clean pass with `--pass-with-no-tests`).
     return {
-      args: appendScopedArgs(base, ["__no_active_features__.feature"]),
+      args: [...base],
+      env: { BDD_FEATURES: `${this.featurePrefix(settings)}/__no_active_features__.feature` },
     };
   }
 
@@ -715,11 +707,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
   }
 
   /**
-   * `use-case` (UC-011): the Use Case's declared featureFiles in order as
-   * positional filters (featuresRoot-relative). Falls back to the `<UC-id>-`
-   * prefix when the UC or its links can't be resolved (e.g. a brand-new UC with
-   * the standard naming): `playwright test` matches a positional arg as a regex
-   * over the generated spec paths, so `UC-002-` selects every `UC-002-*.feature`.
+   * `use-case` (UC-011): scope generation (via `env.BDD_FEATURES`) to the Use
+   * Case's declared featureFiles. Falls back to the `<UC-id>-*.feature` glob when
+   * the UC or its links can't be resolved (e.g. a brand-new UC with the standard
+   * naming) — bddgen expands the glob.
    */
   private async useCaseScopeCommand(
     base: string[],
@@ -729,31 +720,38 @@ export class DefaultTestExecutionService implements TestExecutionService {
     const found = await this.useCaseService.findById(target);
     const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
     if (featureFiles.length > 0) {
-      return {
-        args: appendScopedArgs(base, [
-          ...featureFiles.map((path) => this.featureArg(settings, path)),
-        ]),
-      };
+      return { args: [...base], env: { BDD_FEATURES: this.bddFeatures(settings, featureFiles) } };
     }
     return {
-      args: appendScopedArgs(base, [`${target}-`]),
+      args: [...base],
+      env: { BDD_FEATURES: `${this.featurePrefix(settings)}/${target}-*.feature` },
     };
   }
 
+  /** Comma-separated runner-relative feature paths for `env.BDD_FEATURES`. */
+  private bddFeatures(settings: TestHubSettings, targets: string[]): string {
+    return targets.map((target) => this.featurePath(settings, target)).join(",");
+  }
+
   /**
-   * A single Feature as a `playwright test` positional filter: the file path
-   * RELATIVE TO featuresRoot (the configured feature folder). playwright-bdd
-   * generates each feature's spec at `.features-gen/<path-under-featuresRoot>.spec.js`,
-   * so this relative path is what `playwright test` matches — a runner-relative
-   * `../…` path would match nothing (the spec lives under `.features-gen`).
+   * A single Feature as a runner-relative path for `BDD_FEATURES` (the generated
+   * config's `features`, resolved relative to the runner dir). bddgen generates
+   * ONLY the features in BDD_FEATURES, so an unrelated/malformed feature
+   * elsewhere never blocks a scoped run.
    */
-  private featureArg(settings: TestHubSettings, target: string): string {
+  private featurePath(settings: TestHubSettings, target: string): string {
     const prefix = settings.paths.featureFilesPath;
     // Accept a vault path or a bare basename; reduce to the file path relative
-    // to the configured features folder (= featuresRoot).
-    return target.startsWith(`${prefix}/`)
+    // to the configured features folder, then re-anchor to the runner cwd.
+    const basename = target.startsWith(`${prefix}/`)
       ? target.slice(prefix.length + 1)
       : (target.split("/").pop() ?? target);
+    return `${this.featurePrefix(settings)}/${basename}`;
+  }
+
+  /** Runner-cwd-relative features folder, e.g. `../Specifications/features`. */
+  private featurePrefix(settings: TestHubSettings): string {
+    return relativeVaultPath(settings.paths.testRunnerPath, settings.paths.featureFilesPath);
   }
 
   private finish(run: TestRun, startedAt: Date, durationMs?: number): void {

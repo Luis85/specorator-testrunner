@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultSuiteService } from "../src/application/services/suite-service";
 import {
-  appendScopedArgs,
   DefaultTestExecutionService,
   tokenizeCommand,
   type TestExecutionService,
@@ -102,25 +101,6 @@ describe("tokenizeCommand", () => {
 
   it("returns an empty array for a blank command", () => {
     expect(tokenizeCommand("   ")).toEqual([]);
-  });
-});
-
-describe("appendScopedArgs", () => {
-  it("inserts a single -- when the base has none", () => {
-    expect(appendScopedArgs(["npm", "run", "test"], ["--tags", "@x"])).toEqual([
-      "npm",
-      "run",
-      "test",
-      "--",
-      "--tags",
-      "@x",
-    ]);
-  });
-
-  it("does not add a second -- when the base already forwards args", () => {
-    expect(
-      appendScopedArgs(["npm", "run", "test", "--", "--format", "progress"], ["--tags", "@x"]),
-    ).toEqual(["npm", "run", "test", "--", "--format", "progress", "--tags", "@x"]);
   });
 });
 
@@ -358,7 +338,7 @@ describe("DefaultTestExecutionService", () => {
     );
   });
 
-  it("resolves the feature command as a featuresRoot-relative filter", async () => {
+  it("scopes a feature run to its runner-relative path via BDD_FEATURES", async () => {
     const { service, childProcess } = build();
     const result = await service.execute({
       scope: "feature",
@@ -366,39 +346,33 @@ describe("DefaultTestExecutionService", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Positional filter is relative to featuresRoot (the feature folder), which
-    // is what playwright-bdd's generated spec paths carry — no cucumber profile.
-    expect(childProcess.calls[0].args).toEqual(["npm", "run", "test", "--", "checkout.feature"]);
-    // No spaces → no display quoting.
-    expect(result.value.command).toBe("npm run test -- checkout.feature");
+    // The base command is unchanged; the scope rides BDD_FEATURES so bddgen
+    // generates ONLY this feature.
+    expect(childProcess.calls[0].args).toEqual(["npm", "run", "test"]);
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
+      "../Specifications/features/checkout.feature",
+    );
+    expect(result.value.command).toBe("npm run test");
   });
 
-  it("passes a feature path with $, &, and spaces as a literal argv entry (no shell, no escaping)", async () => {
+  it("carries a feature path with $, &, and spaces verbatim in BDD_FEATURES (env, no shell)", async () => {
     const { service, childProcess } = build();
-    // PR #7: under shell: false these are literal args — never interpolated or
-    // word-split, and no longer false-rejected by CommandSafetyPolicy.
     const result = await service.execute({
       scope: "feature",
       target: "Specifications/features/R&D Price $5.feature",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // The path arrives verbatim as a single literal argv entry — no escaping.
-    expect(childProcess.calls[0].args).toEqual([
-      "npm",
-      "run",
-      "test",
-      "--",
-      "R&D Price $5.feature",
-    ]);
-    // Display quotes only because the arg contains spaces (readability only).
-    expect(result.value.command).toBe('npm run test -- "R&D Price $5.feature"');
+    // The path is an env value passed to the child under shell:false — literal,
+    // never interpolated or word-split.
+    expect(childProcess.calls[0].args).toEqual(["npm", "run", "test"]);
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
+      "../Specifications/features/R&D Price $5.feature",
+    );
   });
 
-  it("resolves a feature path with shell metacharacters and runs (no COMMAND_DISALLOWED)", async () => {
-    const { service } = build();
-    // R&D.feature would be false-rejected/expanded under the old shell:true
-    // policy; with argv arrays it is a literal arg and runs cleanly (PR #7).
+  it("scopes a feature path with shell metacharacters and runs (no COMMAND_DISALLOWED)", async () => {
+    const { service, childProcess } = build();
     const result = await service.execute({
       scope: "feature",
       target: "Specifications/features/R&D.feature",
@@ -406,19 +380,20 @@ describe("DefaultTestExecutionService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("passed");
-    expect(result.value.command).toBe("npm run test -- R&D.feature");
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe("../Specifications/features/R&D.feature");
   });
 
-  it("resolves the use-case command as a UC-id prefix filter when the UC is unknown", async () => {
-    const { service } = build();
+  it("scopes an unknown use-case run to the <UC-id>-*.feature glob via BDD_FEATURES", async () => {
+    const { service, childProcess } = build();
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
-    // playwright matches a positional arg as a regex over the generated spec
-    // paths, so the `UC-001-` prefix selects every UC-001-*.feature.
-    expect(result.ok && result.value.command).toBe("npm run test -- UC-001-");
+    expect(result.ok).toBe(true);
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
+      "../Specifications/features/UC-001-*.feature",
+    );
   });
 
   it("targets a Use Case's declared featureFiles in order (UC-011)", async () => {
-    const { service, fs } = build();
+    const { service, fs, childProcess } = build();
     fs.files.set(
       "Use Cases/UC-001 Demo.md",
       buildNote(
@@ -435,14 +410,16 @@ describe("DefaultTestExecutionService", () => {
       ),
     );
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
-    // Positional feature-path filters in declared order — no cucumber profile.
-    expect(result.ok && result.value.command).toBe(
-      "npm run test -- UC-001-happy-path.feature UC-001-edge.feature",
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Declared featureFiles in order, comma-separated, runner-relative.
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
+      "../Specifications/features/UC-001-happy-path.feature,../Specifications/features/UC-001-edge.feature",
     );
   });
 
   it("excludes deprecated Use Cases' features from Run All (ADR-0012)", async () => {
-    const { service, fs } = build();
+    const { service, fs, childProcess } = build();
     fs.files.set(
       "Use Cases/UC-001 Active.md",
       buildNote(
@@ -469,9 +446,12 @@ describe("DefaultTestExecutionService", () => {
       ),
     );
     const result = await service.execute({ scope: "all", target: "all" });
-    // Explicit positional feature-path filter for the non-deprecated UC — no
-    // cucumber profile (playwright-bdd has no config-paths merge to suppress).
-    expect(result.ok && result.value.command).toBe("npm run test -- UC-001-happy.feature");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Scopes generation to the non-deprecated UC's feature via BDD_FEATURES.
+    expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
+      "../Specifications/features/UC-001-happy.feature",
+    );
   });
 
   it("derives failed from a non-zero exit code", async () => {

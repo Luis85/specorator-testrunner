@@ -119,16 +119,25 @@ describe("buildRunnerTemplates", () => {
     expect(config).toContain("src/steps/**/*.ts");
   });
 
+  it("reads BDD_FEATURES so the Test Hub can scope bddgen generation to chosen features", () => {
+    // feature/use-case/all scoped runs set BDD_FEATURES so bddgen generates only
+    // those features — an unrelated/malformed feature can't break a scoped run.
+    const config = configFor(DEFAULT_SETTINGS);
+    expect(config).toContain("process.env.BDD_FEATURES");
+    expect(config).toContain("split(");
+  });
+
   it("sets featuresRoot to the (out-of-runner) feature folder so bddgen accepts the features", () => {
     // playwright-bdd rejects any feature not under featuresRoot, and defaults it
     // to the runner dir — but the Test Hub keeps features OUTSIDE .testrunner.
     // The feature glob must live under the configured featuresRoot.
     const config = configFor(DEFAULT_SETTINGS);
     const root = /featuresRoot:\s*"([^"]+)"/.exec(config)?.[1];
-    const features = /features:\s*"([^"]+)"/.exec(config)?.[1];
+    // The default feature glob (the BDD_FEATURES fallback) must live under featuresRoot.
+    const glob = /"([^"]*\/\*\*\/\*\.feature)"/.exec(config)?.[1];
     expect(root).toBeTruthy();
-    expect(features).toBeTruthy();
-    expect(features?.startsWith(`${root}/`)).toBe(true);
+    expect(glob).toBeTruthy();
+    expect(glob?.startsWith(`${root}/`)).toBe(true);
     expect(root).toContain(".."); // points out of the runner, into the vault
   });
 

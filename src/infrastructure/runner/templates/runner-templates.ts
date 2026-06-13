@@ -82,7 +82,12 @@ const PLAYWRIGHT_CONFIG = (
 import { defineBddConfig, cucumberReporter } from "playwright-bdd";
 
 const testDir = defineBddConfig({
-  features: ${JSON.stringify(featuresGlob)},
+  // The Test Hub sets BDD_FEATURES (comma-separated, runner-relative paths or a
+  // glob) for feature/use-case/all scoped runs so bddgen GENERATES only those
+  // features — not every \`.feature\` in the vault. This keeps a scoped run of a
+  // valid feature from failing because some other unrelated/malformed feature
+  // doesn't parse. Unset → the full glob (run everything).
+  features: process.env.BDD_FEATURES ? process.env.BDD_FEATURES.split(",") : ${JSON.stringify(featuresGlob)},
   // playwright-bdd rejects any feature file that is not under featuresRoot, and
   // it defaults to the config's own directory (.testrunner). The Test Hub keeps
   // feature files OUTSIDE the runner (in the vault), so point featuresRoot at
