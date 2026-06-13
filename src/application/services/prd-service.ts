@@ -1,7 +1,7 @@
 import { buildPrdNote, prdFolderName } from "../content/prd-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
-import type { Prd, PrdId, PrdStatus } from "../../domain/entities/prd";
+import type { Prd, PrdId } from "../../domain/entities/prd";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
@@ -170,7 +170,7 @@ export class DefaultPrdService implements PrdService {
     if (fm.type !== "prd" || typeof fm.id !== "string") return null;
     const asArray = (v: string | string[] | undefined): string[] =>
       Array.isArray(v) ? v : v && v !== "" ? [v] : [];
-    const parent = typeof fm["parent-prd"] === "string" ? (fm["parent-prd"] as string).trim() : "";
+    const parent = typeof fm["parent-prd"] === "string" ? fm["parent-prd"].trim() : "";
     const status = isPrdStatus(fm.status) ? fm.status : "draft";
     return {
       id: fm.id,
