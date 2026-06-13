@@ -380,9 +380,19 @@ function legacyMonolith() {
 
 **Rules for suppressions:**
 1. Always add a why-comment — what constraint, what's deferred, what's the plan.
-2. Suppressed findings remain **visible** in audit output (counted as
-   suppressed, never silently excluded). This is intentional.
-3. Track intentional suppressions as tech debt (e.g. in a `docs/tech-debt/`
+2. Suppressed findings are **silenced** from normal `fallow audit` output —
+   they do not appear as counted or annotated. This is the expected behavior,
+   but it means suppressions can accumulate silently if left unreviewed.
+3. To surface stale suppressions (lines that suppress a finding that no longer
+   exists), run fallow with the stale-suppressions flag periodically or in CI:
+
+   ```bash
+   fallow dead-code --stale-suppressions
+   ```
+
+   This catches suppressions that were never removed after the underlying issue
+   was fixed, preventing suppressions from becoming permanent dead weight.
+4. Track intentional suppressions as tech debt (e.g. in a `docs/tech-debt/`
    file) so they get revisited rather than accumulated.
 
 ---
