@@ -16,7 +16,7 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { redactSecrets } from "../../shared/logging/redact";
 import { err, ok, type Result } from "../../shared/result/result";
-import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
+import { joinVaultPath } from "../../shared/utils/vault-path";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
 
 /** Test execution contract (TIS §8.10). */
@@ -692,10 +692,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
         ]),
       };
     }
+    // featuresRoot-relative sentinel that matches no generated spec → zero tests
+    // run (with `--pass-with-no-tests` that is a clean pass): there is no active
+    // coverage to run.
     return {
-      args: appendScopedArgs(base, [
-        `${this.featurePrefix(settings)}/__no_active_features__.feature`,
-      ]),
+      args: appendScopedArgs(base, ["__no_active_features__.feature"]),
     };
   }
 
@@ -715,9 +716,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
 
   /**
    * `use-case` (UC-011): the Use Case's declared featureFiles in order as
-   * positional filters. Falls back to the `<UC-id>-*.feature` glob when the UC
-   * or its links can't be resolved (e.g. a brand-new UC with the standard
-   * naming); playwright-bdd expands/matches the path, not a shell.
+   * positional filters (featuresRoot-relative). Falls back to the `<UC-id>-`
+   * prefix when the UC or its links can't be resolved (e.g. a brand-new UC with
+   * the standard naming): `playwright test` matches a positional arg as a regex
+   * over the generated spec paths, so `UC-002-` selects every `UC-002-*.feature`.
    */
   private async useCaseScopeCommand(
     base: string[],
@@ -734,24 +736,24 @@ export class DefaultTestExecutionService implements TestExecutionService {
       };
     }
     return {
-      args: appendScopedArgs(base, [`${this.featurePrefix(settings)}/${target}-*.feature`]),
+      args: appendScopedArgs(base, [`${target}-`]),
     };
   }
 
-  /** Runner-relative path to a single Feature file (TIS §13.2 `feature`). */
+  /**
+   * A single Feature as a `playwright test` positional filter: the file path
+   * RELATIVE TO featuresRoot (the configured feature folder). playwright-bdd
+   * generates each feature's spec at `.features-gen/<path-under-featuresRoot>.spec.js`,
+   * so this relative path is what `playwright test` matches — a runner-relative
+   * `../…` path would match nothing (the spec lives under `.features-gen`).
+   */
   private featureArg(settings: TestHubSettings, target: string): string {
     const prefix = settings.paths.featureFilesPath;
-    // Accept a vault path or a bare basename; reduce to the file relative to
-    // the configured features folder, then re-anchor to the runner cwd.
-    const basename = target.startsWith(`${prefix}/`)
+    // Accept a vault path or a bare basename; reduce to the file path relative
+    // to the configured features folder (= featuresRoot).
+    return target.startsWith(`${prefix}/`)
       ? target.slice(prefix.length + 1)
       : (target.split("/").pop() ?? target);
-    return `${this.featurePrefix(settings)}/${basename}`;
-  }
-
-  /** Runner-cwd-relative features folder, e.g. `../Specifications/features`. */
-  private featurePrefix(settings: TestHubSettings): string {
-    return relativeVaultPath(settings.paths.testRunnerPath, settings.paths.featureFilesPath);
   }
 
   private finish(run: TestRun, startedAt: Date, durationMs?: number): void {

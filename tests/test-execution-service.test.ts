@@ -358,7 +358,7 @@ describe("DefaultTestExecutionService", () => {
     );
   });
 
-  it("resolves the feature command relative to the runner cwd", async () => {
+  it("resolves the feature command as a featuresRoot-relative filter", async () => {
     const { service, childProcess } = build();
     const result = await service.execute({
       scope: "feature",
@@ -366,18 +366,11 @@ describe("DefaultTestExecutionService", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Positional feature-path filter appended to the base — no cucumber profile.
-    expect(childProcess.calls[0].args).toEqual([
-      "npm",
-      "run",
-      "test",
-      "--",
-      "../Specifications/features/checkout.feature",
-    ]);
+    // Positional filter is relative to featuresRoot (the feature folder), which
+    // is what playwright-bdd's generated spec paths carry — no cucumber profile.
+    expect(childProcess.calls[0].args).toEqual(["npm", "run", "test", "--", "checkout.feature"]);
     // No spaces → no display quoting.
-    expect(result.value.command).toBe(
-      "npm run test -- ../Specifications/features/checkout.feature",
-    );
+    expect(result.value.command).toBe("npm run test -- checkout.feature");
   });
 
   it("passes a feature path with $, &, and spaces as a literal argv entry (no shell, no escaping)", async () => {
@@ -396,12 +389,10 @@ describe("DefaultTestExecutionService", () => {
       "run",
       "test",
       "--",
-      "../Specifications/features/R&D Price $5.feature",
+      "R&D Price $5.feature",
     ]);
     // Display quotes only because the arg contains spaces (readability only).
-    expect(result.value.command).toBe(
-      'npm run test -- "../Specifications/features/R&D Price $5.feature"',
-    );
+    expect(result.value.command).toBe('npm run test -- "R&D Price $5.feature"');
   });
 
   it("resolves a feature path with shell metacharacters and runs (no COMMAND_DISALLOWED)", async () => {
@@ -415,15 +406,15 @@ describe("DefaultTestExecutionService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("passed");
-    expect(result.value.command).toBe("npm run test -- ../Specifications/features/R&D.feature");
+    expect(result.value.command).toBe("npm run test -- R&D.feature");
   });
 
-  it("resolves the use-case command as a feature glob when the UC is unknown", async () => {
+  it("resolves the use-case command as a UC-id prefix filter when the UC is unknown", async () => {
     const { service } = build();
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
-    expect(result.ok && result.value.command).toBe(
-      "npm run test -- ../Specifications/features/UC-001-*.feature",
-    );
+    // playwright matches a positional arg as a regex over the generated spec
+    // paths, so the `UC-001-` prefix selects every UC-001-*.feature.
+    expect(result.ok && result.value.command).toBe("npm run test -- UC-001-");
   });
 
   it("targets a Use Case's declared featureFiles in order (UC-011)", async () => {
@@ -446,7 +437,7 @@ describe("DefaultTestExecutionService", () => {
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     // Positional feature-path filters in declared order — no cucumber profile.
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- ../Specifications/features/UC-001-happy-path.feature ../Specifications/features/UC-001-edge.feature",
+      "npm run test -- UC-001-happy-path.feature UC-001-edge.feature",
     );
   });
 
@@ -480,9 +471,7 @@ describe("DefaultTestExecutionService", () => {
     const result = await service.execute({ scope: "all", target: "all" });
     // Explicit positional feature-path filter for the non-deprecated UC — no
     // cucumber profile (playwright-bdd has no config-paths merge to suppress).
-    expect(result.ok && result.value.command).toBe(
-      "npm run test -- ../Specifications/features/UC-001-happy.feature",
-    );
+    expect(result.ok && result.value.command).toBe("npm run test -- UC-001-happy.feature");
   });
 
   it("derives failed from a non-zero exit code", async () => {

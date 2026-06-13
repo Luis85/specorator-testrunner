@@ -124,8 +124,8 @@ describe("buildRunnerTemplates", () => {
     // to the runner dir — but the Test Hub keeps features OUTSIDE .testrunner.
     // The feature glob must live under the configured featuresRoot.
     const config = configFor(DEFAULT_SETTINGS);
-    const root = config.match(/featuresRoot:\s*"([^"]+)"/)?.[1];
-    const features = config.match(/features:\s*"([^"]+)"/)?.[1];
+    const root = /featuresRoot:\s*"([^"]+)"/.exec(config)?.[1];
+    const features = /features:\s*"([^"]+)"/.exec(config)?.[1];
     expect(root).toBeTruthy();
     expect(features).toBeTruthy();
     expect(features?.startsWith(`${root}/`)).toBe(true);

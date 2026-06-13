@@ -100,14 +100,13 @@ try {
   //    `playwright test` by path substring. Must pass and the JSON report must
   //    show 1 passing scenario. This run OVERWRITES reports/cucumber-report.json,
   //    so it runs AFTER the assertions on step 4's report above.
-  const featureFilePath = join(
-    vaultRoot,
-    DEFAULT_SETTINGS.paths.featureFilesPath,
-    DEMO_FEATURE_FILE_NAME,
-  );
-  // Compute the path relative to the runner root and normalise to forward
+  const featuresDir = join(vaultRoot, DEFAULT_SETTINGS.paths.featureFilesPath);
+  const featureFilePath = join(featuresDir, DEMO_FEATURE_FILE_NAME);
+  // The filter must be the feature path RELATIVE TO featuresRoot (the feature
+  // folder): playwright-bdd generates the spec at `.features-gen/<that>.spec.js`,
+  // so a runner-relative `../…` path would match nothing. Normalise to forward
   // slashes so path matching is cross-platform (Windows sep is \).
-  const relativeFeaturePath = relative(runnerRoot, featureFilePath).split(sep).join("/");
+  const relativeFeaturePath = relative(featuresDir, featureFilePath).split(sep).join("/");
   const scopedCommand = `npm run test -- ${relativeFeaturePath}`;
   console.log(`\n$ ${scopedCommand}`);
   // Merge stderr into stdout (`2>&1` works in both sh and cmd.exe) so the
