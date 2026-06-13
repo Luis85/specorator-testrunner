@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { CucumberJsonReportParser } from "../src/application/services/cucumber-json-report-parser";
 import { DefaultReportImportService } from "../src/application/services/report-import-service";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { TestRun } from "../src/domain/entities/test-run";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { FakeAbsoluteFileSystem, FakeDataStore, recordingEventBus, silentLogger } from "./fakes";
+import { assertArtifactReferences, REPRESENTATIVE_REPORT } from "./cucumber-report-fixtures";
 
 const REPORT_ABS = "/vault/.testrunner/reports/cucumber-report.json";
 const REPORT_VAULT = ".testrunner/reports/cucumber-report.json";
+const REPORT_VAULT_PREFIX = ".testrunner/reports";
 
 const run = (overrides: Partial<TestRun> = {}): TestRun => ({
   id: "RUN-2026-05-31-100000",
@@ -29,59 +32,20 @@ const build = () => {
     bus,
   );
   const absoluteFs = new FakeAbsoluteFileSystem();
-  const service = new DefaultReportImportService(settings, absoluteFs, bus, silentLogger);
+  const service = new DefaultReportImportService(
+    settings,
+    absoluteFs,
+    new CucumberJsonReportParser(),
+    bus,
+    silentLogger,
+  );
   return { service, absoluteFs, events, types };
 };
-
-// A representative Cucumber-JS JSON report: one passed scenario, one failed
-// (with an error_message + an image embedding), one all-skipped, one undefined.
-const REPORT = JSON.stringify([
-  {
-    name: "Checkout",
-    uri: "features/UC-001-checkout.feature",
-    elements: [
-      {
-        name: "Successful checkout",
-        type: "scenario",
-        steps: [
-          { result: { status: "passed", duration: 1_000_000 } },
-          { result: { status: "passed", duration: 2_000_000 } },
-        ],
-      },
-      {
-        name: "Declined card",
-        type: "scenario",
-        steps: [
-          { result: { status: "passed", duration: 1_000_000 } },
-          {
-            result: { status: "failed", duration: 3_000_000, error_message: "card declined" },
-            embeddings: [{ mime_type: "image/png", data: "base64==" }],
-          },
-        ],
-      },
-      {
-        name: "All skipped",
-        type: "scenario",
-        steps: [{ result: { status: "skipped" } }, { result: { status: "skipped" } }],
-      },
-      {
-        name: "Undefined step",
-        type: "scenario",
-        steps: [
-          { result: { status: "passed", duration: 1_000_000 } },
-          { result: { status: "undefined" } },
-        ],
-      },
-      // Backgrounds carry no independent result and must be ignored.
-      { name: "setup", type: "background", steps: [{ result: { status: "passed" } }] },
-    ],
-  },
-]);
 
 describe("DefaultReportImportService", () => {
   it("parses statuses into TestRunResult counts and ScenarioResult statuses", async () => {
     const { service, absoluteFs } = build();
-    absoluteFs.seed(REPORT_ABS, REPORT);
+    absoluteFs.seed(REPORT_ABS, REPRESENTATIVE_REPORT);
 
     const result = await service.import(run());
     expect(result.ok).toBe(true);
@@ -110,24 +74,18 @@ describe("DefaultReportImportService", () => {
 
   it("collects the report and screenshot embeddings as artifact references", async () => {
     const { service, absoluteFs } = build();
-    absoluteFs.seed(REPORT_ABS, REPORT);
+    absoluteFs.seed(REPORT_ABS, REPRESENTATIVE_REPORT);
 
     const result = await service.import(run());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const types = result.value.artifacts.map((a) => a.type);
-    expect(types).toContain("report");
-    expect(types).toContain("screenshot");
-    // References only — into .testrunner/reports, never copied bytes.
-    for (const artifact of result.value.artifacts) {
-      expect(artifact.path.startsWith(".testrunner/reports")).toBe(true);
-    }
+    assertArtifactReferences(result.value.artifacts, REPORT_VAULT_PREFIX);
   });
 
   it("emits only report.imported on success", async () => {
     const { service, absoluteFs, types } = build();
-    absoluteFs.seed(REPORT_ABS, REPORT);
+    absoluteFs.seed(REPORT_ABS, REPRESENTATIVE_REPORT);
 
     await service.import(run());
     // report.detected was removed (it triggered a never-built FS watcher); the
@@ -137,7 +95,7 @@ describe("DefaultReportImportService", () => {
 
   it("report.imported payload references the vault path and scenario count", async () => {
     const { service, absoluteFs, events } = build();
-    absoluteFs.seed(REPORT_ABS, REPORT);
+    absoluteFs.seed(REPORT_ABS, REPRESENTATIVE_REPORT);
 
     await service.import(run());
     const imported = events.find((e) => e.type === "report.imported");

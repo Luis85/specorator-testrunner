@@ -44,3 +44,18 @@ export const REQUIRED_RUNNER_DEPENDENCIES = [
   "node_modules/@cucumber/cucumber/bin/cucumber.js",
   "node_modules/tsx",
 ] as const;
+
+/**
+ * The `.testrunner` manifest version. Stamped into `testrunner-manifest.json`
+ * at generation; read back by validation to detect a runner produced by an
+ * older plugin (the Phase 3 playwright-bdd migration keys on this). Bumped
+ * whenever the generated runtime shape changes incompatibly.
+ */
+export const TESTRUNNER_MANIFEST_VERSION = 1;
+
+/** The generated manifest file (vault-relative to the runner root). */
+export const TESTRUNNER_MANIFEST_FILE = "testrunner-manifest.json";
+
+/** Canonical manifest content for the current version. */
+export const testrunnerManifestContent = (): string =>
+  JSON.stringify({ manifestVersion: TESTRUNNER_MANIFEST_VERSION }, null, 2) + "\n";

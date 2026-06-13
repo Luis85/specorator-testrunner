@@ -77,6 +77,25 @@ interface ValidationMessages {
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+/**
+ * The data.json schema version. Bumped when the persisted shape changes
+ * incompatibly. Pre-announcement beta has no migration framework (proposal §9
+ * Phase 2 scope): a present blob with a different version resets to defaults
+ * with a logged report rather than being migrated.
+ */
+const DATA_SCHEMA_VERSION = 1;
+
+/**
+ * The schema version this envelope first shipped at — a FIXED historical
+ * constant, NEVER updated when {@link DATA_SCHEMA_VERSION} bumps. A present blob
+ * carrying no numeric `schemaVersion` predates the envelope, so it is treated as
+ * this version: at v1 it equals {@link DATA_SCHEMA_VERSION} and merges, but once
+ * the code bumps past 1 it no longer matches and resets. Kept distinct from
+ * `DATA_SCHEMA_VERSION` so a future bump can't be "simplified" into folding the
+ * two together (which would silently stop resetting legacy/corrupt blobs).
+ */
+const INITIAL_SCHEMA_VERSION = 1;
+
 /** Runtime mirror of LoggingSettings["level"] for tamper repair on load. */
 const LOG_LEVELS: ReadonlySet<string> = new Set(["debug", "info", "warn", "error"]);
 
@@ -125,10 +144,73 @@ export class DefaultSettingsService implements SettingsService {
   private readonly persistQueue = new SerialQueue();
 
   async load(): Promise<TestHubSettings> {
+    const raw = await this.store.load();
+    // A present blob whose EFFECTIVE version differs from the code → beta reset
+    // (log + defaults, no migration). A present-but-unversioned blob is treated
+    // as v1 (the version this envelope shipped at), so at v1 it still merges,
+    // but a future incompatible bump resets it instead of merging stale data.
+    // First run (no data.json) falls through to defaults silently.
+    if (this.schemaVersionIsStale(raw)) {
+      this.logger.error(
+        "data.json schemaVersion differs from this build; resetting settings to defaults (beta: no migration).",
+        undefined,
+        { expected: DATA_SCHEMA_VERSION },
+      );
+      // PERSIST the reset so the stale blob is overwritten with stamped defaults
+      // — otherwise every subsequent load repeats the reset/log instead of
+      // converging, AND sensitive stale data lingers (e.g. the pre-cut-over
+      // plaintext `auth.env` credentials this rail must drop, ADR-0024).
+      // Write DIRECTLY, NOT through `persistQueue`: `save()` runs its whole body
+      // inside `persistQueue.run(...)` and calls `await this.load()` to compute
+      // changedFields, so re-entering the queue here would deadlock (the reset
+      // queues behind the save that is awaiting it — the re-entrancy the
+      // SerialQueue docs warn about). The direct write is a blind overwrite to
+      // defaults, not a read-modify-write, so interleaving with that in-flight
+      // save is benign: the save's own subsequent write supersedes it. A persist
+      // failure is logged but does not block the load (returned defaults are
+      // correct in memory).
+      const persisted = await this.persist(DEFAULT_SETTINGS);
+      if (!persisted.ok) {
+        this.logger.error(
+          "Failed to persist the settings reset; the stale blob remains.",
+          persisted.error,
+        );
+      }
+      return DEFAULT_SETTINGS;
+    }
     const settings = this.sanitizeScalarShapes(
-      this.sanitizeRunnerEnvInputs(this.sanitizePaths(mergeWithDefaults(await this.store.load()))),
+      this.sanitizeRunnerEnvInputs(this.sanitizePaths(mergeWithDefaults(raw))),
     );
     return { ...settings, onboarding: repairOnboardingShape(settings.onboarding) };
+  }
+
+  /**
+   * True for a PRESENT blob whose EFFECTIVE schema version differs from the
+   * code. Only `undefined` raw (no data.json) is the silent first run. ANY
+   * present value — object, array, scalar, or null — is a stored blob: its
+   * effective version is its numeric `schemaVersion` if it has one, else 1 (the
+   * version this envelope shipped at, fixed forever, NOT `DATA_SCHEMA_VERSION`
+   * which moves on each bump). So an unversioned or malformed present blob
+   * merges while the code is at v1, but resets (and is overwritten) once the
+   * code bumps past 1 — a corrupt non-object blob must not silently survive an
+   * incompatible bump.
+   */
+  private schemaVersionIsStale(raw: unknown): boolean {
+    if (raw === undefined) return false; // first run, not stale
+    const version =
+      typeof raw === "object" && raw !== null && !Array.isArray(raw)
+        ? (raw as Record<string, unknown>).schemaVersion
+        : undefined;
+    // INITIAL_SCHEMA_VERSION (not DATA_SCHEMA_VERSION) is the fallback: any
+    // present-but-unversioned/non-object blob predates the envelope, so it is
+    // effectively the version this envelope shipped at.
+    const effective = typeof version === "number" ? version : INITIAL_SCHEMA_VERSION;
+    return effective !== DATA_SCHEMA_VERSION;
+  }
+
+  /** Persists settings under the schema envelope (stamps the current version). */
+  private persist(settings: TestHubSettings): Promise<Result<void>> {
+    return this.store.save({ schemaVersion: DATA_SCHEMA_VERSION, ...settings });
   }
 
   /**
@@ -548,7 +630,7 @@ export class DefaultSettingsService implements SettingsService {
       // Diff the persisted settings against the incoming ones so the event
       // carries the real changed field names (Event Catalog §13: { changedFields }).
       const previous = await this.load();
-      const saved = await this.store.save(settings);
+      const saved = await this.persist(settings);
       if (!saved.ok) return saved;
       const changedFields = diffSettings(previous, settings);
       await this.eventBus.publish(createEvent("settings.updated", { changedFields }));
@@ -558,7 +640,7 @@ export class DefaultSettingsService implements SettingsService {
 
   reset(correlationId?: string): Promise<Result<TestHubSettings>> {
     return this.persistQueue.run(async () => {
-      const saved = await this.store.save(DEFAULT_SETTINGS);
+      const saved = await this.persist(DEFAULT_SETTINGS);
       if (!saved.ok) return saved;
       await this.eventBus.publish(
         createEvent("settings.reset", { profile: "default" }, { correlationId }),

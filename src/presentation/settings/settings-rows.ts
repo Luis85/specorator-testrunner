@@ -46,7 +46,15 @@ export const checklistRow = (status: ChecklistStatus, text: string): ChecklistRo
  * silently rendering nothing.
  */
 export const runnerValidationRows = (result: RunnerValidationResult): ChecklistRow[] => {
-  if (result.valid) return [checklistRow("ok", "Environment is ready.")];
+  if (result.valid) {
+    // Healthy, but surface any non-error advisories (e.g. an outdated
+    // .testrunner manifest → Repair) so a warning isn't swallowed.
+    const advisories = result.issues.filter((issue) => issue.severity !== "error");
+    return [
+      checklistRow("ok", "Environment is ready."),
+      ...advisories.map((issue) => checklistRow(issue.severity, issue.message)),
+    ];
+  }
   if (result.issues.length === 0) return [checklistRow("error", "Environment is not ready.")];
   return result.issues.map((issue) => checklistRow(issue.severity, issue.message));
 };

@@ -1,6 +1,12 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
-import { REQUIRED_RUNNER_DEPENDENCIES, VALIDATED_RUNNER_FILES } from "../content/runner-manifest";
+import {
+  REQUIRED_RUNNER_DEPENDENCIES,
+  TESTRUNNER_MANIFEST_FILE,
+  TESTRUNNER_MANIFEST_VERSION,
+  VALIDATED_RUNNER_FILES,
+} from "../content/runner-manifest";
+import { parseManifestVersion } from "../content/runner-manifest-version";
 import { buildGitHubActionsWorkflow, isNpmCiCommand } from "../content/ci-workflow-content";
 import { isSafeCiCommand } from "./pipeline-generation-service";
 import { playwrightBrowsersCandidates } from "./runner-paths";
@@ -42,6 +48,18 @@ export interface RunnerValidationIssue {
   code: string;
   message: string;
   severity: "error" | "warning" | "info";
+}
+
+/** The runner probe booleans/lists {@link collectRunnerIssues} maps onto issues. */
+interface RunnerProbe {
+  nodeAvailable: boolean;
+  packageManagerAvailable: boolean;
+  runnerFolderExists: boolean;
+  missingFiles: string[];
+  nodeModulesExists: boolean;
+  missingDependencies: string[];
+  playwrightAvailable: boolean;
+  browsersInstalled: boolean;
 }
 
 export interface CiReadinessResult {
@@ -110,52 +128,18 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
       (await this.commandSucceeds(["npx", "playwright", "--version"], runnerAbs));
     const browsersInstalled = await this.detectBrowsers(runnerAbs);
 
-    if (!nodeAvailable)
-      issues.push({
-        code: "NODE_MISSING",
-        message: "Node.js is not available.",
-        severity: "error",
-      });
-    if (!packageManagerAvailable)
-      issues.push({ code: "NPM_MISSING", message: "npm is not available.", severity: "error" });
-    if (!runnerFolderExists)
-      issues.push({
-        code: "RUNNER_MISSING_FILE",
-        message: "The .testrunner folder is missing.",
-        severity: "error",
-      });
-    else
-      for (const file of missingFiles)
-        issues.push({
-          code: "RUNNER_MISSING_FILE",
-          message: `.testrunner/${file} is missing.`,
-          severity: "error",
-        });
-    if (!nodeModulesExists)
-      issues.push({
-        code: "DEPENDENCIES_MISSING",
-        message: "Runner dependencies are not installed.",
-        severity: "error",
-      });
-    else if (missingDependencies.length > 0)
-      for (const dep of missingDependencies)
-        issues.push({
-          code: "DEPENDENCIES_MISSING",
-          message: `.testrunner/${dep} is missing.`,
-          severity: "error",
-        });
-    else if (!playwrightAvailable)
-      issues.push({
-        code: "PLAYWRIGHT_MISSING",
-        message: "Playwright is installed but not runnable.",
-        severity: "error",
-      });
-    if (!browsersInstalled)
-      issues.push({
-        code: "BROWSER_NOT_INSTALLED",
-        message: "Chromium is not installed.",
-        severity: "error",
-      });
+    issues.push(
+      ...(await this.collectRunnerIssues(runnerAbs, {
+        nodeAvailable,
+        packageManagerAvailable,
+        runnerFolderExists,
+        missingFiles,
+        nodeModulesExists,
+        missingDependencies,
+        playwrightAvailable,
+        browsersInstalled,
+      })),
+    );
 
     const valid =
       nodeAvailable &&
@@ -177,6 +161,93 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
       browsersInstalled,
       issues,
     });
+  }
+
+  /**
+   * Maps the runner probe booleans onto the ordered issue list (US-013). Pulled
+   * out of {@link validateEnvironment} so that function stays a flat orchestration
+   * (load → probe → collect → finish) rather than a long branching tail; the
+   * `valid` flag is still derived from the booleans, not from these issues, so a
+   * manifest advisory (a warning) never flips an otherwise-healthy runner.
+   */
+  private async collectRunnerIssues(
+    runnerAbs: string,
+    probe: RunnerProbe,
+  ): Promise<RunnerValidationIssue[]> {
+    const issues: RunnerValidationIssue[] = [];
+    if (!probe.nodeAvailable)
+      issues.push({
+        code: "NODE_MISSING",
+        message: "Node.js is not available.",
+        severity: "error",
+      });
+    if (!probe.packageManagerAvailable)
+      issues.push({ code: "NPM_MISSING", message: "npm is not available.", severity: "error" });
+    if (!probe.runnerFolderExists)
+      issues.push({
+        code: "RUNNER_MISSING_FILE",
+        message: "The .testrunner folder is missing.",
+        severity: "error",
+      });
+    else {
+      for (const file of probe.missingFiles)
+        issues.push({
+          code: "RUNNER_MISSING_FILE",
+          message: `.testrunner/${file} is missing.`,
+          severity: "error",
+        });
+      // Only probe the manifest when the folder exists, so a wholly-missing
+      // runner (already an error above) doesn't also emit a manifest advisory.
+      const advisory = await this.manifestAdvisory(runnerAbs);
+      if (advisory) issues.push(advisory);
+    }
+    if (!probe.nodeModulesExists)
+      issues.push({
+        code: "DEPENDENCIES_MISSING",
+        message: "Runner dependencies are not installed.",
+        severity: "error",
+      });
+    else if (probe.missingDependencies.length > 0)
+      for (const dep of probe.missingDependencies)
+        issues.push({
+          code: "DEPENDENCIES_MISSING",
+          message: `.testrunner/${dep} is missing.`,
+          severity: "error",
+        });
+    else if (!probe.playwrightAvailable)
+      issues.push({
+        code: "PLAYWRIGHT_MISSING",
+        message: "Playwright is installed but not runnable.",
+        severity: "error",
+      });
+    if (!probe.browsersInstalled)
+      issues.push({
+        code: "BROWSER_NOT_INSTALLED",
+        message: "Chromium is not installed.",
+        severity: "error",
+      });
+    return issues;
+  }
+
+  /**
+   * Reads the on-disk `testrunner-manifest.json` and returns a repair advisory
+   * when its version is not exactly {@link TESTRUNNER_MANIFEST_VERSION}. Any
+   * non-equal version is a repair signal: null/older = a runner from an older
+   * Test Hub; NEWER = a vault repaired by a newer plugin then opened here
+   * (downgrade / Obsidian Sync). Warn on all three, never blocking.
+   */
+  private async manifestAdvisory(runnerAbs: string): Promise<RunnerValidationIssue | null> {
+    const manifestRead = await this.absoluteFs.readAbsolute(
+      `${runnerAbs}/${TESTRUNNER_MANIFEST_FILE}`,
+    );
+    const manifestVersion = parseManifestVersion(manifestRead.ok ? manifestRead.value : undefined);
+    if (manifestVersion === TESTRUNNER_MANIFEST_VERSION) return null;
+    return {
+      code: "RUNNER_MANIFEST_OUTDATED",
+      severity: "warning",
+      message:
+        "The .testrunner was produced by a different Test Hub version; run Repair installation to regenerate it.",
+    };
   }
 
   async validateCiReadiness(settings: TestHubSettings): Promise<CiReadinessResult> {
@@ -207,123 +278,8 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
       // runner files missing even though the workflow points at the real folder.
       const runnerRel = settings.paths.testRunnerPath.replace(/\\/g, "/");
       const runnerAbs = `${root}/${runnerRel}`;
-
-      // The runner project must exist and be committable (US-042 standalone).
-      if (!(await this.absoluteFs.existsAbsolute(runnerAbs))) {
-        missingItems.push(`Runner folder is missing at ${runnerRel}.`);
-      }
-      // The CI `test:ci` script runs `cucumber-js --config cucumber.mjs` against
-      // the support files, so a runner missing any managed file (cucumber.mjs,
-      // world/hooks/paths, tsconfig) fails CI immediately. Verify the same files
-      // the local validator checks (package.json is asserted in detail below).
-      for (const file of VALIDATED_RUNNER_FILES) {
-        if (file === "package.json") continue;
-        if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/${file}`))) {
-          missingItems.push(`Runner file ${file} is missing (the CI test:ci script needs it).`);
-        }
-      }
-      // package.json + the npm script the generated CI job invokes (US-041/
-      // UC-020). The job runs the configured `runner.ciRunCommand` (default
-      // `npm run test:ci`). Only validate a package script when that command
-      // actually parses as `npm run <script>`; a custom non-npm command (e.g.
-      // `npx cucumber-js …`) doesn't depend on a package script, so skip it.
-      const effectiveCiCommand = settings.runner.ciRunCommand.trim() || "npm run test:ci";
-      // Generate CI Workflow refuses commands that aren't a shell-safe npm
-      // ci/run shape, so readiness must flag the same ones rather than
-      // green-light a config the generator would reject.
-      // Generation requires the run command to invoke an npm SCRIPT (not an
-      // install), so readiness must flag the same — npmRunScript returns null
-      // for a non-`npm run` command, which also leaves the script unverified.
-      if (
-        !isSafeCiCommand(effectiveCiCommand, this.commandSafety) ||
-        npmRunScript(effectiveCiCommand) === null
-      ) {
-        missingItems.push(
-          `CI run command "${effectiveCiCommand}" is not supported by Generate CI Workflow.`,
-        );
-      }
-      const ciScript = npmRunScript(effectiveCiCommand);
-      const pkgPath = `${runnerAbs}/package.json`;
-      if (!(await this.absoluteFs.existsAbsolute(pkgPath))) {
-        missingItems.push("Runner package.json is missing.");
-      } else if (ciScript !== null) {
-        const pkg = await this.absoluteFs.readAbsolute(pkgPath);
-        if (pkg.ok) {
-          try {
-            const parsed = JSON.parse(pkg.value) as { scripts?: Record<string, unknown> };
-            if (typeof parsed.scripts?.[ciScript] !== "string") {
-              missingItems.push(
-                `Runner package.json has no "${ciScript}" script (the CI job runs ${effectiveCiCommand}).`,
-              );
-            }
-          } catch {
-            missingItems.push("Runner package.json is not valid JSON.");
-          }
-        } else {
-          // Couldn't read it (permissions / transient I/O) — can't confirm the
-          // CI script, so don't silently report ready.
-          missingItems.push("Runner package.json could not be read to verify the CI script.");
-        }
-      }
-      // Lockfile: required only by an install command that needs one. The
-      // default `npm ci` fails without it (US-041), but a runner configured to
-      // use e.g. `npm install --no-package-lock` doesn't, so don't reject that
-      // valid CI config.
-      const effectiveCiInstall = settings.runner.ciInstallCommand.trim() || "npm ci";
-      if (!isSafeCiCommand(effectiveCiInstall, this.commandSafety)) {
-        missingItems.push(
-          `CI install command "${effectiveCiInstall}" is not supported by Generate CI Workflow.`,
-        );
-      }
-      if (
-        isNpmCiCommand(effectiveCiInstall) &&
-        !(await this.absoluteFs.existsAbsolute(`${runnerAbs}/package-lock.json`))
-      ) {
-        missingItems.push("Runner package-lock.json is missing (npm ci needs a lockfile).");
-      }
-      // The CI workflow itself must have been generated (UC-019 → UC-020).
-      // Generation normalizes `\`→`/` before writing (so a Windows-configured
-      // `.github\workflows\e2e.yml` is written to the POSIX path GitHub finds);
-      // normalize here too or the readiness probe would miss the generated file.
-      const workflowRel = settings.ci.workflowPath.replace(/\\/g, "/");
-      // Generation refuses a traversal/absolute workflowPath (it would write
-      // outside the repo); reject it here too rather than probing outside the
-      // vault and possibly reporting ready for a path Generate CI Workflow won't
-      // accept.
-      if (
-        workflowRel.trim() === "" ||
-        workflowRel.startsWith("/") ||
-        /^[A-Za-z]:/.test(workflowRel) ||
-        workflowRel.split("/").includes("..")
-      ) {
-        missingItems.push(
-          `CI workflow path is invalid (must be repo-relative, no ".."): ${workflowRel}.`,
-        );
-      } else if (!/^\.github\/workflows\/[^/]+\.ya?ml$/.test(workflowRel)) {
-        // GitHub Actions only discovers `.yml`/`.yaml` files directly under
-        // `.github/workflows/`; anything else never runs even if it exists
-        // (matches generation's rule).
-        missingItems.push(
-          `CI workflow must be a .yml/.yaml file under ".github/workflows/" to be discovered by Actions: ${workflowRel}.`,
-        );
-      } else if (!(await this.absoluteFs.existsAbsolute(`${root}/${workflowRel}`))) {
-        missingItems.push(`CI workflow not generated at ${workflowRel}.`);
-      } else {
-        // The workflow exists, but settings (runner path, CI commands, node
-        // version, auth keys) may have changed since it was generated, leaving a
-        // stale working-directory/command that fails in Actions. Compare it to
-        // what generation would write now and warn (not block) if it drifted.
-        const existing = await this.absoluteFs.readAbsolute(`${root}/${workflowRel}`);
-        if (existing.ok && existing.value !== buildGitHubActionsWorkflow(settings)) {
-          warnings.push(
-            "CI workflow is out of date with current settings; re-run Generate CI Workflow.",
-          );
-        }
-      }
-      // node_modules being committed defeats `npm ci`; warn rather than block.
-      if (await this.absoluteFs.existsAbsolute(`${runnerAbs}/node_modules`)) {
-        warnings.push("Runner node_modules is present; ensure it is git-ignored, not committed.");
-      }
+      await this.collectCiRunnerItems(settings, runnerRel, runnerAbs, missingItems, warnings);
+      await this.collectCiWorkflowItems(settings, root, missingItems, warnings);
     }
 
     // The generated workflow ALWAYS sets BASE_URL from `${{ vars.E2E_BASE_URL }}`
@@ -362,6 +318,173 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
       }),
     );
     return result;
+  }
+
+  /**
+   * Probes the runner project a CI checkout installs and runs (US-041/UC-020):
+   * the managed files, package.json + its CI script, and the install lockfile.
+   * Extracted from {@link validateCiReadiness} so that function stays a flat
+   * sequence of probes; pushes onto the shared `missingItems`/`warnings`.
+   */
+  private async collectCiRunnerItems(
+    settings: TestHubSettings,
+    runnerRel: string,
+    runnerAbs: string,
+    missingItems: string[],
+    warnings: string[],
+  ): Promise<void> {
+    // The runner project must exist and be committable (US-042 standalone).
+    if (!(await this.absoluteFs.existsAbsolute(runnerAbs))) {
+      missingItems.push(`Runner folder is missing at ${runnerRel}.`);
+    }
+    // The CI `test:ci` script runs `cucumber-js --config cucumber.mjs` against
+    // the support files, so a runner missing any managed file (cucumber.mjs,
+    // world/hooks/paths, tsconfig) fails CI immediately. Verify the same files
+    // the local validator checks (package.json is asserted in detail below).
+    for (const file of VALIDATED_RUNNER_FILES) {
+      if (file === "package.json") continue;
+      if (!(await this.absoluteFs.existsAbsolute(`${runnerAbs}/${file}`))) {
+        missingItems.push(`Runner file ${file} is missing (the CI test:ci script needs it).`);
+      }
+    }
+    // package.json + the npm script the generated CI job invokes (US-041/
+    // UC-020). The job runs the configured `runner.ciRunCommand` (default
+    // `npm run test:ci`). Only validate a package script when that command
+    // actually parses as `npm run <script>`; a custom non-npm command (e.g.
+    // `npx cucumber-js …`) doesn't depend on a package script, so skip it.
+    const effectiveCiCommand = settings.runner.ciRunCommand.trim() || "npm run test:ci";
+    // Generate CI Workflow refuses commands that aren't a shell-safe npm
+    // ci/run shape, so readiness must flag the same ones rather than
+    // green-light a config the generator would reject.
+    // Generation requires the run command to invoke an npm SCRIPT (not an
+    // install), so readiness must flag the same — npmRunScript returns null
+    // for a non-`npm run` command, which also leaves the script unverified.
+    if (
+      !isSafeCiCommand(effectiveCiCommand, this.commandSafety) ||
+      npmRunScript(effectiveCiCommand) === null
+    ) {
+      missingItems.push(
+        `CI run command "${effectiveCiCommand}" is not supported by Generate CI Workflow.`,
+      );
+    }
+    await this.collectCiPackageScriptItem(
+      runnerAbs,
+      npmRunScript(effectiveCiCommand),
+      effectiveCiCommand,
+      missingItems,
+    );
+    // Lockfile: required only by an install command that needs one. The
+    // default `npm ci` fails without it (US-041), but a runner configured to
+    // use e.g. `npm install --no-package-lock` doesn't, so don't reject that
+    // valid CI config.
+    const effectiveCiInstall = settings.runner.ciInstallCommand.trim() || "npm ci";
+    if (!isSafeCiCommand(effectiveCiInstall, this.commandSafety)) {
+      missingItems.push(
+        `CI install command "${effectiveCiInstall}" is not supported by Generate CI Workflow.`,
+      );
+    }
+    if (
+      isNpmCiCommand(effectiveCiInstall) &&
+      !(await this.absoluteFs.existsAbsolute(`${runnerAbs}/package-lock.json`))
+    ) {
+      missingItems.push("Runner package-lock.json is missing (npm ci needs a lockfile).");
+    }
+    // node_modules being committed defeats `npm ci`; warn rather than block.
+    if (await this.absoluteFs.existsAbsolute(`${runnerAbs}/node_modules`)) {
+      warnings.push("Runner node_modules is present; ensure it is git-ignored, not committed.");
+    }
+  }
+
+  /**
+   * Verifies the runner package.json exists and (when the CI command is an
+   * `npm run <script>`) carries that script. Split out of
+   * {@link collectCiRunnerItems} to keep the JSON parse/IO branching isolated.
+   */
+  private async collectCiPackageScriptItem(
+    runnerAbs: string,
+    ciScript: string | null,
+    effectiveCiCommand: string,
+    missingItems: string[],
+  ): Promise<void> {
+    const pkgPath = `${runnerAbs}/package.json`;
+    if (!(await this.absoluteFs.existsAbsolute(pkgPath))) {
+      missingItems.push("Runner package.json is missing.");
+      return;
+    }
+    if (ciScript === null) return;
+    const pkg = await this.absoluteFs.readAbsolute(pkgPath);
+    if (!pkg.ok) {
+      // Couldn't read it (permissions / transient I/O) — can't confirm the
+      // CI script, so don't silently report ready.
+      missingItems.push("Runner package.json could not be read to verify the CI script.");
+      return;
+    }
+    try {
+      const parsed = JSON.parse(pkg.value) as { scripts?: Record<string, unknown> };
+      if (typeof parsed.scripts?.[ciScript] !== "string") {
+        missingItems.push(
+          `Runner package.json has no "${ciScript}" script (the CI job runs ${effectiveCiCommand}).`,
+        );
+      }
+    } catch {
+      missingItems.push("Runner package.json is not valid JSON.");
+    }
+  }
+
+  /**
+   * Validates the generated GitHub Actions workflow (path shape, existence, and
+   * drift) a CI run discovers (UC-019 → UC-020). Extracted from
+   * {@link validateCiReadiness}; pushes onto the shared `missingItems`/`warnings`.
+   */
+  private async collectCiWorkflowItems(
+    settings: TestHubSettings,
+    root: string,
+    missingItems: string[],
+    warnings: string[],
+  ): Promise<void> {
+    // The CI workflow itself must have been generated (UC-019 → UC-020).
+    // Generation normalizes `\`→`/` before writing (so a Windows-configured
+    // `.github\workflows\e2e.yml` is written to the POSIX path GitHub finds);
+    // normalize here too or the readiness probe would miss the generated file.
+    const workflowRel = settings.ci.workflowPath.replace(/\\/g, "/");
+    // Generation refuses a traversal/absolute workflowPath (it would write
+    // outside the repo); reject it here too rather than probing outside the
+    // vault and possibly reporting ready for a path Generate CI Workflow won't
+    // accept.
+    if (
+      workflowRel.trim() === "" ||
+      workflowRel.startsWith("/") ||
+      /^[A-Za-z]:/.test(workflowRel) ||
+      workflowRel.split("/").includes("..")
+    ) {
+      missingItems.push(
+        `CI workflow path is invalid (must be repo-relative, no ".."): ${workflowRel}.`,
+      );
+      return;
+    }
+    if (!/^\.github\/workflows\/[^/]+\.ya?ml$/.test(workflowRel)) {
+      // GitHub Actions only discovers `.yml`/`.yaml` files directly under
+      // `.github/workflows/`; anything else never runs even if it exists
+      // (matches generation's rule).
+      missingItems.push(
+        `CI workflow must be a .yml/.yaml file under ".github/workflows/" to be discovered by Actions: ${workflowRel}.`,
+      );
+      return;
+    }
+    if (!(await this.absoluteFs.existsAbsolute(`${root}/${workflowRel}`))) {
+      missingItems.push(`CI workflow not generated at ${workflowRel}.`);
+      return;
+    }
+    // The workflow exists, but settings (runner path, CI commands, node
+    // version, auth keys) may have changed since it was generated, leaving a
+    // stale working-directory/command that fails in Actions. Compare it to
+    // what generation would write now and warn (not block) if it drifted.
+    const existing = await this.absoluteFs.readAbsolute(`${root}/${workflowRel}`);
+    if (existing.ok && existing.value !== buildGitHubActionsWorkflow(settings)) {
+      warnings.push(
+        "CI workflow is out of date with current settings; re-run Generate CI Workflow.",
+      );
+    }
   }
 
   private async finish(

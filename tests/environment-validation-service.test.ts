@@ -6,6 +6,7 @@ import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-poli
 import {
   REQUIRED_RUNNER_DEPENDENCIES,
   VALIDATED_RUNNER_FILES,
+  testrunnerManifestContent,
 } from "../src/application/content/runner-manifest";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
@@ -53,10 +54,20 @@ const addDependencies = (absoluteFs: FakeAbsoluteFileSystem) => {
   }
 };
 
-const markFullyInstalled = (absoluteFs: FakeAbsoluteFileSystem) => {
+/** Seeds an otherwise-healthy runner's files, deps and browser cache WITHOUT
+ *  the manifest — the base for the manifest-advisory cases (absent/older/newer)
+ *  that seed their own manifest content (or none). */
+const markHealthyRunnerWithoutManifest = (absoluteFs: FakeAbsoluteFileSystem) => {
   addManagedFiles(absoluteFs);
   addDependencies(absoluteFs);
   absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome-linux/chrome");
+};
+
+const markFullyInstalled = (absoluteFs: FakeAbsoluteFileSystem) => {
+  markHealthyRunnerWithoutManifest(absoluteFs);
+  // Seed the CURRENT manifest content so an otherwise-healthy runner does not
+  // emit a spurious RUNNER_MANIFEST_OUTDATED advisory.
+  absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", testrunnerManifestContent());
 };
 
 /** Seeds the managed runner files the CI readiness check requires (except
@@ -142,6 +153,46 @@ describe("DefaultEnvironmentValidationService", () => {
         (i) => i.code === "RUNNER_MISSING_FILE" && i.message.includes("cucumber.mjs"),
       ),
     ).toBe(true);
+  });
+
+  it("flags a RUNNER_MANIFEST_OUTDATED advisory when the manifest is absent", async () => {
+    const { service, absoluteFs } = build();
+    // Healthy runner, but no manifest content seeded → reader sees undefined.
+    markHealthyRunnerWithoutManifest(absoluteFs);
+
+    const result = await service.validateEnvironment();
+
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(true);
+  });
+
+  it("flags a RUNNER_MANIFEST_OUTDATED advisory when the manifest is older", async () => {
+    const { service, absoluteFs } = build();
+    markHealthyRunnerWithoutManifest(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 0}');
+
+    const result = await service.validateEnvironment();
+
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(true);
+  });
+
+  it("flags a RUNNER_MANIFEST_OUTDATED advisory when the manifest is newer", async () => {
+    const { service, absoluteFs } = build();
+    markHealthyRunnerWithoutManifest(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 99}');
+
+    const result = await service.validateEnvironment();
+
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(true);
+  });
+
+  it("does not flag the manifest, and stays valid, when it carries the current version", async () => {
+    const { service, absoluteFs } = build();
+    markFullyInstalled(absoluteFs);
+
+    const result = await service.validateEnvironment();
+
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(false);
+    expect(result.valid).toBe(true);
   });
 
   it("is invalid when node_modules exists but Cucumber/tsx are missing", async () => {
