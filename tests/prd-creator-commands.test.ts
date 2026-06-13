@@ -35,13 +35,17 @@ describe("Create PRD command", () => {
     validationService: {} as Partial<EnvironmentValidationService> as EnvironmentValidationService,
     maintenanceService: {} as Partial<MaintenanceService> as MaintenanceService,
     pipelineService: {} as Partial<PipelineGenerationService> as PipelineGenerationService,
-    documentationService: {} as Partial<DocumentationGenerationService> as DocumentationGenerationService,
+    documentationService:
+      {} as Partial<DocumentationGenerationService> as DocumentationGenerationService,
     useCaseService: {} as Partial<UseCaseService> as UseCaseService,
     specificationService: {} as Partial<SpecificationService> as SpecificationService,
     stepDefinitionService: {} as Partial<StepDefinitionService> as StepDefinitionService,
     suiteService: {} as Partial<SuiteService> as SuiteService,
     runLauncher: {} as Partial<RunLauncher> as RunLauncher,
-    postRunCoordinator: {} as Partial<PostRunCoordinator> as Pick<PostRunCoordinator, "importLastRun">,
+    postRunCoordinator: {} as Partial<PostRunCoordinator> as Pick<
+      PostRunCoordinator,
+      "importLastRun"
+    >,
     workspace: {} as Partial<WorkspacePort> as WorkspacePort,
     openWizard: vi.fn(),
     openCreateUseCase: vi.fn(),
