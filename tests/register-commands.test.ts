@@ -114,6 +114,7 @@ const buildDeps = (): TestHubCommandDeps => ({
         path: vp("Use Cases/UC-001.md"),
       }),
     ),
+    listDomains: vi.fn(async () => ok([])),
   },
 
   specificationService: {

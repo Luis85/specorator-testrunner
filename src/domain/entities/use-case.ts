@@ -47,5 +47,7 @@ export interface UseCase {
   suites: SuiteId[];
   evidence: VaultPath[];
   lastTestRun?: TestRunSummary;
+  /** Optional research-domain classification (frontmatter `domain:`). */
+  domain?: string;
   path: VaultPath;
 }
