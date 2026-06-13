@@ -118,8 +118,9 @@ export class PrdBuilderModal extends Modal {
       // Extract unique domains from use cases
       const domainSet = new Set<string>();
       for (const uc of result.value) {
-        if ((uc as unknown).domain) {
-          domainSet.add((uc as unknown).domain);
+        const domain = (uc as { domain?: string }).domain;
+        if (domain) {
+          domainSet.add(domain);
         }
       }
       this.domains = Array.from(domainSet).sort();
@@ -133,7 +134,7 @@ export class PrdBuilderModal extends Modal {
       contentEl.createEl("p", { text: errorMsg, cls: "error-text" });
     }
 
-    contentEl.createEl("p", { text: "Select the domain(s) this PRD covers:" });
+    contentEl.createEl("p", { text: "Select the domain(s) this prd covers:" });
 
     for (const domain of this.domains) {
       const container = contentEl.createEl("div");
@@ -163,7 +164,7 @@ export class PrdBuilderModal extends Modal {
     }
 
     new Setting(contentEl)
-      .setName("Research Findings")
+      .setName("Research findings")
       .setDesc("Optional summary of market research, competitive analysis, etc.")
       .addTextArea((area) => {
         area.setValue(this.state.research);
@@ -180,7 +181,7 @@ export class PrdBuilderModal extends Modal {
     }
 
     new Setting(contentEl)
-      .setName("Vision Statement")
+      .setName("Vision statement")
       .setDesc("Required: describe the desired future state (1-2 sentences)")
       .addTextArea((area) => {
         area.setValue(this.state.vision);
@@ -196,10 +197,10 @@ export class PrdBuilderModal extends Modal {
       contentEl.createEl("p", { text: errorMsg, cls: "error-text" });
     }
 
-    contentEl.createEl("h3", { text: "In Scope" });
+    contentEl.createEl("h3", { text: "In scope" });
     this.renderScopeItems(contentEl, "scopeIn");
 
-    contentEl.createEl("h3", { text: "Out of Scope" });
+    contentEl.createEl("h3", { text: "Out of scope" });
     this.renderScopeItems(contentEl, "scopeOut");
   }
 
@@ -249,12 +250,12 @@ export class PrdBuilderModal extends Modal {
     }
 
     new Setting(contentEl)
-      .setName("Success Metrics")
+      .setName("Success metrics")
       .setDesc("Optional: define how to measure success")
       .addTextArea((area) => {
         // Reuse research field for now as temp storage
         area.setValue("");
-        area.onChange((value) => {
+        area.onChange((_value) => {
           // Store in a temp field or extend state
         });
       });
@@ -266,12 +267,13 @@ export class PrdBuilderModal extends Modal {
       contentEl.createEl("p", { text: errorMsg, cls: "error-text" });
     }
 
-    contentEl.createEl("p", { text: "Select Use Cases to assign to this PRD:" });
+    contentEl.createEl("p", { text: "Select Use Cases to assign to this prd:" });
 
     // Filter use cases by selected domains
     const filtered = this.useCases.filter((uc) => {
       if (this.state.selectedDomains.length === 0) return true;
-      return this.state.selectedDomains.includes((uc as unknown).domain || "");
+      const domain = (uc as { domain?: string }).domain ?? "";
+      return this.state.selectedDomains.includes(domain);
     });
 
     for (const uc of filtered) {
@@ -296,7 +298,7 @@ export class PrdBuilderModal extends Modal {
   }
 
   private renderStep7Review(contentEl: HTMLElement): void {
-    contentEl.createEl("h3", { text: "Review PRD Details" });
+    contentEl.createEl("h3", { text: "Review prd details" });
 
     const summary = contentEl.createEl("div", { cls: "prd-summary" });
     summary.createEl("p", { text: `Title: ${this.state.title}` });
@@ -364,12 +366,13 @@ export class PrdBuilderModal extends Modal {
       });
 
       if (!result.ok) {
-        new Notice(`Could not create PRD: ${result.error?.message || "Unknown error"}`);
+        new Notice(`Could not create PRD: ${result.error?.message ?? "Unknown error"}`);
         this.submitting = false;
         return;
       }
 
-      new Notice(`Created PRD: ${result.value!.title}`);
+      const title = result.value?.title ?? "Unknown";
+      new Notice(`Created PRD: ${title}`);
       this.close();
     } catch (err) {
       new Notice(`Error creating PRD: ${err instanceof Error ? err.message : "Unknown error"}`);

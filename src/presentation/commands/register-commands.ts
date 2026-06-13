@@ -22,7 +22,6 @@ import { RunPickerModal } from "../views/run-picker-modal";
 import { SUITE_VIEW_TYPE } from "../views/suite-dashboard-view";
 import { TEST_CONSOLE_VIEW_TYPE } from "../views/test-console-view";
 import { USE_CASE_VIEW_TYPE } from "../views/use-case-dashboard-view";
-import type { App } from "obsidian";
 
 /**
  * The narrow slice of the composition root the command palette needs: the
@@ -404,7 +403,7 @@ export function registerCommands(
   });
   plugin.addCommand({
     id: "create-prd",
-    name: "Create PRD",
+    name: "Create prd",
     callback: () => deps.openPrdBuilder(),
   });
   plugin.addCommand({

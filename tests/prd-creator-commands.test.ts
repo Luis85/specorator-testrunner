@@ -1,12 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { Plugin } from "obsidian";
-import { Notice } from "obsidian";
 import type { TestHubCommandDeps } from "../src/presentation/commands/register-commands";
 import { registerCommands } from "../src/presentation/commands/register-commands";
-import type { DefaultUseCaseService } from "../src/application/services/use-case-service";
-import type { SettingsService } from "../src/application/services/settings-service";
-import { InMemoryEventBus } from "../src/shared/event-bus/event-bus";
-import { silentLogger } from "./fakes";
+import type { EnvironmentValidationService } from "../src/application/services/environment-validation-service";
+import type { MaintenanceService } from "../src/application/services/maintenance-service";
+import type { PipelineGenerationService } from "../src/application/services/pipeline-generation-service";
+import type { DocumentationGenerationService } from "../src/application/services/documentation-generation-service";
+import type { UseCaseService } from "../src/application/services/use-case-service";
+import type { SpecificationService } from "../src/application/services/specification-service";
+import type { StepDefinitionService } from "../src/application/services/step-definition-service";
+import type { SuiteService } from "../src/application/services/suite-service";
+import type { RunLauncher } from "../src/presentation/run/run-launcher";
+import type { PostRunCoordinator } from "../src/application/services/post-run-coordinator";
+import type { WorkspacePort } from "../src/application/ports/workspace-port";
 
 /**
  * Test for Create PRD command registration (Task 11)
@@ -24,26 +30,28 @@ describe("Create PRD command", () => {
     } as unknown as Plugin;
   });
 
+  const createMockDeps = (): TestHubCommandDeps => ({
+    getSettings: vi.fn(),
+    validationService: {} as Partial<EnvironmentValidationService> as EnvironmentValidationService,
+    maintenanceService: {} as Partial<MaintenanceService> as MaintenanceService,
+    pipelineService: {} as Partial<PipelineGenerationService> as PipelineGenerationService,
+    documentationService: {} as Partial<DocumentationGenerationService> as DocumentationGenerationService,
+    useCaseService: {} as Partial<UseCaseService> as UseCaseService,
+    specificationService: {} as Partial<SpecificationService> as SpecificationService,
+    stepDefinitionService: {} as Partial<StepDefinitionService> as StepDefinitionService,
+    suiteService: {} as Partial<SuiteService> as SuiteService,
+    runLauncher: {} as Partial<RunLauncher> as RunLauncher,
+    postRunCoordinator: {} as Partial<PostRunCoordinator> as Pick<PostRunCoordinator, "importLastRun">,
+    workspace: {} as Partial<WorkspacePort> as WorkspacePort,
+    openWizard: vi.fn(),
+    openCreateUseCase: vi.fn(),
+    openCreateSuite: vi.fn(),
+    openDocumentation: vi.fn(),
+    openPrdBuilder: vi.fn(),
+  });
+
   it("registers Create PRD command with correct id", () => {
-    const mockDeps: TestHubCommandDeps = {
-      getSettings: vi.fn(),
-      validationService: {} as any,
-      maintenanceService: {} as any,
-      pipelineService: {} as any,
-      documentationService: {} as any,
-      useCaseService: {} as any,
-      specificationService: {} as any,
-      stepDefinitionService: {} as any,
-      suiteService: {} as any,
-      runLauncher: {} as any,
-      postRunCoordinator: {} as any,
-      workspace: {} as any,
-      openWizard: vi.fn(),
-      openCreateUseCase: vi.fn(),
-      openCreateSuite: vi.fn(),
-      openDocumentation: vi.fn(),
-      openPrdBuilder: vi.fn(),
-    };
+    const mockDeps = createMockDeps();
 
     registerCommands(plugin, mockDeps);
 
@@ -55,25 +63,8 @@ describe("Create PRD command", () => {
   it("invoking Create PRD command calls openPrdBuilder", () => {
     const openPrdBuilder = vi.fn();
 
-    const mockDeps: TestHubCommandDeps = {
-      getSettings: vi.fn(),
-      validationService: {} as any,
-      maintenanceService: {} as any,
-      pipelineService: {} as any,
-      documentationService: {} as any,
-      useCaseService: {} as any,
-      specificationService: {} as any,
-      stepDefinitionService: {} as any,
-      suiteService: {} as any,
-      runLauncher: {} as any,
-      postRunCoordinator: {} as any,
-      workspace: {} as any,
-      openWizard: vi.fn(),
-      openCreateUseCase: vi.fn(),
-      openCreateSuite: vi.fn(),
-      openDocumentation: vi.fn(),
-      openPrdBuilder,
-    };
+    const mockDeps = createMockDeps();
+    mockDeps.openPrdBuilder = openPrdBuilder;
 
     registerCommands(plugin, mockDeps);
 
@@ -86,25 +77,7 @@ describe("Create PRD command", () => {
   });
 
   it("Create PRD command appears in the command list", () => {
-    const mockDeps: TestHubCommandDeps = {
-      getSettings: vi.fn(),
-      validationService: {} as any,
-      maintenanceService: {} as any,
-      pipelineService: {} as any,
-      documentationService: {} as any,
-      useCaseService: {} as any,
-      specificationService: {} as any,
-      stepDefinitionService: {} as any,
-      suiteService: {} as any,
-      runLauncher: {} as any,
-      postRunCoordinator: {} as any,
-      workspace: {} as any,
-      openWizard: vi.fn(),
-      openCreateUseCase: vi.fn(),
-      openCreateSuite: vi.fn(),
-      openDocumentation: vi.fn(),
-      openPrdBuilder: vi.fn(),
-    };
+    const mockDeps = createMockDeps();
 
     registerCommands(plugin, mockDeps);
 

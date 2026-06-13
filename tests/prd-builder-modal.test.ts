@@ -3,6 +3,10 @@ import type { UseCaseService } from "../src/application/services/use-case-servic
 import type { EventBus } from "../src/shared/event-bus/event-bus";
 import { PrdBuilderModal, type PrdBuilderDeps } from "../src/presentation/views/prd-builder-modal";
 import { InMemoryEventBus } from "../src/shared/event-bus/event-bus";
+import type { App } from "obsidian";
+
+// Type alias for accessing private members in tests
+type ModalWithPrivates = Record<string, unknown>;
 
 /**
  * Mock/stub implementations for testing PrdBuilderModal
@@ -57,14 +61,14 @@ describe("PrdBuilderModal", () => {
   it("can be instantiated with dependencies", () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
     // Create a minimal mock app
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
     expect(modal).toBeTruthy();
   });
@@ -72,186 +76,199 @@ describe("PrdBuilderModal", () => {
   it("has initial state with step 1 and empty fields", () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
 
     // Verify initial state through modal behavior
-    const state = (modal as any).state;
-    expect(state.currentStep).toBe(1);
-    expect(state.title).toBe("");
-    expect(state.selectedDomains).toEqual([]);
-    expect(state.errorMessages).toEqual({});
+    const state = (modal as unknown as ModalWithPrivates).state as Record<string, unknown>;
+    expect((state as Record<string, number>).currentStep).toBe(1);
+    expect((state as Record<string, string>).title).toBe("");
+    expect((state as Record<string, unknown[]>).selectedDomains).toEqual([]);
+    expect((state as Record<string, Record<string, unknown>>).errorMessages).toEqual({});
   });
 
   it("can navigate between steps", () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
 
-    const state = (modal as any).state;
-    expect(state.currentStep).toBe(1);
+    const state = (modal as unknown as ModalWithPrivates).state as Record<string, unknown>;
+    expect((state as Record<string, number>).currentStep).toBe(1);
 
     // Simulate navigation to step 2
-    (modal as any).state = { ...state, currentStep: 2 };
-    expect((modal as any).state.currentStep).toBe(2);
+    const state2 = { ...state, currentStep: 2 };
+    (modal as unknown as ModalWithPrivates).state = state2;
+    const newState2 = (modal as unknown as ModalWithPrivates).state as Record<string, number>;
+    expect(newState2.currentStep).toBe(2);
 
     // Navigate to step 7
-    (modal as any).state = { ...(modal as any).state, currentStep: 7 };
-    expect((modal as any).state.currentStep).toBe(7);
+    const state7 = { ...newState2, currentStep: 7 };
+    (modal as unknown as ModalWithPrivates).state = state7;
+    const newState7 = (modal as unknown as ModalWithPrivates).state as Record<string, number>;
+    expect(newState7.currentStep).toBe(7);
 
     // Navigate back to step 3
-    (modal as any).state = { ...(modal as any).state, currentStep: 3 };
-    expect((modal as any).state.currentStep).toBe(3);
+    const state3 = { ...newState7, currentStep: 3 };
+    (modal as unknown as ModalWithPrivates).state = state3;
+    const newState3 = (modal as unknown as ModalWithPrivates).state as Record<string, number>;
+    expect(newState3.currentStep).toBe(3);
   });
 
   it("can update title in state", () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
 
-    let state = (modal as any).state;
-    expect(state.title).toBe("");
+    let state = (modal as unknown as ModalWithPrivates).state as Record<string, unknown>;
+    expect((state as Record<string, string>).title).toBe("");
 
     state = { ...state, title: "My PRD" };
-    (modal as any).state = state;
-    expect((modal as any).state.title).toBe("My PRD");
+    (modal as unknown as ModalWithPrivates).state = state;
+    const updatedState = (modal as unknown as ModalWithPrivates).state as Record<string, string>;
+    expect(updatedState.title).toBe("My PRD");
   });
 
   it("can update domains in state", () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
 
-    let state = (modal as any).state;
-    expect(state.selectedDomains).toEqual([]);
+    let state = (modal as unknown as ModalWithPrivates).state as Record<string, unknown>;
+    expect((state as Record<string, unknown[]>).selectedDomains).toEqual([]);
 
     state = { ...state, selectedDomains: ["dashboard", "api"] };
-    (modal as any).state = state;
-    expect((modal as any).state.selectedDomains).toEqual(["dashboard", "api"]);
+    (modal as unknown as ModalWithPrivates).state = state;
+    const updatedState = (modal as unknown as ModalWithPrivates).state as Record<string, unknown[]>;
+    expect(updatedState.selectedDomains).toEqual(["dashboard", "api"]);
   });
 
   it("can update vision in state", () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
 
-    let state = (modal as any).state;
-    expect(state.vision).toBe("");
+    let state = (modal as unknown as ModalWithPrivates).state as Record<string, unknown>;
+    expect((state as Record<string, string>).vision).toBe("");
 
     state = { ...state, vision: "Single source of truth" };
-    (modal as any).state = state;
-    expect((modal as any).state.vision).toBe("Single source of truth");
+    (modal as unknown as ModalWithPrivates).state = state;
+    const updatedState = (modal as unknown as ModalWithPrivates).state as Record<string, string>;
+    expect(updatedState.vision).toBe("Single source of truth");
   });
 
   it("can update scope items in state", () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
 
-    let state = (modal as any).state;
-    expect(state.scopeIn).toEqual([]);
-    expect(state.scopeOut).toEqual([]);
+    let state = (modal as unknown as ModalWithPrivates).state as Record<string, unknown>;
+    expect((state as Record<string, unknown[]>).scopeIn).toEqual([]);
+    expect((state as Record<string, unknown[]>).scopeOut).toEqual([]);
 
     state = { ...state, scopeIn: ["Feature A", "Feature B"], scopeOut: ["Legacy System"] };
-    (modal as any).state = state;
-    expect((modal as any).state.scopeIn).toEqual(["Feature A", "Feature B"]);
-    expect((modal as any).state.scopeOut).toEqual(["Legacy System"]);
+    (modal as unknown as ModalWithPrivates).state = state;
+    const updatedState = (modal as unknown as ModalWithPrivates).state as Record<string, unknown[]>;
+    expect(updatedState.scopeIn).toEqual(["Feature A", "Feature B"]);
+    expect(updatedState.scopeOut).toEqual(["Legacy System"]);
   });
 
   it("can update selected use cases in state", () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
 
-    let state = (modal as any).state;
-    expect(state.selectedUcs).toEqual([]);
+    let state = (modal as unknown as ModalWithPrivates).state as Record<string, unknown>;
+    expect((state as Record<string, unknown[]>).selectedUcs).toEqual([]);
 
     state = { ...state, selectedUcs: ["UC-001", "UC-002"] };
-    (modal as any).state = state;
-    expect((modal as any).state.selectedUcs).toEqual(["UC-001", "UC-002"]);
+    (modal as unknown as ModalWithPrivates).state = state;
+    const updatedState = (modal as unknown as ModalWithPrivates).state as Record<string, unknown[]>;
+    expect(updatedState.selectedUcs).toEqual(["UC-001", "UC-002"]);
   });
 
   it("can store error messages", () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
 
-    let state = (modal as any).state;
-    expect(state.errorMessages).toEqual({});
+    let state = (modal as unknown as ModalWithPrivates).state as Record<string, unknown>;
+    expect((state as Record<string, Record<string, unknown>>).errorMessages).toEqual({});
 
     state = { ...state, errorMessages: { vision: "Vision is required" } };
-    (modal as any).state = state;
-    expect((modal as any).state.errorMessages.vision).toBe("Vision is required");
+    (modal as unknown as ModalWithPrivates).state = state;
+    const stateObj = (modal as unknown as ModalWithPrivates).state as Record<string, unknown>;
+    const msgs = stateObj.errorMessages as Record<string, string>;
+    expect(msgs.vision).toBe("Vision is required");
   });
 
   it("calls prdService.create when state is submitted", async () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
 
-    (modal as any).state = {
+    (modal as unknown as ModalWithPrivates).state = {
       currentStep: 7,
       title: "Test PRD",
       parentPrdId: undefined,
@@ -265,7 +282,7 @@ describe("PrdBuilderModal", () => {
     };
 
     // Call create directly
-    await (modal as any).create();
+    await (modal as unknown as ModalWithPrivates).create();
 
     expect(mockPrdService.create).toHaveBeenCalled();
   });
@@ -273,17 +290,17 @@ describe("PrdBuilderModal", () => {
   it("closes modal after successful PRD creation", async () => {
     const deps: PrdBuilderDeps = {
       prdService: mockPrdService,
-      useCaseService: mockUseCaseService as any,
+      useCaseService: mockUseCaseService as UseCaseService,
       settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
 
-    const mockApp = { workspace: { activeEditor: null } } as any;
+    const mockApp = { workspace: { activeEditor: null } } as App;
     const modal = new PrdBuilderModal(mockApp, deps);
     const closeSpy = vi.spyOn(modal, "close");
 
-    (modal as any).state = {
+    (modal as unknown as ModalWithPrivates).state = {
       currentStep: 7,
       title: "Test PRD",
       parentPrdId: undefined,
@@ -296,7 +313,7 @@ describe("PrdBuilderModal", () => {
       errorMessages: {},
     };
 
-    await (modal as any).create();
+    await (modal as unknown as ModalWithPrivates).create();
 
     expect(closeSpy).toHaveBeenCalled();
   });
