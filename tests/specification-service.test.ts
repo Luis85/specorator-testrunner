@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
+import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import {
   DefaultSpecificationService,
   parseBddgenMissingSteps,
@@ -42,13 +43,13 @@ const bddgenNoneMissing = (): string =>
 All steps are defined.
 `;
 
-const build = () => {
+const build = (dataSeed?: Record<string, unknown>) => {
   const fs = new FakeVaultFileSystem();
   const absoluteFs = new FakeAbsoluteFileSystem();
   const childProcess = new FakeChildProcessRunner();
   const { bus, events, types } = recordingEventBus();
   const settings = new DefaultSettingsService(
-    new FakeDataStore(),
+    new FakeDataStore(dataSeed),
     new DefaultPathSafetyPolicy(),
     bus,
   );
@@ -476,6 +477,29 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
       c.args.some((a) => a.includes("playwright-bdd")),
     );
     expect(bddgenCall?.args).toEqual(["node", "node_modules/playwright-bdd/dist/cli/index.js"]);
+  });
+
+  it("runs bddgen with the configured Node executable, not a hard-coded `node`", async () => {
+    // A user whose bare `node` is off PATH sets runner.nodeExecutable; bddgen
+    // must use it (the runner is launched/validated with the same executable).
+    const { service, fs, absoluteFs, childProcess } = build({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, nodeExecutable: "/opt/managed/node" },
+    });
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    await service.detectMissingSteps(path);
+
+    const bddgenCall = childProcess.calls.find((c) =>
+      c.args.some((a) => a.includes("playwright-bdd")),
+    );
+    expect(bddgenCall?.args).toEqual([
+      "/opt/managed/node",
+      "node_modules/playwright-bdd/dist/cli/index.js",
+    ]);
   });
 
   it("bddgen reports no missing steps → empty missingSteps, event still published", async () => {

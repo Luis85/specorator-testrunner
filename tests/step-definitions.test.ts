@@ -222,4 +222,14 @@ describe("buildAppendedStubs", () => {
     expect(block).not.toContain("createBdd()"); // no new binding line
     expect(block).toContain('Given("a fresh step"');
   });
+
+  it("reuses a Given bound via a custom import — no duplicate binding (P2)", () => {
+    // A custom-fixtures module re-exports `createBdd(test)` and the file imports
+    // `Given` from it; the append must NOT add its own `const { Given } = …`.
+    const existing =
+      'import { Given } from "../fixtures";\n\nGiven("x", async ({ page }) => {});\n';
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).not.toContain("createBdd");
+    expect(block).toContain('Given("a fresh step"');
+  });
 });

@@ -220,13 +220,24 @@ const CREATE_BDD_GIVEN = `const { Given } = createBdd();`;
 const STEP_DEFINITION_IMPORTS = `${CREATE_BDD_IMPORT}\n${CREATE_BDD_DESTRUCTURE}`;
 
 /**
- * True when the source already binds `Given` from a `createBdd()` destructure
- * (`const { Given … } = createBdd()`), excluding an alias rename (`{ Given: g }`).
- * The generated stubs always call `Given(...)`, so this — not merely "createBdd
- * is called" — decides whether the append needs its own `Given` binding.
+ * True when the source already binds `Given` at the top level — via a
+ * `createBdd()` destructure (`const { Given … } = createBdd()`) OR a named
+ * import (`import { Given } from '…'`, e.g. a custom-fixtures module that
+ * re-exports `createBdd(test)`). An alias rename binds a DIFFERENT local name,
+ * so `{ Given: g }` / `{ Given as g }` do NOT count. The generated stubs always
+ * call `Given(...)`, so this — not merely "createBdd is called" — decides
+ * whether the append must add its own `Given` binding (and adding one when
+ * `Given` is already bound would be a duplicate declaration that fails to load).
  */
-const bindsGiven = (source: string): boolean =>
-  /\bconst\s*\{[^}]*\bGiven\b(?!\s*:)[^}]*\}\s*=\s*createBdd\s*\(/.test(source);
+const bindsGiven = (source: string): boolean => {
+  if (/\bconst\s*\{[^}]*\bGiven\b(?!\s*:)[^}]*\}\s*=\s*createBdd\s*\(/.test(source)) return true;
+  for (const match of source.matchAll(/import\s*\{([^}]*)\}\s*from/g)) {
+    // A bare `Given` specifier binds the local name `Given`; `Given as g` binds
+    // `g`, so only an exact `Given` (no `as`) counts.
+    if (match[1].split(",").some((spec) => spec.trim() === "Given")) return true;
+  }
+  return false;
+};
 
 /** Renders ONLY the step-definition stub blocks (no import header). */
 const buildStepDefinitionStubBlocks = (missingSteps: string[]): string =>

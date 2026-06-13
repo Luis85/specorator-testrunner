@@ -26,9 +26,12 @@ import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath } from "../../shared/utils/vault-path";
 
 // playwright-bdd v9's `bddgen` bin resolves to `dist/cli/index.js` (NOT
-// `dist/cli.js`); spawn it directly with node so the invocation is shell-free
-// and cross-platform (the `.bin/bddgen` shim is a `.cmd` on Windows).
-const BDDGEN_ARGS = ["node", "node_modules/playwright-bdd/dist/cli/index.js"] as const;
+// `dist/cli.js`); run it directly with the configured Node executable so the
+// invocation is shell-free and cross-platform (the `.bin/bddgen` shim is a
+// `.cmd` on Windows). The Node program is `settings.runner.nodeExecutable` —
+// the same executable the runner is launched and validated with — so a user
+// whose `node` is not on PATH still gets detection.
+const BDDGEN_CLI = "node_modules/playwright-bdd/dist/cli/index.js";
 
 export interface SpecificationValidationError {
   line?: number;
@@ -303,7 +306,10 @@ export class DefaultSpecificationService implements SpecificationService {
       return err(appError("RUNNER_NOT_INSTALLED", "Install the runner to detect missing steps."));
     }
 
-    const ran = await this.childProcess.run({ args: [...BDDGEN_ARGS], cwd: cwd.value });
+    const ran = await this.childProcess.run({
+      args: [settings.runner.nodeExecutable, BDDGEN_CLI],
+      cwd: cwd.value,
+    });
     // bddgen exits 0 even when steps are missing, so a real failure is a spawn
     // error or a non-zero exit WITHOUT the missing-steps report.
     const bddgenFailed =
