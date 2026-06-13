@@ -70,7 +70,7 @@ Path: `src/presentation/{views,components,commands,settings}`.
 
 Each view subscribes to the `EventBus` for state it cares about and dispatches commands to application services for state changes. Views do not publish domain events directly; services do.
 
-> **Naming note (reconciled with code).** The implemented Obsidian `ItemView` classes are `DashboardView` (the main dashboard — drafted here as `TestHubView`), `UseCaseDashboardView` (drafted as `UseCaseExplorerView`), `UseCaseDetailView` (per-Use-Case authoring surface), `SuiteDashboardView` (drafted as `SuiteExplorerView`), `TestConsoleView` (the sidebar live-run panel — drafted as `TestRunPanel`), and `EvidenceExplorerView` (view type `e2e-test-hub-evidence`, over the partitioned run history), all under `src/presentation/views/`. There are no separate `SpecificationExplorerView` or `DocumentationView` leaf classes in V1; that functionality is folded into the dashboards/notes. The first-run flow is `InitializationWizardModal`; further modals are `CreateUseCaseModal`, `EditUseCaseModal`, `CreateSuiteModal`, `GenerateFeatureModal`, `RunPickerModal`, and `AddEnvironmentModal`. Treat the names below as the originally-planned surfaces; the parenthetical/real class names are authoritative.
+> **Naming note (reconciled with code).** The implemented Obsidian `ItemView` classes are `DashboardView` (the main dashboard — drafted here as `TestHubView`), `UseCaseDashboardView` (drafted as `UseCaseExplorerView`), `UseCaseDetailView` (per-Use-Case authoring surface), `SuiteDashboardView` (drafted as `SuiteExplorerView`), `TestConsoleView` (the sidebar live-run panel — drafted as `TestRunPanel`), and `EvidenceExplorerView` (view type `e2e-test-hub-evidence`, over the partitioned run history), all under `src/presentation/views/`. There are no separate `SpecificationExplorerView` or `DocumentationView` leaf classes in V1; that functionality is folded into the dashboards/notes. The first-run flow is `InitializationWizardModal`; further modals are `CreateUseCaseModal`, `EditUseCaseModal`, `CreateSuiteModal`, `GenerateFeatureModal`, `RunPickerModal`, `AddEnvironmentModal`, and `PrdBuilderModal` (the 7-step PRD Builder). The PRD layer added two real leaf surfaces below: `PrdExplorerView` and the dashboard's PRD-roadmap projection. Treat the names below as the originally-planned surfaces; the parenthetical/real class names are authoritative.
 
 | View | Surface | Purpose | Consumes |
 | --- | --- | --- | --- |
@@ -79,6 +79,8 @@ Each view subscribes to the `EventBus` for state it cares about and dispatches c
 | `UseCaseExplorerView` | Workspace leaf | Browse, create, run Use Cases; show automation status. | `usecase.created`, `usecase.updated`, `usecase.status.changed`, `evidence.linkedToUseCase` |
 | `SpecificationExplorerView` | Workspace leaf | Manage feature files; validate; detect missing steps. | `specification.created`, `specification.updated`, `specification.validation.completed`, `specification.missingSteps.detected` |
 | `SuiteExplorerView` | Workspace leaf | List/create/run suites; manage tag expressions. | `suite.created`, `suite.updated`, `suite.executed` |
+| `PrdExplorerView` | Workspace leaf | Browse the Domain → PRD → Use Case hierarchy as a tree; launch the builder; open a PRD note. View type `e2e-test-hub-prds` (ribbon _Open PRDs_). | `prd.created`, `prd.deleted` |
+| `PrdBuilderModal` | Modal | The 7-step PRD Builder (domains → research → vision → scope → success → assign Use Cases → review). On submit, creates the PRD via `PrdService` and links the chosen Use Cases via `UseCaseService.assignToPrd`. | — (dispatches commands; the dashboard's **PRDs & roadmap** section is a projection rendered by `DashboardView` from `PrdService`) |
 | `TestConsoleView` | Sidebar leaf | Live execution: streaming output, status, results, evidence link. (Was drafted as `TestRunPanel`; the implemented class is `TestConsoleView`, view type `e2e-test-hub-console`.) | `testrun.started`, `testrun.output.received`, `testrun.completed`, `testrun.failed`, `testrun.cancelled` |
 | `EvidenceExplorerView` | Workspace leaf | List/open evidence; jump to reports, screenshots, traces. | `evidence.generated`, `evidence.linkedToUseCase`, `report.imported` |
 | `DocumentationView` | Workspace leaf | Render generated `Test Hub` notes (Getting Started, User Manual, Troubleshooting). | `documentation.generated`, `documentation.opened` |
@@ -129,7 +131,7 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 ### 5.7 `UseCaseService`
 
 - **Purpose:** Use Case lifecycle.
-- **Responsibilities:** Create document, parse frontmatter, update metadata, link to feature and evidence.
+- **Responsibilities:** Create document, parse frontmatter, update metadata, link to feature and evidence. Owns the Use Case → PRD link (ADR-0026): `assignToPrd(id, prdId)` validates the target PRD exists and writes the `prd-id` frontmatter field, `listDomains()` / `countUseCasesByPrd()` aggregate the index for the PRD surfaces. The PRD existence check + write run inside the shared PRD mutation lock (via the injected `PrdLookup` port — `findById` + `withMutationLock`) so a concurrent `PrdService.deletePrd` cannot leave a Use Case pointing at a deleted PRD.
 - **Publishes:** `usecase.created`, `usecase.updated`, `usecase.status.changed`.
 
 ### 5.8 `SpecificationService`
@@ -203,6 +205,14 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 - **Purpose:** Project historical runs from the ADR-0016 evidence partitions (`Test Evidence/YYYY/MM/<runId>/`) for the Evidence Explorer. Path-derived fields are always present; frontmatter-derived fields degrade to `undefined` when a note is edited or corrupt — the Markdown stays the single source of truth.
 - **Depends on:** `VaultFileSystem`, `SettingsService`, `Logger`.
 
+### 5.19 `PrdService`
+
+- **Status:** Implemented — `src/application/services/prd-service.ts` (ADR-0026).
+- **Purpose:** PRD aggregate lifecycle — the Domain → PRD → Use Case hierarchy's middle layer.
+- **Responsibilities:** `create()` allocates the next id (`PRD-000` for the root, sequential otherwise), writes one folder per PRD (`<prdsPath>/<id>-<slug>/<id>-<slug>.md`) and its note, and on a note-write failure cleans up only a folder it created. `findAll()`/`findById()` parse PRD notes (a missing PRDs folder reads as `ok([])`; an empty `parent-prd:` normalizes to the root). `deletePrd()` refuses while the PRD still has child PRDs or linked Use Cases (the linked-UC count fails closed on an unreadable note) and never deletes the root `PRD-000`; sibling attachments in the folder are preserved and counted. `withMutationLock(op)` runs `op` on the PRD note-write queue (key `prd:mutate`) — the same critical section `UseCaseService.assignToPrd` enters, serializing link writes against create/delete.
+- **Publishes:** `prd.created`, `prd.deleted`.
+- **Depends on:** `SettingsService`, `VaultFileSystem`, `EventBus`, `Logger`. The pure step-state machine and parent-resolution helpers live in `prd-builder.ts`; note serialization in `content/prd-content.ts`.
+
 ---
 
 ## 6. Domain Layer
@@ -211,11 +221,11 @@ Path: `src/domain/{entities,value-objects,events,policies,settings}`. (There is 
 
 ### 6.1 Entities
 
-`UseCase`, `FeatureSpecification`, `TestSuite`, `TestRun`, `Evidence`, `RunnerInstallation`, `CiPipeline`.
+`Prd`, `UseCase`, `FeatureSpecification`, `TestSuite`, `TestRun`, `Evidence`, `RunnerInstallation`, `CiPipeline`. (`Prd` is the read model for a PRD note — `id`, `title`, `status` (`draft`/`active`/`deprecated`), optional `parentPrdId` (undefined for the root), `domains`, `vision`, `scopeIn`/`scopeOut`, and `displayOrder`; a `UseCase` carries an optional `prdId` back-reference — ADR-0026.)
 
 ### 6.2 Value Objects
 
-`VaultPath`, `RunnerPath`, `UseCaseId`, `SuiteId`, `FeatureTag`, `TagExpression`, `TestStatus`, `ExecutionScope`.
+`VaultPath`, `RunnerPath`, `PrdId`, `UseCaseId`, `SuiteId`, `FeatureTag`, `TagExpression`, `TestStatus`, `ExecutionScope`.
 
 ### 6.3 Domain Events
 

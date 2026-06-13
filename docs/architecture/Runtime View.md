@@ -21,6 +21,7 @@
 | RV-6 | Generate Evidence (post-run) | UC-016 | A terminal run event fires; the `PostRunCoordinator` continues in-process as a continuation of any execution scenario. |
 | RV-7 | Generate CI Pipeline | UC-019 | User clicks **Generate CI** in `SettingsTab` or `TestHubView`. |
 | RV-8 | Repair Installation | UC-003 | User clicks **Repair Installation** in `TestHubView`. |
+| RV-9 | Create PRD and link Use Cases | ADR-0026 | User runs **New PRD** and completes `PrdBuilderModal`. |
 
 Conventions:
 
@@ -368,6 +369,44 @@ sequenceDiagram
 ```
 
 **Idempotency.** `repair()` is safe to invoke repeatedly. It does not delete user-authored content under `.testrunner/src/steps` or `.testrunner/src/pages`.
+
+---
+
+## RV-9 — Create PRD and link Use Cases (ADR-0026)
+
+**Trigger.** User runs **New PRD** (command, dashboard **PRDs & roadmap**, or the PRDs explorer), completing the 7-step `PrdBuilderModal`.
+
+**Postconditions.** A `PRD-NNN` note exists under `<prdsPath>/`, each selected Use Case carries the new `prd-id`, and the PRD surfaces refresh. The PRD-link write is serialized with PRD create/delete (shared mutation lock) so a Use Case can never be linked to a deleted PRD.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant M as PrdBuilderModal
+    participant Prd as PrdService
+    participant UC as UseCaseService
+    participant Vault as ObsidianVaultAdapter
+    participant FM as FrontmatterPort
+    participant Bus as EventBus
+    participant Exp as PrdExplorerView
+
+    U->>M: Complete builder (domains, vision, scope, assign UCs), submit
+    M->>Prd: create(request)
+    Prd->>Vault: createFolder(<prdsPath>/PRD-NNN-slug)
+    Prd->>Vault: createFile(prdNotePath, prdNote)
+    Prd-->>Bus: prd.created
+    loop each selected Use Case
+        M->>UC: assignToPrd(UC-NNN, PRD-NNN)
+        Note over UC,Prd: runs inside the shared PRD mutation lock (prd:mutate)
+        UC->>Prd: findById(PRD-NNN)
+        Prd-->>UC: Prd (or null → "Unknown PRD")
+        UC->>FM: update(useCasePath, { prd-id: PRD-NNN })
+        UC-->>Bus: usecase.updated
+    end
+    Bus-->>Exp: prd.created (tree refreshes)
+```
+
+**Delete.** The inverse (`PrdService.deletePrd`) runs in the same critical section and refuses while the PRD has child PRDs or linked Use Cases, and never deletes the root `PRD-000`; sibling attachments are preserved.
 
 ---
 

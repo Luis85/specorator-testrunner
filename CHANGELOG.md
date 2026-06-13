@@ -8,6 +8,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A **PRD (Product Requirements Document) hierarchy** above Use Cases — the
+  Domain → PRD → Use Case artifact model (ADR-0026). PRDs form a single-parent
+  tree (`PRD-000` is the root product vision; sub-PRDs carry a `parent-prd` and
+  a `display_order`), each owning the Use Cases that detail its solution. New
+  surfaces: a **PRDs explorer** (ribbon _Open PRDs_) over the tree, a
+  dashboard **PRDs & roadmap** section, and a 7-step **PRD Builder** (_New PRD_
+  command) covering domains, research, vision, scope in/out, and assigning Use
+  Cases. Each Use Case links to one PRD via a `prd-id` frontmatter field, edited
+  from the Use Case create/edit modals; linking is serialized with PRD
+  create/delete through a shared mutation lock so a Use Case can never point at
+  a deleted PRD. PRD delete refuses while children or linked Use Cases remain
+  and never removes the root. Emits `prd.created` / `prd.deleted`.
 - Five accepted V2 foundational ADRs (ADR-0021…0025): playwright-bdd runner,
   scenario identity & history store, opt-in local MCP / no in-plugin AI,
   credentials via Obsidian `secretStorage`, and the Chromium-only default

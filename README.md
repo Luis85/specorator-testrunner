@@ -23,6 +23,12 @@ single Markdown-native, local-first workflow.
 > **EPIC-009 (Dashboard)** — KPI roll-up, quick actions, and recent runs; and
 > **EPIC-010 (CI/CD)** — GitHub Actions workflow generation and CI-readiness
 > checks.
+>
+> Beyond V1: the generated `.testrunner` now runs **playwright-bdd** (`bddgen` +
+> `@playwright/test`) instead of cucumber-js (ADR-0021), and a **PRD hierarchy**
+> (Domain → PRD → Use Case, ADR-0026) sits above Use Cases — a PRDs explorer,
+> a dashboard roadmap, and a PRD Builder, with each Use Case linked to a parent
+> PRD.
 
 ## Installation
 
@@ -54,7 +60,13 @@ every command, but each one is also reachable through a view:
   an active-environment badge with a one-click switcher, KPI tiles, and recent
   runs that link straight to their Evidence note. Before the vault is
   initialized it shows a single prominent **Initialize Test Hub** call to
-  action.
+  action. The dashboard's **PRDs & roadmap** section surfaces the root product
+  vision, its sub-PRDs, and per-PRD Use Case counts, with **New PRD** and a
+  jump into the PRDs explorer.
+- **PRDs.** A PRDs explorer (ribbon **Open PRDs**) renders the Domain → PRD →
+  Use Case tree; the **PRD Builder** (**New PRD**) walks through domains,
+  research, vision, scope in/out, and assigning Use Cases. Each Use Case links
+  to a parent PRD via its **Parent PRD** field in the create/edit modals.
 - **Use Case detail.** Opening a Use Case shows its Feature Specifications with
   per-Feature **Open / Run / Validate / Detect missing steps / Generate step
   definitions** actions (results render inline), a **Generate Feature** button,

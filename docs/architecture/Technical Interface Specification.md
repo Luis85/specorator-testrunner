@@ -90,6 +90,7 @@ Codes are stable across plugin versions. Adding is safe; renaming is breaking.
 
 ```ts
 export type Id = string;
+export type PrdId = string;                // e.g. "PRD-001"; "PRD-000" is the root
 export type UseCaseId = string;            // e.g. "UC-001"
 export type SuiteId = string;              // e.g. "smoke"
 export type RunId = string;                // e.g. "RUN-2026-06-01-100000"
@@ -424,6 +425,7 @@ export interface UseCase {
   description?: string;                    // standardized name per G6
   status: UseCaseStatus;                   // business lifecycle
   automationStatus: AutomationStatus;      // test state
+  prdId?: PrdId;                           // parent PRD (ADR-0026); required once backfilled
   featureFiles: VaultPath[];               // 0..N per ADR-0012; empty = not automated
   suites: SuiteId[];
   evidence: VaultPath[];
@@ -600,6 +602,27 @@ export interface EvidenceArtifact {
 }
 ```
 
+### 6.16 Prd (ADR-0026)
+
+```ts
+export type PrdStatus = "draft" | "active" | "deprecated";
+
+// Read model for a PRD note — the synthesis layer between research Domains and
+// Use Cases. PRDs form a single-parent tree; PRD-000 is the root product vision.
+export interface Prd {
+  id: PrdId;                               // "PRD-NNN"; "PRD-000" is the root
+  title: string;
+  status: PrdStatus;
+  parentPrdId?: PrdId;                     // undefined for the root PRD
+  domains: string[];                       // research domains this PRD synthesizes from
+  vision: string;
+  scopeIn: string[];
+  scopeOut: string[];
+  displayOrder: number;                    // sibling ordering, separate from the immutable id
+  path: VaultPath;                         // <prdsPath>/<id>-<slug>/<id>-<slug>.md
+}
+```
+
 ---
 
 ## 7. Repository Contracts
@@ -773,6 +796,11 @@ export interface UseCaseService {
   findAll(): Promise<Result<UseCase[]>>;
   linkFeature(useCaseId: UseCaseId, featurePath: VaultPath): Promise<Result<void>>;
   linkEvidence(useCaseId: UseCaseId, evidencePath: VaultPath): Promise<Result<void>>;
+  // ADR-0026 — write the parent PRD link (validated against the live PRD index
+  // and serialized with PRD create/delete through the shared mutation lock).
+  assignToPrd(id: UseCaseId, prdId: PrdId): Promise<Result<UseCase>>;
+  listDomains(): Promise<Result<{ domain: string; count: number }[]>>;
+  countUseCasesByPrd(): Promise<Result<Map<string, number>>>;
 }
 
 export interface CreateUseCaseRequest {
@@ -939,6 +967,35 @@ export interface TraceabilityRecord {
   suites: SuiteId[];
   runs: RunId[];
   evidence: EvidenceId[];
+}
+```
+
+### 8.15 PrdService (ADR-0026)
+
+```ts
+export interface PrdService {
+  create(request: CreatePrdRequest): Promise<Result<Prd>>;
+  findAll(): Promise<Result<Prd[]>>;
+  findById(id: PrdId): Promise<Result<Prd | null>>;
+  deletePrd(id: PrdId): Promise<Result<DeletePrdResult>>;
+  // The PRD note-write critical section (key "prd:mutate"). UseCaseService.assignToPrd
+  // enters the SAME section, serializing link writes against create/delete.
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T>;
+}
+
+export interface CreatePrdRequest {
+  title: string;
+  parentPrdId?: PrdId;                     // omit/empty → root (PRD-000) on first PRD
+  domains: string[];
+  vision: string;
+  scopeIn: string[];
+  scopeOut: string[];
+  research?: string;
+}
+
+export interface DeletePrdResult {
+  prdId: PrdId;
+  preservedFiles: number;                  // sibling attachments left in the PRD folder
 }
 ```
 
