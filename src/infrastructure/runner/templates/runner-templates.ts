@@ -33,9 +33,9 @@ const PACKAGE_JSON = `{
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bddgen && playwright test",
-    "test:smoke": "bddgen && playwright test --grep @smoke",
-    "test:ci": "bddgen && playwright test",
+    "test": "bddgen && playwright test --pass-with-no-tests",
+    "test:smoke": "bddgen && playwright test --grep @smoke --pass-with-no-tests",
+    "test:ci": "bddgen && playwright test --pass-with-no-tests",
     "install:browsers": "playwright install chromium",
     "install:browsers:ci": "playwright install --with-deps chromium"
   },
@@ -83,6 +83,9 @@ import { defineBddConfig, cucumberReporter } from "playwright-bdd";
 const testDir = defineBddConfig({
   features: ${JSON.stringify(featuresGlob)},
   steps: "src/steps/**/*.ts",
+  // The Test Hub sets BDD_TAGS for suite (tag-expression) runs; bddgen applies
+  // the full cucumber tag expression at generation. Undefined runs everything.
+  tags: process.env.BDD_TAGS || undefined,
 });
 
 export default defineConfig({

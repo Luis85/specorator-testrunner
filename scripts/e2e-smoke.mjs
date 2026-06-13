@@ -4,12 +4,12 @@
  * runner-template changes — or locally):
  * proves a `.testrunner` generated from the ACTUAL templates installs and the
  * demo test passes on a real OS — the class of failure unit tests can't catch
- * (npm.cmd quoting, cucumber config wiring, playwright install).
+ * (npm.cmd quoting, playwright-bdd config wiring, playwright install).
  *
  * Flow: bundle src/ exports → scaffold a temp fake vault (templates +
  * demo feature) → npm install → playwright install → npm run test:ci →
- * assert on the cucumber JSON report, not just the exit code (a silently
- * empty run must fail).
+ * assert on the cucumber-format JSON report (cucumberReporter), not just the
+ * exit code (a silently empty run must fail).
  */
 
 import { execSync } from "node:child_process";
@@ -53,7 +53,7 @@ try {
     await import(pathToFileURL(entryBundle).href);
 
   // 2. Scaffold the fake vault: runner templates + the demo feature in the
-  //    folder the runner's cucumber.mjs feature glob points at.
+  //    folder the runner's playwright.config.ts feature glob points at.
   const runnerRoot = join(vaultRoot, DEFAULT_SETTINGS.paths.testRunnerPath);
   for (const file of buildRunnerTemplates(DEFAULT_SETTINGS)) {
     const target = join(runnerRoot, file.path);
@@ -95,28 +95,26 @@ try {
   }
   console.log(`\nE2E smoke PASSED: ${scenarios.length} scenario(s), all steps passed.`);
 
-  // 5. The Test Console's scoped invocation shape (feature path as CLI arg,
-  //    `--profile scoped` so config paths don't merge — that merge is a
-  //    deprecation): must pass and the JSON report must show 1 passing scenario.
-  //    This run OVERWRITES reports/cucumber-report.json, so it runs AFTER the
-  //    assertions on step 4's report above.
+  // 5. The Test Console's scoped invocation shape (feature path as a positional
+  //    filter arg appended after `--`): playwright-bdd filters the trailing
+  //    `playwright test` by path substring. Must pass and the JSON report must
+  //    show 1 passing scenario. This run OVERWRITES reports/cucumber-report.json,
+  //    so it runs AFTER the assertions on step 4's report above.
   const featureFilePath = join(
     vaultRoot,
     DEFAULT_SETTINGS.paths.featureFilesPath,
     DEMO_FEATURE_FILE_NAME,
   );
   // Compute the path relative to the runner root and normalise to forward
-  // slashes so cucumber-js glob expansion is cross-platform (Windows sep is \).
+  // slashes so path matching is cross-platform (Windows sep is \).
   const relativeFeaturePath = relative(runnerRoot, featureFilePath).split(sep).join("/");
-  const scopedCommand = `npm run test -- --profile scoped ${relativeFeaturePath}`;
+  const scopedCommand = `npm run test -- ${relativeFeaturePath}`;
   console.log(`\n$ ${scopedCommand}`);
-  // Cucumber emits its deprecation warning on STDERR; merge it into stdout
-  // (`2>&1` works in both sh and cmd.exe) so the assertion below can see it —
-  // execSync's return value carries stdout only. The try/catch surfaces the
-  // captured output on failure, which execSync's bare error message omits.
-  let scopedOutput = "";
+  // Merge stderr into stdout (`2>&1` works in both sh and cmd.exe) so the
+  // try/catch can surface the captured output on failure, which execSync's bare
+  // error message omits.
   try {
-    scopedOutput = execSync(`${scopedCommand} 2>&1`, { cwd: runnerRoot, encoding: "utf8" });
+    execSync(`${scopedCommand} 2>&1`, { cwd: runnerRoot, encoding: "utf8" });
   } catch (error) {
     const captured = `${error.stdout ?? ""}${error.stderr ?? ""}`;
     fail(`scoped run failed:\n${captured}\n${error.message}`);
@@ -140,10 +138,6 @@ try {
           .map((step) => `${step.name ?? "(hook)"} → ${step.result?.status}`)
           .join(", "),
     );
-  }
-  // The merged output must not carry the paths-merge deprecation warning.
-  if (scopedOutput.includes("specified paths in both")) {
-    fail("scoped run: cucumber printed the paths-merge deprecation warning");
   }
   console.log(`\nE2E smoke scoped-run PASSED: 1 scenario, all steps passed.`);
 } catch (error) {

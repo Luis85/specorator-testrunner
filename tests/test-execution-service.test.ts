@@ -29,20 +29,6 @@ const waitForActive = async (service: TestExecutionService): Promise<void> => {
   }
 };
 
-/**
- * Absolute path to the runner's managed cucumber.mjs (vault base `/vault` +
- * default testRunnerPath `.testrunner`).
- */
-const CUCUMBER_MJS_PATH = "/vault/.testrunner/cucumber.mjs";
-
-/** Minimal cucumber.mjs content that defines the `scoped` profile. */
-const MODERN_CUCUMBER_MJS = "export const scoped = { paths: [] };";
-
-/** Seeds the modern cucumber.mjs so scopedProfileArgs returns profile args. */
-const seedModernCucumberMjs = (absoluteFs: FakeAbsoluteFileSystem): void => {
-  absoluteFs.seed(CUCUMBER_MJS_PATH, MODERN_CUCUMBER_MJS);
-};
-
 const FIXED_NOW = new Date("2026-06-01T10:00:00.000Z");
 
 const build = () => {
@@ -209,12 +195,12 @@ describe("DefaultTestExecutionService", () => {
   it("resolves the all command", async () => {
     const { service } = build();
     const result = await service.execute({ scope: "all", target: "all" });
-    // Bare-glob branch (no deprecated UCs): no explicit CLI paths, so the
-    // `scoped` profile is NOT selected — the config glob runs unmodified.
+    // Bare-glob branch (no deprecated UCs): no positional feature paths, so the
+    // config glob runs unmodified — no scope args appended.
     expect(result.ok && result.value.command).toBe("npm run test");
   });
 
-  it("demo and suite scopes do not select the scoped profile (no CLI feature paths)", async () => {
+  it("no scope passes a cucumber --profile arg (playwright-bdd has no profiles)", async () => {
     const { service, childProcess, fs } = build();
     seedSuite(fs, "regression", "@regression");
 
@@ -223,6 +209,12 @@ describe("DefaultTestExecutionService", () => {
 
     await service.execute({ scope: "suite", target: "regression" });
     expect(childProcess.calls[1].args).not.toContain("--profile");
+
+    await service.execute({
+      scope: "feature",
+      target: "Specifications/features/checkout.feature",
+    });
+    expect(childProcess.calls[2].args).not.toContain("--profile");
   });
 
   it("clears any prior Cucumber report before running (no stale import)", async () => {
@@ -339,17 +331,13 @@ describe("DefaultTestExecutionService", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Verbatim tag as a single literal argv entry (AD-4, no quoting/escaping).
-    expect(childProcess.calls[0].args).toEqual([
-      "npm",
-      "run",
-      "test",
-      "--",
-      "--tags",
-      "@smoke and not @wip",
-    ]);
-    // Display string quotes only the space-bearing arg, for readability.
-    expect(result.value.command).toBe('npm run test -- --tags "@smoke and not @wip"');
+    // Suite runs use playwright-bdd's native tag mechanism via BDD_TAGS on the
+    // spawn env (the generated config reads process.env.BDD_TAGS) — NOT a
+    // cucumber `--tags` arg. The base command is otherwise unchanged.
+    expect(childProcess.calls[0].args).toEqual(["npm", "run", "test"]);
+    expect(childProcess.calls[0].env?.BDD_TAGS).toBe("@smoke and not @wip");
+    // The display command stays the bare base — the tag goes through the env.
+    expect(result.value.command).toBe("npm run test");
     // suite.executed precedes the terminal event (UC-013).
     expect(types()).toEqual([
       "testrun.requested",
@@ -359,33 +347,41 @@ describe("DefaultTestExecutionService", () => {
     ]);
   });
 
+  it("merges BDD_TAGS on top of the Active SUT env (BASE_URL + auth) for suite runs", async () => {
+    const { service, childProcess, fs } = build();
+    seedSuite(fs, "smoke", "@smoke");
+    await service.execute({ scope: "suite", target: "smoke" });
+    // The returned suite env is merged with runEnv(settings), not replacing it.
+    expect(childProcess.calls[0].env?.BDD_TAGS).toBe("@smoke");
+    expect(childProcess.calls[0].env?.BASE_URL).toBe(
+      "file://./.testrunner/src/fixtures/example.html",
+    );
+  });
+
   it("resolves the feature command relative to the runner cwd", async () => {
-    const { service, childProcess, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
+    const { service, childProcess } = build();
     const result = await service.execute({
       scope: "feature",
       target: "Specifications/features/checkout.feature",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    // Positional feature-path filter appended to the base — no cucumber profile.
     expect(childProcess.calls[0].args).toEqual([
       "npm",
       "run",
       "test",
       "--",
-      "--profile",
-      "scoped",
       "../Specifications/features/checkout.feature",
     ]);
     // No spaces → no display quoting.
     expect(result.value.command).toBe(
-      "npm run test -- --profile scoped ../Specifications/features/checkout.feature",
+      "npm run test -- ../Specifications/features/checkout.feature",
     );
   });
 
   it("passes a feature path with $, &, and spaces as a literal argv entry (no shell, no escaping)", async () => {
-    const { service, childProcess, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
+    const { service, childProcess } = build();
     // PR #7: under shell: false these are literal args — never interpolated or
     // word-split, and no longer false-rejected by CommandSafetyPolicy.
     const result = await service.execute({
@@ -400,19 +396,16 @@ describe("DefaultTestExecutionService", () => {
       "run",
       "test",
       "--",
-      "--profile",
-      "scoped",
       "../Specifications/features/R&D Price $5.feature",
     ]);
     // Display quotes only because the arg contains spaces (readability only).
     expect(result.value.command).toBe(
-      'npm run test -- --profile scoped "../Specifications/features/R&D Price $5.feature"',
+      'npm run test -- "../Specifications/features/R&D Price $5.feature"',
     );
   });
 
   it("resolves a feature path with shell metacharacters and runs (no COMMAND_DISALLOWED)", async () => {
-    const { service, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
+    const { service } = build();
     // R&D.feature would be false-rejected/expanded under the old shell:true
     // policy; with argv arrays it is a literal arg and runs cleanly (PR #7).
     const result = await service.execute({
@@ -422,23 +415,19 @@ describe("DefaultTestExecutionService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe("passed");
-    expect(result.value.command).toBe(
-      "npm run test -- --profile scoped ../Specifications/features/R&D.feature",
-    );
+    expect(result.value.command).toBe("npm run test -- ../Specifications/features/R&D.feature");
   });
 
   it("resolves the use-case command as a feature glob when the UC is unknown", async () => {
-    const { service, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
+    const { service } = build();
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- --profile scoped ../Specifications/features/UC-001-*.feature",
+      "npm run test -- ../Specifications/features/UC-001-*.feature",
     );
   });
 
   it("targets a Use Case's declared featureFiles in order (UC-011)", async () => {
-    const { service, fs, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
+    const { service, fs } = build();
     fs.files.set(
       "Use Cases/UC-001 Demo.md",
       buildNote(
@@ -455,42 +444,14 @@ describe("DefaultTestExecutionService", () => {
       ),
     );
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
+    // Positional feature-path filters in declared order — no cucumber profile.
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- --profile scoped ../Specifications/features/UC-001-happy-path.feature ../Specifications/features/UC-001-edge.feature",
+      "npm run test -- ../Specifications/features/UC-001-happy-path.feature ../Specifications/features/UC-001-edge.feature",
     );
   });
 
-  // A pre-upgrade runner whose cucumber.mjs has no scoped export (and is never
-  // rewritten outside init/repair/reset) must fall back to the old path-only
-  // argv: the run keeps working (deprecation warning, not a hard fail on an
-  // unknown profile). Table-driven over the path-scoped run scopes.
-  it.each([
-    {
-      scope: "feature" as const,
-      target: "Specifications/features/checkout.feature",
-      expectedPathArg: "../Specifications/features/checkout.feature",
-    },
-    {
-      scope: "use-case" as const,
-      target: "UC-002",
-      expectedPathArg: "../Specifications/features/UC-002-*.feature",
-    },
-  ])(
-    "legacy runner (no scoped export): $scope-scoped run omits --profile but keeps the path",
-    async ({ scope, target, expectedPathArg }) => {
-      const { service, childProcess, absoluteFs } = build();
-      // Do NOT seed cucumber.mjs → readAbsolute returns err → profileArgs = [].
-      expect(absoluteFs.written.has(CUCUMBER_MJS_PATH)).toBe(false);
-      const result = await service.execute({ scope, target });
-      expect(result.ok).toBe(true);
-      expect(childProcess.calls[0].args).not.toContain("--profile");
-      expect(childProcess.calls[0].args).toContain(expectedPathArg);
-    },
-  );
-
   it("excludes deprecated Use Cases' features from Run All (ADR-0012)", async () => {
-    const { service, fs, absoluteFs } = build();
-    seedModernCucumberMjs(absoluteFs);
+    const { service, fs } = build();
     fs.files.set(
       "Use Cases/UC-001 Active.md",
       buildNote(
@@ -517,9 +478,10 @@ describe("DefaultTestExecutionService", () => {
       ),
     );
     const result = await service.execute({ scope: "all", target: "all" });
-    // Explicit file list: scoped profile selected so config paths don't merge.
+    // Explicit positional feature-path filter for the non-deprecated UC — no
+    // cucumber profile (playwright-bdd has no config-paths merge to suppress).
     expect(result.ok && result.value.command).toBe(
-      "npm run test -- --profile scoped ../Specifications/features/UC-001-happy.feature",
+      "npm run test -- ../Specifications/features/UC-001-happy.feature",
     );
   });
 

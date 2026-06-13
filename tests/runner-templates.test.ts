@@ -58,6 +58,26 @@ describe("buildRunnerTemplates", () => {
     expect(parsed.devDependencies["@cucumber/cucumber"]).toBeUndefined();
   });
 
+  it("playwright test scripts pass --pass-with-no-tests (empty tag/path filter = success)", () => {
+    // A suite/tag (BDD_TAGS) or positional path filter that matches nothing makes
+    // `playwright test` exit non-zero ("No tests found"); --pass-with-no-tests
+    // keeps a zero-scenario filter a passing run, matching V1 (TIS §13.2).
+    const parsed = JSON.parse(byPath.get("package.json")?.content ?? "{}") as {
+      scripts: Record<string, string>;
+    };
+    expect(parsed.scripts.test).toContain("--pass-with-no-tests");
+    expect(parsed.scripts["test:ci"]).toContain("--pass-with-no-tests");
+    expect(parsed.scripts["test:smoke"]).toContain("--pass-with-no-tests");
+  });
+
+  it("playwright.config.ts reads BDD_TAGS so the Test Hub can drive tag-expression suite runs", () => {
+    // The Test Hub sets BDD_TAGS on the spawn env for suite (tag-expression)
+    // runs; bddgen applies the full cucumber tag expression at generation.
+    const config = configFor(DEFAULT_SETTINGS);
+    expect(config).toContain("process.env.BDD_TAGS");
+    expect(config).toContain("defineBddConfig");
+  });
+
   it("the example steps file uses createBdd fixtures, not a Cucumber World", () => {
     const steps = byPath.get("src/steps/example.steps.ts")?.content ?? "";
     expect(steps).not.toBe("");
