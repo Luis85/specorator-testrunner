@@ -721,13 +721,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
 
   private openPrdBuilder(): void {
     // Task 12: PrdService will be properly wired here; stub deps for now
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
     new PrdBuilderModal(this.app, {
       prdService: {}, // Stub
       useCaseService: this.useCaseService,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       settingsService: this.hubSettingsService as any,
       eventBus: this.eventBus,
       openPrdBuilder: () => this.openPrdBuilder(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any).open();
   }
 
