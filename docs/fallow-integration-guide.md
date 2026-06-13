@@ -196,15 +196,16 @@ quality:
 **Start advisory.** The template above includes `continue-on-error: true` on
 the audit step so a warn/fail verdict shows as a failed step annotation but the
 job (and the PR check) stays green. Use this phase to observe signal quality on
-a few PRs. If the gate is noisy (lots of false positives from pre-existing
-inventory), tune your `.fallowrc.jsonc` thresholds before flipping to blocking.
+a few PRs before flipping to blocking.
 
-The audit uses new-only attribution by default: it gates on findings *your
-changeset introduced*, not the entire historical inventory. This means
-launch-default thresholds are usually workable without tuning. However, any
-edit to a file places that file's findings in scope — pre-existing complexity
-in heavily-edited files can surface as "introduced." Revisit thresholds only if
-this proves noisy in practice.
+The audit runs with `--gate new-only` by default: only findings where
+`introduced: true` can fail the gate. When you edit a legacy file, inherited
+findings from that file appear in the output as context (annotated
+`introduced: false`) but do **not** cause a failure — the audit exits 0 for
+those. Only a finding that fallow attributes to your changeset can push the
+verdict to warn or fail. If the gate trips, the finding is genuinely new;
+threshold tuning or suppressions are appropriate for `--gate all` or real
+noise, not for inherited findings surfaced as context.
 
 **Flip to blocking** once you trust the signal — remove `continue-on-error`:
 
