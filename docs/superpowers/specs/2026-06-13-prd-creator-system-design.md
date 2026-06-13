@@ -25,7 +25,7 @@ Currently, Specorator has:
 ### Solution
 
 Introduce **PRDs as synthesis artifacts**:
-- **PRD 0:** System-level product vision (top-level)
+- **PRD-000:** System-level product vision (top-level)
 - **Sub-PRDs:** Feature/capability areas derived from domain research
 - **Use Cases:** Detailed implementation of each PRD
 
@@ -48,7 +48,7 @@ Use Case (solution detail)
 **Invariants:**
 - Use Case has exactly one parent PRD (`prd-id` field)
 - Use Case retains its `domain` (research context)
-- Sub-PRDs reference 1..N domains (cross-cutting concerns allowed); root PRD (`parent-prd: null`) has optional domains (0..N)
+- Sub-PRDs reference 1..N domains (cross-cutting concerns allowed); the root PRD (empty `parent-prd`) has optional domains (0..N)
 - PRD tree is single-parent (each sub-PRD has one parent; PRD-000 is root)
 - PRD IDs are immutable; display order managed via `display_order` frontmatter field
 
@@ -58,20 +58,30 @@ Use Case (solution detail)
 id: PRD-001
 type: prd
 title: "Dashboard & KPI Tracking"
-status: draft | active | deprecated
-parent-prd: PRD-000  # null for PRD-000 (root)
-domains: [dashboard, reporting]  # which domain research informs this (optional for root PRD)
+status: draft
+parent-prd: PRD-000
+domains:
+  - dashboard
+  - reporting
 vision: "Single source of truth for test health"
-scope_in: [KPI tiles, recent runs, 7-day trend]  # what's included
-scope_out: [historical analytics, custom exports]  # what's excluded
-research-notes: []  # Reserved for V2: link to domain artifacts
-display_order: 1  # for sibling ordering in tree (optional; auto-assigned if omitted)
+scope_in:
+  - KPI tiles
+  - recent runs
+  - 7-day trend
+scope_out:
+  - historical analytics
+  - custom exports
+display_order: 1
 ```
 
 Required fields: `id`, `type`, `title`, `status`, `parent-prd`, `vision`, `scope_in`, `scope_out`.  
-Optional fields: `domains` (required for sub-PRDs, optional for root), `research-notes`, `display_order`.  
-**Note on scope:** Scope is stored as two array fields (`scope_in`, `scope_out`) instead of block scalar to remain parseable by the shared frontmatter parser (which supports scalars/arrays only, not block scalars).  
-**Note:** Root PRD (`parent-prd: null`) has `domains: []` or omitted (no domains apply to system-level vision).
+Optional fields: `domains` (required for sub-PRDs, optional for root), `display_order`.  
+`status` is one of: `draft`, `active`, `deprecated`.
+
+**On-disk format must match the shared frontmatter parser** (`src/shared/utils/frontmatter.ts`), which round-trips only string scalars and block-sequence arrays — **not** inline flow arrays (`[a, b]`), block scalars (`|`), or YAML `null`. Therefore:
+- **Arrays** (`domains`, `scope_in`, `scope_out`) use block-sequence form (`- item` on indented lines), never inline `[a, b]`.
+- **Root PRD** is identified by an **absent or empty `parent-prd`** (the parser yields an empty string), never a literal `null`. The PRD read model normalizes empty `parent-prd` → root. This is the single source of truth for "is this the root"; do not rely on the `PRD-000` id alone.
+- `research-notes` is omitted in V1 (reserved for V1.5; see §6).
 
 **Backwards compatibility:** Existing Use Cases lack `prd-id` field until migration runs. Validation must treat `prd-id` as optional until per-vault backfill completes; enforce only after migration assigns a PRD to all Use Cases.
 
@@ -150,7 +160,7 @@ All PRD markdown includes these standard sections (flexible content):
 - Obsidian API limits realtime subscriptions
 
 ## Sub-PRDs
-- (if this is PRD-0 or a parent PRD, list children)
+- (if this is PRD-000 or a parent PRD, list children)
 
 ## Related Use Cases
 - UC-009: View Dashboard
@@ -257,7 +267,7 @@ The PRD system surfaces at three entry points (explorer, dashboard, modal), supp
 **Location:** Sidebar panel (alongside Use Case explorer)
 
 **Content:**
-- Hierarchical tree: PRD-0 at root, sub-PRDs as collapsible children
+- Hierarchical tree: PRD-000 at root, sub-PRDs as collapsible children
 - Each node shows: PRD title + badge (UC count)
 - Indentation indicates hierarchy depth
 
@@ -266,18 +276,18 @@ The PRD system surfaces at three entry points (explorer, dashboard, modal), supp
 - **Right-click node:** Context menu
   - "Create sub-PRD" → open builder with `parent-prd` pre-filled
   - "Edit" → open builder with existing fields populated
-  - "Delete" (if no child PRDs or UCs) → confirm + delete folder
+  - "Delete" (if no child PRDs or UCs) → confirm, then delete only the generated `PRD-NNN-*.md` note. If the folder contains other user-authored files (diagrams, attachments), leave them and the folder in place and surface a notice ("PRD note removed; N other files preserved in folder"); never recursively delete a folder with non-PRD content.
   - "Open in file explorer" → reveal folder in OS file system
 - **Drag-to-reorder:** Reorder sub-PRDs within same parent (maintains immutable PRD-NNN IDs; updates `display_order` frontmatter field for tree rendering)
 - **Search:** Filter PRDs by title or domain (e.g., search "dashboard" shows all PRDs tagged with dashboard domain)
 
 **Tree example:**
 ```
-PRD-0: Specorator Testrunner (P)
-├── PRD-1: Dashboard & KPI (9 UCs)
-├── PRD-2: Evidence Reporting (5 UCs)
-├── PRD-3: CI/CD Integration (3 UCs)
-└── PRD-4: Step Definition Authoring (4 UCs)
+PRD-000: Specorator Testrunner (root)
+├── PRD-001: Dashboard & KPI (9 UCs)
+├── PRD-002: Evidence Reporting (5 UCs)
+├── PRD-003: CI/CD Integration (3 UCs)
+└── PRD-004: Step Definition Authoring (4 UCs)
 ```
 
 ### 4.2 Dashboard Integration
@@ -285,14 +295,14 @@ PRD-0: Specorator Testrunner (P)
 **Location:** New "PRD & Roadmap" section on Dashboard (below KPI tiles)
 
 **Content:**
-- **PRD 0 summary card:**
+- **PRD-000 summary card:**
   - Title: "Specorator Testrunner"
   - Vision excerpt (first 100 chars)
   - Stats: "4 sub-PRDs, 21 Use Cases"
   - Status badge (Draft | Active | Deprecated)
-- **Sub-PRD list** (next level children of PRD-0):
+- **Sub-PRD list** (next level children of PRD-000):
   - Show each with title, UC count, status
-  - Example: "PRD-1: Dashboard & KPI (9 UCs) — Active"
+  - Example: "PRD-001: Dashboard & KPI (9 UCs) — Active"
 
 **Actions:**
 - **"New PRD"** → opens builder modal (parent-prd auto-set if in PRD context)
@@ -372,7 +382,7 @@ npm run migrate:analyze-domains
 
 **User documents their decision** in a checklist (e.g., "Dashboard + KPI domains → PRD-001", "Evidence domain → PRD-002", etc.)
 
-### Phase 3: Create PRD-0 (System Vision)
+### Phase 3: Create PRD-000 (System Vision)
 
 **Script:** `scripts/migrate-prd-0.mjs`
 
@@ -389,13 +399,15 @@ npm run migrate:create-prd-0
   type: prd
   title: "Specorator Testrunner"
   status: active
-  parent-prd: null
-  domains: []  # root PRD may omit or leave empty
+  parent-prd:            # empty → root (no literal null)
   vision: "Enable teams to transform requirements into executable specifications..."
-  scope_in: "[from current PRD section]"  # list of included features
-  scope_out: "[from current PRD section]"  # list of excluded features
-  display_order: 0  # root always first
+  scope_in:              # block-sequence, derived from current PRD's Goals/scope
+    - "[included feature]"
+  scope_out:             # block-sequence, derived from current PRD's Non-Goals
+    - "[excluded feature]"
+  display_order: 0       # root always first
   ```
+  (`domains` omitted for the root PRD; the parser yields an empty `parent-prd`, which the read model normalizes to "root".)
 - **Preserves backlinks:** Keeps original `docs/Specorator Testrunner.md` as a redirect note with Obsidian alias:
   ```yaml
   ---
@@ -510,7 +522,7 @@ This design supports a progression toward richer traceability and visualization.
 ### V2.5+ (Future)
 
 **Cross-PRD Dependencies:**
-- Allow PRDs to reference other PRDs (e.g., "PRD-3 depends on PRD-1")
+- Allow PRDs to reference other PRDs (e.g., "PRD-003 depends on PRD-001")
 - Visualization in Lineage view (show dependency edges)
 - Validation: warn if circular dependencies detected
 
@@ -536,12 +548,12 @@ This design supports a progression toward richer traceability and visualization.
 
 ### Manual Validation Checklist
 
-- [ ] PRD Explorer shows PRD-0 and sub-PRDs in correct hierarchy
+- [ ] PRD Explorer shows PRD-000 and sub-PRDs in correct hierarchy
 - [ ] Clicking PRD in explorer shows detail view with correct domains, vision, scope
 - [ ] Creating a new PRD via builder creates file + folder in correct location
 - [ ] Assigning Use Cases to PRD updates UC frontmatter with `prd-id`
 - [ ] Use Case detail breadcrumb shows correct PRD link
-- [ ] Dashboard shows PRD-0 summary + sub-PRD list
+- [ ] Dashboard shows PRD-000 summary + sub-PRD list
 - [ ] Migration scripts run without errors; all 37 existing UCs linked to PRDs
 - [ ] Backward compatibility: existing Use Cases still render correctly with new `prd-id` field
 
@@ -598,10 +610,12 @@ This design introduces architecture-shaping decisions and new product terminolog
 
 2. **CONTEXT.md Glossary Updates:** Add entries for:
    - **PRD (Product Requirements Document):** A synthesis artifact that defines solution scope, drawing from domain research. Each PRD owns 0..N Use Cases. Distinct from "PRD" in other contexts.
-   - **parent-prd:** The parent PRD of a sub-PRD or Use Case. Null for PRD-000 (root).
+   - **parent-prd:** The parent PRD of a sub-PRD. Empty/absent for PRD-000 (root); the read model normalizes empty → root.
    - **prd-id:** Frontmatter field linking a Use Case to its parent PRD (immutable once assigned).
    - **Domain:** Research/discovery context (solution-agnostic). Separate from PRD.
    - **display_order:** Frontmatter field managing sibling PRD ordering without mutating immutable IDs.
+
+3. **Event Catalog + typed payloads:** This design emits a new `prd.created` domain event. Before publishing it, add it to `docs/architecture/Event Catalog.md` and to the typed `EventPayloads` map (so the publisher cannot drift from the catalogued shape). Payload: `{ prdId, parentPrd, ucCount }`. Catalog any further PRD events (e.g. `prd.updated`, `prd.deleted`) introduced during implementation the same way.
 
 These updates ensure the design is formally recorded and product language is consistent across the codebase.
 
