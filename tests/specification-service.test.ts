@@ -460,6 +460,27 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
     expect(types()).toContain("specification.missingSteps.detected");
   });
 
+  it("matches a bddgen {string} expression back to the feature's quoted step (codex P1)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    // The feature step carries a quoted literal; bddgen prints the cucumber
+    // EXPRESSION ({string}), which an exact compare would never match.
+    fs.files.set(path, 'Feature: Demo\n  Scenario: S\n    Given I set header for "test"\n');
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("I set header for {string}", "a step from a different feature"),
+    );
+
+    const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The RAW feature step is returned (the stub generator parameterizes it),
+    // and the unrelated other-feature expression is filtered out.
+    expect(result.value.missingSteps).toEqual(['I set header for "test"']);
+  });
+
   it("invokes bddgen via the playwright-bdd v9 entrypoint (dist/cli/index.js)", async () => {
     // playwright-bdd v9's `bddgen` bin is `dist/cli/index.js`; the non-existent
     // `dist/cli.js` would crash node and make detection always report
@@ -477,6 +498,22 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
       c.args.some((a) => a.includes("playwright-bdd")),
     );
     expect(bddgenCall?.args).toEqual(["node", "node_modules/playwright-bdd/dist/cli/index.js"]);
+  });
+
+  it("scopes detection's bddgen to the selected feature via BDD_FEATURES (codex P2)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    await service.detectMissingSteps(path);
+
+    const bddgenCall = childProcess.calls.find((c) =>
+      c.args.some((a) => a.includes("playwright-bdd")),
+    );
+    // Runner-relative path → bddgen parses only this feature, not the whole vault.
+    expect(bddgenCall?.env?.BDD_FEATURES).toBe("../Specifications/features/UC-001-demo.feature");
   });
 
   it("runs bddgen with the configured Node executable, not a hard-coded `node`", async () => {

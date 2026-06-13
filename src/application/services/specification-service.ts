@@ -6,12 +6,17 @@ import {
   serialiseFeature,
   useCaseIdFromPath,
 } from "../content/gherkin";
-import { parseStepDefinitions, type StepDefinitionPattern } from "../content/step-definitions";
+import {
+  isStepDefined,
+  parseStepDefinitions,
+  type StepDefinitionPattern,
+} from "../content/step-definitions";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import { resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
+import type { TestHubSettings } from "../../domain/settings/settings";
 import type { UseCaseService } from "./use-case-service";
 import {
   createFeatureSpecification,
@@ -23,7 +28,7 @@ import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
-import { joinVaultPath } from "../../shared/utils/vault-path";
+import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
 
 // playwright-bdd v9's `bddgen` bin resolves to `dist/cli/index.js` (NOT
 // `dist/cli.js`); run it directly with the configured Node executable so the
@@ -136,16 +141,23 @@ export const parseBddgenMissingSteps = (stdout: string): string[] => {
 };
 
 /**
- * The requested feature's step texts that bddgen reported missing, de-duplicated
- * and in feature order. bddgen scans ALL features, so the result is filtered to
- * THIS feature; `collectStepTexts` can repeat a step across scenarios, hence the
- * `seen` guard.
+ * The requested feature's RAW step texts that bddgen reported missing,
+ * de-duplicated and in feature order. bddgen prints cucumber EXPRESSIONS
+ * (`I set header for {string}`), not the feature's raw text
+ * (`I set header for "test"`), so the match must compile each reported
+ * expression and test it against the raw step — an exact string compare would
+ * drop every parameterized step. We return the raw feature texts (what the stub
+ * generator expects), keeping bddgen purely as the "is it missing?" oracle.
+ * `collectStepTexts` can repeat a step across scenarios, hence the `seen` guard.
  */
-const keepFeatureSteps = (featureTexts: string[], allMissing: ReadonlySet<string>): string[] => {
+const keepFeatureSteps = (
+  featureTexts: string[],
+  missingPatterns: StepDefinitionPattern[],
+): string[] => {
   const seen = new Set<string>();
   const kept: string[] = [];
   for (const text of featureTexts) {
-    if (!seen.has(text) && allMissing.has(text)) {
+    if (!seen.has(text) && isStepDefined(text, missingPatterns)) {
       seen.add(text);
       kept.push(text);
     }
@@ -306,9 +318,13 @@ export class DefaultSpecificationService implements SpecificationService {
       return err(appError("RUNNER_NOT_INSTALLED", "Install the runner to detect missing steps."));
     }
 
+    // Scope bddgen to THIS feature (same BDD_FEATURES env the generated config
+    // reads) so a malformed/unrelated feature elsewhere can't make detection
+    // fail and report RUNNER_NOT_INSTALLED.
     const ran = await this.childProcess.run({
       args: [settings.runner.nodeExecutable, BDDGEN_CLI],
       cwd: cwd.value,
+      env: { BDD_FEATURES: this.runnerRelativeFeature(settings, featurePath) },
     });
     // bddgen exits 0 even when steps are missing, so a real failure is a spawn
     // error or a non-zero exit WITHOUT the missing-steps report.
@@ -318,8 +334,13 @@ export class DefaultSpecificationService implements SpecificationService {
       return err(appError("RUNNER_NOT_INSTALLED", "Install the runner to detect missing steps."));
     }
 
-    const allMissing = new Set(parseBddgenMissingSteps(ran.value.stdout));
-    const missingSteps = keepFeatureSteps(collectStepTexts(feature), allMissing);
+    // bddgen reports cucumber EXPRESSIONS; treat each as a step-definition
+    // pattern so a parameterized feature step (`… "test"`) matches its
+    // reported expression (`… {string}`).
+    const missingPatterns: StepDefinitionPattern[] = parseBddgenMissingSteps(ran.value.stdout).map(
+      (source) => ({ kind: "expression", source }),
+    );
+    const missingSteps = keepFeatureSteps(collectStepTexts(feature), missingPatterns);
 
     const detectionEvent = createEvent("specification.missingSteps.detected", {
       featurePath,
@@ -331,6 +352,18 @@ export class DefaultSpecificationService implements SpecificationService {
       missing: missingSteps.length,
     });
     return ok({ featurePath, missingSteps, detectionEventId: detectionEvent.id });
+  }
+
+  /**
+   * A feature's path relative to the runner dir, for `BDD_FEATURES` (the
+   * generated config's `features`, resolved relative to that dir).
+   */
+  private runnerRelativeFeature(settings: TestHubSettings, featurePath: VaultPath): string {
+    const folder = settings.paths.featureFilesPath;
+    const rel = featurePath.startsWith(`${folder}/`)
+      ? featurePath.slice(folder.length + 1)
+      : (featurePath.split("/").pop() ?? featurePath);
+    return `${relativeVaultPath(settings.paths.testRunnerPath, folder)}/${rel}`;
   }
 
   /** UC-013: discover the runnable `.feature` files (see the interface doc). */

@@ -194,7 +194,7 @@ const failedAttemptTerminals: readonly TourEventRule[] = [
  * patterns (that file is user-owned, `overwrite: false`, and duplicate
  * Cucumber patterns would be ambiguous); only the Given is reused.
  */
-export const TOUR_GHERKIN_SNIPPET = `@tour
+const TOUR_GHERKIN_SNIPPET = `@tour
 Feature: Greet the visitor
   Scenario: Greeting shows the entered name
     Given I open the local example page
@@ -203,28 +203,27 @@ Feature: Greet the visitor
     Then the greeting should say "Hello, Ada!"
 `;
 
-/** The implementation the user pastes into the generated step scaffold (step 6). */
-export const TOUR_STEPS_SNIPPET = `import { Then, When } from "@cucumber/cucumber";
-import assert from "node:assert/strict";
-import { TestWorld } from "../support/world";
+/**
+ * The implementation the user pastes into the generated step scaffold (step 6).
+ * playwright-bdd form (`createBdd()` + the Playwright `{ page }` fixture) so it
+ * loads in the V2 runner — the V1 `@cucumber/cucumber` + `World` snippet would
+ * fail `bddgen`/typecheck (those packages/files are absent in a V2 runner).
+ */
+const TOUR_STEPS_SNIPPET = `import { expect } from "@playwright/test";
+import { createBdd } from "playwright-bdd";
 
-When("I enter {string} into the name field", async function (this: TestWorld, name: string) {
-  if (!this.page) throw new Error("Page not initialized");
-  await this.page.fill("#name", name);
+const { When, Then } = createBdd();
+
+When("I enter {string} into the name field", async ({ page }, name: string) => {
+  await page.fill("#name", name);
 });
 
-When("I submit the greeting", async function (this: TestWorld) {
-  if (!this.page) throw new Error("Page not initialized");
-  await this.page.click("#greet");
+When("I submit the greeting", async ({ page }) => {
+  await page.click("#greet");
 });
 
-Then("the greeting should say {string}", async function (this: TestWorld, expected: string) {
-  if (!this.page) throw new Error("Page not initialized");
-  for (let attempt = 0; attempt < 20; attempt++) {
-    if ((await this.page.textContent("#greeting")) === expected) return;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  assert.equal(await this.page.textContent("#greeting"), expected);
+Then("the greeting should say {string}", async ({ page }, expected: string) => {
+  await expect(page.locator("#greeting")).toHaveText(expected);
 });
 `;
 
