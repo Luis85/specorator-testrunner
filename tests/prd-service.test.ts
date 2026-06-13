@@ -72,19 +72,19 @@ describe("DefaultPrdService.create", () => {
     expect(result.ok && result.value.id).toBe("PRD-002");
   });
 
-  it("cleans up the new folder when the note write fails (no orphaned empty folder)", async () => {
-    const { service, fs } = build();
+  // Both cleanup tests create a sub-PRD ("Cleanup Test" → PRD-001-cleanup-test)
+  // whose note write is rigged to fail after the folder step; they differ only
+  // in whether the target folder pre-exists.
+  const createWithFailingNote = (service: DefaultPrdService, fs: FakeVaultFileSystem) => {
     fs.files.set(
       "PRDs/PRD-000-vision/PRD-000-vision.md",
       "---\nid: PRD-000\ntype: prd\nparent-prd:\n---\n",
     );
-    // The note write fails after the folder is created.
     fs.failOn = {
       path: "PRDs/PRD-001-cleanup-test/PRD-001-cleanup-test.md",
       message: "disk full",
     };
-
-    const result = await service.create({
+    return service.create({
       title: "Cleanup Test",
       parentPrdId: "PRD-000",
       domains: ["d"],
@@ -92,10 +92,29 @@ describe("DefaultPrdService.create", () => {
       scopeIn: ["a"],
       scopeOut: ["b"],
     });
+  };
+
+  it("cleans up the new folder when the note write fails (no orphaned empty folder)", async () => {
+    const { service, fs } = build();
+    const result = await createWithFailingNote(service, fs);
 
     expect(result.ok).toBe(false);
     // The just-created folder must not be left behind on a note-write failure.
     expect([...fs.folders].some((f) => f.startsWith("PRDs/PRD-001"))).toBe(false);
+  });
+
+  it("never deletes a PRE-EXISTING folder (with user content) when the note write fails", async () => {
+    const { service, fs } = build();
+    // The target folder already exists and holds user content (e.g. a diagram).
+    fs.folders.add("PRDs/PRD-001-cleanup-test");
+    fs.files.set("PRDs/PRD-001-cleanup-test/diagram.md", "# my notes");
+
+    const result = await createWithFailingNote(service, fs);
+
+    expect(result.ok).toBe(false);
+    // Cleanup must be limited to folders THIS call created — the pre-existing
+    // folder and its user content survive (codex P2).
+    expect(fs.files.get("PRDs/PRD-001-cleanup-test/diagram.md")).toBe("# my notes");
   });
 });
 

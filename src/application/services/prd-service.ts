@@ -148,14 +148,20 @@ export class DefaultPrdService implements PrdService {
       };
 
       const folderPath = joinVaultPath(settings.paths.prdsPath, folder);
+      // Whether the folder already existed: cleanup below must only remove a
+      // folder THIS call created, never a pre-existing one (which could hold
+      // user content — diagrams, a stale draft), since createFolder is a no-op
+      // success on an existing path.
+      const folderPreexisted = await this.fs.exists(folderPath);
       const folderResult = await this.fs.createFolder(folderPath);
       if (!folderResult.ok) return folderResult;
 
       const createResult = await this.fs.createFile(path, buildPrdNote(prd, request.research));
       if (!createResult.ok) {
         // Don't leave an orphaned empty PRD folder behind on a note-write
-        // failure; best-effort cleanup (the original error is what we return).
-        await this.fs.deleteFolder(folderPath);
+        // failure; best-effort, and only for the folder we just created (the
+        // original error is what we return).
+        if (!folderPreexisted) await this.fs.deleteFolder(folderPath);
         return createResult;
       }
 
