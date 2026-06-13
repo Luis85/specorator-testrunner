@@ -370,7 +370,8 @@ export class DefaultUseCaseService implements UseCaseService {
       suites: toArray(fm.suites),
       evidence: toVaultPaths(fm.evidence),
       lastTestRun,
-      domain: typeof fm.domain === "string" && fm.domain.trim() !== "" ? fm.domain.trim() : undefined,
+      domain:
+        typeof fm.domain === "string" && fm.domain.trim() !== "" ? fm.domain.trim() : undefined,
       path,
     };
   }

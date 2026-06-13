@@ -7,7 +7,11 @@ import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } f
 const build = () => {
   const fs = new FakeVaultFileSystem();
   const { bus, types, events } = recordingEventBus();
-  const settings = new DefaultSettingsService(new FakeDataStore(), new DefaultPathSafetyPolicy(), bus);
+  const settings = new DefaultSettingsService(
+    new FakeDataStore(),
+    new DefaultPathSafetyPolicy(),
+    bus,
+  );
   const service = new DefaultPrdService(settings, fs, bus, silentLogger);
   return { service, fs, types, events };
 };
@@ -46,11 +50,19 @@ describe("DefaultPrdService.create", () => {
 
   it("auto-increments ids past existing PRDs (PRD-000 reserved)", async () => {
     const { service, fs } = build();
-    fs.files.set("PRDs/PRD-000-product-vision/PRD-000-product-vision.md", "---\nid: PRD-000\ntype: prd\n---\n");
+    fs.files.set(
+      "PRDs/PRD-000-product-vision/PRD-000-product-vision.md",
+      "---\nid: PRD-000\ntype: prd\n---\n",
+    );
     fs.files.set("PRDs/PRD-001-x/PRD-001-x.md", "---\nid: PRD-001\ntype: prd\n---\n");
 
     const result = await service.create({
-      title: "Second", parentPrdId: "PRD-000", domains: ["d"], vision: "v", scopeIn: ["a"], scopeOut: ["b"],
+      title: "Second",
+      parentPrdId: "PRD-000",
+      domains: ["d"],
+      vision: "v",
+      scopeIn: ["a"],
+      scopeOut: ["b"],
     });
     expect(result.ok && result.value.id).toBe("PRD-002");
   });
@@ -61,11 +73,41 @@ describe("DefaultPrdService.findAll/parse", () => {
     const { service, fs } = build();
     fs.files.set(
       "PRDs/PRD-000-product-vision/PRD-000-product-vision.md",
-      ["---", "id: PRD-000", "type: prd", "title: Vision", "status: active", "parent-prd:", "vision: V", "display_order: 0", "---", "# PRD-000: Vision", ""].join("\n"),
+      [
+        "---",
+        "id: PRD-000",
+        "type: prd",
+        "title: Vision",
+        "status: active",
+        "parent-prd:",
+        "vision: V",
+        "display_order: 0",
+        "---",
+        "# PRD-000: Vision",
+        "",
+      ].join("\n"),
     );
     fs.files.set(
       "PRDs/PRD-001-dash/PRD-001-dash.md",
-      ["---", "id: PRD-001", "type: prd", "title: Dash", "status: draft", "parent-prd: PRD-000", "domains:", "  - dashboard", "vision: V", "scope_in:", "  - tiles", "scope_out:", "  - exports", "display_order: 1", "---", "# PRD-001: Dash", ""].join("\n"),
+      [
+        "---",
+        "id: PRD-001",
+        "type: prd",
+        "title: Dash",
+        "status: draft",
+        "parent-prd: PRD-000",
+        "domains:",
+        "  - dashboard",
+        "vision: V",
+        "scope_in:",
+        "  - tiles",
+        "scope_out:",
+        "  - exports",
+        "display_order: 1",
+        "---",
+        "# PRD-001: Dash",
+        "",
+      ].join("\n"),
     );
 
     const result = await service.findAll();
@@ -91,7 +133,20 @@ describe("DefaultPrdService.assignUseCaseToPrd", () => {
   it("adds prd-id to the use case note, preserving other frontmatter", async () => {
     const { service, fs } = build();
     const ucPath = "Use Cases/UC-001 Init.md";
-    fs.files.set(ucPath, ["---", "id: UC-001", "type: use-case", "title: Init", "domain: Installation", "status: specified", "---", "# UC-001 Init", ""].join("\n"));
+    fs.files.set(
+      ucPath,
+      [
+        "---",
+        "id: UC-001",
+        "type: use-case",
+        "title: Init",
+        "domain: Installation",
+        "status: specified",
+        "---",
+        "# UC-001 Init",
+        "",
+      ].join("\n"),
+    );
 
     const result = await service.assignUseCaseToPrd(
       // pass a VaultPath; in tests use unsafeVaultPath

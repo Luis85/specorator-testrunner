@@ -181,7 +181,8 @@ export class DefaultPrdService implements PrdService {
       vision: typeof fm.vision === "string" ? fm.vision : "",
       scopeIn: asArray(fm.scope_in),
       scopeOut: asArray(fm.scope_out),
-      displayOrder: Number.parseInt(typeof fm.display_order === "string" ? fm.display_order : "0", 10) || 0,
+      displayOrder:
+        Number.parseInt(typeof fm.display_order === "string" ? fm.display_order : "0", 10) || 0,
       path,
     };
   }
