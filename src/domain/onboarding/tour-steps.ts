@@ -194,7 +194,7 @@ const failedAttemptTerminals: readonly TourEventRule[] = [
  * patterns (that file is user-owned, `overwrite: false`, and duplicate
  * step-definition patterns would be ambiguous); only the Given is reused.
  */
-const TOUR_GHERKIN_SNIPPET = `@tour
+export const TOUR_GHERKIN_SNIPPET = `@tour
 Feature: Greet the visitor
   Scenario: Greeting shows the entered name
     Given I open the local example page
@@ -209,7 +209,7 @@ Feature: Greet the visitor
  * loads in the V2 runner — the V1 `@cucumber/cucumber` + `World` snippet would
  * fail `bddgen`/typecheck (those packages/files are absent in a V2 runner).
  */
-const TOUR_STEPS_SNIPPET = `import { expect } from "@playwright/test";
+export const TOUR_STEPS_SNIPPET = `import { expect } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
 const { When, Then } = createBdd();

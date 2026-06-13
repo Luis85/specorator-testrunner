@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   isTourStepId,
+  TOUR_GHERKIN_SNIPPET,
   TOUR_STEPS,
+  TOUR_STEPS_SNIPPET,
   tourObservedEventTypes,
   type TourEventContext,
   type TourStepId,
@@ -289,5 +291,21 @@ describe("completion predicates", () => {
     expect(eventRule("generate-ci").matches({ provider: "github-actions", path: "x" }, ctx)).toBe(
       true,
     );
+  });
+});
+
+// The e2e-smoke `@tour` leg consumes these exact constants to prove the tour's
+// self-authored cycle runs green against the real runner. These guards pin the
+// leg's premise (the gherkin and the createBdd snippet line up) without a spawn.
+describe("exported @tour artifacts (e2e premise)", () => {
+  it("the gherkin carries @tour and the greeting steps", () => {
+    expect(TOUR_GHERKIN_SNIPPET).toContain("@tour");
+    expect(TOUR_GHERKIN_SNIPPET).toContain('I enter "Ada" into the name field');
+    expect(TOUR_GHERKIN_SNIPPET).toContain('the greeting should say "Hello, Ada!"');
+  });
+
+  it("the steps snippet binds When/Then via createBdd and drives the fixture", () => {
+    expect(TOUR_STEPS_SNIPPET).toContain("createBdd()");
+    expect(TOUR_STEPS_SNIPPET).toMatch(/#name|#greet|#greeting/);
   });
 });
