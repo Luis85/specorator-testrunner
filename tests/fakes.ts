@@ -115,6 +115,31 @@ export class FakeVaultFileSystem implements VaultFileSystem {
     }
     return ok(undefined);
   }
+
+  async deleteFile(path: VaultPath): Promise<Result<void>> {
+    if (this.failOn?.path === path) {
+      return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
+    }
+    this.files.delete(path); // idempotent: missing file is not an error
+    return ok(undefined);
+  }
+}
+
+/**
+ * Minimal {@link PrdLookup} for UseCaseService tests. By default every id
+ * "exists" (so assignToPrd succeeds); pass a set of known ids to restrict —
+ * any id outside the set resolves to null (not found).
+ */
+export class FakePrdLookup {
+  constructor(private readonly known?: Set<string>) {}
+  async findById(id: string): Promise<Result<{ id: string } | null>> {
+    if (this.known && !this.known.has(id)) return ok(null);
+    return ok({ id });
+  }
+  // Tests don't exercise cross-service serialization; run the operation inline.
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
+    return operation();
+  }
 }
 
 /** In-memory {@link DataStore}. */

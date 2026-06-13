@@ -6,7 +6,13 @@ import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-poli
 import type { UseCase, UseCaseStatus } from "../src/domain/entities/use-case";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import {
+  FakeDataStore,
+  FakePrdLookup,
+  FakeVaultFileSystem,
+  recordingEventBus,
+  silentLogger,
+} from "./fakes";
 
 const build = () => {
   const fs = new FakeVaultFileSystem();
@@ -16,7 +22,7 @@ const build = () => {
     new DefaultPathSafetyPolicy(),
     bus,
   );
-  const service = new DefaultUseCaseService(settings, fs, bus, silentLogger);
+  const service = new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup());
   return { service, fs, types, events };
 };
 
@@ -537,5 +543,160 @@ describe("DefaultUseCaseService", () => {
     // write clobbers the first writer's change. Fix 1 moves findById inside the
     // lock, adding two more recorded reads (one per writer) vs. the original four.
     expect(order).toEqual(["read", "read", "read", "read", "write", "read", "read", "write"]);
+  });
+});
+
+describe("domain field and listDomains", () => {
+  it("exposes the domain frontmatter field and lists distinct domains", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Use Cases/UC-001 A.md",
+      "---\nid: UC-001\ntype: use-case\ntitle: A\ndomain: Installation\nstatus: specified\n---\n# UC-001 A\n",
+    );
+    fs.files.set(
+      "Use Cases/UC-002 B.md",
+      "---\nid: UC-002\ntype: use-case\ntitle: B\ndomain: Dashboard\nstatus: specified\n---\n# UC-002 B\n",
+    );
+    fs.files.set(
+      "Use Cases/UC-003 C.md",
+      "---\nid: UC-003\ntype: use-case\ntitle: C\ndomain: Dashboard\nstatus: specified\n---\n# UC-003 C\n",
+    );
+
+    const all = await service.findAll();
+    expect(all.ok && all.value.find((u) => u.id === "UC-001")?.domain).toBe("Installation");
+
+    const domains = await service.listDomains();
+    expect(domains.ok && domains.value).toEqual([
+      { domain: "Dashboard", count: 2 },
+      { domain: "Installation", count: 1 },
+    ]);
+  });
+});
+
+describe("assignToPrd", () => {
+  it("writes prd-id to the use case note, preserving other frontmatter and body", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Use Cases/UC-001 Init.md",
+      [
+        "---",
+        "id: UC-001",
+        "type: use-case",
+        "title: Init",
+        "domain: Installation",
+        "status: specified",
+        "---",
+        "# UC-001 Init",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await service.assignToPrd("UC-001", "PRD-001");
+    expect(result.ok).toBe(true);
+    const updated = fs.files.get("Use Cases/UC-001 Init.md") ?? "";
+    expect(updated).toContain("prd-id: PRD-001");
+    expect(updated).toContain("domain: Installation"); // preserved
+    expect(updated).toContain("# UC-001 Init"); // body preserved
+  });
+
+  it("emits usecase.updated with the prd-id change", async () => {
+    const { service, fs, events } = build();
+    fs.files.set(
+      "Use Cases/UC-001.md",
+      ["---", "id: UC-001", "type: use-case", "title: A", "status: specified", "---", ""].join(
+        "\n",
+      ),
+    );
+    await service.assignToPrd("UC-001", "PRD-002");
+    const updated = events.find((e) => e.type === "usecase.updated");
+    expect(updated?.payload).toMatchObject({ useCaseId: "UC-001", changedFields: ["prd-id"] });
+  });
+
+  it("is a no-op when the use case is already linked to that PRD", async () => {
+    const { service, fs, types } = build();
+    fs.files.set(
+      "Use Cases/UC-001.md",
+      [
+        "---",
+        "id: UC-001",
+        "type: use-case",
+        "title: A",
+        "prd-id: PRD-001",
+        "status: specified",
+        "---",
+        "",
+      ].join("\n"),
+    );
+    const result = await service.assignToPrd("UC-001", "PRD-001");
+    expect(result.ok).toBe(true);
+    expect(types().filter((t) => t === "usecase.updated")).toHaveLength(0);
+  });
+
+  it("errors for an unknown use case", async () => {
+    const { service } = build();
+    const result = await service.assignToPrd("UC-404", "PRD-001");
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects linking to a PRD that does not exist (stale dropdown / typo)", async () => {
+    const fs = new FakeVaultFileSystem();
+    const { bus } = recordingEventBus();
+    const settings = new DefaultSettingsService(
+      new FakeDataStore(),
+      new DefaultPathSafetyPolicy(),
+      bus,
+    );
+    // A lookup that knows of no PRDs → every target resolves to "not found".
+    const service = new DefaultUseCaseService(
+      settings,
+      fs,
+      bus,
+      silentLogger,
+      new FakePrdLookup(new Set()),
+    );
+    fs.files.set(
+      "Use Cases/UC-001.md",
+      ["---", "id: UC-001", "type: use-case", "title: A", "status: specified", "---", ""].join(
+        "\n",
+      ),
+    );
+
+    const result = await service.assignToPrd("UC-001", "PRD-999");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("PRD-999");
+    // The note must be left untouched — no dangling prd-id written.
+    expect(fs.files.get("Use Cases/UC-001.md") ?? "").not.toContain("prd-id");
+  });
+});
+
+describe("prdId field and countUseCasesByPrd", () => {
+  it("reads prd-id frontmatter and counts use cases per PRD", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Use Cases/UC-001 A.md",
+      "---\nid: UC-001\ntype: use-case\ntitle: A\nprd-id: PRD-001\nstatus: specified\n---\n# UC-001 A\n",
+    );
+    fs.files.set(
+      "Use Cases/UC-002 B.md",
+      "---\nid: UC-002\ntype: use-case\ntitle: B\nprd-id: PRD-001\nstatus: specified\n---\n# UC-002 B\n",
+    );
+    fs.files.set(
+      "Use Cases/UC-003 C.md",
+      "---\nid: UC-003\ntype: use-case\ntitle: C\nprd-id: PRD-002\nstatus: specified\n---\n# UC-003 C\n",
+    );
+    fs.files.set(
+      "Use Cases/UC-004 D.md",
+      "---\nid: UC-004\ntype: use-case\ntitle: D\nstatus: specified\n---\n# UC-004 D\n",
+    );
+
+    const all = await service.findAll();
+    expect(all.ok && all.value.find((u) => u.id === "UC-001")?.prdId).toBe("PRD-001");
+    expect(all.ok && all.value.find((u) => u.id === "UC-004")?.prdId).toBeUndefined();
+
+    const counts = await service.countUseCasesByPrd();
+    expect(counts.ok && counts.value.get("PRD-001")).toBe(2);
+    expect(counts.ok && counts.value.get("PRD-002")).toBe(1);
+    expect(counts.ok && counts.value.has("")).toBe(false);
   });
 });

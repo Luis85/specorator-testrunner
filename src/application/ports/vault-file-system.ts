@@ -26,4 +26,10 @@ export interface VaultFileSystem {
    * error (the delete is idempotent); a real I/O failure returns `err`.
    */
   deleteFolder(path: VaultPath): Promise<Result<void>>;
+  /**
+   * Deletes a single file. Used by {@link PrdService.deletePrd} to remove a PRD
+   * note while preserving any sibling attachments in its folder. A missing file
+   * is NOT an error (idempotent); a real I/O failure returns `err`.
+   */
+  deleteFile(path: VaultPath): Promise<Result<void>>;
 }

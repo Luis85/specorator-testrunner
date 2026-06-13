@@ -35,6 +35,9 @@ export type DomainEventType =
   | "usecase.updated"
   | "usecase.deleted"
   | "usecase.status.changed"
+  // prd
+  | "prd.created"
+  | "prd.deleted"
   // specification
   | "specification.created"
   | "specification.updated"
@@ -111,6 +114,10 @@ export interface EventPayloads {
   "usecase.updated": { useCaseId: string; path: string; changedFields: string[] };
   "usecase.deleted": { useCaseId: string; path: string };
   "usecase.status.changed": { useCaseId: string; previousStatus: string; nextStatus: string };
+
+  // prd
+  "prd.created": { prdId: string; title: string; path: string; parentPrdId?: string };
+  "prd.deleted": { prdId: string; path: string; preservedFiles: number };
 
   // specification (§5)
   "specification.created": { useCaseId: string; featurePath: string };

@@ -15,6 +15,11 @@ const makeService = (initial?: unknown) => {
 };
 
 describe("DefaultSettingsService", () => {
+  it("ships default PRD and Domain paths", () => {
+    expect(String(DEFAULT_SETTINGS.paths.prdsPath)).toBe("PRDs");
+    expect(String(DEFAULT_SETTINGS.paths.domainsPath)).toBe("Domains");
+  });
+
   it("returns defaults when nothing is stored", async () => {
     const { service } = makeService(undefined);
     expect(await service.load()).toEqual(DEFAULT_SETTINGS);

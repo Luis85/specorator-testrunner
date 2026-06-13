@@ -26,6 +26,23 @@ export interface CreateUseCaseRequest {
 }
 
 /**
+ * The narrow PRD existence check {@link UseCaseService.assignToPrd} needs to keep
+ * a Use Case from linking to a nonexistent PRD (the single-parent hierarchy
+ * invariant, ADR-0026). Satisfied structurally by `PrdService.findById`; injected
+ * as a minimal contract rather than the whole service to avoid coupling the two
+ * services together.
+ */
+export interface PrdLookup {
+  findById(id: string): Promise<Result<{ id: string } | null>>;
+  /**
+   * Runs `operation` inside the PRD mutation critical section so `assignToPrd`
+   * serializes with PRD create/delete — preventing a delete from racing the
+   * link. Satisfied by `PrdService.withMutationLock`.
+   */
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T>;
+}
+
+/**
  * The user-editable Use Case metadata (Wave G §3, UC-005). Deliberately ONLY
  * the title and the business status: the id is immutable identity, and
  * `automationStatus` is owned by the UseCaseAutomationPolicy (ADR-0017) —
@@ -49,9 +66,24 @@ export interface UseCaseService {
   update(useCase: UseCase): Promise<Result<void>>;
   /** Quick edit of title/status from the UI (Wave G §3, UC-005). */
   updateMetadata(id: UseCaseId, changes: UseCaseMetadataChanges): Promise<Result<UseCase>>;
+  /**
+   * Links a Use Case to a PRD by writing its `prd-id` frontmatter. Owned here
+   * (not by PrdService) so it shares the same per-note write queue as every
+   * other Use Case mutation — preventing a lost-update race with evidence/
+   * feature/metadata writes to the same note.
+   */
+  assignToPrd(id: UseCaseId, prdId: string): Promise<Result<UseCase>>;
+  /** List unique domains from all use cases with their counts. */
+  listDomains(): Promise<Result<{ domain: string; count: number }[]>>;
+  /** Count use cases grouped by their assigned PRD id (`prd-id` frontmatter). */
+  countUseCasesByPrd(): Promise<Result<Map<string, number>>>;
 }
 
 const ID_PATTERN = /^UC-(\d+)$/;
+
+/** A trimmed non-empty frontmatter string, or undefined for blanks/non-strings. */
+const readTrimmed = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 
 /** Next sequential `UC-NNN` id given the existing use cases (US-015). */
 export const nextUseCaseId = (existing: UseCase[]): UseCaseId => {
@@ -76,6 +108,7 @@ export class DefaultUseCaseService implements UseCaseService {
     private readonly fs: VaultFileSystem,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
+    private readonly prdLookup: PrdLookup,
   ) {}
 
   async create(request: CreateUseCaseRequest): Promise<Result<UseCase>> {
@@ -308,6 +341,63 @@ export class DefaultUseCaseService implements UseCaseService {
     });
   }
 
+  async assignToPrd(id: UseCaseId, prdId: string): Promise<Result<UseCase>> {
+    const target = prdId.trim();
+    if (target === "") {
+      return err(appError("VALIDATION_FAILED", "A PRD id is required."));
+    }
+
+    // Serialize the whole validate-then-write inside the shared PRD mutation lock
+    // so a concurrent deletePrd() can't remove the PRD between the existence check
+    // and the link write (or vice versa), which would leave this Use Case pointing
+    // at a deleted PRD (ADR-0026 single-parent invariant).
+    return this.prdLookup.withMutationLock(async () => {
+      // The target PRD must exist before persisting the link — guards a stale
+      // editor dropdown (PRD deleted after the modal loaded) or a typo.
+      const prd = await this.prdLookup.findById(target);
+      if (!prd.ok) return err(prd.error);
+      if (prd.value === null) {
+        return err(appError("VALIDATION_FAILED", `Unknown PRD: ${target}`));
+      }
+
+      const preLock = await this.findById(id);
+      if (!preLock.ok) return err(preLock.error);
+      if (preLock.value === null) {
+        return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
+      }
+
+      return this.noteWrites.run(preLock.value.path, async () => {
+        // Re-read under the lock so we never clobber a concurrent write (evidence
+        // linking, metadata edit) with a stale snapshot — that race is exactly
+        // why this lives on the Use Case write queue.
+        const fresh = await this.findById(id);
+        if (!fresh.ok) return err(fresh.error);
+        if (fresh.value === null) {
+          return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
+        }
+        const existing = fresh.value;
+        // No-op when already linked to the same PRD (avoids a phantom event).
+        if (existing.prdId === target) return ok(existing);
+
+        const read = await this.fs.readFile(existing.path);
+        if (!read.ok) return err(read.error);
+        const content = updateNoteFrontmatter(read.value, { "prd-id": target });
+        const written = await this.fs.writeFile(existing.path, content);
+        if (!written.ok) return err(written.error);
+
+        await this.eventBus.publish(
+          createEvent(
+            "usecase.updated",
+            { useCaseId: id, path: existing.path, changedFields: ["prd-id"] },
+            { correlationId: id },
+          ),
+        );
+        this.logger.info("Use Case linked to PRD", { id, prdId: target });
+        return ok({ ...existing, prdId: target });
+      });
+    });
+  }
+
   /** Maps a note's frontmatter to a {@link UseCase}; returns null if it is not one. */
   private parse(content: string, path: VaultPath): UseCase | null {
     const fm = parseFrontmatter(content);
@@ -368,7 +458,34 @@ export class DefaultUseCaseService implements UseCaseService {
       suites: toArray(fm.suites),
       evidence: toVaultPaths(fm.evidence),
       lastTestRun,
+      domain: readTrimmed(fm.domain),
+      prdId: readTrimmed(fm["prd-id"]),
       path,
     };
+  }
+
+  async listDomains(): Promise<Result<{ domain: string; count: number }[]>> {
+    const all = await this.findAll();
+    if (!all.ok) return all;
+    const counts = new Map<string, number>();
+    for (const uc of all.value) {
+      if (!uc.domain) continue;
+      counts.set(uc.domain, (counts.get(uc.domain) ?? 0) + 1);
+    }
+    const list = [...counts.entries()]
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
+    return ok(list);
+  }
+
+  async countUseCasesByPrd(): Promise<Result<Map<string, number>>> {
+    const all = await this.findAll();
+    if (!all.ok) return all;
+    const counts = new Map<string, number>();
+    for (const uc of all.value) {
+      if (!uc.prdId) continue;
+      counts.set(uc.prdId, (counts.get(uc.prdId) ?? 0) + 1);
+    }
+    return ok(counts);
   }
 }

@@ -24,9 +24,29 @@ _Avoid_: Workspace, repo, instance.
 
 ### Business artifacts
 
+**Domain (research)**:
+A bounded research context the team investigates — market signals, competitor behaviour, user pain — whose output is **findings**, not committed scope. Distinct from a **PRD**: a Domain is the research layer, a PRD is the committed-solution-scope layer synthesized from one or more Domains (per ADR-0026). Also distinct from "domain" in the DDD sense.
+_Avoid_: Bounded context, problem space, research area.
+
+**PRD** _(accepted — see ADR-0026)_:
+A Product Requirements Document: the synthesis artifact between Domain research and Use Cases. States a **problem statement plus scope** (not research), drawn from one or more research **Domains**. Identified as `PRD-NNN` (`PRD-000` reserved for the root product vision). Stored one folder per PRD at `<prdsPath>/<id>-<slug>/<id>-<slug>.md`. The middle layer of the **Domain → PRD → Use Case** hierarchy (per ADR-0026).
+_Avoid_: Spec, requirement doc, epic, brief.
+
 **Use Case**:
-A business-facing description of a single capability the System Under Test must support. A Markdown note with frontmatter, identified as `UC-NNN`. May own 0..N **Feature Specifications**. Distinct from "use case" in the generic software-architecture sense.
+A business-facing description of a single capability the System Under Test must support. A Markdown note with frontmatter, identified as `UC-NNN`. Links to exactly one **PRD** via `prd-id` (per ADR-0026). May own 0..N **Feature Specifications**. Distinct from "use case" in the generic software-architecture sense.
 _Avoid_: Story, requirement, scenario, ticket.
+
+**prd-id** _(accepted — see ADR-0026)_:
+The Use Case frontmatter field that links a Use Case to its parent **PRD** (a `PRD-NNN` value). The hierarchy is a single-parent tree, so each Use Case names exactly one PRD. Optional until existing Use Cases are backfilled, then required.
+_Avoid_: prdRef, parent, prd.
+
+**parent-prd** _(accepted — see ADR-0026)_:
+The PRD frontmatter field naming a PRD's parent PRD (a `PRD-NNN` value). The **root PRD** is identified by an **empty** `parent-prd:` field — never the literal `null` — which the read model normalizes to `undefined`.
+_Avoid_: parent, parentId, root flag.
+
+**display_order** _(accepted — see ADR-0026)_:
+The PRD frontmatter field that orders sibling PRDs. Kept separate from the immutable `PRD-NNN` id so siblings can be reordered **without renaming ids** and breaking cross-references (per ADR-0026).
+_Avoid_: order, sort key, sequence, index.
 
 **Feature Specification**:
 A `.feature` file in Gherkin that makes part of a Use Case executable. Each Feature belongs to exactly one Use Case; the back-reference is encoded both in the filename (`<UC-id>-<slug>.feature`) and in the Feature's frontmatter. Sharing test logic across Use Cases is done via step definitions (`createBdd()` steps) and Gherkin `Background`, never via shared Feature files.

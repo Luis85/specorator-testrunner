@@ -53,6 +53,7 @@ export interface TestHubCommandDeps {
   openWizard(): void;
   openCreateUseCase(): void;
   openCreateSuite(): void;
+  openPrdBuilder(): void;
   openDocumentation(
     documentType?: "getting-started" | "manual" | "troubleshooting" | "index",
   ): Promise<void>;
@@ -399,6 +400,11 @@ export function registerCommands(
     id: "create-test-suite",
     name: "New Test Suite",
     callback: () => deps.openCreateSuite(),
+  });
+  plugin.addCommand({
+    id: "create-prd",
+    name: "Create prd",
+    callback: () => deps.openPrdBuilder(),
   });
   plugin.addCommand({
     id: "open-test-suites",

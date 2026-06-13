@@ -120,6 +120,20 @@ const buildDeps = (): TestHubCommandDeps => ({
         path: vp("Use Cases/UC-001.md"),
       }),
     ),
+    listDomains: vi.fn(async () => ok([])),
+    countUseCasesByPrd: vi.fn(async () => ok(new Map<string, number>())),
+    assignToPrd: vi.fn(async () =>
+      ok({
+        id: "UC-001",
+        title: "stub",
+        status: "draft" as const,
+        automationStatus: "not-planned" as const,
+        featureFiles: [],
+        suites: [],
+        evidence: [],
+        path: vp("Use Cases/UC-001.md"),
+      }),
+    ),
   },
 
   specificationService: {
@@ -190,6 +204,7 @@ const buildDeps = (): TestHubCommandDeps => ({
   openWizard: vi.fn(() => undefined),
   openCreateUseCase: vi.fn(() => undefined),
   openCreateSuite: vi.fn(() => undefined),
+  openPrdBuilder: vi.fn(() => undefined),
   openDocumentation: vi.fn(async () => undefined),
 });
 
@@ -219,6 +234,7 @@ describe("registerCommands (smoke)", () => {
       "generate-documentation",
       "generate-step-definitions",
       "open-test-console",
+      "create-prd",
     ];
     for (const id of knownIds) {
       expect(ids, `command "${id}" missing from registered set`).toContain(id);

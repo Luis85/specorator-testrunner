@@ -10,6 +10,7 @@ import {
   FakeAbsoluteFileSystem,
   FakeChildProcessRunner,
   FakeDataStore,
+  FakePrdLookup,
   FakeVaultFileSystem,
   recordingEventBus,
   silentLogger,
@@ -55,7 +56,7 @@ const build = () => {
     new DefaultPathSafetyPolicy(),
     bus,
   );
-  const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger);
+  const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup());
   const specification = new DefaultSpecificationService(
     settings,
     useCases,

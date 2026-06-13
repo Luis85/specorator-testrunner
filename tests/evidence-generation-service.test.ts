@@ -13,7 +13,13 @@ import type { TestRun } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { parseFrontmatter } from "../src/shared/utils/frontmatter";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import {
+  FakeDataStore,
+  FakePrdLookup,
+  FakeVaultFileSystem,
+  recordingEventBus,
+  silentLogger,
+} from "./fakes";
 
 const EVIDENCE_PATH = vp("Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md");
 const FIXED_NOW = new Date("2026-05-31T10:05:00.000Z");
@@ -66,7 +72,13 @@ const build = () => {
     new DefaultPathSafetyPolicy(),
     bus,
   );
-  const useCaseService = new DefaultUseCaseService(settings, fs, bus, silentLogger);
+  const useCaseService = new DefaultUseCaseService(
+    settings,
+    fs,
+    bus,
+    silentLogger,
+    new FakePrdLookup(),
+  );
   const service = new DefaultEvidenceGenerationService(
     settings,
     fs,

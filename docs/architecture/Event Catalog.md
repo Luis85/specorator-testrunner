@@ -149,6 +149,38 @@ export interface DomainEvent<TPayload = unknown> {
 }
 ```
 
+---
+
+## 5. PRD Events
+
+### `prd.created`
+
+```ts
+{
+  prdId: string;        // e.g. "PRD-001"
+  title: string;        // e.g. "Dashboard & KPI Tracking"
+  path: string;         // vault path to the PRD note
+  parentPrdId?: string; // parent PRD id; absent for the root PRD (PRD-000)
+}
+```
+
+Emitted by `DefaultPrdService.create()` after the PRD note is written.
+Correlation: `correlationId = prdId` (mirrors `usecase.created`, see §19).
+
+### `prd.deleted`
+
+```ts
+{
+  prdId: string;         // e.g. "PRD-001"
+  path: string;          // vault path to the deleted PRD note
+  preservedFiles: number; // sibling attachments left in the PRD folder
+}
+```
+
+Emitted by `DefaultPrdService.deletePrd()` after the PRD note is removed.
+Correlation: `correlationId = prdId`. The root PRD (`PRD-000`), PRDs with child
+PRDs, and PRDs with linked Use Cases are never deleted.
+
 `*Status` values follow `UseCaseStatus` in SDD §6.
 
 ---
