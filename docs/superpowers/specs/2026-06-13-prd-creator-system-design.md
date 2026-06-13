@@ -48,8 +48,9 @@ Use Case (solution detail)
 **Invariants:**
 - Use Case has exactly one parent PRD (`prd-id` field)
 - Use Case retains its `domain` (research context)
-- PRD can reference 1..N domains (cross-cutting concerns allowed)
-- PRD tree is single-parent (each sub-PRD has one parent; PRD-0 is root)
+- Sub-PRDs reference 1..N domains (cross-cutting concerns allowed); root PRD (`parent-prd: null`) has optional domains (0..N)
+- PRD tree is single-parent (each sub-PRD has one parent; PRD-000 is root)
+- PRD IDs are immutable; display order managed via `display_order` frontmatter field
 
 ### 2.2 PRD Frontmatter Schema
 
@@ -58,16 +59,19 @@ id: PRD-001
 type: prd
 title: "Dashboard & KPI Tracking"
 status: draft | active | deprecated
-parent-prd: PRD-000  # null for PRD-0 (root)
-domains: [dashboard, reporting]  # which domain research informs this
+parent-prd: PRD-000  # null for PRD-000 (root)
+domains: [dashboard, reporting]  # which domain research informs this (optional for root PRD)
 vision: "Single source of truth for test health"
 scope: |
   In: KPI tiles, recent runs, 7-day trend
   Out: historical analytics, custom exports
 research-notes: []  # Reserved for V2: link to domain artifacts
+display_order: 1  # for sibling ordering in tree (optional; auto-assigned if omitted)
 ```
 
-All fields except `research-notes` are required.
+Required fields: `id`, `type`, `title`, `status`, `parent-prc`, `vision`, `scope`.  
+Optional fields: `domains` (required for sub-PRDs, optional for root), `research-notes`, `display_order`.  
+**Note:** Root PRD (`parent-prd: null`) has `domains: []` or omitted (no domains apply to system-level vision).
 
 ### 2.3 Use Case Updates
 
@@ -163,11 +167,11 @@ The **PRD Builder** is a multi-step modal that guides users through PRD creation
 
 **Goal:** Establish which research contexts inform this PRD.
 
-- **Input:** User selects one or more domains from a dropdown
-- **Domain source:** Options derived from the `domain` field in existing Use Cases (all domains referenced by any UC become available options). Future: may expand to pull from a dedicated domains directory if one is created.
-- **UI:** Multi-select dropdown with domain titles; shows UC count per domain
-- **Guidance:** "Which research spaces inform this solution? Cross-domain PRDs are OK (e.g., a new Dashboard feature might draw from Dashboard + KPI domains)."
-- **Output:** Populates `domains: [...]` frontmatter field
+- **Input:** User selects one or more domains from a dropdown, or adds new domain values via free text
+- **Domain source:** Options derived from the `domain` field in existing Use Cases (all domains referenced by any UC become available options). User can also type a new domain name to create one not yet in Use Cases.
+- **UI:** Multi-select dropdown with domain titles (shows UC count per domain) + "Add new domain" text input field
+- **Guidance:** "Which research spaces inform this solution? Select existing domains or type new ones. Cross-domain PRDs are OK (e.g., a new Dashboard feature might draw from Dashboard + KPI domains)."
+- **Output:** Populates `domains: [...]` frontmatter field with both selected and newly created domain names
 
 ### Step 2: Research Summary
 
@@ -261,7 +265,7 @@ The PRD system surfaces at three entry points (explorer, dashboard, modal), supp
   - "Edit" → open builder with existing fields populated
   - "Delete" (if no child PRDs or UCs) → confirm + delete folder
   - "Open in file explorer" → reveal folder in OS file system
-- **Drag-to-reorder:** Reorder sub-PRDs within same parent (reorder file prefixes)
+- **Drag-to-reorder:** Reorder sub-PRDs within same parent (maintains immutable PRD-NNN IDs; updates `display_order` frontmatter field for tree rendering)
 - **Search:** Filter PRDs by title or domain (e.g., search "dashboard" shows all PRDs tagged with dashboard domain)
 
 **Tree example:**
@@ -382,9 +386,10 @@ npm run migrate:create-prd-0
   title: "Specorator Testrunner"
   status: active
   parent-prd: null
-  domains: []
+  domains: []  # root PRD may omit or leave empty
   vision: "Enable teams to transform requirements into executable specifications..."
   scope: "[from current PRD]"
+  display_order: 0  # root always first
   ```
 - **Preserves backlinks:** Keeps original `docs/Specorator Testrunner.md` as a redirect note with Obsidian alias:
   ```yaml
