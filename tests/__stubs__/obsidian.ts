@@ -55,6 +55,9 @@ export class Setting {
   setDesc(_desc: string): this {
     return this;
   }
+  setHeading(): this {
+    return this;
+  }
   settingEl_: HTMLElement = {} as HTMLElement;
 }
 

@@ -86,6 +86,31 @@ const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /**
+ * The slice of a {@link SettingDefinitionItem} the legacy (pre-1.13) renderer
+ * consumes, modelled structurally so it never depends on the exact shape of
+ * Obsidian's declarative union (which the legacy path must build without the
+ * 1.13 framework). `getSettingDefinitions()` only ever emits headed groups and
+ * bare rows, and each row carries its wiring in `render` — exactly what these
+ * capture.
+ */
+interface LegacyRenderableRow {
+  name?: string;
+  desc?: string;
+  render?: (setting: Setting, group: { listEl: HTMLElement }) => unknown;
+}
+interface LegacyGroup {
+  type: "group";
+  heading: string;
+  cls?: string;
+  items: LegacyRenderableRow[];
+}
+type LegacyDefinition = LegacyGroup | LegacyRenderableRow;
+
+// A headed group is the only definition variant that carries `type`, so its
+// presence is a sufficient discriminator.
+const isLegacyGroup = (item: LegacyDefinition): item is LegacyGroup => "type" in item;
+
+/**
  * Edit paths, manage SUT environments (ADR-0013/0014), run maintenance and CI
  * actions with inline results, validate, reset (US-003, BBV §4 `SettingsTab`).
  */
@@ -120,43 +145,95 @@ export class TestHubSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Pre-1.13 Obsidian apps (reachable via BRAT, which does not enforce
-   * `minAppVersion`) call `display()` directly when opening the settings tab.
-   * Without this override they crash with `e.display is not a function` because
-   * the base class `SettingTab.display()` does not exist in those versions.
+   * The Obsidian 1.13 declarative settings API (`getSettingDefinitions()`) only
+   * exists on 1.13+. On those builds the concrete base `display()` bridges to
+   * it, so this returns the base method to delegate to. On pre-1.13 builds the
+   * base prototype has no `display` at all — detected here at runtime (not via
+   * typings) — and this returns `undefined`, signalling the legacy render path.
    *
-   * On Obsidian 1.13+ the concrete base `display()` bridges to
-   * `getSettingDefinitions()`, so we delegate to it rather than duplicating the
-   * render logic. On pre-1.13 builds the base prototype has no `display` at all
-   * — we detect that at runtime (not via typings) and render a plain upgrade
-   * notice into `containerEl` instead.
+   * Anchored to `PluginSettingTab.prototype` explicitly (not
+   * `Object.getPrototypeOf`) so an intermediate class in the hierarchy can never
+   * change which `display()` we detect; narrowed to the call signature before
+   * use.
    */
-  // fallow-ignore-next-line unused-class-member
-  display(): void {
-    // Runtime detection: on pre-1.13 Obsidian builds `SettingTab.display` does
-    // not exist on the base prototype at all. Anchor to PluginSettingTab
-    // explicitly (not Object.getPrototypeOf) so an intermediate class in the
-    // hierarchy can never change which display() this delegates to; narrow to
-    // the call signature before using it.
+  private declarativeDisplay(): (() => void) | undefined {
     const baseProto: unknown = PluginSettingTab.prototype;
-    const baseDisplay =
-      baseProto !== null &&
+    return baseProto !== null &&
       typeof baseProto === "object" &&
       "display" in baseProto &&
       typeof baseProto.display === "function"
-        ? (baseProto as { display: () => void }).display
-        : undefined;
+      ? (baseProto as { display: () => void }).display
+      : undefined;
+  }
+
+  /**
+   * Pre-1.13 Obsidian apps (reachable via BRAT, which does not enforce
+   * `minAppVersion`, while 1.13 is still in development) call `display()`
+   * directly when opening the settings tab. Without this override they crash
+   * with `e.display is not a function` because the base class
+   * `SettingTab.display()` does not exist in those versions.
+   *
+   * On Obsidian 1.13+ we delegate to the base `display()` (the future,
+   * declarative implementation built on {@link getSettingDefinitions}) rather
+   * than duplicating its render logic. On pre-1.13 builds we render the legacy
+   * settings imperatively — same rows, same wiring, driven from the very same
+   * definitions — so the two implementations can never drift apart.
+   */
+  display(): void {
+    const baseDisplay = this.declarativeDisplay();
     if (baseDisplay !== undefined) {
       baseDisplay.call(this);
       return;
     }
-    // Pre-1.13 fallback: no declarative API available — show a simple notice.
-    this.containerEl.empty();
-    this.containerEl.createEl("p", {
-      text: "Specorator Testrunner requires Obsidian 1.13 or newer. Update Obsidian to use this settings tab.",
-    });
+    this.renderLegacy();
   }
 
+  /**
+   * Legacy (pre-1.13) imperative render: walks the SAME
+   * {@link getSettingDefinitions} the 1.13 framework would, building each row
+   * through the long-stable imperative `Setting` API. One source of truth means
+   * old and new Obsidian show identical settings; only the render mechanism
+   * differs.
+   */
+  private renderLegacy(): void {
+    this.cancelPendingFlushes();
+    this.containerEl.empty();
+    // One bridging cast from the framework's declarative union to the
+    // structural slice the interpreter consumes (see {@link LegacyDefinition}).
+    const definitions = this.getSettingDefinitions() as unknown as LegacyDefinition[];
+    for (const item of definitions) this.renderLegacyDefinition(this.containerEl, item);
+  }
+
+  private renderLegacyDefinition(parent: HTMLElement, item: LegacyDefinition): void {
+    if (isLegacyGroup(item)) {
+      // A group with a `cls` (e.g. the per-environment block) gets its own
+      // wrapper element so the styling hook the declarative API would apply
+      // still lands; headingless groups are not produced, so render it always.
+      const groupEl = item.cls === undefined ? parent : parent.createDiv({ cls: item.cls });
+      new Setting(groupEl).setName(item.heading).setHeading();
+      for (const child of item.items) this.renderLegacyItem(groupEl, child);
+      return;
+    }
+    this.renderLegacyItem(parent, item);
+  }
+
+  private renderLegacyItem(parent: HTMLElement, item: LegacyRenderableRow): void {
+    const setting = new Setting(parent);
+    if (item.name !== undefined) setting.setName(item.name);
+    if (item.desc !== undefined) setting.setDesc(item.desc);
+    // Each row's interactive wiring lives in its `render` escape hatch — the
+    // exact callbacks the 1.13 declarative API drives. The framework passes a
+    // "group" context there; our callbacks use only its `listEl` (to create the
+    // sibling result/error containers they then position next to the setting),
+    // so a shim exposing this parent as `listEl` satisfies them. Any returned
+    // cleanup is intentionally dropped: the legacy path rebuilds the whole
+    // container on every refresh, and each render reassigns its own state.
+    item.render?.(setting, { listEl: parent });
+  }
+
+  // Obsidian invokes hide() when the settings tab closes; fallow can't see that
+  // cross-boundary call, so the override otherwise reads as an unused member.
+  // fallow-ignore-next-line unused-class-member
   hide(): void {
     // Closing the dialog must NOT cancel a save still inside the 600ms persist
     // window — that would silently lose the last edit. Flush (run) pending
@@ -169,14 +246,18 @@ export class TestHubSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Re-renders the open tab from persisted state (the declarative-API
-   * replacement for the deprecated imperative `display()` re-render): pending
-   * debouncers are cancelled first because every input is rebuilt from what
-   * was actually saved (PRES-L2).
+   * Re-renders the open tab from persisted state; pending debouncers are
+   * cancelled first because every input is rebuilt from what was actually saved
+   * (PRES-L2). On 1.13+ this is the framework's declarative `update()`; on
+   * pre-1.13 (no `update()`) the legacy render rebuilds `containerEl` directly.
    */
   private refreshTab(): void {
-    this.cancelPendingFlushes();
-    this.update();
+    if (this.declarativeDisplay() !== undefined) {
+      this.cancelPendingFlushes();
+      this.update();
+      return;
+    }
+    this.renderLegacy();
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
@@ -405,6 +486,23 @@ export class TestHubSettingTab extends PluginSettingTab {
     });
   }
 
+  /**
+   * Styles a button as destructive across Obsidian versions. `setDestructive()`
+   * is the 1.13 API; pre-1.13 builds only have the (now-deprecated)
+   * `setWarning()`. Both are reached through a narrowed cast — so neither the
+   * missing-method crash on pre-1.13 nor the no-deprecated lint on
+   * `setWarning()` can bite — and both add the `mod-warning` class the disarm
+   * paths remove.
+   */
+  private markDestructive(button: ButtonComponent): void {
+    const styler = button as unknown as {
+      setDestructive?: () => void;
+      setWarning?: () => void;
+    };
+    if (typeof styler.setDestructive === "function") styler.setDestructive();
+    else if (typeof styler.setWarning === "function") styler.setWarning();
+  }
+
   private wireRemoveEnvironmentButton(
     button: ButtonComponent,
     name: string,
@@ -428,7 +526,8 @@ export class TestHubSettingTab extends PluginSettingTab {
     button.onClick(() => {
       if (!armed) {
         armed = true;
-        button.setDestructive().setButtonText("Remove — click again to confirm");
+        this.markDestructive(button);
+        button.setButtonText("Remove — click again to confirm");
         window.clearTimeout(disarmTimer);
         disarmTimer = window.setTimeout(() => {
           armed = false;
@@ -619,7 +718,8 @@ export class TestHubSettingTab extends PluginSettingTab {
    * is warning-styled from the start — reset is always destructive.
    */
   private wireResetButton(button: ButtonComponent): void {
-    button.setButtonText("Reset").setDestructive();
+    button.setButtonText("Reset");
+    this.markDestructive(button);
     let armed = false;
     let disarmTimer = 0;
     button.onClick(() => {
