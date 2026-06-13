@@ -67,6 +67,7 @@ import {
   DefaultUseCaseService,
   type UseCaseService,
 } from "./application/services/use-case-service";
+import { DefaultPrdService, type PrdService } from "./application/services/prd-service";
 import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
 import type { VaultPath } from "./domain/value-objects/identifiers";
@@ -137,6 +138,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private documentationService!: DocumentationGenerationService;
   private pipelineService!: PipelineGenerationService;
   private useCaseService!: UseCaseService;
+  private prdService!: PrdService;
   private specificationService!: SpecificationService;
   // Wave F insight: read-only scenario/tag queries (Tag Expression match
   // counts, per-Feature health) shared by the suites explorer, the
@@ -297,6 +299,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    this.prdService = new DefaultPrdService(this.hubSettingsService, vault, eventBus, this.logger);
     this.specificationService = new DefaultSpecificationService(
       this.hubSettingsService,
       this.useCaseService,
@@ -720,19 +723,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   }
 
   private openPrdBuilder(): void {
-    // Task 12: PrdService will be properly wired here; stub deps for now
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const deps = {
-      prdService: {}, // Stub — Task 12 will wire real PrdService
+    new PrdBuilderModal(this.app, {
+      prdService: this.prdService,
       useCaseService: this.useCaseService,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      settingsService: this.hubSettingsService as any,
-      eventBus: this.eventBus,
-      openPrdBuilder: () => this.openPrdBuilder(),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    new PrdBuilderModal(this.app, deps).open();
+    }).open();
   }
 
   // EPIC-011 FEAT-025 (US-046, UC-021/022/023): open the documentation index

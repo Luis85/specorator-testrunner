@@ -31,6 +31,10 @@ export interface PrdService {
 
 const PRD_ID_RE = /^PRD-(\d{3,})$/;
 
+/** Drop blanks and collapse newlines so each item is a single parser-safe line. */
+const normalizeLines = (values: string[] | undefined): string[] =>
+  (values ?? []).filter((s) => s.trim() !== "").map((s) => s.replace(/\n+/g, " ").trim());
+
 export class DefaultPrdService implements PrdService {
   private readonly noteWrites = new KeyedSerialQueue();
 
@@ -42,35 +46,9 @@ export class DefaultPrdService implements PrdService {
   ) {}
 
   async create(request: CreatePrdRequest): Promise<Result<Prd>> {
-    const title = request.title.trim();
-    if (title === "") {
-      return err(appError("VALIDATION_FAILED", "A PRD title is required."));
-    }
-
-    const vision = request.vision.trim();
-    if (vision === "") {
-      return err(appError("VALIDATION_FAILED", "PRD vision statement is required."));
-    }
-
-    // Normalize multiline fields: collapse newlines per frontmatter parser limits
-    const scopeIn = (request.scopeIn || [])
-      .filter((s) => s.trim() !== "")
-      .map((s) => s.replace(/\n+/g, " ").trim());
-    if (scopeIn.length === 0) {
-      return err(appError("VALIDATION_FAILED", "At least one item must be in scope."));
-    }
-
-    const scopeOut = (request.scopeOut || [])
-      .filter((s) => s.trim() !== "")
-      .map((s) => s.replace(/\n+/g, " ").trim());
-    if (scopeOut.length === 0) {
-      return err(appError("VALIDATION_FAILED", "At least one item must be out of scope."));
-    }
-
-    const domains = (request.domains || []).filter((d) => d.trim() !== "");
-    if (request.parentPrdId && domains.length === 0) {
-      return err(appError("VALIDATION_FAILED", "Sub-PRDs must be linked to at least one domain."));
-    }
+    const validated = this.validateAndNormalize(request);
+    if (!validated.ok) return validated;
+    const { title, vision, scopeIn, scopeOut, domains } = validated.value;
 
     const settings = await this.settingsService.load();
 
@@ -115,6 +93,46 @@ export class DefaultPrdService implements PrdService {
       this.logger.info("PRD created", { id: prd.id, path: prd.path });
       return ok(prd);
     });
+  }
+
+  /**
+   * Validates required fields and normalizes scope/domain lists. Multiline scope
+   * items are collapsed to single lines to stay within the frontmatter parser's
+   * scalar/block-sequence support. Returns the cleaned inputs or the first error.
+   */
+  private validateAndNormalize(request: CreatePrdRequest): Result<{
+    title: string;
+    vision: string;
+    scopeIn: string[];
+    scopeOut: string[];
+    domains: string[];
+  }> {
+    const title = request.title.trim();
+    if (title === "") {
+      return err(appError("VALIDATION_FAILED", "A PRD title is required."));
+    }
+
+    const vision = request.vision.trim();
+    if (vision === "") {
+      return err(appError("VALIDATION_FAILED", "PRD vision statement is required."));
+    }
+
+    const scopeIn = normalizeLines(request.scopeIn);
+    if (scopeIn.length === 0) {
+      return err(appError("VALIDATION_FAILED", "At least one item must be in scope."));
+    }
+
+    const scopeOut = normalizeLines(request.scopeOut);
+    if (scopeOut.length === 0) {
+      return err(appError("VALIDATION_FAILED", "At least one item must be out of scope."));
+    }
+
+    const domains = (request.domains || []).filter((d) => d.trim() !== "");
+    if (request.parentPrdId && domains.length === 0) {
+      return err(appError("VALIDATION_FAILED", "Sub-PRDs must be linked to at least one domain."));
+    }
+
+    return ok({ title, vision, scopeIn, scopeOut, domains });
   }
 
   async findAll(): Promise<Result<Prd[]>> {

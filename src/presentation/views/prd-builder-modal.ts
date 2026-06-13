@@ -1,56 +1,35 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
-import type { EventBus } from "../../shared/event-bus/event-bus";
+import type { UseCase } from "../../domain/entities/use-case";
+import type { CreatePrdRequest, PrdService } from "../../application/services/prd-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { PrdBuilderState } from "../../application/services/prd-builder";
 import { prdBuilderStepTitle } from "../../application/services/prd-builder";
 
-/** Placeholder PRD service interface for Task 10 - to be fully implemented in Task 12. */
-export interface PrdService {
-  create(request: CreatePrdRequest): Promise<Result<{ id: string; title: string; path: string }>>;
-}
-
-export interface CreatePrdRequest {
-  title: string;
-  parentPrdId?: string;
-  selectedDomains: string[];
-  research: string;
-  vision: string;
-  scopeIn: string[];
-  scopeOut: string[];
-  selectedUcs: string[];
-}
-
-export interface Result<T> {
-  ok: boolean;
-  error?: { message: string };
-  value?: T;
-}
-
-/** Settings service interface for getting PRD paths. */
-export interface SettingsService {
-  load(): Promise<{ paths: Record<string, string> }>;
-}
-
 /**
- * Dependencies for PrdBuilderModal.
+ * Dependencies for {@link PrdBuilderModal}. Mirrors the narrow-contract pattern
+ * used by the other creation modals (e.g. CreateUseCaseModal): the modal depends
+ * only on the application services it actually drives, not the composition root.
  */
 export interface PrdBuilderDeps {
   prdService: PrdService;
   useCaseService: UseCaseService;
-  settingsService: SettingsService;
-  eventBus: EventBus;
-  openPrdBuilder(callback: () => void): void;
 }
 
 /**
  * 7-step wizard modal for creating PRDs.
- * Steps: 1=domains, 2=research, 3=vision, 4=scope, 5=success, 6=assign-UCs, 7=review
+ * Steps: 1=title+domains, 2=research, 3=vision, 4=scope, 5=success, 6=assign-UCs, 7=review
+ *
+ * The wizard collects everything {@link PrdService.create} needs (title, domains,
+ * vision, scope) and, on success, links the chosen Use Cases to the new PRD via
+ * {@link PrdService.assignUseCaseToPrd}. Research/success-criteria are surfaced as
+ * editable sections in the generated note rather than service inputs.
  */
 export class PrdBuilderModal extends Modal {
   private state: PrdBuilderState;
   private submitting = false;
+  private domainsLoaded = false;
   private domains: string[] = [];
-  private useCases: { id: string; title: string; domain?: string }[] = [];
+  private useCases: UseCase[] = [];
 
   constructor(
     app: App,
@@ -72,18 +51,38 @@ export class PrdBuilderModal extends Modal {
   }
 
   onOpen(): void {
+    // Load the domain/UC catalog once per modal lifetime; the first paint runs
+    // synchronously (possibly with an empty catalog), then re-renders when the
+    // async load resolves so the Domains step is never stuck empty.
+    void this.ensureCatalogLoaded();
+    this.render();
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+
+  private async ensureCatalogLoaded(): Promise<void> {
+    if (this.domainsLoaded) return;
+    const result = await this.deps.useCaseService.findAll();
+    if (result.ok) {
+      this.useCases = result.value;
+      this.domains = Array.from(
+        new Set(result.value.map((uc) => uc.domain).filter((d): d is string => Boolean(d))),
+      ).sort();
+    }
+    this.domainsLoaded = true;
+    this.render();
+  }
+
+  private render(): void {
     const { contentEl } = this;
     contentEl.empty();
-
-    // Load domains and use cases
-    void this.loadDomains();
-
-    const currentStepTitle = prdBuilderStepTitle(this.state.currentStep);
-    contentEl.createEl("h2", { text: currentStepTitle });
+    contentEl.createEl("h2", { text: prdBuilderStepTitle(this.state.currentStep) });
 
     switch (this.state.currentStep) {
       case 1:
-        this.renderStep1Domains(contentEl);
+        this.renderStep1TitleAndDomains(contentEl);
         break;
       case 2:
         this.renderStep2Research(contentEl);
@@ -108,60 +107,64 @@ export class PrdBuilderModal extends Modal {
     this.renderButtons(contentEl);
   }
 
-  onClose(): void {
-    this.contentEl.empty();
-  }
-
-  private async loadDomains(): Promise<void> {
-    const result = await this.deps.useCaseService.findAll();
-    if (result.ok) {
-      // Extract unique domains from use cases
-      const domainSet = new Set<string>();
-      for (const uc of result.value) {
-        const domain = (uc as { domain?: string }).domain;
-        if (domain) {
-          domainSet.add(domain);
-        }
-      }
-      this.domains = Array.from(domainSet).sort();
-      this.useCases = result.value;
-    }
-  }
-
-  private renderStep1Domains(contentEl: HTMLElement): void {
-    const errorMsg = this.state.errorMessages.selectedDomains;
-    if (errorMsg) {
-      contentEl.createEl("p", { text: errorMsg, cls: "error-text" });
-    }
-
-    contentEl.createEl("p", { text: "Select the domain(s) this prd covers:" });
-
-    for (const domain of this.domains) {
-      const container = contentEl.createEl("div");
+  /** Renders a list of toggleable checkboxes (shared by domains and Use Cases). */
+  private renderCheckboxList(
+    parent: HTMLElement,
+    rows: { id: string; label: string }[],
+    isChecked: (id: string) => boolean,
+    onToggle: (id: string, checked: boolean) => void,
+  ): void {
+    for (const row of rows) {
+      const container = parent.createEl("div");
       const checkbox = container.createEl("input", { attr: { type: "checkbox" } });
-      checkbox.id = `domain-${domain}`;
-      checkbox.checked = this.state.selectedDomains.includes(domain);
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked && !this.state.selectedDomains.includes(domain)) {
-          this.state = { ...this.state, selectedDomains: [...this.state.selectedDomains, domain] };
-        } else if (!checkbox.checked) {
-          this.state = {
-            ...this.state,
-            selectedDomains: this.state.selectedDomains.filter((d) => d !== domain),
-          };
-        }
-      });
-
-      const label = container.createEl("label", { text: domain });
+      checkbox.id = `prd-opt-${row.id}`;
+      checkbox.checked = isChecked(row.id);
+      checkbox.addEventListener("change", () => onToggle(row.id, checkbox.checked));
+      const label = container.createEl("label", { text: row.label });
       label.htmlFor = checkbox.id;
     }
   }
 
-  private renderStep2Research(contentEl: HTMLElement): void {
-    const errorMsg = this.state.errorMessages.research;
+  private renderError(contentEl: HTMLElement, field: string): void {
+    const errorMsg = this.state.errorMessages[field];
     if (errorMsg) {
       contentEl.createEl("p", { text: errorMsg, cls: "error-text" });
     }
+  }
+
+  private renderStep1TitleAndDomains(contentEl: HTMLElement): void {
+    this.renderError(contentEl, "title");
+
+    new Setting(contentEl).setName("Title").addText((text) => {
+      text
+        .setPlaceholder("E.g. Reporting & dashboards")
+        .setValue(this.state.title)
+        .onChange((value) => {
+          this.state = { ...this.state, title: value };
+        });
+      text.inputEl.focus();
+    });
+
+    this.renderError(contentEl, "selectedDomains");
+    contentEl.createEl("p", { text: "Select the domain(s) this prd covers:" });
+
+    this.renderCheckboxList(
+      contentEl,
+      this.domains.map((d) => ({ id: d, label: d })),
+      (id) => this.state.selectedDomains.includes(id),
+      (id, checked) => {
+        this.state = {
+          ...this.state,
+          selectedDomains: checked
+            ? [...this.state.selectedDomains, id]
+            : this.state.selectedDomains.filter((d) => d !== id),
+        };
+      },
+    );
+  }
+
+  private renderStep2Research(contentEl: HTMLElement): void {
+    this.renderError(contentEl, "research");
 
     new Setting(contentEl)
       .setName("Research findings")
@@ -175,10 +178,7 @@ export class PrdBuilderModal extends Modal {
   }
 
   private renderStep3Vision(contentEl: HTMLElement): void {
-    const errorMsg = this.state.errorMessages.vision;
-    if (errorMsg) {
-      contentEl.createEl("p", { text: errorMsg, cls: "error-text" });
-    }
+    this.renderError(contentEl, "vision");
 
     new Setting(contentEl)
       .setName("Vision statement")
@@ -192,10 +192,7 @@ export class PrdBuilderModal extends Modal {
   }
 
   private renderStep4Scope(contentEl: HTMLElement): void {
-    const errorMsg = this.state.errorMessages.scopeIn;
-    if (errorMsg) {
-      contentEl.createEl("p", { text: errorMsg, cls: "error-text" });
-    }
+    this.renderError(contentEl, "scopeIn");
 
     contentEl.createEl("h3", { text: "In scope" });
     this.renderScopeItems(contentEl, "scopeIn");
@@ -212,107 +209,72 @@ export class PrdBuilderModal extends Modal {
       const itemContainer = container.createEl("div", { cls: "scope-item" });
       itemContainer.createEl("span", { text: items[i] });
       itemContainer.createEl("button", { text: "Remove" }).addEventListener("click", () => {
-        this.state = {
-          ...this.state,
-          [field]: items.filter((_, idx) => idx !== i),
-        };
-        this.onOpen();
+        this.state = { ...this.state, [field]: items.filter((_, idx) => idx !== i) };
+        this.render();
       });
     }
 
     new Setting(container).addText((text) => {
       text.setPlaceholder(`Add ${field === "scopeIn" ? "in scope" : "out of scope"} item...`);
-      text.onChange((value) => {
-        if (value.trim().length > 0) {
-          // Don't actually add yet - wait for user to press button
-        }
-      });
       const input = text.inputEl;
 
       container.createEl("button", { text: "Add" }).addEventListener("click", () => {
         const value = input.value.trim();
         if (value.length > 0) {
-          this.state = {
-            ...this.state,
-            [field]: [...items, value],
-          };
+          this.state = { ...this.state, [field]: [...items, value] };
           input.value = "";
-          this.onOpen();
+          this.render();
         }
       });
     });
   }
 
   private renderStep5Success(contentEl: HTMLElement): void {
-    const errorMsg = this.state.errorMessages.successMetrics;
-    if (errorMsg) {
-      contentEl.createEl("p", { text: errorMsg, cls: "error-text" });
-    }
-
-    new Setting(contentEl)
-      .setName("Success metrics")
-      .setDesc("Optional: define how to measure success")
-      .addTextArea((area) => {
-        // Reuse research field for now as temp storage
-        area.setValue("");
-        area.onChange((_value) => {
-          // Store in a temp field or extend state
-        });
-      });
+    // Success criteria are not a PrdService.create() input; they live as an
+    // editable section in the generated note. Surface that instead of an inert
+    // control so the wizard never collects input it silently drops.
+    contentEl.createEl("p", {
+      text:
+        "Success criteria are captured in the generated PRD note under its " +
+        '"Success Criteria" section — open the note after creation to fill them in.',
+    });
   }
 
   private renderStep6AssignUseCases(contentEl: HTMLElement): void {
-    const errorMsg = this.state.errorMessages.selectedUcs;
-    if (errorMsg) {
-      contentEl.createEl("p", { text: errorMsg, cls: "error-text" });
-    }
-
+    this.renderError(contentEl, "selectedUcs");
     contentEl.createEl("p", { text: "Select Use Cases to assign to this prd:" });
 
-    // Filter use cases by selected domains
+    // Scope the list to the chosen domains (all UCs when no domain is selected).
     const filtered = this.useCases.filter((uc) => {
       if (this.state.selectedDomains.length === 0) return true;
-      const domain = (uc as { domain?: string }).domain ?? "";
-      return this.state.selectedDomains.includes(domain);
+      return this.state.selectedDomains.includes(uc.domain ?? "");
     });
 
-    for (const uc of filtered) {
-      const container = contentEl.createEl("div");
-      const checkbox = container.createEl("input", { attr: { type: "checkbox" } });
-      checkbox.id = `uc-${uc.id}`;
-      checkbox.checked = this.state.selectedUcs.includes(uc.id);
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked && !this.state.selectedUcs.includes(uc.id)) {
-          this.state = { ...this.state, selectedUcs: [...this.state.selectedUcs, uc.id] };
-        } else if (!checkbox.checked) {
-          this.state = {
-            ...this.state,
-            selectedUcs: this.state.selectedUcs.filter((id) => id !== uc.id),
-          };
-        }
-      });
-
-      const label = container.createEl("label", { text: `${uc.id} — ${uc.title}` });
-      label.htmlFor = checkbox.id;
-    }
+    this.renderCheckboxList(
+      contentEl,
+      filtered.map((uc) => ({ id: uc.id, label: `${uc.id} — ${uc.title}` })),
+      (id) => this.state.selectedUcs.includes(id),
+      (id, checked) => {
+        this.state = {
+          ...this.state,
+          selectedUcs: checked
+            ? [...this.state.selectedUcs, id]
+            : this.state.selectedUcs.filter((ucId) => ucId !== id),
+        };
+      },
+    );
   }
 
   private renderStep7Review(contentEl: HTMLElement): void {
     contentEl.createEl("h3", { text: "Review prd details" });
 
     const summary = contentEl.createEl("div", { cls: "prd-summary" });
-    summary.createEl("p", { text: `Title: ${this.state.title}` });
+    summary.createEl("p", { text: `Title: ${this.state.title || "(none)"}` });
     summary.createEl("p", { text: `Domains: ${this.state.selectedDomains.join(", ") || "None"}` });
-    summary.createEl("p", { text: `Vision: ${this.state.vision}` });
-    summary.createEl("p", {
-      text: `Scope In: ${this.state.scopeIn.length > 0 ? this.state.scopeIn.join(", ") : "None"}`,
-    });
-    summary.createEl("p", {
-      text: `Scope Out: ${this.state.scopeOut.length > 0 ? this.state.scopeOut.join(", ") : "None"}`,
-    });
-    summary.createEl("p", {
-      text: `Use Cases: ${this.state.selectedUcs.length > 0 ? this.state.selectedUcs.join(", ") : "None"}`,
-    });
+    summary.createEl("p", { text: `Vision: ${this.state.vision || "(none)"}` });
+    summary.createEl("p", { text: `Scope In: ${this.state.scopeIn.join(", ") || "None"}` });
+    summary.createEl("p", { text: `Scope Out: ${this.state.scopeOut.join(", ") || "None"}` });
+    summary.createEl("p", { text: `Use Cases: ${this.state.selectedUcs.join(", ") || "None"}` });
   }
 
   private renderButtons(contentEl: HTMLElement): void {
@@ -324,7 +286,7 @@ export class PrdBuilderModal extends Modal {
     prevBtn.addEventListener("click", () => {
       if (this.state.currentStep > 1) {
         this.state = { ...this.state, currentStep: this.state.currentStep - 1 };
-        this.onOpen();
+        this.render();
       }
     });
 
@@ -334,7 +296,7 @@ export class PrdBuilderModal extends Modal {
     nextBtn.addEventListener("click", () => {
       if (this.state.currentStep < 7) {
         this.state = { ...this.state, currentStep: this.state.currentStep + 1 };
-        this.onOpen();
+        this.render();
       }
     });
 
@@ -354,30 +316,42 @@ export class PrdBuilderModal extends Modal {
     this.submitting = true;
 
     try {
-      const result = await this.deps.prdService.create({
+      const request: CreatePrdRequest = {
         title: this.state.title,
         parentPrdId: this.state.parentPrdId,
-        selectedDomains: this.state.selectedDomains,
-        research: this.state.research,
+        domains: this.state.selectedDomains,
         vision: this.state.vision,
         scopeIn: this.state.scopeIn,
         scopeOut: this.state.scopeOut,
-        selectedUcs: this.state.selectedUcs,
-      });
+      };
+      const result = await this.deps.prdService.create(request);
 
       if (!result.ok) {
-        new Notice(`Could not create PRD: ${result.error?.message ?? "Unknown error"}`);
+        new Notice(`Could not create PRD: ${result.error.message}`);
         this.submitting = false;
         return;
       }
 
-      const title = result.value?.title ?? "Unknown";
-      new Notice(`Created PRD: ${title}`);
+      await this.assignSelectedUseCases(result.value.id);
+
+      new Notice(`Created PRD: ${result.value.id}`);
       this.close();
     } catch (err) {
       new Notice(`Error creating PRD: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       this.submitting = false;
+    }
+  }
+
+  /** Links each chosen Use Case to the new PRD, reporting any per-UC failure. */
+  private async assignSelectedUseCases(prdId: string): Promise<void> {
+    for (const ucId of this.state.selectedUcs) {
+      const uc = this.useCases.find((u) => u.id === ucId);
+      if (!uc) continue;
+      const assigned = await this.deps.prdService.assignUseCaseToPrd(uc.path, prdId);
+      if (!assigned.ok) {
+        new Notice(`Created ${prdId} but could not assign ${ucId}: ${assigned.error.message}`);
+      }
     }
   }
 }
