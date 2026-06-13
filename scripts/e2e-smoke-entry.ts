@@ -10,3 +10,7 @@ export {
 } from "../src/application/content/demo-content";
 export { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 export { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
+// The real Guided-Tour artifacts, so the smoke run proves the tour's `@tour`
+// cycle (authored feature + pasted createBdd steps) runs green against the
+// generated runner — no copies to drift (Phase 3.3).
+export { TOUR_GHERKIN_SNIPPET, TOUR_STEPS_SNIPPET } from "../src/domain/onboarding/tour-steps";

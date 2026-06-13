@@ -49,8 +49,14 @@ try {
     // if it ever is, the dynamic import below fails loudly.
     external: ["obsidian"],
   });
-  const { buildRunnerTemplates, DEFAULT_SETTINGS, DEMO_FEATURE_CONTENT, DEMO_FEATURE_FILE_NAME } =
-    await import(pathToFileURL(entryBundle).href);
+  const {
+    buildRunnerTemplates,
+    DEFAULT_SETTINGS,
+    DEMO_FEATURE_CONTENT,
+    DEMO_FEATURE_FILE_NAME,
+    TOUR_GHERKIN_SNIPPET,
+    TOUR_STEPS_SNIPPET,
+  } = await import(pathToFileURL(entryBundle).href);
 
   // 2. Scaffold the fake vault: runner templates + the demo feature in the
   //    folder the runner's playwright.config.ts feature glob points at.
@@ -182,6 +188,48 @@ try {
     );
   }
   console.log(`\nE2E smoke demo @smoke run PASSED: 1 scenario, all steps passed.`);
+
+  // 7. The Guided Tour's self-authored `@tour` cycle (ADR-0020, Phase 3.3): the
+  //    user authors the `@tour` greeting scenario and pastes the createBdd step
+  //    snippet, then runs the `@tour` suite. We replay that against the real
+  //    runner using the EXACT artifacts the tour shows the user — proving the
+  //    onboarding loop completes end-to-end on the migrated runner. The reused
+  //    `Given I open the local example page` is supplied by the generated demo
+  //    `example.steps.ts`; the snippet adds the three greeting When/Then steps.
+  writeFileSync(join(featureDir, "tour-greet.feature"), TOUR_GHERKIN_SNIPPET, "utf8");
+  writeFileSync(join(runnerRoot, "src", "steps", "tour.steps.ts"), TOUR_STEPS_SNIPPET, "utf8");
+  console.log(`\n$ BDD_TAGS=@tour npm run test`);
+  try {
+    execSync(`npm run test 2>&1`, {
+      cwd: runnerRoot,
+      encoding: "utf8",
+      env: { ...process.env, BDD_TAGS: "@tour" },
+    });
+  } catch (error) {
+    const captured = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+    fail(`@tour run failed:\n${captured}\n${error.message}`);
+  }
+
+  // Assert the @tour report: exactly 1 scenario (the greeting), all steps passed.
+  const tourReport = JSON.parse(readFileSync(reportPath, "utf8"));
+  const tourScenarios = tourReport.flatMap((feature) =>
+    (feature.elements ?? []).filter((element) => element.type === "scenario"),
+  );
+  if (tourScenarios.length !== 1) {
+    fail(`@tour run: expected exactly 1 scenario, got ${tourScenarios.length}`);
+  }
+  const tourFailingSteps = tourScenarios
+    .flatMap((scenario) => scenario.steps ?? [])
+    .filter((step) => step.result?.status !== "passed");
+  if (tourFailingSteps.length > 0) {
+    fail(
+      `@tour run: ${tourFailingSteps.length} step(s) did not pass: ` +
+        tourFailingSteps
+          .map((step) => `${step.name ?? "(hook)"} → ${step.result?.status}`)
+          .join(", "),
+    );
+  }
+  console.log(`\nE2E smoke @tour run PASSED: 1 scenario, all steps passed.`);
 } catch (error) {
   console.error(`\nE2E smoke FAILED: ${error instanceof Error ? error.message : String(error)}`);
   // exitCode (not process.exit) lets the finally cleanup complete first.

@@ -33,6 +33,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
   (regenerates managed files, removes the V1 cucumber config + demo, reinstalls
   deps) and reports that custom V1 steps must be re-authored as `createBdd`
   steps (ADR-0021, US-051/US-052).
+- User-facing docs (README, the PRD, and the CONTEXT.md glossary) now describe
+  the playwright-bdd runtime instead of cucumber-js, and the migration is
+  validated end-to-end — the `e2e-smoke` real-OS run now also drives the Guided
+  Tour's self-authored `@tour` cycle (author the scenario, paste the
+  `createBdd` steps, run the `@tour` suite) against the generated runner
+  (proposal §9 Phase 3.3 — the migration is complete).
 - Report import is now port-based: `DefaultReportImportService` delegates
   parsing to a `ReportParser` (first implementation `CucumberJsonReportParser`),
   so the V2 runner's Cucumber Messages output and other formats slot in beside
