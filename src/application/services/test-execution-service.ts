@@ -646,7 +646,12 @@ export class DefaultTestExecutionService implements TestExecutionService {
     }
   }
 
-  /** `demo`: the configured smoke command (`npm run test:smoke`) verbatim. */
+  /**
+   * `demo`: the configured smoke command (`npm run test:smoke`). Also sets
+   * `BDD_TAGS=@smoke` so the `bddgen` step inside that script generates ONLY
+   * @smoke features — otherwise a malformed non-@smoke feature elsewhere would
+   * fail generation before `playwright test --grep @smoke` ever filters.
+   */
   private demoScopeCommand(settings: TestHubSettings): Result<ResolvedCommand> {
     const smoke = toArgv(settings.runner.smokeRunCommand, ["npm", "run", "test:smoke"]);
     if (!isNpmRun(smoke)) {
@@ -657,7 +662,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
         ),
       );
     }
-    return ok({ args: smoke });
+    return ok({ args: smoke, env: { BDD_TAGS: "@smoke" } });
   }
 
   /**
@@ -728,9 +733,13 @@ export class DefaultTestExecutionService implements TestExecutionService {
     };
   }
 
-  /** Comma-separated runner-relative feature paths for `env.BDD_FEATURES`. */
+  /**
+   * Newline-separated runner-relative feature paths for `env.BDD_FEATURES` (the
+   * generated config splits on `\n`). Newline — not comma — because a vault path
+   * may contain a comma but never a control character.
+   */
   private bddFeatures(settings: TestHubSettings, targets: string[]): string {
-    return targets.map((target) => this.featurePath(settings, target)).join(",");
+    return targets.map((target) => this.featurePath(settings, target)).join("\n");
   }
 
   /**

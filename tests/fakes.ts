@@ -168,7 +168,13 @@ export class FakeAbsoluteFileSystem implements AbsoluteFileSystem {
     return ok(undefined);
   }
 
+  /** Absolute paths whose deleteAbsolute should fail (e.g. locked/read-only). */
+  readonly deleteFailures = new Set<string>();
+
   async deleteAbsolute(path: string): Promise<Result<void>> {
+    if (this.deleteFailures.has(path)) {
+      return { ok: false, error: { code: "INIT_FAILED", message: `cannot delete ${path}` } };
+    }
     this.written.delete(path);
     this.existing.delete(path);
     return ok(undefined);

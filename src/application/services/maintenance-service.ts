@@ -179,7 +179,9 @@ export class DefaultMaintenanceService implements MaintenanceService {
       //    ExamplePage) is recreated at V2 by the createRunner pass below (its
       //    templates are overwrite:false → CREATE when absent). Guarded so a
       //    healthy V2 repair (no mismatch) deletes nothing.
-      const removedFiles = manifestMismatch ? await this.migrateV1Runner(settings) : [];
+      const migrated = manifestMismatch ? await this.migrateV1Runner(settings) : ok([]);
+      if (!migrated.ok) return err(migrated.error);
+      const removedFiles = migrated.value;
 
       // 3. Re-sync the managed template files; user-authored steps/pages are
       //    preserved because their templates declare overwrite:false (RV-8). On a
@@ -401,21 +403,25 @@ export class DefaultMaintenanceService implements MaintenanceService {
    * Returns the relative paths that EXISTED and were removed, so the change
    * report lists only real deletions — not idempotent no-ops for files a given
    * V1 runner never had. MUST run BEFORE createRunner so the deleted demo is
-   * recreated at V2.
+   * recreated at V2. A delete that actually FAILS (locked/read-only stale file)
+   * returns `err` and fails the repair: the demo files are recreated
+   * `overwrite:false`, so a surviving V1 `@cucumber`/World file would leave the
+   * runner un-loadable while Repair falsely reported success.
    */
-  private async migrateV1Runner(settings: TestHubSettings): Promise<VaultPath[]> {
+  private async migrateV1Runner(settings: TestHubSettings): Promise<Result<VaultPath[]>> {
     const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
-    if (!cwd.ok) return [];
+    if (!cwd.ok) return ok([]);
     const removed: VaultPath[] = [];
     for (const relPath of V1_INCOMPATIBLE_FILES) {
       const abs = `${cwd.value}/${relPath}`;
-      // Only report a file as removed if it actually existed: deleteAbsolute is
+      // Only act on a file that actually exists: deleteAbsolute is
       // force-idempotent (no error on a missing path), so without this guard the
       // change report would claim deletions a fresh-ish V1 runner never had.
       if (!(await this.absoluteFs.existsAbsolute(abs))) continue;
       const deleted = await this.absoluteFs.deleteAbsolute(abs);
-      if (deleted.ok) removed.push(unsafeVaultPath(relPath));
+      if (!deleted.ok) return err(deleted.error);
+      removed.push(unsafeVaultPath(relPath));
     }
-    return removed;
+    return ok(removed);
   }
 }

@@ -169,6 +169,9 @@ describe("DefaultTestExecutionService", () => {
     expect(result.value.status).toBe("passed");
     expect(result.value.id).toBe("RUN-2026-06-01-100000");
     expect(childProcess.calls[0].args).toEqual(["npm", "run", "test:smoke"]);
+    // Scopes the bddgen step inside test:smoke to @smoke so a malformed
+    // non-@smoke feature can't fail "Run demo test" during generation.
+    expect(childProcess.calls[0].env?.BDD_TAGS).toBe("@smoke");
     expect(types()).toEqual(["testrun.requested", "testrun.started", "testrun.completed"]);
   });
 
@@ -412,9 +415,10 @@ describe("DefaultTestExecutionService", () => {
     const result = await service.execute({ scope: "use-case", target: "UC-001" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Declared featureFiles in order, comma-separated, runner-relative.
+    // Declared featureFiles in order, NEWLINE-separated (a vault path may hold a
+    // comma but never a newline), runner-relative.
     expect(childProcess.calls[0].env?.BDD_FEATURES).toBe(
-      "../Specifications/features/UC-001-happy-path.feature,../Specifications/features/UC-001-edge.feature",
+      "../Specifications/features/UC-001-happy-path.feature\n../Specifications/features/UC-001-edge.feature",
     );
   });
 

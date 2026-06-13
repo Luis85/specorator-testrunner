@@ -199,6 +199,24 @@ describe("DefaultMaintenanceService", () => {
     expect(result.value.removedFiles).toEqual(present.map((rel) => vp(rel)));
   });
 
+  it("fails the repair when a stale V1 file cannot be deleted (codex P1)", async () => {
+    const { service, absoluteFs } = build();
+    seedHealthyRunner(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 1}');
+    absoluteFs.seed("/vault/.testrunner/cucumber.mjs", "// stale V1 config");
+    // A locked/read-only stale file: its deletion fails.
+    absoluteFs.deleteFailures.add("/vault/.testrunner/cucumber.mjs");
+
+    const result = await service.repair();
+
+    // Repair must NOT report success while a V1 @cucumber file survives (the demo
+    // is recreated overwrite:false, so the broken runner would persist).
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("INIT_FAILED");
+    expect(await absoluteFs.existsAbsolute("/vault/.testrunner/cucumber.mjs")).toBe(true);
+  });
+
   it("does not clean-cut a healthy V2 runner: deletes nothing and reports no migration", async () => {
     const { service, absoluteFs, templates } = build();
     seedHealthyRunner(absoluteFs);
