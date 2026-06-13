@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, sep } from "node:path";
 // @ts-expect-error — plain ESM helper module, no type declarations
 import { parseFlags, extractTableColumn } from "../scripts/lib/migrate-utils.mjs";
+// @ts-expect-error — plain ESM helper module, no type declarations
+import { collectMarkdownFiles } from "../scripts/lib/migrate-utils.mjs";
 
 const SPEC = {
   "--prds-path": { key: "prdsPath", default: "PRDs" },
@@ -57,5 +62,31 @@ describe("extractTableColumn", () => {
 
   it("returns an empty array when no matching table is found", () => {
     expect(extractTableColumn(body, /Missing/)).toEqual([]);
+  });
+});
+
+describe("collectMarkdownFiles", () => {
+  it("collects .md notes recursively and skips non-markdown files", () => {
+    const root = mkdtempSync(join(tmpdir(), "uc-scan-"));
+    try {
+      writeFileSync(join(root, "UC-001.md"), "x");
+      writeFileSync(join(root, "notes.txt"), "x");
+      mkdirSync(join(root, "auth", "nested"), { recursive: true });
+      writeFileSync(join(root, "auth", "UC-002.md"), "x");
+      writeFileSync(join(root, "auth", "nested", "UC-003.md"), "x");
+
+      const relative = collectMarkdownFiles(root)
+        .map((path: string) =>
+          path
+            .slice(root.length + 1)
+            .split(sep)
+            .join("/"),
+        )
+        .sort();
+
+      expect(relative).toEqual(["UC-001.md", "auth/UC-002.md", "auth/nested/UC-003.md"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

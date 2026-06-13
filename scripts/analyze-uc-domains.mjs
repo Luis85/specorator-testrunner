@@ -13,11 +13,12 @@
  * docs/migration-report-domains.md.
  */
 
-import { readdirSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { domainFromFrontmatter, groupByDomain } from "./lib/uc-domains.mjs";
+import { collectMarkdownFiles } from "./lib/migrate-utils.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -37,17 +38,12 @@ function parseArgs(argv) {
   return options;
 }
 
-/** Reads `*.md` notes from a directory into `{ id, domain }` records. */
+/** Reads `*.md` notes from a directory (recursively) into `{ id, domain }` records. */
 function readUseCaseNotes(dir) {
-  const entries = readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => entry.name)
-    .sort();
-
-  return entries.map((name) => {
-    const content = readFileSync(join(dir, name), "utf8");
+  return collectMarkdownFiles(dir).map((path) => {
+    const content = readFileSync(path, "utf8");
     const idMatch = /^id:\s*(.*)$/m.exec(content);
-    const id = idMatch ? idMatch[1].trim() : name.replace(/\.md$/, "");
+    const id = idMatch ? idMatch[1].trim() : basename(path).replace(/\.md$/, "");
     return { id, domain: domainFromFrontmatter(content) || "(none)" };
   });
 }

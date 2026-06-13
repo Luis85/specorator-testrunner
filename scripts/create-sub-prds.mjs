@@ -25,25 +25,23 @@
  *     [--use-cases-path <dir>]
  */
 
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildPrdNote, prdFolderName } from "./lib/prd-note.mjs";
-import { parseFlags } from "./lib/migrate-utils.mjs";
+import { collectMarkdownFiles, parseFlags } from "./lib/migrate-utils.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
 
-/** Builds an index from Use Case id → absolute note path under `dir`. */
+/** Builds an index from Use Case id → note path under `dir` (recursively). */
 function indexUseCases(dir) {
   const index = new Map();
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith(".md")) continue;
-    const path = join(dir, name);
+  for (const path of collectMarkdownFiles(dir)) {
     const content = readFileSync(path, "utf8");
     const idMatch = /^id:\s*(.*)$/m.exec(content);
-    const id = idMatch ? idMatch[1].trim() : name.replace(/\.md$/, "");
+    const id = idMatch ? idMatch[1].trim() : basename(path).replace(/\.md$/, "");
     index.set(id, path);
   }
   return index;
