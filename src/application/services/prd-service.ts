@@ -52,12 +52,17 @@ export class DefaultPrdService implements PrdService {
       return err(appError("VALIDATION_FAILED", "PRD vision statement is required."));
     }
 
-    const scopeIn = (request.scopeIn || []).filter((s) => s.trim() !== "");
+    // Normalize multiline fields: collapse newlines per frontmatter parser limits
+    const scopeIn = (request.scopeIn || [])
+      .filter((s) => s.trim() !== "")
+      .map((s) => s.replace(/\n+/g, " ").trim());
     if (scopeIn.length === 0) {
       return err(appError("VALIDATION_FAILED", "At least one item must be in scope."));
     }
 
-    const scopeOut = (request.scopeOut || []).filter((s) => s.trim() !== "");
+    const scopeOut = (request.scopeOut || [])
+      .filter((s) => s.trim() !== "")
+      .map((s) => s.replace(/\n+/g, " ").trim());
     if (scopeOut.length === 0) {
       return err(appError("VALIDATION_FAILED", "At least one item must be out of scope."));
     }
@@ -68,49 +73,61 @@ export class DefaultPrdService implements PrdService {
     }
 
     const settings = await this.settingsService.load();
-    const existing = await this.findAll();
-    if (!existing.ok) return existing;
 
-    const id = this.nextId(existing.value.map((p) => p.id));
-    const folder = prdFolderName(id, title);
-    const path = joinVaultPath(settings.paths.prdsPath, folder, `${folder}.md`);
+    // Allocate ID inside write queue to serialize against concurrent creates (race prevention).
+    // Returns the created PRD directly from queue callback to avoid null-checking.
+    const queueKey = `prd:create:${title}`; // Serialize all PRD creates together
+    return this.noteWrites.run(queueKey, async () => {
+      const existing = await this.findAll();
+      if (!existing.ok) return existing;
 
-    const prd: Prd = {
-      id,
-      title,
-      status: "draft",
-      parentPrdId: request.parentPrdId,
-      domains,
-      vision,
-      scopeIn,
-      scopeOut,
-      displayOrder: existing.value.length,
-      path,
-    };
+      const id = this.nextId(existing.value.map((p) => p.id));
+      const folder = prdFolderName(id, title);
+      const path = joinVaultPath(settings.paths.prdsPath, folder, `${folder}.md`);
 
-    const folderPath = joinVaultPath(settings.paths.prdsPath, folder);
-    const write = await this.noteWrites.run(path, async () => {
+      const prd: Prd = {
+        id,
+        title,
+        status: "draft",
+        parentPrdId: request.parentPrdId,
+        domains,
+        vision,
+        scopeIn,
+        scopeOut,
+        displayOrder: existing.value.length,
+        path,
+      };
+
+      const folderPath = joinVaultPath(settings.paths.prdsPath, folder);
       const folderResult = await this.fs.createFolder(folderPath);
       if (!folderResult.ok) return folderResult;
-      return this.fs.createFile(path, buildPrdNote(prd));
-    });
-    if (!write.ok) return write;
 
-    await this.eventBus.publish(
-      createEvent(
-        "prd.created",
-        { prdId: id, title, path: String(path), parentPrdId: request.parentPrdId },
-        { correlationId: id },
-      ),
-    );
-    this.logger.info("PRD created", { id, path });
-    return ok(prd);
+      const createResult = await this.fs.createFile(path, buildPrdNote(prd));
+      if (!createResult.ok) return createResult;
+
+      await this.eventBus.publish(
+        createEvent(
+          "prd.created",
+          { prdId: prd.id, title, path: String(prd.path), parentPrdId: request.parentPrdId },
+          { correlationId: prd.id },
+        ),
+      );
+      this.logger.info("PRD created", { id: prd.id, path: prd.path });
+      return ok(prd);
+    });
   }
 
   async findAll(): Promise<Result<Prd[]>> {
     const settings = await this.settingsService.load();
     const listed = await this.fs.listFilesRecursive(settings.paths.prdsPath);
-    if (!listed.ok) return ok([]); // folder may not exist yet
+    // Distinguish folder-not-found (ok, return empty) from real I/O errors (propagate)
+    if (!listed.ok) {
+      const messageLC = listed.error.message.toLowerCase();
+      if (messageLC.includes("enoent") || messageLC.includes("not found")) {
+        return ok([]); // folder doesn't exist yet; treat as empty
+      }
+      return listed; // real I/O error; propagate to caller
+    }
     const prds: Prd[] = [];
     for (const path of listed.value) {
       if (!String(path).endsWith(".md")) continue;
@@ -130,6 +147,9 @@ export class DefaultPrdService implements PrdService {
   }
 
   async assignUseCaseToPrd(useCasePath: VaultPath, prdId: PrdId): Promise<Result<void>> {
+    // TODO (P2 concurrency): This queue is independent of DefaultUseCaseService's per-path queue.
+    // Concurrent UC updates (edit, post-run evidence, feature links) can race here.
+    // Consider refactoring to route through UseCaseService or use a shared note-level mutex.
     return this.noteWrites.run(useCasePath, async () => {
       const read = await this.fs.readFile(useCasePath);
       if (!read.ok) return read;
