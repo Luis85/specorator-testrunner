@@ -297,20 +297,23 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       // active-run slot) settles before maintenance touches any files.
       () => this.postRunCoordinator.whenSettled(),
     );
+    // Built before useCaseService (which links to it): PrdService depends only
+    // on settings/vault/bus/logger, so constructing it first lets assignToPrd's
+    // PRD-lookup + shared-mutation-lock probes reference an already-assigned
+    // `this.prdService` rather than a forward reference.
+    this.prdService = new DefaultPrdService(this.hubSettingsService, vault, eventBus, this.logger);
     this.useCaseService = new DefaultUseCaseService(
       this.hubSettingsService,
       vault,
       eventBus,
       this.logger,
-      // Late-bound so assignToPrd validates links against the live PRD index and
-      // serializes them with PRD create/delete through the shared mutation lock;
-      // prdService is assigned just below and these only run on user action.
+      // assignToPrd validates links against the live PRD index and serializes
+      // them with PRD create/delete through the shared mutation lock.
       {
         findById: (id) => this.prdService.findById(id),
         withMutationLock: (op) => this.prdService.withMutationLock(op),
       },
     );
-    this.prdService = new DefaultPrdService(this.hubSettingsService, vault, eventBus, this.logger);
     this.specificationService = new DefaultSpecificationService(
       this.hubSettingsService,
       this.useCaseService,

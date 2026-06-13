@@ -106,7 +106,7 @@ export class PrdExplorerView extends ItemView {
     const header = container.createDiv({ cls: "e2e-test-hub-prd-header" });
     header.createEl("h2", { text: "PRDs" });
     header
-      .createEl("button", { text: "New prd", cls: "mod-cta" })
+      .createEl("button", { text: "New PRD", cls: "mod-cta" })
       .addEventListener("click", () => this.deps.openPrdBuilder());
 
     const [prds, counts] = await Promise.all([
@@ -125,7 +125,7 @@ export class PrdExplorerView extends ItemView {
 
     if (prds.value.length === 0) {
       container.createEl("p", {
-        text: "No PRDs yet. Create prd-000 (the product vision) to get started.",
+        text: "No PRDs yet. Create PRD-000 (the product vision) to get started.",
       });
       return;
     }

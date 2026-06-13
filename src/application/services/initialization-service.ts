@@ -373,6 +373,8 @@ export class DefaultInitializationService implements InitializationService {
     const { paths, logging } = settings;
     const candidates = [
       paths.testHubPath,
+      paths.domainsPath,
+      paths.prdsPath,
       paths.useCasesPath,
       paths.specificationsPath,
       paths.featureFilesPath,

@@ -90,8 +90,8 @@ export class EditUseCaseModal extends Modal {
     // Populated asynchronously so the modal opens immediately; the dropdown
     // appears once the PRD list resolves.
     const prdSetting = new Setting(contentEl)
-      .setName("Parent prd")
-      .setDesc("Link this Use Case to a prd (clearing a link is not supported here).");
+      .setName("Parent PRD")
+      .setDesc("Link this Use Case to a PRD (clearing a link is not supported here).");
     void this.renderPrdDropdown(prdSetting);
 
     this.errorEl = contentEl.createDiv({ cls: "e2e-test-hub-settings-errors" });

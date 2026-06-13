@@ -140,16 +140,30 @@ export class DefaultPrdService implements PrdService {
         vision,
         scopeIn,
         scopeOut,
+        // Allocation order only (V1 has no reparent/reorder); siblings are
+        // sorted by `displayOrder || id.localeCompare`, so a value reused after
+        // a delete still resolves deterministically by the immutable id.
         displayOrder: existing.value.length,
         path,
       };
 
       const folderPath = joinVaultPath(settings.paths.prdsPath, folder);
+      // Whether the folder already existed: cleanup below must only remove a
+      // folder THIS call created, never a pre-existing one (which could hold
+      // user content — diagrams, a stale draft), since createFolder is a no-op
+      // success on an existing path.
+      const folderPreexisted = await this.fs.exists(folderPath);
       const folderResult = await this.fs.createFolder(folderPath);
       if (!folderResult.ok) return folderResult;
 
       const createResult = await this.fs.createFile(path, buildPrdNote(prd, request.research));
-      if (!createResult.ok) return createResult;
+      if (!createResult.ok) {
+        // Don't leave an orphaned empty PRD folder behind on a note-write
+        // failure; best-effort, and only for the folder we just created (the
+        // original error is what we return).
+        if (!folderPreexisted) await this.fs.deleteFolder(folderPath);
+        return createResult;
+      }
 
       await this.eventBus.publish(
         createEvent(

@@ -16,7 +16,7 @@ export type ExecutionScope = (typeof EXECUTION_SCOPES)[number];
  * enumerates the same single source the {@link TestRunStatus} union is
  * derived from.
  */
-export const TEST_RUN_STATUSES = [
+const TEST_RUN_STATUSES = [
   "queued",
   "running",
   "passed",

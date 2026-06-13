@@ -345,7 +345,7 @@ export class DashboardView extends ItemView {
     if (!roadmap.root) {
       section.createEl("p", { text: "No PRDs yet. Start with the product vision." });
       section
-        .createEl("button", { text: "Create prd-000 (product vision)", cls: "mod-cta" })
+        .createEl("button", { text: "Create PRD-000 (product vision)", cls: "mod-cta" })
         .addEventListener("click", () => this.deps.openPrdBuilder());
       return;
     }
@@ -361,10 +361,10 @@ export class DashboardView extends ItemView {
 
     const actions = section.createDiv({ cls: "e2e-test-hub-prd-roadmap-actions" });
     actions
-      .createEl("button", { text: "New prd", cls: "mod-cta" })
+      .createEl("button", { text: "New PRD", cls: "mod-cta" })
       .addEventListener("click", () => this.deps.openPrdBuilder());
     actions
-      .createEl("button", { text: "View prd tree", cls: "e2e-test-hub-doc-button" })
+      .createEl("button", { text: "View PRD tree", cls: "e2e-test-hub-doc-button" })
       .addEventListener("click", () => void this.deps.navigateToPrds());
 
     if (roadmap.children.length > 0) {

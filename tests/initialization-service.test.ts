@@ -129,10 +129,14 @@ describe("DefaultInitializationService", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // Folders (US-005): the six business folders + runner + logs, deduped.
+    // Folders (US-005): the business folders + runner + logs, deduped.
     expect(fs.folders.has(".testrunner")).toBe(true);
     expect(fs.folders.has("Use Cases")).toBe(true);
     expect(fs.folders.has("Test Evidence")).toBe(true);
+    // The PRD hierarchy folders are scaffolded too (the PRD Explorer / Domains
+    // research space must exist post-init, not just be lazily created on first use).
+    expect(fs.folders.has("PRDs")).toBe(true);
+    expect(fs.folders.has("Domains")).toBe(true);
     expect(result.value.createdFolders).toContain("Specifications/features");
 
     // Default suites (US-008).
