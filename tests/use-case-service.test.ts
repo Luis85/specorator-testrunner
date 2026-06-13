@@ -6,7 +6,13 @@ import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-poli
 import type { UseCase, UseCaseStatus } from "../src/domain/entities/use-case";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import {
+  FakeDataStore,
+  FakePrdLookup,
+  FakeVaultFileSystem,
+  recordingEventBus,
+  silentLogger,
+} from "./fakes";
 
 const build = () => {
   const fs = new FakeVaultFileSystem();
@@ -16,7 +22,7 @@ const build = () => {
     new DefaultPathSafetyPolicy(),
     bus,
   );
-  const service = new DefaultUseCaseService(settings, fs, bus, silentLogger);
+  const service = new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup());
   return { service, fs, types, events };
 };
 
@@ -630,6 +636,37 @@ describe("assignToPrd", () => {
     const { service } = build();
     const result = await service.assignToPrd("UC-404", "PRD-001");
     expect(result.ok).toBe(false);
+  });
+
+  it("rejects linking to a PRD that does not exist (stale dropdown / typo)", async () => {
+    const fs = new FakeVaultFileSystem();
+    const { bus } = recordingEventBus();
+    const settings = new DefaultSettingsService(
+      new FakeDataStore(),
+      new DefaultPathSafetyPolicy(),
+      bus,
+    );
+    // A lookup that knows of no PRDs → every target resolves to "not found".
+    const service = new DefaultUseCaseService(
+      settings,
+      fs,
+      bus,
+      silentLogger,
+      new FakePrdLookup(new Set()),
+    );
+    fs.files.set(
+      "Use Cases/UC-001.md",
+      ["---", "id: UC-001", "type: use-case", "title: A", "status: specified", "---", ""].join(
+        "\n",
+      ),
+    );
+
+    const result = await service.assignToPrd("UC-001", "PRD-999");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("PRD-999");
+    // The note must be left untouched — no dangling prd-id written.
+    expect(fs.files.get("Use Cases/UC-001.md") ?? "").not.toContain("prd-id");
   });
 });
 

@@ -7,7 +7,13 @@ import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-poli
 import type { FeatureSpecification } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import {
+  FakeDataStore,
+  FakePrdLookup,
+  FakeVaultFileSystem,
+  recordingEventBus,
+  silentLogger,
+} from "./fakes";
 
 const build = () => {
   const fs = new FakeVaultFileSystem();
@@ -17,7 +23,7 @@ const build = () => {
     new DefaultPathSafetyPolicy(),
     bus,
   );
-  const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger);
+  const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup());
   const service = new DefaultSpecificationService(settings, useCases, fs, bus, silentLogger);
   return { service, useCases, fs, events, types };
 };

@@ -26,6 +26,17 @@ export interface CreateUseCaseRequest {
 }
 
 /**
+ * The narrow PRD existence check {@link UseCaseService.assignToPrd} needs to keep
+ * a Use Case from linking to a nonexistent PRD (the single-parent hierarchy
+ * invariant, ADR-0026). Satisfied structurally by `PrdService.findById`; injected
+ * as a minimal contract rather than the whole service to avoid coupling the two
+ * services together.
+ */
+export interface PrdLookup {
+  findById(id: string): Promise<Result<{ id: string } | null>>;
+}
+
+/**
  * The user-editable Use Case metadata (Wave G §3, UC-005). Deliberately ONLY
  * the title and the business status: the id is immutable identity, and
  * `automationStatus` is owned by the UseCaseAutomationPolicy (ADR-0017) —
@@ -91,6 +102,7 @@ export class DefaultUseCaseService implements UseCaseService {
     private readonly fs: VaultFileSystem,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
+    private readonly prdLookup: PrdLookup,
   ) {}
 
   async create(request: CreateUseCaseRequest): Promise<Result<UseCase>> {
@@ -327,6 +339,16 @@ export class DefaultUseCaseService implements UseCaseService {
     const target = prdId.trim();
     if (target === "") {
       return err(appError("VALIDATION_FAILED", "A PRD id is required."));
+    }
+
+    // Validate the target PRD exists before persisting the link: a stale editor
+    // dropdown (PRD deleted after the modal loaded) or a typo would otherwise
+    // dangle the breadcrumb/counts and break the single-parent hierarchy
+    // invariant (ADR-0026).
+    const prd = await this.prdLookup.findById(target);
+    if (!prd.ok) return err(prd.error);
+    if (prd.value === null) {
+      return err(appError("VALIDATION_FAILED", `Unknown PRD: ${target}`));
     }
 
     const preLock = await this.findById(id);

@@ -24,6 +24,7 @@ import {
   FakeAbsoluteFileSystem,
   FakeChildProcessRunner,
   FakeDataStore,
+  FakePrdLookup,
   FakeTemplateWriter,
   FakeVaultFileSystem,
   recordingEventBus,
@@ -213,7 +214,13 @@ const buildReset = (
   const docs = new DefaultDocumentationGenerationService(settings, vault, bus);
   const suites = new DefaultSuiteService(settings, vault, bus);
   const demo = new DefaultDemoContentService(settings, vault, bus);
-  const useCaseService = new DefaultUseCaseService(settings, vault, bus, silentLogger);
+  const useCaseService = new DefaultUseCaseService(
+    settings,
+    vault,
+    bus,
+    silentLogger,
+    new FakePrdLookup(),
+  );
   const runnerInstall = new DefaultRunnerInstallationService(
     templates,
     childProcess,

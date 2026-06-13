@@ -125,6 +125,19 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 }
 
+/**
+ * Minimal {@link PrdLookup} for UseCaseService tests. By default every id
+ * "exists" (so assignToPrd succeeds); pass a set of known ids to restrict —
+ * any id outside the set resolves to null (not found).
+ */
+export class FakePrdLookup {
+  constructor(private readonly known?: Set<string>) {}
+  async findById(id: string): Promise<Result<{ id: string } | null>> {
+    if (this.known && !this.known.has(id)) return ok(null);
+    return ok({ id });
+  }
+}
+
 /** In-memory {@link DataStore}. */
 export class FakeDataStore implements DataStore {
   constructor(private data?: unknown) {}

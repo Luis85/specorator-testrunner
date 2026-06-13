@@ -5,7 +5,13 @@ import { DefaultStepDefinitionService } from "../../src/application/services/ste
 import { DefaultUseCaseService } from "../../src/application/services/use-case-service";
 import { DefaultPathSafetyPolicy } from "../../src/domain/policies/path-safety-policy";
 import { unsafeVaultPath as vp } from "../../src/domain/value-objects/vault-path";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "../fakes";
+import {
+  FakeDataStore,
+  FakePrdLookup,
+  FakeVaultFileSystem,
+  recordingEventBus,
+  silentLogger,
+} from "../fakes";
 
 /**
  * RV-4 / UC-010 — Generate Step Definition Stub (command path).
@@ -30,7 +36,7 @@ const build = () => {
     new DefaultPathSafetyPolicy(),
     bus,
   );
-  const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger);
+  const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup());
   const specification = new DefaultSpecificationService(settings, useCases, fs, bus, silentLogger);
   const stepDefinitions = new DefaultStepDefinitionService(settings, fs, bus, silentLogger);
   return { specification, stepDefinitions, fs, events, types };

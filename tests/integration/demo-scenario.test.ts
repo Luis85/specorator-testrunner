@@ -14,7 +14,13 @@ import { DefaultUseCaseService } from "../../src/application/services/use-case-s
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/settings";
 import { DefaultPathSafetyPolicy } from "../../src/domain/policies/path-safety-policy";
 import { joinVaultPath } from "../../src/shared/utils/vault-path";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "../fakes";
+import {
+  FakeDataStore,
+  FakePrdLookup,
+  FakeVaultFileSystem,
+  recordingEventBus,
+  silentLogger,
+} from "../fakes";
 
 /**
  * US-049 — Validate Demo Scenario (FEAT-028, UC-001).
@@ -40,7 +46,7 @@ const build = () => {
     new DefaultPathSafetyPolicy(),
     bus,
   );
-  const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger);
+  const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup());
   const suites = new DefaultSuiteService(settings, fs, bus);
   return { fs, useCases, suites };
 };

@@ -299,6 +299,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       vault,
       eventBus,
       this.logger,
+      // Late-bound so assignToPrd validates links against the live PRD index;
+      // prdService is assigned just below and findById only runs on user action.
+      { findById: (id) => this.prdService.findById(id) },
     );
     this.prdService = new DefaultPrdService(this.hubSettingsService, vault, eventBus, this.logger);
     this.specificationService = new DefaultSpecificationService(

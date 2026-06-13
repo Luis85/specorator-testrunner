@@ -17,6 +17,7 @@ import {
   FakeAbsoluteFileSystem,
   FakeChildProcessRunner,
   FakeDataStore,
+  FakePrdLookup,
   FakeVaultFileSystem,
   recordingEventBus,
   silentLogger,
@@ -54,7 +55,13 @@ const build = () => {
     bus,
   );
   const suiteService = new DefaultSuiteService(settings, fs, bus);
-  const useCaseService = new DefaultUseCaseService(settings, fs, bus, silentLogger);
+  const useCaseService = new DefaultUseCaseService(
+    settings,
+    fs,
+    bus,
+    silentLogger,
+    new FakePrdLookup(),
+  );
   const childProcess = new FakeChildProcessRunner();
   const absoluteFs = new FakeAbsoluteFileSystem();
   const service = new DefaultTestExecutionService(
@@ -755,7 +762,7 @@ describe("DefaultTestExecutionService", () => {
     const broken = new DefaultTestExecutionService(
       brokenSettings,
       new DefaultSuiteService(settings, fs, bus),
-      new DefaultUseCaseService(settings, fs, bus, silentLogger),
+      new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup()),
       new FakeChildProcessRunner(),
       new FakeAbsoluteFileSystem(),
       new DefaultCommandSafetyPolicy(),
