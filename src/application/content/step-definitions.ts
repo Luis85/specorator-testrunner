@@ -189,10 +189,11 @@ const PENDING_MARKER = ["TO", "DO"].join("");
 /** Renders a single step-definition stub for one missing step text. */
 const renderStub = (stepText: string): string => {
   const { expression, params } = toStubExpression(stepText);
-  const signature = ["this: TestWorld", ...params.map((p) => `${p}: string`)].join(", ");
+  const args = params.map((p) => `${p}: string`).join(", ");
+  const signature = args ? `{ page }, ${args}` : `{ page }`;
   return [
     `// ${PENDING_MARKER}: implement this step (generated stub for: ${squash(stepText)})`,
-    `Given("${escapeDoubleQuoted(expression)}", async function (${signature}) {`,
+    `Given("${escapeDoubleQuoted(expression)}", async (${signature}) => {`,
     `  throw new Error("Pending");`,
     `});`,
   ].join("\n");
@@ -201,48 +202,23 @@ const renderStub = (stepText: string): string => {
 /**
  * Builds a complete `*.steps.ts` file body for the given missing steps (RV-4).
  *
- * Each missing step becomes a `Given(...)` with `@cucumber/cucumber`, a
- * pending-work comment (see {@link PENDING_MARKER}) and a
+ * Each missing step becomes a `Given(...)` stub via playwright-bdd's `createBdd()`,
+ * a pending-work comment (see {@link PENDING_MARKER}) and a
  * `throw new Error("Pending")` body. `Given` is used uniformly:
- * `collectStepTexts` discards the Given/When/Then keyword, and cucumber-js
+ * `collectStepTexts` discards the Given/When/Then keyword, and playwright-bdd
  * matches a step definition by its TEXT regardless of which keyword decorator
  * declared it, so a `Given`-declared stub still satisfies a `When`/`Then` step.
  * Quoted literals and Scenario Outline placeholders are parameterised to
  * `{string}` so one stub can serve a family of steps.
  */
-/** The imports a generated steps module's stubs need, by LOCAL binding name. */
-const STEP_DEFINITION_IMPORT_BINDINGS: readonly { local: string; statement: string }[] = [
-  { local: "Given", statement: `import { Given } from "@cucumber/cucumber";` },
-  { local: "TestWorld", statement: `import { TestWorld } from "../support/world";` },
-];
+const CREATE_BDD_IMPORT = `import { createBdd } from "playwright-bdd";`;
+const CREATE_BDD_DESTRUCTURE = `const { Given, When, Then } = createBdd();`;
 
-/** Import header every generated steps module needs (Cucumber `Given` + the World). */
-export const STEP_DEFINITION_IMPORTS = STEP_DEFINITION_IMPORT_BINDINGS.map((b) => b.statement).join(
-  "\n",
-);
-
-/**
- * The LOCAL binding names introduced by a module's named imports, accounting for
- * aliases: `import { Given, When as w } from "x"` → {"Given", "w"}. Used to avoid
- * BOTH a duplicate binding (re-importing `Given` when it's already bound) AND a
- * missing one (the file imports `Given as defineStep`, so `Given` is NOT bound).
- */
-const namedImportLocals = (source: string): Set<string> => {
-  const locals = new Set<string>();
-  for (const match of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*["'][^"']+["']/g)) {
-    for (const raw of match[1].split(",")) {
-      const spec = raw.trim();
-      if (spec.length === 0) continue;
-      const parts = spec.split(/\s+as\s+/);
-      const local = (parts[1] ?? parts[0]).trim(); // alias target, else the name itself
-      if (local.length > 0) locals.add(local);
-    }
-  }
-  return locals;
-};
+/** Import header every generated steps module needs (playwright-bdd `createBdd`). */
+const STEP_DEFINITION_IMPORTS = `${CREATE_BDD_IMPORT}\n${CREATE_BDD_DESTRUCTURE}`;
 
 /** Renders ONLY the step-definition stub blocks (no import header). */
-export const buildStepDefinitionStubBlocks = (missingSteps: string[]): string =>
+const buildStepDefinitionStubBlocks = (missingSteps: string[]): string =>
   missingSteps.map(renderStub).join("\n\n");
 
 /** A complete, loadable steps module: full import header + stub blocks (new files). */
@@ -251,16 +227,16 @@ export const buildStepDefinitionStubFile = (missingSteps: string[]): string =>
 
 /**
  * Builds the content to APPEND to an existing steps file: the stub blocks, plus
- * ONLY the import statements whose local binding the file does not already have.
- * This avoids a duplicate top-level binding (`Identifier 'Given' has already been
- * declared`) when the import is present, and avoids a missing `Given` when the
- * file imported it under an alias (`import { Given as defineStep }`).
+ * the playwright-bdd header ONLY if the file does not already import from it.
+ * This avoids a duplicate top-level binding when the import is already present.
  */
 export const buildAppendedStubs = (existingSource: string, missingSteps: string[]): string => {
-  const present = namedImportLocals(existingSource);
-  const header = STEP_DEFINITION_IMPORT_BINDINGS.filter((b) => !present.has(b.local))
-    .map((b) => b.statement)
-    .join("\n");
+  // Detect the `createBdd()` destructure that provides the Given/When/Then
+  // bindings the stubs call — not merely a "playwright-bdd" import substring,
+  // which could appear in a comment or an unrelated import and wrongly skip the
+  // load-bearing header. A file the generator wrote (or any file already calling
+  // createBdd()) keeps its single header; one lacking the bindings gets it.
+  const hasHeader = /createBdd\s*\(/.test(existingSource);
   const blocks = buildStepDefinitionStubBlocks(missingSteps);
-  return header.length > 0 ? `${header}\n\n${blocks}\n` : `${blocks}\n`;
+  return hasHeader ? `${blocks}\n` : `${STEP_DEFINITION_IMPORTS}\n\n${blocks}\n`;
 };

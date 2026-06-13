@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAppendedStubs,
   buildStepDefinitionStubFile,
   findMissingSteps,
   isStepDefined,
   parseStepDefinitions,
 } from "../src/application/content/step-definitions";
 
-const STEPS_SOURCE = `import { Given, When, Then } from "@cucumber/cucumber";
+// STEPS_SOURCE uses createBdd form (playwright-bdd) to reflect the generated shape.
+const STEPS_SOURCE = `import { createBdd } from "playwright-bdd";
+const { Given, When, Then } = createBdd();
 
-Given("I open the local example page", async function () {});
-When("I click the {string} button", async function (label) {});
-Then(/^I should see (\\d+) results$/, async function (count) {});
-And('a quoted single step', function () {});
+Given("I open the local example page", async ({ page }) => {});
+When("I click the {string} button", async ({ page }, label) => {});
+Then(/^I should see (\\d+) results$/, async ({ page }, count) => {});
+Given('a quoted single step', async ({ page }) => {});
 `;
 
 describe("parseStepDefinitions", () => {
@@ -131,28 +134,42 @@ describe("findMissingSteps", () => {
 });
 
 describe("buildStepDefinitionStubFile", () => {
-  it("emits a cucumber/world import header and one Given stub per step", () => {
+  it("emits a createBdd import header and one Given stub per step", () => {
     const file = buildStepDefinitionStubFile(["I open the page", "the result is shown"]);
-    expect(file).toContain(`import { Given } from "@cucumber/cucumber";`);
-    expect(file).toContain(`import { TestWorld } from "../support/world";`);
-    expect(file).toContain(`Given("I open the page", async function (this: TestWorld) {`);
-    expect(file).toContain(`Given("the result is shown", async function (this: TestWorld) {`);
+    expect(file).toContain(`import { createBdd } from "playwright-bdd";`);
+    expect(file).toContain(`const { Given, When, Then } = createBdd();`);
+    expect(file).toContain(`Given("I open the page", async ({ page }) => {`);
+    expect(file).toContain(`Given("the result is shown", async ({ page }) => {`);
     // Every stub is pending and TODO-flagged for the user to fill in.
     expect(file.match(/throw new Error\("Pending"\);/g)).toHaveLength(2);
     expect(file).toContain("// TODO: implement this step");
+    expect(file).not.toContain("@cucumber/cucumber");
+    expect(file).not.toContain("TestWorld");
+  });
+
+  it("renders a createBdd stub with page fixture and typed params", () => {
+    const file = buildStepDefinitionStubFile(['I click the "Continue" button']);
+    expect(file).toContain('import { createBdd } from "playwright-bdd";');
+    expect(file).toContain("const { Given, When, Then } = createBdd();");
+    expect(file).toContain(
+      'Given("I click the {string} button", async ({ page }, arg1: string) =>',
+    );
+    expect(file).not.toContain("@cucumber/cucumber");
+    expect(file).not.toContain("TestWorld");
+    expect(file).not.toContain("this:");
   });
 
   it("parameterises quoted literals to {string} with one typed arg each", () => {
     const file = buildStepDefinitionStubFile([`I click the "Continue" button`]);
     expect(file).toContain(
-      `Given("I click the {string} button", async function (this: TestWorld, arg1: string) {`,
+      `Given("I click the {string} button", async ({ page }, arg1: string) => {`,
     );
   });
 
   it("parameterises Scenario Outline placeholders to {string}", () => {
     const file = buildStepDefinitionStubFile(["I select <option> from <menu>"]);
     expect(file).toContain(
-      `Given("I select {string} from {string}", async function (this: TestWorld, arg1: string, arg2: string) {`,
+      `Given("I select {string} from {string}", async ({ page }, arg1: string, arg2: string) => {`,
     );
   });
 
@@ -165,5 +182,23 @@ describe("buildStepDefinitionStubFile", () => {
     const file = buildStepDefinitionStubFile([`I click the "Continue" button`]);
     const defs = parseStepDefinitions(file);
     expect(isStepDefined(`I click the "Save" button`, defs)).toBe(true);
+  });
+});
+
+describe("buildAppendedStubs", () => {
+  it("appends only the missing createBdd header to a file that already has it", () => {
+    const existing =
+      'import { createBdd } from "playwright-bdd";\nconst { Given, When, Then } = createBdd();\n\nGiven("x", async ({ page }) => {});\n';
+    const block = buildAppendedStubs(existing, ["I do a new thing"]);
+    expect(block).not.toContain("import { createBdd }");
+    expect(block).toContain('Given("I do a new thing", async ({ page }) =>');
+  });
+
+  it("prepends the header when appending to a file without a playwright-bdd import", () => {
+    const existing = `// notes, no imports here\n`;
+    const block = buildAppendedStubs(existing, ["a fresh step"]);
+    expect(block).toContain('import { createBdd } from "playwright-bdd";');
+    expect(block).toContain("const { Given, When, Then } = createBdd();");
+    expect(block).toContain('Given("a fresh step"');
   });
 });
