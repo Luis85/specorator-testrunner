@@ -57,6 +57,10 @@ export interface UseCaseService {
 
 const ID_PATTERN = /^UC-(\d+)$/;
 
+/** A trimmed non-empty frontmatter string, or undefined for blanks/non-strings. */
+const readTrimmed = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+
 /** Next sequential `UC-NNN` id given the existing use cases (US-015). */
 export const nextUseCaseId = (existing: UseCase[]): UseCaseId => {
   const max = existing.reduce((highest, useCase) => {
@@ -372,12 +376,8 @@ export class DefaultUseCaseService implements UseCaseService {
       suites: toArray(fm.suites),
       evidence: toVaultPaths(fm.evidence),
       lastTestRun,
-      domain:
-        typeof fm.domain === "string" && fm.domain.trim() !== "" ? fm.domain.trim() : undefined,
-      prdId:
-        typeof fm["prd-id"] === "string" && fm["prd-id"].trim() !== ""
-          ? fm["prd-id"].trim()
-          : undefined,
+      domain: readTrimmed(fm.domain),
+      prdId: readTrimmed(fm["prd-id"]),
       path,
     };
   }

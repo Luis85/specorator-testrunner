@@ -441,6 +441,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       (leaf) =>
         new UseCaseDetailView(leaf, {
           useCaseService: this.useCaseService,
+          prdService: this.prdService,
           specificationService: this.specificationService,
           stepDefinitionService: this.stepDefinitionService,
           featureInsight: this.featureInsightService,

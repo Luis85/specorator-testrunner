@@ -4,6 +4,7 @@ import type { FeatureInsightService } from "../../application/services/feature-i
 import type { SpecificationService } from "../../application/services/specification-service";
 import type { StepDefinitionService } from "../../application/services/step-definition-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
+import type { PrdService } from "../../application/services/prd-service";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
@@ -14,6 +15,7 @@ import { EditUseCaseModal } from "./edit-use-case-modal";
 import { LiveRefresh } from "./live-refresh";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
 import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
+import { PRD_VIEW_TYPE } from "./prd-explorer-view";
 import {
   featureHealthLine,
   featureValidationRows,
@@ -57,10 +59,30 @@ const REFRESH_ON: DomainEventType[] = [
  * shared run launcher (Wave B), and the generate-Feature opener (which reuses
  * the command palette's slug-prompt flow rather than forking it).
  */
+/**
+ * The Use Case → (Domain ›) PRD breadcrumb label. Empty when the Use Case has
+ * neither a domain nor a PRD link. Falls back to the bare PRD id when its title
+ * is not in `prdTitleById`.
+ */
+export const prdBreadcrumbLabel = (
+  uc: { domain?: string; prdId?: string },
+  prdTitleById: Map<string, string>,
+): string => {
+  const parts: string[] = [];
+  if (uc.domain) parts.push(`Domain: ${uc.domain}`);
+  if (uc.prdId) {
+    const title = prdTitleById.get(uc.prdId);
+    parts.push(title ? `${uc.prdId}: ${title}` : uc.prdId);
+  }
+  return parts.join("  ›  ");
+};
+
 export interface UseCaseDetailDeps {
   // findById powers the render; updateMetadata backs the header's quick-edit
   // modal (Wave G §3).
   useCaseService: Pick<UseCaseService, "findById" | "updateMetadata">;
+  // Resolves the parent PRD's title for the header breadcrumb (Task 16b).
+  prdService: Pick<PrdService, "findById">;
   specificationService: Pick<
     SpecificationService,
     "listFeatures" | "validate" | "detectMissingSteps"
@@ -185,11 +207,22 @@ export class UseCaseDetailView extends ItemView {
     }
     const useCase = found.value;
 
-    this.renderHeader(container, useCase);
+    // Resolve the parent PRD's title (if any) for the header breadcrumb.
+    const prdTitleById = new Map<string, string>();
+    if (useCase.prdId) {
+      const prd = await this.deps.prdService.findById(useCase.prdId);
+      if (prd.ok && prd.value) prdTitleById.set(useCase.prdId, prd.value.title);
+    }
+
+    this.renderHeader(container, useCase, prdTitleById);
     await this.renderFeatures(container, useCase);
   }
 
-  private renderHeader(container: HTMLElement, useCase: UseCase): void {
+  private renderHeader(
+    container: HTMLElement,
+    useCase: UseCase,
+    prdTitleById: Map<string, string>,
+  ): void {
     const header = projectUseCaseHeader(useCase);
 
     const headerEl = container.createDiv({ cls: "e2e-test-hub-uc-detail-header" });
@@ -202,6 +235,7 @@ export class UseCaseDetailView extends ItemView {
         attr: { "aria-label": "Open the Use Cases explorer" },
       })
       .addEventListener("click", () => void this.deps.workspace.openView(USE_CASE_VIEW_TYPE));
+    this.renderPrdBreadcrumb(headerEl, useCase, prdTitleById);
     headerEl.createEl("h2", { text: `${header.id} — ${header.title}` });
 
     const meta = headerEl.createDiv({ cls: "e2e-test-hub-uc-detail-meta" });
@@ -255,6 +289,34 @@ export class UseCaseDetailView extends ItemView {
       .addEventListener("click", () =>
         this.deps.openGenerateFeature(useCase, () => void this.live.schedule()),
       );
+  }
+
+  /**
+   * Renders the Domain › PRD breadcrumb above the title. The PRD segment is a
+   * link-button opening the PRD Explorer; nothing renders when the Use Case has
+   * neither a domain nor a PRD link.
+   */
+  private renderPrdBreadcrumb(
+    headerEl: HTMLElement,
+    useCase: UseCase,
+    prdTitleById: Map<string, string>,
+  ): void {
+    if (!useCase.domain && !useCase.prdId) return;
+    const crumb = headerEl.createDiv({ cls: "e2e-test-hub-uc-prd-breadcrumb" });
+    crumb.setAttr("aria-label", prdBreadcrumbLabel(useCase, prdTitleById));
+
+    if (useCase.domain) crumb.createSpan({ text: `Domain: ${useCase.domain}` });
+    if (useCase.prdId) {
+      if (useCase.domain) crumb.createSpan({ text: "  ›  " });
+      const title = prdTitleById.get(useCase.prdId);
+      crumb
+        .createEl("button", {
+          text: title ? `${useCase.prdId}: ${title}` : useCase.prdId,
+          cls: "e2e-test-hub-link-button",
+          attr: { "aria-label": `Open PRD ${useCase.prdId} in the PRD explorer` },
+        })
+        .addEventListener("click", () => void this.deps.workspace.openView(PRD_VIEW_TYPE));
+    }
   }
 
   private async renderFeatures(container: HTMLElement, useCase: UseCase): Promise<void> {
