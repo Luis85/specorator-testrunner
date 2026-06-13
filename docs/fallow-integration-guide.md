@@ -492,21 +492,25 @@ step in CI. Fallow automatically picks up `./coverage` (Istanbul format):
   run: npx fallow audit ...
 ```
 
-### Pre-existing inventory floods the audit verdict
+### Audit output shows findings in files I didn't introduce
 
-**Symptom:** The audit fails with many findings, but most are in files you
-didn't touch.
+**Symptom:** The audit report includes findings in files you edited but didn't
+write from scratch.
 
-**Cause:** New-only attribution is the default, but any edit to a file brings
-that file's pre-existing findings into scope. Heavy edits to complex legacy
-files can surface dormant findings.
+**Explanation:** With `--gate new-only` (the default), inherited findings from
+touched files appear in the output as **context** — they are annotated
+`introduced: false` and do **not** fail the gate. The audit exits 0 for them.
+No action is required. They are informational: fallow is showing you what
+pre-existing debt exists in the neighbourhood of your change.
 
-**Options:**
-1. Refactor the complex file (preferred — this is the signal working correctly).
-2. Suppress specific findings with inline `fallow-ignore-next-line` and track
-   as tech debt.
-3. Tune thresholds in `.fallowrc.jsonc` (last resort — only if the gate is
-   systematically noisy and the findings are not actionable).
+**If the audit actually fails** (non-zero exit), the failing findings are
+genuinely new — introduced by your changeset (`introduced: true`). In that
+case:
+1. Refactor or simplify the introduced code to bring it under threshold.
+2. If the finding is a legitimate false positive, suppress it with
+   `fallow-ignore-next-line <rule>` and a why-comment, then track as tech debt.
+3. Tune thresholds in `.fallowrc.jsonc` only if the gate trips systematically
+   on findings that are demonstrably not actionable (last resort).
 
 ---
 
