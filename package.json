@@ -10,6 +10,9 @@
   "scripts": {
     "build": "node esbuild.config.mjs production",
     "test-build": "node scripts/test-build.mjs",
+    "migrate:analyze-domains": "node scripts/analyze-uc-domains.mjs",
+    "migrate:create-prd-0": "node scripts/migrate-prd-0.mjs",
+    "migrate:create-sub-prds": "node scripts/create-sub-prds.mjs",
     "dev": "node esbuild.config.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.eslint.json",
     "test": "vitest run",
