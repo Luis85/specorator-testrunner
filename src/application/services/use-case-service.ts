@@ -34,6 +34,12 @@ export interface CreateUseCaseRequest {
  */
 export interface PrdLookup {
   findById(id: string): Promise<Result<{ id: string } | null>>;
+  /**
+   * Runs `operation` inside the PRD mutation critical section so `assignToPrd`
+   * serializes with PRD create/delete — preventing a delete from racing the
+   * link. Satisfied by `PrdService.withMutationLock`.
+   */
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 /**
@@ -341,50 +347,54 @@ export class DefaultUseCaseService implements UseCaseService {
       return err(appError("VALIDATION_FAILED", "A PRD id is required."));
     }
 
-    // Validate the target PRD exists before persisting the link: a stale editor
-    // dropdown (PRD deleted after the modal loaded) or a typo would otherwise
-    // dangle the breadcrumb/counts and break the single-parent hierarchy
-    // invariant (ADR-0026).
-    const prd = await this.prdLookup.findById(target);
-    if (!prd.ok) return err(prd.error);
-    if (prd.value === null) {
-      return err(appError("VALIDATION_FAILED", `Unknown PRD: ${target}`));
-    }
+    // Serialize the whole validate-then-write inside the shared PRD mutation lock
+    // so a concurrent deletePrd() can't remove the PRD between the existence check
+    // and the link write (or vice versa), which would leave this Use Case pointing
+    // at a deleted PRD (ADR-0026 single-parent invariant).
+    return this.prdLookup.withMutationLock(async () => {
+      // The target PRD must exist before persisting the link — guards a stale
+      // editor dropdown (PRD deleted after the modal loaded) or a typo.
+      const prd = await this.prdLookup.findById(target);
+      if (!prd.ok) return err(prd.error);
+      if (prd.value === null) {
+        return err(appError("VALIDATION_FAILED", `Unknown PRD: ${target}`));
+      }
 
-    const preLock = await this.findById(id);
-    if (!preLock.ok) return err(preLock.error);
-    if (preLock.value === null) {
-      return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
-    }
-
-    return this.noteWrites.run(preLock.value.path, async () => {
-      // Re-read under the lock so we never clobber a concurrent write (evidence
-      // linking, metadata edit) with a stale snapshot — that race is exactly
-      // why this lives on the Use Case write queue.
-      const fresh = await this.findById(id);
-      if (!fresh.ok) return err(fresh.error);
-      if (fresh.value === null) {
+      const preLock = await this.findById(id);
+      if (!preLock.ok) return err(preLock.error);
+      if (preLock.value === null) {
         return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
       }
-      const existing = fresh.value;
-      // No-op when already linked to the same PRD (avoids a phantom event).
-      if (existing.prdId === target) return ok(existing);
 
-      const read = await this.fs.readFile(existing.path);
-      if (!read.ok) return err(read.error);
-      const content = updateNoteFrontmatter(read.value, { "prd-id": target });
-      const written = await this.fs.writeFile(existing.path, content);
-      if (!written.ok) return err(written.error);
+      return this.noteWrites.run(preLock.value.path, async () => {
+        // Re-read under the lock so we never clobber a concurrent write (evidence
+        // linking, metadata edit) with a stale snapshot — that race is exactly
+        // why this lives on the Use Case write queue.
+        const fresh = await this.findById(id);
+        if (!fresh.ok) return err(fresh.error);
+        if (fresh.value === null) {
+          return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
+        }
+        const existing = fresh.value;
+        // No-op when already linked to the same PRD (avoids a phantom event).
+        if (existing.prdId === target) return ok(existing);
 
-      await this.eventBus.publish(
-        createEvent(
-          "usecase.updated",
-          { useCaseId: id, path: existing.path, changedFields: ["prd-id"] },
-          { correlationId: id },
-        ),
-      );
-      this.logger.info("Use Case linked to PRD", { id, prdId: target });
-      return ok({ ...existing, prdId: target });
+        const read = await this.fs.readFile(existing.path);
+        if (!read.ok) return err(read.error);
+        const content = updateNoteFrontmatter(read.value, { "prd-id": target });
+        const written = await this.fs.writeFile(existing.path, content);
+        if (!written.ok) return err(written.error);
+
+        await this.eventBus.publish(
+          createEvent(
+            "usecase.updated",
+            { useCaseId: id, path: existing.path, changedFields: ["prd-id"] },
+            { correlationId: id },
+          ),
+        );
+        this.logger.info("Use Case linked to PRD", { id, prdId: target });
+        return ok({ ...existing, prdId: target });
+      });
     });
   }
 

@@ -136,6 +136,10 @@ export class FakePrdLookup {
     if (this.known && !this.known.has(id)) return ok(null);
     return ok({ id });
   }
+  // Tests don't exercise cross-service serialization; run the operation inline.
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
+    return operation();
+  }
 }
 
 /** In-memory {@link DataStore}. */

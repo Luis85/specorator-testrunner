@@ -40,6 +40,14 @@ export interface PrdService {
    * the root PRD, a PRD with child PRDs, or a PRD with linked Use Cases.
    */
   deletePrd(id: PrdId): Promise<Result<DeletePrdResult>>;
+  /**
+   * Runs `operation` inside the PRD mutation critical section (the same one
+   * create/delete use), so an external PRD-relationship writer —
+   * UseCaseService.assignToPrd — serializes against create()/deletePrd() and a
+   * Use Case can't be linked to a PRD that a concurrent delete is removing
+   * (ADR-0026 single-parent invariant).
+   */
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 const PRD_ID_RE = /^PRD-(\d{3,})$/;
@@ -67,6 +75,15 @@ export class DefaultPrdService implements PrdService {
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
   ) {}
+
+  /**
+   * The PRD-wide critical section (PRD_MUTATE_KEY) used by create()/deletePrd();
+   * exposed so UseCaseService.assignToPrd can serialize a Use Case→PRD link
+   * against PRD deletion through the same lock.
+   */
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
+    return this.noteWrites.run(PRD_MUTATE_KEY, operation);
+  }
 
   async create(request: CreatePrdRequest): Promise<Result<Prd>> {
     const validated = this.validateAndNormalize(request);
