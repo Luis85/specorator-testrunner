@@ -41,8 +41,8 @@ Create `src/application/ports/report-parser.ts`:
 
 ```ts
 import type { EvidenceArtifact } from "../../domain/entities/evidence";
-import type { TestRunResult, RunId } from "../../domain/entities/test-run";
-import type { VaultPath } from "../../domain/value-objects/identifiers";
+import type { TestRunResult } from "../../domain/entities/test-run";
+import type { RunId, VaultPath } from "../../domain/value-objects/identifiers";
 import type { Result } from "../../shared/result/result";
 
 /** One scenario's rolled-up outcome (display + UC-linking fields). */
