@@ -272,6 +272,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       runnerInstall,
       eventBus,
       this.logger,
+      // V1→V2 clean-cut migration deletes cucumber-era files under `.testrunner`
+      // (outside the vault index) through the absolute FS port.
+      absoluteFs,
       {
         activeRunId: () => this.testExecutionService.activeRunId(),
         whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
@@ -300,6 +303,16 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       vault,
       eventBus,
       this.logger,
+      childProcess,
+      absoluteFs,
+      // Screens the configured Node executable before detection spawns bddgen
+      // (the same ADR-0010 allowlist validation/execution use).
+      commandSafety,
+      // bddgen diagnostics regenerate `.features-gen` under the shared runner
+      // cwd, so detection refuses while a run is active. The execution service
+      // is built further down — probe lazily through `this` (null until then,
+      // which is fine: no run can be active before it exists).
+      () => this.testExecutionService?.activeRunId() ?? null,
     );
     // Wave F insight: composes listFeatures (discovery stays defined once) with
     // the shared Gherkin parser to answer "how many scenarios does this Tag

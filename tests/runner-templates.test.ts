@@ -11,8 +11,8 @@ const templates = buildRunnerTemplates(DEFAULT_SETTINGS);
 // Key by plain string so lookups can use bare path literals (t.path is a VaultPath).
 const byPath = new Map<string, (typeof templates)[number]>(templates.map((t) => [t.path, t]));
 
-const cucumberFor = (settings: TestHubSettings): string =>
-  buildRunnerTemplates(settings).find((t) => t.path === "cucumber.mjs")?.content ?? "";
+const configFor = (settings: TestHubSettings): string =>
+  buildRunnerTemplates(settings).find((t) => t.path === "playwright.config.ts")?.content ?? "";
 
 describe("buildRunnerTemplates", () => {
   it("includes the files US-010 requires", () => {
@@ -31,8 +31,64 @@ describe("buildRunnerTemplates", () => {
     }
   });
 
-  it("does NOT generate playwright.config.ts (TIS §11)", () => {
-    expect(byPath.has("playwright.config.ts")).toBe(false);
+  it("generates a playwright.config.ts with the json reporter and skipAttachments:false", () => {
+    const config = byPath.get("playwright.config.ts")?.content ?? "";
+    expect(config).not.toBe("");
+    expect(config).toContain("skipAttachments: false");
+    expect(config).toContain('cucumberReporter("json"');
+    expect(config).toContain("reports/cucumber-report.json");
+  });
+
+  it("no longer generates the V1 cucumber-js files", () => {
+    const paths = buildRunnerTemplates(DEFAULT_SETTINGS).map((f) => f.path);
+    expect(paths).not.toContain("cucumber.mjs");
+    expect(paths).not.toContain("src/support/world.ts");
+    expect(paths).not.toContain("src/support/hooks.ts");
+    expect(paths).toContain("playwright.config.ts");
+  });
+
+  it("package.json runs bddgen before playwright test and depends on playwright-bdd", () => {
+    const parsed = JSON.parse(byPath.get("package.json")?.content ?? "{}") as {
+      scripts: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    expect(parsed.scripts["test:ci"]).toContain("bddgen");
+    expect(parsed.scripts["test:ci"]).toContain("playwright test");
+    expect(parsed.devDependencies["playwright-bdd"]).toBeDefined();
+    expect(parsed.devDependencies["@cucumber/cucumber"]).toBeUndefined();
+  });
+
+  it("playwright test scripts pass --pass-with-no-tests (empty tag/path filter = success)", () => {
+    // A suite/tag (BDD_TAGS) or positional path filter that matches nothing makes
+    // `playwright test` exit non-zero ("No tests found"); --pass-with-no-tests
+    // keeps a zero-scenario filter a passing run, matching V1 (TIS §13.2).
+    const parsed = JSON.parse(byPath.get("package.json")?.content ?? "{}") as {
+      scripts: Record<string, string>;
+    };
+    expect(parsed.scripts.test).toContain("--pass-with-no-tests");
+    expect(parsed.scripts["test:ci"]).toContain("--pass-with-no-tests");
+    expect(parsed.scripts["test:smoke"]).toContain("--pass-with-no-tests");
+  });
+
+  it("playwright.config.ts reads BDD_TAGS so the Test Hub can drive tag-expression suite runs", () => {
+    // The Test Hub sets BDD_TAGS on the spawn env for suite (tag-expression)
+    // runs; bddgen applies the full cucumber tag expression at generation.
+    const config = configFor(DEFAULT_SETTINGS);
+    expect(config).toContain("process.env.BDD_TAGS");
+    expect(config).toContain("defineBddConfig");
+  });
+
+  it("the example steps file uses createBdd fixtures, not a Cucumber World", () => {
+    const steps = byPath.get("src/steps/example.steps.ts")?.content ?? "";
+    expect(steps).not.toBe("");
+    expect(steps).toContain("createBdd");
+    expect(steps).toContain("{ page }");
+    expect(steps).not.toContain("@cucumber/cucumber");
+    expect(steps).not.toContain("TestWorld");
+    // POM demo coherence: steps must drive the page through ExamplePage, not
+    // call page.goto/click directly — the generated ExamplePage must be used.
+    expect(steps).toContain('from "../pages/ExamplePage"');
+    expect(steps).toContain("ExamplePage");
   });
 
   it("fixture page carries the Guided Tour greeting form", () => {
@@ -45,30 +101,55 @@ describe("buildRunnerTemplates", () => {
     }
   });
 
-  it("ships a serial cucumber config without the deprecated loader hook (AD-6, AD-7)", () => {
-    const cucumber = byPath.get("cucumber.mjs");
-    expect(cucumber?.content).toContain("parallel: 0");
-    expect(cucumber?.content).not.toContain("loader:");
-    expect(cucumber?.content).toContain("../Specifications/features/**/*.feature");
-  });
-
   it("derives the feature glob from configured runner and feature folders", () => {
-    expect(
-      cucumberFor({
-        ...DEFAULT_SETTINGS,
-        paths: {
-          ...DEFAULT_SETTINGS.paths,
-          testRunnerPath: vp("Tools/.testrunner"),
-          featureFilesPath: vp("Specs/features"),
-        },
-      }),
-    ).toContain('paths: ["../../Specs/features/**/*.feature"]');
+    const config = configFor({
+      ...DEFAULT_SETTINGS,
+      paths: {
+        ...DEFAULT_SETTINGS.paths,
+        testRunnerPath: vp("Tools/.testrunner"),
+        featureFilesPath: vp("Specs/features"),
+      },
+    });
+    expect(config).toContain("../../Specs/features/**/*.feature");
   });
 
-  it("registers tsx via `node --import tsx` and pins chromium-only install (AD-2, AD-5, AD-7)", () => {
+  it("playwright.config.ts uses defineBddConfig with the correct steps glob", () => {
+    const config = configFor(DEFAULT_SETTINGS);
+    expect(config).toContain("defineBddConfig");
+    expect(config).toContain("src/steps/**/*.ts");
+  });
+
+  it("reads BDD_FEATURES so the Test Hub can scope bddgen generation to chosen features", () => {
+    // feature/use-case/all scoped runs set BDD_FEATURES so bddgen generates only
+    // those features — an unrelated/malformed feature can't break a scoped run.
+    const config = configFor(DEFAULT_SETTINGS);
+    expect(config).toContain("process.env.BDD_FEATURES");
+    expect(config).toContain("split(");
+  });
+
+  it("sets featuresRoot to the (out-of-runner) feature folder so bddgen accepts the features", () => {
+    // playwright-bdd rejects any feature not under featuresRoot, and defaults it
+    // to the runner dir — but the Test Hub keeps features OUTSIDE .testrunner.
+    // The feature glob must live under the configured featuresRoot.
+    const config = configFor(DEFAULT_SETTINGS);
+    const root = /featuresRoot:\s*"([^"]+)"/.exec(config)?.[1];
+    // The default feature glob (the BDD_FEATURES fallback) must live under featuresRoot.
+    const glob = /"([^"]*\/\*\*\/\*\.feature)"/.exec(config)?.[1];
+    expect(root).toBeTruthy();
+    expect(glob).toBeTruthy();
+    expect(glob?.startsWith(`${root}/`)).toBe(true);
+    expect(root).toContain(".."); // points out of the runner, into the vault
+  });
+
+  it("playwright.config.ts includes chromium project and screenshot/trace settings", () => {
+    const config = configFor(DEFAULT_SETTINGS);
+    expect(config).toContain("chromium");
+    expect(config).toContain("only-on-failure");
+    expect(config).toContain("retain-on-failure");
+  });
+
+  it("registers playwright install chromium scripts (AD-2, AD-5)", () => {
     const pkg = byPath.get("package.json")?.content ?? "";
-    expect(pkg).toContain("node --import tsx");
-    expect(pkg).toContain("@cucumber/cucumber/bin/cucumber.js");
     expect(pkg).toContain('"test:smoke"');
     expect(pkg).toContain('"test:ci"');
     expect(pkg).toContain("playwright install chromium");
@@ -87,109 +168,36 @@ describe("buildRunnerTemplates", () => {
 
   it("treats managed config/support files as overwritable", () => {
     expect(byPath.get("package.json")?.overwrite).toBe(true);
-    expect(byPath.get("src/support/world.ts")?.overwrite).toBe(true);
+    expect(byPath.get("playwright.config.ts")?.overwrite).toBe(true);
   });
 
   it("escapes a hostile feature path into a safe JS string literal (P0-1 defence-in-depth)", () => {
     // Even if PathSafetyPolicy were bypassed and a break-out payload reached the
-    // generator, JSON.stringify must keep `paths` a single, fully-escaped string
-    // literal so the generated module Node loads cannot execute injected code.
+    // generator, JSON.stringify must keep the features glob a single, fully-escaped
+    // string literal so the generated module Node loads cannot execute injected code.
     const hostile = 'features"]};import("node:child_process").execSync("calc");//';
-    const cucumber = cucumberFor({
+    const config = configFor({
       ...DEFAULT_SETTINGS,
       paths: { ...DEFAULT_SETTINGS.paths, featureFilesPath: vp(hostile) },
     });
     // The embedded quote that would close the literal must be backslash-escaped
     // (JSON.stringify) so it can't break out — i.e. `"` only ever appears as `\"`.
-    expect(cucumber).toContain('\\"]};import(');
-    // The emitted module must still be valid JS that evaluates to a config with
-    // a single string `paths` entry — i.e. nothing escaped the literal.
-    const config = evalModule(cucumber);
-    expect(Array.isArray(config.paths)).toBe(true);
-    expect(config.paths).toHaveLength(1);
-    expect(typeof config.paths[0]).toBe("string");
-    // The breakout sequence survived as inert STRING DATA inside the literal —
-    // nothing escaped to module scope (which would have thrown or changed shape).
-    expect(config.paths[0]).toContain('"]};import(');
-  });
-
-  it("exports the options DIRECTLY (no profile wrapper) so Cucumber's ESM loader reads them", () => {
-    // REGRESSION (testvault demo run): `export default { default: {…} }` — the
-    // CJS profile-keyed idiom — is NOT unwrapped for an ESM default export, so
-    // Cucumber silently ignored the whole config: step imports never loaded
-    // (every demo step "Undefined") and the json report was never written.
-    const config = evalModule(cucumberFor(DEFAULT_SETTINGS));
-    expect(config).not.toHaveProperty("default");
-    expect(config.import).toEqual(["src/support/**/*.ts", "src/steps/**/*.ts"]);
-    expect(config.paths).toEqual(["../Specifications/features/**/*.feature"]);
-    expect(config.format).toContain("json:reports/cucumber-report.json");
-  });
-
-  it("emits a `scoped` named export with no paths (used by --profile scoped to avoid merge warning)", () => {
-    // The `scoped` profile is selected by scoped runs (feature/use-case) so
-    // the config `paths` glob does not merge with the CLI paths and produce a
-    // deprecation warning in the Test Console.
-    const source = cucumberFor(DEFAULT_SETTINGS);
-    expect(source).toContain("export const scoped");
-    // The scoped export must NOT carry paths — the whole point is to let the
-    // CLI paths be the sole source.
-    const scoped = evalScopedExport(source);
-    expect(scoped).not.toHaveProperty("paths");
-    // But it must keep the import globs and format so step definitions load
-    // and the JSON report is written.
-    expect(scoped.import).toEqual(["src/support/**/*.ts", "src/steps/**/*.ts"]);
-    expect(scoped.format).toContain("json:reports/cucumber-report.json");
+    expect(config).toContain('\\"]};import(');
+    // The breakout sequence survived as inert STRING DATA inside the literal.
+    expect(config).toContain('"]};import(');
   });
 
   it("generates testrunner-manifest.json carrying the current manifest version", () => {
     const files = buildRunnerTemplates(DEFAULT_SETTINGS);
     const manifest = files.find((f) => f.path === "testrunner-manifest.json");
     expect(manifest).toBeDefined();
-    expect(JSON.parse(manifest?.content ?? "{}")).toEqual({ manifestVersion: 1 });
+    expect(JSON.parse(manifest?.content ?? "{}")).toEqual({ manifestVersion: 2 });
   });
 
-  it("hooks template sets a 60 s cucumber timeout before the Before hook", () => {
-    const hooks = byPath.get("src/support/hooks.ts")?.content ?? "";
-    expect(hooks).toContain("setDefaultTimeout(60_000)");
-    // Must be imported alongside the hook lifecycle exports.
-    expect(hooks).toContain("setDefaultTimeout");
-    // The setDefaultTimeout call must appear BEFORE the Before hook registration.
-    const timeoutIdx = hooks.indexOf("setDefaultTimeout(60_000)");
-    const beforeIdx = hooks.indexOf("Before(");
-    expect(timeoutIdx).toBeGreaterThan(-1);
-    expect(timeoutIdx).toBeLessThan(beforeIdx);
+  it("ExamplePage uses Playwright Page import, not Cucumber World", () => {
+    const page = byPath.get("src/pages/ExamplePage.ts")?.content ?? "";
+    expect(page).toContain("@playwright/test");
+    expect(page).not.toContain("@cucumber/cucumber");
+    expect(page).not.toContain("TestWorld");
   });
 });
-
-/** Evaluates the generated `export default { … }` module body in isolation. */
-const evalModule = (
-  source: string,
-): { paths: unknown[]; import?: unknown[]; format?: unknown[] } => {
-  // Strip ES module export keywords so the source runs inside a plain function body:
-  //   export default { … }  → return { … }
-  //   export const foo = …  → const foo = …  (named profile exports, dead after return)
-  const body = source
-    .replace(/^export default\b/m, "return")
-    .replace(/^export const /gm, "const ")
-    .replace(/^\/\/.*$/gm, "");
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  return new Function(body)() as { paths: unknown[]; import?: unknown[]; format?: unknown[] };
-};
-
-/**
- * Evaluates the generated `export const scoped = { … }` expression and
- * returns the value of the `scoped` binding.
- */
-const evalScopedExport = (
-  source: string,
-): { paths?: unknown[]; import?: unknown[]; format?: unknown[] } => {
-  // Strip the default export line entirely, then turn `export const scoped = …`
-  // into a return so new Function can evaluate it.
-  const body = source
-    .replace(/^export default\b[^\n]*/m, "")
-    .replace(/^export const scoped\s*=/m, "return")
-    .replace(/^export const /gm, "const ")
-    .replace(/^\/\/.*$/gm, "");
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  return new Function(body)() as { paths?: unknown[]; import?: unknown[]; format?: unknown[] };
-};

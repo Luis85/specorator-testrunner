@@ -24,6 +24,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The generated `.testrunner` now runs Gherkin through **playwright-bdd**
+  (`bddgen` + `@playwright/test`) instead of cucumber-js: native traces,
+  fixtures, and `createBdd()` typed step stubs; missing-step detection delegates
+  to `bddgen`. The report stays cucumber-JSON, so the import/evidence pipeline
+  is unchanged. Suite (tag-expression) runs filter through `bddgen`'s native
+  tags; `Repair installation` clean-cuts a V1 runner to the new environment
+  (regenerates managed files, removes the V1 cucumber config + demo, reinstalls
+  deps) and reports that custom V1 steps must be re-authored as `createBdd`
+  steps (ADR-0021, US-051/US-052).
 - Report import is now port-based: `DefaultReportImportService` delegates
   parsing to a `ReportParser` (first implementation `CucumberJsonReportParser`),
   so the V2 runner's Cucumber Messages output and other formats slot in beside

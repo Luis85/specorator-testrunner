@@ -86,10 +86,10 @@ export class DefaultStepDefinitionService implements StepDefinitionService {
     let written: Result<void>;
     if (exists) {
       // Append to (never overwrite) a hand-edited steps file: read its current
-      // content and add the new stubs below it. buildAppendedStubs emits only the
-      // imports the file does not already have (by local binding name), so it
-      // neither duplicates an existing `Given` binding nor omits one that was
-      // imported under an alias (review: duplicate/aliased imports).
+      // content and add the new stubs below it. buildAppendedStubs prepends the
+      // `createBdd()` header only when the file does not already have it, so a
+      // file the generator previously wrote (or any file already calling
+      // createBdd()) does not get a duplicate Given/When/Then binding.
       const read = await this.fs.readFile(stepFile);
       if (!read.ok) return err(read.error);
       const separator = read.value.endsWith("\n") ? "\n" : "\n\n";
