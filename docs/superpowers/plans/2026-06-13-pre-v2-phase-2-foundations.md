@@ -13,7 +13,7 @@
 **Decisions locked in by this plan** (from the design spec; flag in review if any should change):
 
 1. **`schemaVersion` is a persistence-envelope key, not a `TestHubSettings` field.** It lives in the saved `data.json` blob alongside the settings fields, handled entirely in `SettingsService.load`/`save`. The domain `TestHubSettings` type stays clean (it is the user-facing settings shape, not metadata).
-2. **A present blob whose *effective* version differs from the code resets; first run is silent.** Absent `data.json` (`raw === undefined`) → defaults, no log (normal first run). For a present blob the **effective version** is its `schemaVersion` if numeric, else **1** (a pre-versioning V1 blob is treated as the version this envelope shipped at — *not* as "forever current"). Effective version **differs** from the code → reset to defaults **and** `logger.error` (beta break, no migration); effective version **matches** → merge + sanitize as today. So at v1 an unversioned blob still merges (keeping the existing unversioned fixtures valid), but when `DATA_SCHEMA_VERSION` is later bumped for an incompatible change those unversioned blobs correctly reset rather than merge as if current. The reset **persists** — it overwrites the stale blob with stamped defaults (through the persist queue) so the store converges and sensitive stale data (e.g. pre-cut-over plaintext credentials, ADR-0024) does not linger. (All raised by the codex review on PR #38.)
+2. **A present blob whose *effective* version differs from the code resets; first run is silent.** Absent `data.json` (`raw === undefined`) → defaults, no log (normal first run). For a present blob the **effective version** is its `schemaVersion` if numeric, else **1** (a pre-versioning V1 blob is treated as the version this envelope shipped at — *not* as "forever current"). Effective version **differs** from the code → reset to defaults **and** `logger.error` (beta break, no migration); effective version **matches** → merge + sanitize as today. So at v1 an unversioned blob still merges (keeping the existing unversioned fixtures valid), but when `DATA_SCHEMA_VERSION` is later bumped for an incompatible change those unversioned blobs correctly reset rather than merge as if current. The reset **persists** — it overwrites the stale blob with stamped defaults so the store converges and sensitive stale data (e.g. pre-cut-over plaintext credentials, ADR-0024) does not linger. The reset write goes **directly** to the store, *not* through `persistQueue`: `save()` holds the queue while awaiting `load()`, so re-entering it from `load()` would deadlock — the direct write is a benign blind overwrite (Task 4 details). (All raised by the codex review on PR #38.)
 3. **`DATA_SCHEMA_VERSION = 1` and `TESTRUNNER_MANIFEST_VERSION = 1`.** The first stamped versions. For `data.json`, an *absent* version is treated as the envelope's introduction version (1, per Decision 2): merged while the code is at v1, reset once the code bumps past 1. For the `.testrunner` **manifest**, an absent/older/newer version means a version-mismatched runner → a Repair signal (Task 5); the manifest has no additive-merge story, so any non-equal version there is treated as outdated.
 4. **The manifest file is `.testrunner/testrunner-manifest.json`**, content `{ "manifestVersion": <n> }`, generated like every other managed file (`overwrite: true`). It is validation-relevant but **not** added to `VALIDATED_RUNNER_FILES` (whose absence hard-fails a run); a missing/old manifest is a *repair* signal, not a run-blocker.
 5. **The `ReportParser` port owns `ScenarioResult` and a new `ParsedReport`;** `ImportedReport` becomes `ParsedReport & { runId }`. The parser is pure (string in, `Result<ParsedReport>` out); all filesystem I/O and event emission stay in `DefaultReportImportService`.
@@ -449,6 +449,35 @@ describe("schemaVersion envelope (2.1)", () => {
     );
   });
 
+  it("save() against a stale stored blob completes without deadlocking", async () => {
+    // Regression: save() runs inside persistQueue and calls load(); if the
+    // stale-reset persisted THROUGH the queue it would deadlock. A 1s timeout
+    // turns a hang into a failure rather than a stuck test.
+    const store = new FakeDataStore();
+    await store.save({ schemaVersion: 0, ...DEFAULT_SETTINGS }); // stale present blob
+    const service = buildServiceWith(store);
+    const saved = await Promise.race([
+      service.save(DEFAULT_SETTINGS),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("save() deadlocked")), 1000)),
+    ]);
+    expect(saved.ok).toBe(true);
+  });
+
+  it("resets a present non-object blob once the schema advances (not just at v1)", async () => {
+    // A present array/scalar/null is a stored blob, not a first run: at v1 it
+    // merges (mergeWithDefaults coerces it to defaults), but it is treated as
+    // effective v1 so a future DATA_SCHEMA_VERSION bump would reset+overwrite
+    // it. Here at v1 it must NOT log a reset and must NOT be left on disk as a
+    // non-object once a save lands.
+    const store = new FakeDataStore();
+    await store.save([1, 2, 3] as unknown as Record<string, unknown>); // malformed present blob
+    const logger = recordingLogger();
+    const service = buildServiceWith(store, logger);
+    const settings = await service.load();
+    expect(settings.ci.nodeVersion).toBe(DEFAULT_SETTINGS.ci.nodeVersion); // coerced to defaults
+    expect(logger.errorCalls.some((m) => m.includes("schema"))).toBe(false); // v1: not a reset
+  });
+
   it("is silent and uses defaults on a fresh install (no data.json)", async () => {
     const store = new FakeDataStore(); // load() returns undefined
     const logger = recordingLogger();
@@ -523,14 +552,20 @@ async load(): Promise<TestHubSettings> {
       undefined,
       { expected: DATA_SCHEMA_VERSION },
     );
-    // PERSIST the reset (through the same serialization queue as save/reset, so
-    // it can't race a concurrent write): overwrite the stale blob with stamped
-    // defaults. Otherwise every subsequent load repeats the reset/log instead
-    // of converging, AND sensitive stale data lingers — e.g. the pre-cut-over
-    // plaintext `auth.env` credentials this rail is meant to drop (ADR-0024).
-    // A persist failure is logged but does not block the load: the returned
-    // defaults are still correct in memory.
-    const persisted = await this.persistQueue.run(() => this.persist(DEFAULT_SETTINGS));
+    // PERSIST the reset so the stale blob is overwritten with stamped defaults
+    // — otherwise every subsequent load repeats the reset/log instead of
+    // converging, AND sensitive stale data lingers (e.g. the pre-cut-over
+    // plaintext `auth.env` credentials this rail must drop, ADR-0024).
+    // Write DIRECTLY, NOT through `persistQueue`: `save()` runs its whole body
+    // inside `persistQueue.run(...)` and calls `await this.load()` to compute
+    // changedFields, so re-entering the queue here would deadlock (the reset
+    // queues behind the save that is awaiting it — the re-entrancy the
+    // SerialQueue docs warn about). The direct write is a blind overwrite to
+    // defaults, not a read-modify-write, so interleaving with that in-flight
+    // save is benign: the save's own subsequent write supersedes it. A persist
+    // failure is logged but does not block the load (returned defaults are
+    // correct in memory).
+    const persisted = await this.persist(DEFAULT_SETTINGS);
     if (!persisted.ok) {
       this.logger.error("Failed to persist the settings reset; the stale blob remains.", persisted.error);
     }
@@ -543,18 +578,24 @@ async load(): Promise<TestHubSettings> {
 }
 
 /**
- * True for a present blob whose EFFECTIVE schema version differs from the
- * code. A present-but-unversioned (or non-numeric) blob predates the
- * envelope, so it is treated as version 1 — the version this envelope shipped
- * at, fixed forever, NOT `DATA_SCHEMA_VERSION` which moves on each bump. Thus
- * an unversioned blob merges while the code is at v1, but resets once the code
- * bumps past 1. `undefined` raw = first run, not stale.
+ * True for a PRESENT blob whose EFFECTIVE schema version differs from the
+ * code. Only `undefined` raw (no data.json) is the silent first run. ANY
+ * present value — object, array, scalar, or null — is a stored blob: its
+ * effective version is its numeric `schemaVersion` if it has one, else 1 (the
+ * version this envelope shipped at, fixed forever, NOT `DATA_SCHEMA_VERSION`
+ * which moves on each bump). So an unversioned or malformed present blob
+ * merges while the code is at v1, but resets (and is overwritten) once the
+ * code bumps past 1 — a corrupt non-object blob must not silently survive an
+ * incompatible bump.
  */
 private schemaVersionIsStale(raw: unknown): boolean {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return false;
-  const version = (raw as Record<string, unknown>).schemaVersion;
+  if (raw === undefined) return false; // first run, not stale
+  const version =
+    typeof raw === "object" && raw !== null && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>).schemaVersion
+      : undefined;
   // 1 = the schema version at which this envelope shipped (a constant, not
-  // DATA_SCHEMA_VERSION); a pre-envelope blob is effectively v1.
+  // DATA_SCHEMA_VERSION); any present-but-unversioned/non-object blob is v1.
   const effective = typeof version === "number" ? version : 1;
   return effective !== DATA_SCHEMA_VERSION;
 }
