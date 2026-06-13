@@ -119,6 +119,19 @@ describe("buildRunnerTemplates", () => {
     expect(config).toContain("src/steps/**/*.ts");
   });
 
+  it("sets featuresRoot to the (out-of-runner) feature folder so bddgen accepts the features", () => {
+    // playwright-bdd rejects any feature not under featuresRoot, and defaults it
+    // to the runner dir — but the Test Hub keeps features OUTSIDE .testrunner.
+    // The feature glob must live under the configured featuresRoot.
+    const config = configFor(DEFAULT_SETTINGS);
+    const root = config.match(/featuresRoot:\s*"([^"]+)"/)?.[1];
+    const features = config.match(/features:\s*"([^"]+)"/)?.[1];
+    expect(root).toBeTruthy();
+    expect(features).toBeTruthy();
+    expect(features?.startsWith(`${root}/`)).toBe(true);
+    expect(root).toContain(".."); // points out of the runner, into the vault
+  });
+
   it("playwright.config.ts includes chromium project and screenshot/trace settings", () => {
     const config = configFor(DEFAULT_SETTINGS);
     expect(config).toContain("chromium");

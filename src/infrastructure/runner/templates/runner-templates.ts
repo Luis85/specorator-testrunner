@@ -77,11 +77,18 @@ const TSCONFIG_JSON = `{
 // (defence in depth behind PathSafetyPolicy; see SEC-1 / P0-1).
 const PLAYWRIGHT_CONFIG = (
   featuresGlob: string,
+  featuresRoot: string,
 ): string => `import { defineConfig } from "@playwright/test";
 import { defineBddConfig, cucumberReporter } from "playwright-bdd";
 
 const testDir = defineBddConfig({
   features: ${JSON.stringify(featuresGlob)},
+  // playwright-bdd rejects any feature file that is not under featuresRoot, and
+  // it defaults to the config's own directory (.testrunner). The Test Hub keeps
+  // feature files OUTSIDE the runner (in the vault), so point featuresRoot at
+  // the configured feature folder — otherwise \`bddgen\` fails: "All feature
+  // files should be located underneath featuresRoot."
+  featuresRoot: ${JSON.stringify(featuresRoot)},
   steps: "src/steps/**/*.ts",
   // The Test Hub sets BDD_TAGS for suite (tag-expression) runs; bddgen applies
   // the full cucumber tag expression at generation. Undefined runs everything.
@@ -220,9 +227,15 @@ traces are saved under \`test-results/\`.
 
 /** All `.testrunner` template files, paths relative to the runner root. */
 export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] => {
-  // SEC-1 / P0-1: the glob is emitted via JSON.stringify inside PLAYWRIGHT_CONFIG
-  // so a hostile featureFilesPath cannot escape the string literal.
-  const featuresGlob = `${relativeVaultPath(settings.paths.testRunnerPath, settings.paths.featureFilesPath)}/**/*.feature`;
+  // SEC-1 / P0-1: the glob + root are emitted via JSON.stringify inside
+  // PLAYWRIGHT_CONFIG so a hostile featureFilesPath cannot escape the literal.
+  // featuresRoot is the feature folder relative to the runner (features live
+  // outside .testrunner); the glob walks it for `.feature` files.
+  const featuresRoot = relativeVaultPath(
+    settings.paths.testRunnerPath,
+    settings.paths.featureFilesPath,
+  );
+  const featuresGlob = `${featuresRoot}/**/*.feature`;
 
   return [
     // Template paths are trusted compile-time literals relative to the runner root.
@@ -235,7 +248,7 @@ export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] 
     { path: unsafeVaultPath("tsconfig.json"), content: TSCONFIG_JSON, overwrite: true },
     {
       path: unsafeVaultPath("playwright.config.ts"),
-      content: PLAYWRIGHT_CONFIG(featuresGlob),
+      content: PLAYWRIGHT_CONFIG(featuresGlob, featuresRoot),
       overwrite: true,
     },
     { path: unsafeVaultPath("README.md"), content: README_MD, overwrite: true },
