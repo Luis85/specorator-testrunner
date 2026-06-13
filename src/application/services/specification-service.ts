@@ -22,7 +22,7 @@ import {
   createFeatureSpecification,
   type FeatureSpecification,
 } from "../../domain/entities/specification";
-import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
+import type { RunId, UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -174,6 +174,16 @@ export class DefaultSpecificationService implements SpecificationService {
     private readonly logger: Logger,
     private readonly childProcess: ChildProcessRunner,
     private readonly absoluteFs: AbsoluteFileSystem,
+    /**
+     * Probes the in-flight run id (null when idle). `detectMissingSteps` runs
+     * `bddgen` in the shared `.testrunner` cwd, which clears and regenerates
+     * `.features-gen/**` — the very specs an in-flight `playwright test` is
+     * executing. Refusing while a run is active stops a concurrent diagnostic
+     * from corrupting the live run (codex P2). Defaults to "always idle" so
+     * constructions without an execution service (tests, headless tooling) are
+     * unaffected — same lazy-probe pattern as initialization-service.
+     */
+    private readonly activeRunId: () => RunId | null = () => null,
   ) {}
 
   /** UC-006: non-destructively create a Feature and link it back to its UC. */
@@ -310,6 +320,23 @@ export class DefaultSpecificationService implements SpecificationService {
     const feature = parseFeature(read.value, featurePath);
     if (feature === null) {
       return err(appError("VALIDATION_FAILED", `"${featurePath}" is not a valid Feature.`));
+    }
+
+    // bddgen regenerates `.features-gen/**` in the shared runner cwd, so a
+    // diagnostic launched during a run would replace the specs the live
+    // `playwright test` is reading. Refuse rather than corrupt it (codex P2);
+    // the user can re-detect once the run settles.
+    const activeRunId = this.activeRunId();
+    if (activeRunId !== null) {
+      return err(
+        appError(
+          "RUN_IN_PROGRESS",
+          "Finish or cancel the test run before detecting missing steps.",
+          {
+            details: { activeRunId },
+          },
+        ),
+      );
     }
 
     const settings = await this.settingsService.load();

@@ -305,6 +305,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       this.logger,
       childProcess,
       absoluteFs,
+      // bddgen diagnostics regenerate `.features-gen` under the shared runner
+      // cwd, so detection refuses while a run is active. The execution service
+      // is built further down — probe lazily through `this` (null until then,
+      // which is fine: no run can be active before it exists).
+      () => this.testExecutionService?.activeRunId() ?? null,
     );
     // Wave F insight: composes listFeatures (discovery stays defined once) with
     // the shared Gherkin parser to answer "how many scenarios does this Tag

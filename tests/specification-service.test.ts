@@ -43,7 +43,10 @@ const bddgenNoneMissing = (): string =>
 All steps are defined.
 `;
 
-const build = (dataSeed?: Record<string, unknown>) => {
+const build = (
+  dataSeed?: Record<string, unknown>,
+  opts?: { activeRunId?: () => string | null },
+) => {
   const fs = new FakeVaultFileSystem();
   const absoluteFs = new FakeAbsoluteFileSystem();
   const childProcess = new FakeChildProcessRunner();
@@ -62,6 +65,7 @@ const build = (dataSeed?: Record<string, unknown>) => {
     silentLogger,
     childProcess,
     absoluteFs,
+    opts?.activeRunId ?? (() => null),
   );
   return { service, useCases, fs, absoluteFs, childProcess, events, types };
 };
@@ -428,6 +432,27 @@ Use snippets above to create missing steps.
 });
 
 describe("DefaultSpecificationService.detectMissingSteps", () => {
+  it("refuses while a run is active so bddgen can't regenerate the live run's specs (codex P2)", async () => {
+    // bddgen rewrites `.features-gen` in the shared runner cwd; running it
+    // during a live `playwright test` would replace the specs that run reads.
+    const { service, fs, absoluteFs, childProcess } = build(undefined, {
+      activeRunId: () => "RUN-2026-06-13-120000",
+    });
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    const result = await service.detectMissingSteps(path);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("RUN_IN_PROGRESS");
+    expect(result.error.details?.activeRunId).toBe("RUN-2026-06-13-120000");
+    // bddgen must never have been spawned — refusal precedes the diagnostic.
+    expect(childProcess.calls).toHaveLength(0);
+  });
+
   it("bddgen reports two missing steps → returns only the steps in THIS feature", async () => {
     const { service, fs, absoluteFs, childProcess, types } = build();
     const path = vp("Specifications/features/UC-001-demo.feature");
