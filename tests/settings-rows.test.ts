@@ -68,6 +68,29 @@ describe("runnerValidationRows", () => {
       { icon: "✗", status: "error", text: "Environment is not ready." },
     ]);
   });
+
+  it("surfaces a warning advisory alongside the ready row when the runner is valid", () => {
+    const rows = runnerValidationRows(
+      validation({
+        valid: true,
+        issues: [
+          {
+            code: "RUNNER_MANIFEST_OUTDATED",
+            severity: "warning",
+            message: "run Repair installation",
+          },
+        ],
+      }),
+    );
+    expect(rows[0]).toMatchObject({ status: "ok" });
+    expect(rows.some((r) => r.status === "warning" && r.text.includes("Repair"))).toBe(true);
+  });
+
+  it("still shows only the ready row when valid with no advisories", () => {
+    const rows = runnerValidationRows(validation({ valid: true, issues: [] }));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "ok" });
+  });
 });
 
 describe("repairRows", () => {

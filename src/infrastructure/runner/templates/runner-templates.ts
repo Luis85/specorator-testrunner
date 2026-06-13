@@ -1,5 +1,9 @@
 import type { TemplateFile } from "../../../application/ports/template-writer";
 import type { TestHubSettings } from "../../../domain/settings/settings";
+import {
+  TESTRUNNER_MANIFEST_FILE,
+  testrunnerManifestContent,
+} from "../../../application/content/runner-manifest";
 import { unsafeVaultPath } from "../../../domain/value-objects/vault-path";
 import { relativeVaultPath } from "../../../shared/utils/vault-path";
 
@@ -280,6 +284,11 @@ Tests run serially in V1 (\`parallel: 0\`, AD-6).
 export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] => [
   // Template paths are trusted compile-time literals relative to the runner root.
   { path: unsafeVaultPath("package.json"), content: PACKAGE_JSON, overwrite: true },
+  {
+    path: unsafeVaultPath(TESTRUNNER_MANIFEST_FILE),
+    content: testrunnerManifestContent(),
+    overwrite: true,
+  },
   { path: unsafeVaultPath("tsconfig.json"), content: TSCONFIG_JSON, overwrite: true },
   {
     path: unsafeVaultPath("cucumber.mjs"),

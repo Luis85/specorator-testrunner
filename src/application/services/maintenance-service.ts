@@ -132,8 +132,17 @@ export class DefaultMaintenanceService implements MaintenanceService {
       // 3. Reinstall only what's missing. A present-but-unrunnable Playwright
       //    (node_modules exists yet `npx playwright --version` fails) counts as a
       //    broken dependency set and triggers a reinstall.
+      // A manifest-version mismatch means the generated runtime shape changed, so
+      // stale node_modules must be reinstalled even though the dependency markers
+      // still resolve. validateEnvironment() already read the manifest before
+      // createRunner overwrote it, so detect the mismatch from `before.issues`
+      // rather than re-reading — DRY and reader-consistent.
+      const manifestMismatch = before.issues.some(
+        (issue) => issue.code === "RUNNER_MANIFEST_OUTDATED",
+      );
+
       let reinstalledPackages = false;
-      if (!before.dependenciesInstalled || !before.playwrightAvailable) {
+      if (!before.dependenciesInstalled || !before.playwrightAvailable || manifestMismatch) {
         const deps = await this.runnerInstall.installDependencies(settings);
         if (!deps.ok) return err(deps.error);
         reinstalledPackages = true;

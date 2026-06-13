@@ -275,13 +275,21 @@ export function registerCommands(
   const validateEnvironment = async (): Promise<void> => {
     new Notice("Validating environment…");
     const result = await deps.validationService.validateEnvironment();
+    // A valid runner may still carry non-error advisories (e.g. an outdated
+    // .testrunner manifest → Repair); surface their count rather than a bare
+    // "ready" so the hint to run Repair isn't swallowed.
+    const advisories = result.issues.filter((issue) => issue.severity !== "error");
+    const readyMessage =
+      advisories.length > 0
+        ? `Environment ready (${advisories.length} advisory: run Repair installation).`
+        : "Environment is ready.";
     new Notice(
       result.valid
-        ? "Environment is ready."
+        ? readyMessage
         : `Environment has ${result.issues.length} issue(s): ${result.issues
             .map((issue) => issue.message)
             .join("; ")}`,
-      result.valid ? undefined : 10000,
+      result.valid && advisories.length === 0 ? undefined : 10000,
     );
   };
 
