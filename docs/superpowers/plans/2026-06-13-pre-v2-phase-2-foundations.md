@@ -583,10 +583,12 @@ git commit -m "feat: schemaVersion envelope on data.json with beta reset-on-mism
 - Modify: `src/application/content/runner-manifest.ts` (version constant + manifest filename/content)
 - Modify: `src/infrastructure/runner/templates/runner-templates.ts` (generate the manifest file)
 - Create: `src/application/content/runner-manifest-version.ts` (pure reader)
-- Modify: `src/application/services/environment-validation-service.ts` (flag outdated/missing manifest)
-- Test: `tests/runner-manifest-version.test.ts`, `tests/runner-templates.test.ts`
+- Modify: `src/application/services/environment-validation-service.ts` (flag any version-mismatched manifest)
+- Modify: `src/presentation/settings/settings-rows.ts` (surface advisory issues even when the runner is valid)
+- Modify: `src/presentation/commands/register-commands.ts` (mention advisories in the validate notice)
+- Test: `tests/runner-manifest-version.test.ts`, `tests/runner-templates.test.ts`, `tests/settings-rows.test.ts`, `tests/environment-validation-service.test.ts`
 
-Stamp a version into the generated runner and let validation detect an old/missing one — the rail Phase 3 uses to recognise a pre-playwright-bdd `.testrunner`.
+Stamp a version into the generated runner and let validation detect a version-mismatched/missing one — the rail Phase 3 uses to recognise a pre-playwright-bdd `.testrunner`. The signal is a non-blocking **warning** (the runner still runs), so it must be surfaced where validation results are shown even when `valid === true`.
 
 - [ ] **Step 1: Add the version constant + manifest contract data**
 
@@ -674,9 +676,9 @@ export const parseManifestVersion = (content: string | undefined): number | null
 
 Run: `npx vitest run tests/runner-manifest-version.test.ts` → PASS.
 
-- [ ] **Step 4: Flag an outdated/missing manifest in validation**
+- [ ] **Step 4: Flag a version-mismatched/missing manifest in validation**
 
-In `environment-validation-service.ts`, read the manifest from the runner and add a warning when it is missing or older than `TESTRUNNER_MANIFEST_VERSION`. Locate where the service reads runner files via the file system port; add (matching the file's existing read/validation idiom):
+In `environment-validation-service.ts`, read the manifest from the runner and add a warning whenever its version is not exactly `TESTRUNNER_MANIFEST_VERSION`. Locate where the service reads runner files via the file system port; add (matching the file's existing read/validation idiom):
 
 ```ts
 import {
@@ -688,18 +690,46 @@ import { parseManifestVersion } from "../content/runner-manifest-version";
 const manifestPath = joinVaultPath(settings.paths.testRunnerPath, TESTRUNNER_MANIFEST_FILE);
 const manifestRead = await this.fs.readFile(manifestPath);
 const manifestVersion = parseManifestVersion(manifestRead.ok ? manifestRead.value : undefined);
-if (manifestVersion === null || manifestVersion < TESTRUNNER_MANIFEST_VERSION) {
+if (manifestVersion !== TESTRUNNER_MANIFEST_VERSION) {
+  // Any non-equal version is a repair signal: null/older = a runner from an
+  // older Test Hub; NEWER = a vault repaired by a newer plugin then opened
+  // here (downgrade / Obsidian Sync), whose .testrunner shape may not match
+  // this build. Warn on all three rather than only on older.
   issues.push({
     severity: "warning",
     message:
-      "The .testrunner was produced by an older Test Hub; run Repair installation to regenerate it.",
+      "The .testrunner was produced by a different Test Hub version; run Repair installation to regenerate it.",
   });
 }
 ```
 
-(Use the service's actual issue/warning shape and its file-system port field name — read the surrounding validators and match them exactly. If the service has no `fs.readFile`-style reader, route the read through whatever port it already uses for runner files.)
+This is a **warning**, so `valid` stays `true` for an otherwise-healthy runner (the manifest mismatch does not block a run). Use the service's actual issue/warning shape and its file-system port field name — read the surrounding validators and match them exactly. If the service has no `fs.readFile`-style reader, route the read through whatever port it already uses for runner files.
 
-- [ ] **Step 5: Pin the generation + validation in tests**
+- [ ] **Step 5: Surface advisory (non-error) issues even when the runner is valid**
+
+The manifest warning is invisible today: `runnerValidationRows` (`src/presentation/settings/settings-rows.ts`) returns only the ready row when `result.valid`, and the validate command's `Notice` (`register-commands.ts`) branches on `valid` alone. Render the advisories too.
+
+In `settings-rows.ts`, change `runnerValidationRows` so a valid result still shows warning/info rows:
+
+```ts
+export const runnerValidationRows = (result: RunnerValidationResult): ChecklistRow[] => {
+  if (result.valid) {
+    // Healthy, but surface any non-error advisories (e.g. an outdated
+    // .testrunner manifest → Repair) so a warning isn't swallowed.
+    const advisories = result.issues.filter((issue) => issue.severity !== "error");
+    return [
+      checklistRow("ok", "Environment is ready."),
+      ...advisories.map((issue) => checklistRow(issue.severity, issue.message)),
+    ];
+  }
+  if (result.issues.length === 0) return [checklistRow("error", "Environment is not ready.")];
+  return result.issues.map((issue) => checklistRow(issue.severity, issue.message));
+};
+```
+
+In `register-commands.ts`, where the validate command surfaces its `Notice`, when `result.valid` but `result.issues` contains warnings, append a hint (e.g. `"Environment ready (N advisory: run Repair installation)."`) instead of a bare "ready" — match the file's existing Notice idiom. (`register-commands.ts` is coverage-excluded; the behaviour is pinned by the projection test below, and the command smoke test from PR #38 still passes.)
+
+- [ ] **Step 6: Pin the generation, validation, and surfacing in tests**
 
 Add to `tests/runner-templates.test.ts` (the file already asserts generated templates):
 
@@ -712,9 +742,31 @@ it("generates testrunner-manifest.json carrying the current manifest version", (
 });
 ```
 
-Add a validation test to `tests/environment-validation-service.test.ts` (match its existing setup): a runner whose manifest is absent → the outdated-runner warning is present; a runner whose manifest carries the current version → no such warning. (Mirror the file's existing "missing required file" warning test for shape.)
+Add validation tests to `tests/environment-validation-service.test.ts` (match its existing setup), covering all three mismatch directions and the equal case: manifest **absent** → warning present; manifest **older** (e.g. `manifestVersion: 0`) → warning present; manifest **newer** (e.g. `manifestVersion: 99`) → warning present; manifest at the **current** version → no manifest warning. (Mirror the file's existing "missing required file" warning test for shape.)
 
-- [ ] **Step 6: Verify, CHANGELOG, commit**
+Add a projection test to `tests/settings-rows.test.ts` proving the advisory is surfaced when valid:
+
+```ts
+it("surfaces a warning advisory alongside the ready row when the runner is valid", () => {
+  const rows = runnerValidationRows({
+    valid: true,
+    issues: [{ code: "MANIFEST_OUTDATED", severity: "warning", message: "run Repair installation" }],
+    // ...any other RunnerValidationResult fields the type requires
+  } as RunnerValidationResult);
+  expect(rows[0]).toMatchObject({ status: "ok" });
+  expect(rows.some((r) => r.status === "warning" && /Repair/.test(r.label))).toBe(true);
+});
+
+it("still shows only the ready row when valid with no advisories", () => {
+  const rows = runnerValidationRows({ valid: true, issues: [] } as RunnerValidationResult);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ status: "ok" });
+});
+```
+
+(Adapt the `RunnerValidationResult` literal to the type's required fields and the `ChecklistRow` shape — read `settings-rows.ts` and its existing tests; the row's text field may be `label` or `text`.)
+
+- [ ] **Step 7: Verify, CHANGELOG, commit**
 
 Run: `npm run lint && npm run typecheck && npm test && npm run format:check && npm run test:coverage && npx fallow audit --base origin/main`
 Expected: all green; audit exit 0. (Note: adding a generated file means the `e2e-smoke` surface — `runner-templates.ts` — changed, so that workflow auto-triggers on the eventual PR; the new file is inert at runtime, so the smoke run stays green.)
@@ -723,13 +775,15 @@ Under `### Added` add:
 
 ```markdown
 - The generated `.testrunner` carries a versioned `testrunner-manifest.json`;
-  environment validation flags a runner produced by an older Test Hub for
-  Repair — the detection rail the V2 playwright-bdd migration keys on.
+  environment validation flags a runner produced by a different Test Hub
+  version for Repair (surfaced as an advisory even when the runner is
+  otherwise ready) — the detection rail the V2 playwright-bdd migration keys
+  on.
 ```
 
 ```bash
-git add src/application/content/runner-manifest.ts src/application/content/runner-manifest-version.ts src/infrastructure/runner/templates/runner-templates.ts src/application/services/environment-validation-service.ts tests/runner-manifest-version.test.ts tests/runner-templates.test.ts tests/environment-validation-service.test.ts CHANGELOG.md
-git commit -m "feat: versioned .testrunner manifest + outdated-runner validation (pre-V2 2.2)"
+git add src/application/content/runner-manifest.ts src/application/content/runner-manifest-version.ts src/infrastructure/runner/templates/runner-templates.ts src/application/services/environment-validation-service.ts src/presentation/settings/settings-rows.ts src/presentation/commands/register-commands.ts tests/runner-manifest-version.test.ts tests/runner-templates.test.ts tests/environment-validation-service.test.ts tests/settings-rows.test.ts CHANGELOG.md
+git commit -m "feat: versioned .testrunner manifest + advisory outdated-runner validation (pre-V2 2.2)"
 ```
 
 ---
