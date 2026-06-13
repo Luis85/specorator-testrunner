@@ -30,35 +30,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildPrdNote, prdFolderName } from "./lib/prd-note.mjs";
+import { parseFlags } from "./lib/migrate-utils.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
-
-function parseArgs(argv) {
-  const options = {
-    plan: "migration-plan.json",
-    prdsPath: "PRDs",
-    useCasesPath: "Use Cases",
-  };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--plan") {
-      options.plan = required(argv[++i], "--plan");
-    } else if (arg === "--prds-path") {
-      options.prdsPath = required(argv[++i], "--prds-path");
-    } else if (arg === "--use-cases-path") {
-      options.useCasesPath = required(argv[++i], "--use-cases-path");
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-  return options;
-}
-
-function required(value, flag) {
-  if (!value) throw new Error(`${flag} requires an argument`);
-  return value;
-}
 
 /** Builds an index from Use Case id → absolute note path under `dir`. */
 function indexUseCases(dir) {
@@ -103,7 +78,11 @@ function addPrdId(content, prdId) {
   return rebuilt + normalised.slice(match[0].length);
 }
 
-const options = parseArgs(process.argv.slice(2));
+const options = parseFlags(process.argv.slice(2), {
+  "--plan": { key: "plan", default: "migration-plan.json" },
+  "--prds-path": { key: "prdsPath", default: "PRDs" },
+  "--use-cases-path": { key: "useCasesPath", default: "Use Cases" },
+});
 
 const planPath = resolve(ROOT, options.plan);
 const plan = JSON.parse(readFileSync(planPath, "utf8"));
