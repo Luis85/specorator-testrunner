@@ -51,10 +51,17 @@ if (!existsSync(originalPath)) {
   throw new Error(`Original vision note not found: ${originalPath}`);
 }
 const backupPath = `${originalPath}.backup`;
-if (existsSync(backupPath) && !options.force) {
-  throw new Error(`Backup already exists: ${backupPath} (pass --force to overwrite)`);
+const hasBackup = existsSync(backupPath);
+if (hasBackup && !options.force) {
+  throw new Error(`Backup already exists: ${backupPath} (pass --force to re-run)`);
 }
-copyFileSync(originalPath, backupPath);
+// Only back up when no backup exists yet. On a --force re-run the original note
+// is already the Phase-3 redirect, so re-copying would overwrite the sole copy
+// of the original vision document and break the documented rollback — preserve
+// the first backup instead.
+if (!hasBackup) {
+  copyFileSync(originalPath, backupPath);
+}
 
 const originalContent = readFileSync(originalPath, "utf8");
 const { body: originalBody } = splitNote(originalContent);
@@ -111,5 +118,7 @@ The \`${folder}\` alias above preserves existing \`[[${ORIGINAL_NAME}]]\` backli
 writeFileSync(originalPath, redirect, "utf8");
 
 console.log(`Created ${prdNotePath}`);
-console.log(`Backed up original to ${backupPath}`);
+console.log(
+  hasBackup ? `Preserved existing backup at ${backupPath}` : `Backed up original to ${backupPath}`,
+);
 console.log(`Rewrote ${originalPath} as a redirect to [[${folder}]]`);

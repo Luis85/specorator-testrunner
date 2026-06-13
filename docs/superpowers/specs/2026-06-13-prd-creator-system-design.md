@@ -440,10 +440,10 @@ User opens PRD Builder modal repeatedly, creates each sub-PRD manually (more tim
 
 ### Phase 5: Link Use Cases to PRDs
 
-**Script:** `scripts/link-uc-to-prds.mjs`
+**Script:** `scripts/create-sub-prds.mjs` — the implemented migration combines Phase 4 (create sub-PRDs) and Phase 5 (link Use Cases) into a single pass.
 
 ```bash
-npm run migrate:link-ucs-to-prds
+npm run migrate:create-sub-prds
 ```
 
 **What it does:**
