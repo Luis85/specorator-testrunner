@@ -57,6 +57,9 @@ const stubUseCaseService = (useCases: UseCase[]): UseCaseService => ({
   async updateMetadata() {
     throw new Error("not used");
   },
+  async listDomains(): Promise<Result<{ domain: string; count: number }[]>> {
+    return ok([]);
+  },
 });
 
 describe("projectDashboardSnapshot (ADR-0017 KPI definitions)", () => {

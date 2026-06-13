@@ -49,6 +49,8 @@ export interface UseCaseService {
   update(useCase: UseCase): Promise<Result<void>>;
   /** Quick edit of title/status from the UI (Wave G §3, UC-005). */
   updateMetadata(id: UseCaseId, changes: UseCaseMetadataChanges): Promise<Result<UseCase>>;
+  /** List unique domains from all use cases with their counts. */
+  listDomains(): Promise<Result<{ domain: string; count: number }[]>>;
 }
 
 const ID_PATTERN = /^UC-(\d+)$/;
@@ -368,7 +370,22 @@ export class DefaultUseCaseService implements UseCaseService {
       suites: toArray(fm.suites),
       evidence: toVaultPaths(fm.evidence),
       lastTestRun,
+      domain: typeof fm.domain === "string" && fm.domain.trim() !== "" ? fm.domain.trim() : undefined,
       path,
     };
+  }
+
+  async listDomains(): Promise<Result<{ domain: string; count: number }[]>> {
+    const all = await this.findAll();
+    if (!all.ok) return all;
+    const counts = new Map<string, number>();
+    for (const uc of all.value) {
+      if (!uc.domain) continue;
+      counts.set(uc.domain, (counts.get(uc.domain) ?? 0) + 1);
+    }
+    const list = [...counts.entries()]
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
+    return ok(list);
   }
 }

@@ -539,3 +539,21 @@ describe("DefaultUseCaseService", () => {
     expect(order).toEqual(["read", "read", "read", "read", "write", "read", "read", "write"]);
   });
 });
+
+describe("domain field and listDomains", () => {
+  it("exposes the domain frontmatter field and lists distinct domains", async () => {
+    const { service, fs } = build();
+    fs.files.set("Use Cases/UC-001 A.md", "---\nid: UC-001\ntype: use-case\ntitle: A\ndomain: Installation\nstatus: specified\n---\n# UC-001 A\n");
+    fs.files.set("Use Cases/UC-002 B.md", "---\nid: UC-002\ntype: use-case\ntitle: B\ndomain: Dashboard\nstatus: specified\n---\n# UC-002 B\n");
+    fs.files.set("Use Cases/UC-003 C.md", "---\nid: UC-003\ntype: use-case\ntitle: C\ndomain: Dashboard\nstatus: specified\n---\n# UC-003 C\n");
+
+    const all = await service.findAll();
+    expect(all.ok && all.value.find((u) => u.id === "UC-001")?.domain).toBe("Installation");
+
+    const domains = await service.listDomains();
+    expect(domains.ok && domains.value).toEqual([
+      { domain: "Dashboard", count: 2 },
+      { domain: "Installation", count: 1 },
+    ]);
+  });
+});

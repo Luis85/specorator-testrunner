@@ -62,11 +62,9 @@ export class DefaultPrdService implements PrdService {
       return err(appError("VALIDATION_FAILED", "At least one item must be out of scope."));
     }
 
-    if (request.parentPrdId) {
-      const domains = (request.domains || []).filter((d) => d.trim() !== "");
-      if (domains.length === 0) {
-        return err(appError("VALIDATION_FAILED", "Sub-PRDs must be linked to at least one domain."));
-      }
+    const domains = (request.domains || []).filter((d) => d.trim() !== "");
+    if (request.parentPrdId && domains.length === 0) {
+      return err(appError("VALIDATION_FAILED", "Sub-PRDs must be linked to at least one domain."));
     }
 
     const settings = await this.settingsService.load();
@@ -82,7 +80,7 @@ export class DefaultPrdService implements PrdService {
       title,
       status: "draft",
       parentPrdId: request.parentPrdId,
-      domains: scopeIn.length > 0 ? request.domains : undefined,
+      domains,
       vision,
       scopeIn,
       scopeOut,
@@ -140,10 +138,20 @@ export class DefaultPrdService implements PrdService {
       if (!write.ok) return write;
 
       // Emit usecase.updated so Explorer live-refresh recomputes counts & breadcrumbs
-      await this.eventBus.publish({
-        type: "usecase.updated",
-        payload: { useCasePath },
-      } as any);
+      // Extract useCaseId from the frontmatter to emit a properly-typed event
+      const readForId = await this.fs.readFile(useCasePath);
+      if (readForId.ok) {
+        const { frontmatter: fm } = parseNote(readForId.value);
+        if (typeof fm.id === "string") {
+          await this.eventBus.publish(
+            createEvent("usecase.updated", {
+              useCaseId: fm.id,
+              path: String(useCasePath),
+              changedFields: ["prd-id"],
+            }),
+          );
+        }
+      }
       return ok(undefined);
     });
   }
