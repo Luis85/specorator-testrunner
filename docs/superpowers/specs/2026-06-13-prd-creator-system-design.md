@@ -81,31 +81,37 @@ The existing `domain` field is retained (not replaced).
 
 ### 2.4 File Structure
 
+PRD paths respect Vault settings (like Use Cases). Default configuration shown below:
+
 ```
-docs/
-├── domains/                 # Existing: research/problem space
-│   ├── dashboard/
-│   │   ├── research.md      # Domain research, findings
-│   │   └── ...
-│   └── evidence/
-│
-├── prds/                    # New: solution space
-│   ├── PRD-000-product-vision/
-│   │   └── PRD-000-product-vision.md
-│   ├── PRD-001-dashboard/
-│   │   ├── PRD-001-dashboard.md
-│   │   └── (future: diagrams, related docs)
-│   ├── PRD-002-evidence/
-│   │   └── PRD-002-evidence.md
-│   └── PRD-003-ci-integration/
-│       └── PRD-003-ci-integration.md
-│
-└── use-cases/               # Existing: solution detail
-    ├── UC-001.md            # References prd-id: PRD-001
-    └── UC-002.md
+PRDs folder (defaults to "PRDs", configurable via settings.paths.prdsPath)
+├── PRD-000-product-vision/
+│   └── PRD-000-product-vision.md
+├── PRD-001-dashboard/
+│   ├── PRD-001-dashboard.md
+│   └── (future: diagrams, related docs)
+├── PRD-002-evidence/
+│   └── PRD-002-evidence.md
+└── PRD-003-ci-integration/
+    └── PRD-003-ci-integration.md
+
+Use Cases folder (existing; "Use Cases" by default)
+├── UC-001.md  # References prd-id: PRD-001
+└── UC-002.md
+
+Domains folder (existing research space; "Domains" if configured)
+├── Dashboard/
+│   ├── research.md
+│   └── ...
+└── Evidence/
+    └── ...
 ```
 
-**Naming convention:** `PRD-NNN-slug` (kebab-case). PRD-0 reserved for product vision.
+**Path Configuration:** 
+- PRDs use `settings.paths.prdsPath` (default: `PRDs`), matching the pattern used for useCasesPath, specificationsPath, etc.
+- Implementation creates folder under vault root, allowing users to customize via settings.
+
+**Naming convention:** `PRD-NNN-slug` (kebab-case). `PRD-000` reserved for product vision (canonical root ID).
 
 ### 2.5 PRD Markdown Sections
 
@@ -156,8 +162,9 @@ The **PRD Builder** is a multi-step modal that guides users through PRD creation
 
 **Goal:** Establish which research contexts inform this PRD.
 
-- **Input:** User selects one or more domains from a dropdown (populated from `docs/domains/`)
-- **UI:** Multi-select dropdown with domain titles
+- **Input:** User selects one or more domains from a dropdown
+- **Domain source:** Options derived from the `domain` field in existing Use Cases (all domains referenced by any UC become available options). Future: may expand to pull from a dedicated domains directory if one is created.
+- **UI:** Multi-select dropdown with domain titles; shows UC count per domain
 - **Guidance:** "Which research spaces inform this solution? Cross-domain PRDs are OK (e.g., a new Dashboard feature might draw from Dashboard + KPI domains)."
 - **Output:** Populates `domains: [...]` frontmatter field
 
@@ -220,7 +227,7 @@ The **PRD Builder** is a multi-step modal that guides users through PRD creation
 
 - **Input:** 
   - PRD title (auto-filled from vision or user override)
-  - Parent PRD (dropdown; defaults to PRD-0 for new top-level PRDs)
+  - Parent PRD (dropdown; defaults to PRD-000 for new top-level PRDs)
   - Status (draft | active | deprecated)
   - Slug (auto-generated from title, user can edit)
 - **UI:** Form with preview of final markdown
@@ -366,8 +373,8 @@ npm run migrate:create-prd-0
 ```
 
 **What it does:**
-- Moves `docs/Specorator Testrunner.md` → `docs/prds/PRD-000-product-vision/PRD-000-product-vision.md`
-- Adjusts frontmatter:
+- Creates `<prds-path>/PRD-000-product-vision/PRD-000-product-vision.md` (respects `settings.paths.prdsPath`)
+- Copies content from `docs/Specorator Testrunner.md` and adjusts frontmatter:
   ```yaml
   id: PRD-000
   type: prd
@@ -378,10 +385,18 @@ npm run migrate:create-prd-0
   vision: "Enable teams to transform requirements into executable specifications..."
   scope: "[from current PRD]"
   ```
-- Preserves all existing markdown content
-- Outputs: "PRD-0 created at `docs/prds/PRD-000-product-vision/`"
+- **Preserves backlinks:** Keeps original `docs/Specorator Testrunner.md` as a redirect note with Obsidian alias:
+  ```yaml
+  ---
+  aliases: [PRD-000-product-vision]
+  ---
+  # Moved to PRD-000
+  See [[PRD-000-product-vision/PRD-000-product-vision|PRD-000: Specorator Testrunner]]
+  ```
+  This preserves existing `[[Specorator Testrunner]]` links in architecture docs and ADRs.
+- Outputs: "PRD-000 created; redirect note created at `docs/Specorator Testrunner.md`"
 
-**Backup:** Original `docs/Specorator Testrunner.md` saved as `docs/Specorator Testrunner.md.backup`
+**Why:** Obsidian link resolution supports aliases, so existing `[[Specorator Testrunner]]` references in ADRs and architecture docs continue to work through the alias.
 
 ### Phase 4: Create Sub-PRDs
 
