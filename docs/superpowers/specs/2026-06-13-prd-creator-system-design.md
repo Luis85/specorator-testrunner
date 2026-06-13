@@ -62,15 +62,15 @@ status: draft | active | deprecated
 parent-prd: PRD-000  # null for PRD-000 (root)
 domains: [dashboard, reporting]  # which domain research informs this (optional for root PRD)
 vision: "Single source of truth for test health"
-scope: |
-  In: KPI tiles, recent runs, 7-day trend
-  Out: historical analytics, custom exports
+scope_in: [KPI tiles, recent runs, 7-day trend]  # what's included
+scope_out: [historical analytics, custom exports]  # what's excluded
 research-notes: []  # Reserved for V2: link to domain artifacts
 display_order: 1  # for sibling ordering in tree (optional; auto-assigned if omitted)
 ```
 
-Required fields: `id`, `type`, `title`, `status`, `parent-prd`, `vision`, `scope`.  
+Required fields: `id`, `type`, `title`, `status`, `parent-prd`, `vision`, `scope_in`, `scope_out`.  
 Optional fields: `domains` (required for sub-PRDs, optional for root), `research-notes`, `display_order`.  
+**Note on scope:** Scope is stored as two array fields (`scope_in`, `scope_out`) instead of block scalar to remain parseable by the shared frontmatter parser (which supports scalars/arrays only, not block scalars).  
 **Note:** Root PRD (`parent-prd: null`) has `domains: []` or omitted (no domains apply to system-level vision).
 
 **Backwards compatibility:** Existing Use Cases lack `prd-id` field until migration runs. Validation must treat `prd-id` as optional until per-vault backfill completes; enforce only after migration assigns a PRD to all Use Cases.
@@ -171,6 +171,7 @@ The **PRD Builder** is a multi-step modal that guides users through PRD creation
 
 - **Input:** User selects one or more domains from a dropdown, or adds new domain values via free text
 - **Domain source:** Options derived from the `domain` field in existing Use Cases (all domains referenced by any UC become available options). User can also type a new domain name to create one not yet in Use Cases.
+  - **Implementation note:** `DefaultUseCaseService.parse()` does not currently expose `domain` field. Implementation must either (a) add `domain` to the UC read model, or (b) use a separate frontmatter scan to derive available domains. See domain population section below.
 - **UI:** Multi-select dropdown with domain titles (shows UC count per domain) + "Add new domain" text input field
 - **Guidance:** "Which research spaces inform this solution? Select existing domains or type new ones. Cross-domain PRDs are OK (e.g., a new Dashboard feature might draw from Dashboard + KPI domains)."
 - **Output:** Populates `domains: [...]` frontmatter field with both selected and newly created domain names
@@ -207,7 +208,7 @@ The **PRD Builder** is a multi-step modal that guides users through PRD creation
 - **Input:** Two-column editor (In | Out)
 - **UI:** Side-by-side text areas, each accepts bullet list or free text
 - **Guidance:** "Be explicit about what you're NOT solving. This keeps the PRD focused and helps prevent scope creep."
-- **Output:** Populates `scope` field + markdown "Scope" section
+- **Output:** Populates `scope_in` and `scope_out` frontmatter fields (as arrays) + markdown "Scope" section
 
 ### Step 5: Success Criteria
 
@@ -391,7 +392,8 @@ npm run migrate:create-prd-0
   parent-prd: null
   domains: []  # root PRD may omit or leave empty
   vision: "Enable teams to transform requirements into executable specifications..."
-  scope: "[from current PRD]"
+  scope_in: "[from current PRD section]"  # list of included features
+  scope_out: "[from current PRD section]"  # list of excluded features
   display_order: 0  # root always first
   ```
 - **Preserves backlinks:** Keeps original `docs/Specorator Testrunner.md` as a redirect note with Obsidian alias:
