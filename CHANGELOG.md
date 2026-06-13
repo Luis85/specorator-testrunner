@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-06-13
+
 ### Changed
 
 - A Gherkin step's argument is modelled as a sum type (data table OR text
