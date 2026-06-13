@@ -81,8 +81,9 @@ export interface UseCaseDetailDeps {
   // findById powers the render; updateMetadata backs the header's quick-edit
   // modal (Wave G §3).
   useCaseService: Pick<UseCaseService, "findById" | "updateMetadata">;
-  // Resolves the parent PRD's title for the header breadcrumb (Task 16b).
-  prdService: Pick<PrdService, "findById">;
+  // Resolves the parent PRD's title for the header breadcrumb (Task 16b) and
+  // backs the Use Case editor's Parent PRD selector (Task 16c).
+  prdService: Pick<PrdService, "findById" | "findAll" | "assignUseCaseToPrd">;
   specificationService: Pick<
     SpecificationService,
     "listFeatures" | "validate" | "detectMissingSteps"
@@ -268,6 +269,7 @@ export class UseCaseDetailView extends ItemView {
       .addEventListener("click", () =>
         new EditUseCaseModal(this.app, {
           useCaseService: this.deps.useCaseService,
+          prdService: this.deps.prdService,
           useCase,
         }).open(),
       );

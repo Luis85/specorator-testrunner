@@ -1,5 +1,6 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
 import type { UseCaseService } from "../../application/services/use-case-service";
+import type { PrdService } from "../../application/services/prd-service";
 import {
   USE_CASE_STATUSES,
   type UseCase,
@@ -9,9 +10,24 @@ import { submitOnEnter } from "./modal-helpers";
 
 export interface EditUseCaseDeps {
   useCaseService: Pick<UseCaseService, "updateMetadata">;
+  // Lists PRDs for the Parent PRD dropdown and persists a re-link (Task 16c).
+  prdService: Pick<PrdService, "findAll" | "assignUseCaseToPrd">;
   /** The Use Case being edited (prefills the fields). */
-  useCase: Pick<UseCase, "id" | "title" | "status">;
+  useCase: Pick<UseCase, "id" | "title" | "status" | "path" | "prdId">;
 }
+
+/**
+ * The Parent PRD dropdown options: a leading "none" plus every PRD ordered by
+ * id. Pure so it can be unit-tested without the modal DOM.
+ */
+export const prdDropdownOptions = (
+  prds: { id: string; title: string }[],
+): { value: string; label: string }[] => [
+  { value: "", label: "— None —" },
+  ...[...prds]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((p) => ({ value: p.id, label: `${p.id}: ${p.title}` })),
+];
 
 /**
  * Quick-edit modal for a Use Case's title and business status (Wave G §3,
@@ -31,6 +47,8 @@ export interface EditUseCaseDeps {
 export class EditUseCaseModal extends Modal {
   private useCaseTitle: string;
   private status: UseCaseStatus;
+  private readonly originalPrdId: string;
+  private selectedPrdId: string;
   private errorEl: HTMLElement | null = null;
   private submitting = false;
 
@@ -41,6 +59,8 @@ export class EditUseCaseModal extends Modal {
     super(app);
     this.useCaseTitle = deps.useCase.title;
     this.status = deps.useCase.status;
+    this.originalPrdId = deps.useCase.prdId ?? "";
+    this.selectedPrdId = this.originalPrdId;
   }
 
   onOpen(): void {
@@ -65,6 +85,13 @@ export class EditUseCaseModal extends Modal {
       });
     });
 
+    // Populated asynchronously so the modal opens immediately; the dropdown
+    // appears once the PRD list resolves.
+    const prdSetting = new Setting(contentEl)
+      .setName("Parent prd")
+      .setDesc("Link this Use Case to a prd (clearing a link is not supported here).");
+    void this.renderPrdDropdown(prdSetting);
+
     this.errorEl = contentEl.createDiv({ cls: "e2e-test-hub-settings-errors" });
 
     new Setting(contentEl).addButton((button) =>
@@ -73,6 +100,19 @@ export class EditUseCaseModal extends Modal {
         .setCta()
         .onClick(() => void this.submit()),
     );
+  }
+
+  private async renderPrdDropdown(setting: Setting): Promise<void> {
+    const prds = await this.deps.prdService.findAll();
+    if (!prds.ok) return; // a missing PRD list just hides the optional control
+    setting.addDropdown((dropdown) => {
+      for (const option of prdDropdownOptions(prds.value)) {
+        dropdown.addOption(option.value, option.label);
+      }
+      dropdown.setValue(this.selectedPrdId).onChange((value) => {
+        this.selectedPrdId = value;
+      });
+    });
   }
 
   onClose(): void {
@@ -102,6 +142,23 @@ export class EditUseCaseModal extends Modal {
       this.showError(result.error.message);
       return;
     }
+
+    // Persist a PRD re-link if the user picked a different (non-empty) parent.
+    // Clearing to "none" is intentionally a no-op for V1 (a required link
+    // shouldn't be silently dropped from the editor).
+    if (this.selectedPrdId !== "" && this.selectedPrdId !== this.originalPrdId) {
+      const linked = await this.deps.prdService.assignUseCaseToPrd(
+        this.deps.useCase.path,
+        this.selectedPrdId,
+      );
+      if (!linked.ok) {
+        this.showError(
+          `Saved, but could not link to ${this.selectedPrdId}: ${linked.error.message}`,
+        );
+        return;
+      }
+    }
+
     new Notice(`Updated ${result.value.id}.`);
     this.close();
   }
