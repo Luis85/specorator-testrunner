@@ -86,3 +86,23 @@ describe("DefaultPrdService.findAll/parse", () => {
     expect(result.ok && result.value).toEqual([]);
   });
 });
+
+describe("DefaultPrdService.assignUseCaseToPrd", () => {
+  it("adds prd-id to the use case note, preserving other frontmatter", async () => {
+    const { service, fs } = build();
+    const ucPath = "Use Cases/UC-001 Init.md";
+    fs.files.set(ucPath, ["---", "id: UC-001", "type: use-case", "title: Init", "domain: Installation", "status: specified", "---", "# UC-001 Init", ""].join("\n"));
+
+    const result = await service.assignUseCaseToPrd(
+      // pass a VaultPath; in tests use unsafeVaultPath
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ucPath as any,
+      "PRD-001",
+    );
+    expect(result.ok).toBe(true);
+    const updated = fs.files.get(ucPath) ?? "";
+    expect(updated).toContain("prd-id: PRD-001");
+    expect(updated).toContain("domain: Installation"); // preserved
+    expect(updated).toContain("# UC-001 Init"); // body preserved
+  });
+});
