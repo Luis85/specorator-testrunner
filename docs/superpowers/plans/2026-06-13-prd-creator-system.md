@@ -1376,9 +1376,9 @@ git commit -m "feat(dashboard): add PRD & Roadmap section"
 (Prerequisite for Task 16a's delete implementation.)
 
 **Files:**
-- Modify: `src/infrastructure/ports/vault-file-system.ts` (add `deleteFile(path): Promise<Result<void>>` to interface)
-- Modify: `src/infrastructure/adapters/obsidian-vault-file-system.ts` (implement using `vault.adapter.remove(...)` or trash)
-- Modify: `tests/__stubs__/fake-vault-file-system.ts` (implement stub for testing)
+- Modify: `src/application/ports/vault-file-system.ts` (add `deleteFile(path): Promise<Result<void>>` to interface)
+- Modify: `src/infrastructure/obsidian/obsidian-vault-adapter.ts` (implement using Obsidian's file adapter)
+- Modify: `tests/fakes.ts` (extend FakeVaultFileSystem to implement deleteFile stub for testing)
 
 - [ ] **Step 1: Read the existing port** to understand the interface pattern and error handling.
 
