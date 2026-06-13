@@ -282,7 +282,8 @@ describe("PrdBuilderModal", () => {
     };
 
     // Call create directly
-    await (modal as unknown as ModalWithPrivates).create();
+    const modalPrivate = modal as unknown as ModalWithPrivates;
+    await (modalPrivate.create as () => Promise<void>)();
 
     expect(mockPrdService.create).toHaveBeenCalled();
   });
@@ -313,7 +314,8 @@ describe("PrdBuilderModal", () => {
       errorMessages: {},
     };
 
-    await (modal as unknown as ModalWithPrivates).create();
+    const modalPrivate2 = modal as unknown as ModalWithPrivates;
+    await (modalPrivate2.create as () => Promise<void>)();
 
     expect(closeSpy).toHaveBeenCalled();
   });

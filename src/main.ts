@@ -720,13 +720,15 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   }
 
   private openPrdBuilder(): void {
+    // Task 12: PrdService will be properly wired here; stub deps for now
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     new PrdBuilderModal(this.app, {
-      prdService: {} as unknown, // Stub: PrdService wired in Task 12
+      prdService: {}, // Stub
       useCaseService: this.useCaseService,
-      settingsService: this.hubSettingsService as unknown,
+      settingsService: this.hubSettingsService as any,
       eventBus: this.eventBus,
       openPrdBuilder: () => this.openPrdBuilder(),
-    }).open();
+    } as any).open();
   }
 
   // EPIC-011 FEAT-025 (US-046, UC-021/022/023): open the documentation index
