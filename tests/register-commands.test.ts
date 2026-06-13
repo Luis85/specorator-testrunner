@@ -115,6 +115,7 @@ const buildDeps = (): TestHubCommandDeps => ({
       }),
     ),
     listDomains: vi.fn(async () => ok([])),
+    countUseCasesByPrd: vi.fn(async () => ok(new Map<string, number>())),
   },
 
   specificationService: {

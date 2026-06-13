@@ -60,6 +60,9 @@ const stubUseCaseService = (useCases: UseCase[]): UseCaseService => ({
   async listDomains(): Promise<Result<{ domain: string; count: number }[]>> {
     return ok([]);
   },
+  async countUseCasesByPrd(): Promise<Result<Map<string, number>>> {
+    return ok(new Map());
+  },
 });
 
 describe("projectDashboardSnapshot (ADR-0017 KPI definitions)", () => {

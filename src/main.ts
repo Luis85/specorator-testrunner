@@ -92,6 +92,7 @@ import { CreateSuiteModal } from "./presentation/views/create-suite-modal";
 import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
 import { PrdBuilderModal } from "./presentation/views/prd-builder-modal";
+import { PRD_VIEW_TYPE, PrdExplorerView } from "./presentation/views/prd-explorer-view";
 import { SUITE_VIEW_TYPE, SuiteDashboardView } from "./presentation/views/suite-dashboard-view";
 import { TEST_CONSOLE_VIEW_TYPE, TestConsoleView } from "./presentation/views/test-console-view";
 import {
@@ -472,6 +473,17 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         }),
     );
     this.registerView(
+      PRD_VIEW_TYPE,
+      (leaf) =>
+        new PrdExplorerView(leaf, {
+          prdService: this.prdService,
+          useCaseService: this.useCaseService,
+          workspace: this.workspaceAdapter,
+          eventBus,
+          openPrdBuilder: (parentPrdId) => this.openPrdBuilder(parentPrdId),
+        }),
+    );
+    this.registerView(
       TEST_CONSOLE_VIEW_TYPE,
       (leaf) =>
         new TestConsoleView(leaf, {
@@ -603,6 +615,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       "Open Test Console",
       () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
     );
+    this.addRibbonIcon(
+      "git-fork",
+      "Open PRDs",
+      () => void this.workspaceAdapter.openView(PRD_VIEW_TYPE, "sidebar"),
+    );
 
     // Command-palette surface (P2-7): the command bodies live in
     // presentation/commands/register-commands.ts behind a narrow deps contract;
@@ -722,10 +739,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     }).open();
   }
 
-  private openPrdBuilder(): void {
+  private openPrdBuilder(parentPrdId?: string): void {
     new PrdBuilderModal(this.app, {
       prdService: this.prdService,
       useCaseService: this.useCaseService,
+      parentPrdId,
     }).open();
   }
 
