@@ -119,7 +119,7 @@ Add a `quality` namespace to `package.json`, mirroring your existing
     "quality:health":     "fallow health --score",
     "quality:dead-code":  "fallow dead-code",
     "quality:dupes":      "fallow dupes",
-    "quality:audit":      "fallow audit"
+    "quality:audit":      "fallow audit --base origin/main"
   }
 }
 ```
@@ -133,6 +133,13 @@ What each command does:
 | `npm run quality:dead-code` | List unused files, exports, and dependencies only. |
 | `npm run quality:dupes` | List clone groups only. |
 | `npm run quality:audit` | Changed-code verdict vs. `origin/main`. **Run before requesting review.** |
+
+> **Why `--base origin/main` in the script?** Without it, fallow uses the
+> branch's tracked upstream as the base. On a pushed feature branch that
+> tracks `origin/my-feature`, this means the audit compares the branch against
+> itself and reports nothing. Pinning `--base origin/main` ensures the local
+> audit always produces the same diff as the CI job. If your main branch has a
+> different name (e.g. `master`, `develop`), adjust accordingly.
 
 ---
 
