@@ -169,6 +169,30 @@ describe("DefaultSpecificationService.validate", () => {
     expect(result.value.errors).toEqual([]);
   });
 
+  it("reports both the orphan prefix and the missing declaration for an unparseable orphan", async () => {
+    const { service, fs } = build();
+    const path = vp("Specifications/features/not-gherkin.feature");
+    fs.files.set(path, "just some text\n");
+    const result = await service.validate(path);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.valid).toBe(false);
+    const messages = result.value.errors.map((e) => e.message);
+    expect(messages.some((m) => m.includes("orphan"))).toBe(true);
+    expect(messages).toContain("File does not contain a Feature: declaration.");
+  });
+
+  it("flags a whitespace-only feature name (trim semantics, TD-003)", async () => {
+    const { service, fs } = build();
+    const path = vp("Specifications/features/UC-001-blank-name.feature");
+    fs.files.set(path, "Feature:  \n  Scenario: S\n    Given a step\n");
+    const result = await service.validate(path);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.valid).toBe(false);
+    expect(result.value.errors.map((e) => e.message)).toContain("Feature has no name.");
+  });
+
   it("flags orphan filename, missing scenarios, and stepless scenarios", async () => {
     const { service, fs, events } = build();
     const path = vp("Specifications/features/orphan.feature");

@@ -59,6 +59,57 @@ export class Setting {
 }
 
 /**
+ * Minimal ItemView stub for unit tests. View files that extend ItemView cannot
+ * be loaded by Vitest without this (register-commands.ts transitively imports
+ * several view modules). Behaviour is irrelevant for command-smoke tests.
+ */
+export class ItemView {
+  constructor(public readonly leaf: unknown) {}
+  getViewType(): string {
+    return "";
+  }
+  getDisplayText(): string {
+    return "";
+  }
+  onOpen(): Promise<void> {
+    return Promise.resolve();
+  }
+  onClose(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+/**
+ * Minimal TextFileView stub (feature-editor-view extends it).
+ */
+export class TextFileView extends ItemView {
+  data = "";
+  getViewData(): string {
+    return this.data;
+  }
+  setViewData(_data: string, _clear: boolean): void {}
+  clear(): void {}
+}
+
+/**
+ * Minimal FuzzySuggestModal stub (run-picker-modal / generate-feature-modal
+ * extend it). The command callbacks that open these call `.open()` — the inert
+ * stub is all that is needed.
+ */
+export class FuzzySuggestModal<T> {
+  constructor(public readonly app: unknown) {}
+  getItems(): T[] {
+    return [];
+  }
+  getItemText(_item: T): string {
+    return "";
+  }
+  onChooseItem(_item: T, _evt: unknown): void {}
+  open(): void {}
+  close(): void {}
+}
+
+/**
  * Minimal debounce stub — returns a no-op function with cancel/run.
  */
 export const debounce = <T extends (...args: unknown[]) => void>(

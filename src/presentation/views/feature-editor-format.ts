@@ -1,8 +1,8 @@
 import {
-  isPlainDescriptionLine,
-  serialiseCell,
-  useCaseIdFromPath,
-} from "../../application/content/gherkin";
+  structuralIssues,
+  type ValidationItem,
+} from "../../application/content/feature-validation";
+import { isPlainDescriptionLine } from "../../application/content/gherkin";
 import {
   isStepDefined,
   type StepDefinitionPattern,
@@ -13,6 +13,7 @@ import type {
   GherkinStep,
   ScenarioSpecification,
 } from "../../domain/entities/specification";
+import { isScenarioOutline } from "../../domain/entities/specification";
 
 /**
  * Pure helpers for the Feature Editor (the `.feature` file handler's
@@ -20,57 +21,21 @@ import type {
  * unit-testable, following the test-console-format.ts pattern.
  */
 
-export interface ValidationItem {
-  level: "error" | "warning";
-  message: string;
-}
-
-const flagDoubleArguments = (
-  items: ValidationItem[],
-  steps: readonly GherkinStep[],
-  label: string,
-): void => {
-  for (const step of steps) {
-    if (step.dataTable && step.docString) {
-      items.push({
-        level: "error",
-        message: `A step in "${label}" has both a data table and a text block (Gherkin allows one argument).`,
-      });
-    }
-  }
-};
+export type { ValidationItem } from "../../application/content/feature-validation";
 
 /**
- * Live structural validation over the in-memory spec — the same rules as
- * `SpecificationService.validate` (name, ≥1 scenario, steps per scenario,
- * ADR-0012 filename prefix) so the editor strip and the Validate action
- * agree, plus editor-only hints (unnamed scenario, Outline without Examples
- * rows) for content that is still being typed.
+ * Live validation for the editor strip: the shared structural rules
+ * (TD-003) plus editor-only typing-time hints (unnamed scenario, rowless
+ * Outline) for content that is still being typed.
  */
 export const projectValidation = (specification: FeatureSpecification): ValidationItem[] => {
-  const items: ValidationItem[] = [];
-  if (useCaseIdFromPath(specification.path) === null) {
-    items.push({
-      level: "warning",
-      message: 'No "UC-NNN-" filename prefix — this Feature is an orphan (ADR-0012).',
-    });
-  }
-  if (specification.featureName.trim() === "") {
-    items.push({ level: "error", message: "Feature has no name." });
-  }
-  if (specification.scenarios.length === 0) {
-    items.push({ level: "error", message: "Feature has no scenarios." });
-  }
-  flagDoubleArguments(items, specification.background ?? [], "Background");
+  const items = structuralIssues(specification);
   for (const scenario of specification.scenarios) {
     const label = scenario.name.trim() === "" ? "(unnamed)" : scenario.name;
     if (scenario.name.trim() === "") {
       items.push({ level: "warning", message: "A scenario has no name." });
     }
-    if (scenario.steps.length === 0) {
-      items.push({ level: "error", message: `Scenario "${label}" has no steps.` });
-    }
-    if (scenario.keyword === "Scenario Outline") {
+    if (isScenarioOutline(scenario)) {
       const hasRows = (scenario.examples ?? []).some((block) => block.rows.length > 0);
       if (!hasRows) {
         items.push({
@@ -79,7 +44,6 @@ export const projectValidation = (specification: FeatureSpecification): Validati
         });
       }
     }
-    flagDoubleArguments(items, scenario.steps, label);
   }
   return items;
 };
@@ -146,11 +110,8 @@ export const normalizeTag = (value: string): string | null => {
   return joined === "" ? null : `@${joined}`;
 };
 
-/**
- * Keeps a table cell round-trippable via the serializer's own cell encoding
- * (one policy, two surfaces), trimmed for tidy editor input.
- */
-export const sanitizeCell = (value: string): string => serialiseCell(value).trim();
+/** Tidies editor cell input; pipes/backslashes are escaped by the serializer (TD-001). */
+export const sanitizeCell = (value: string): string => value.trim();
 
 /** Picks a doc-string fence the body cannot terminate early. */
 export const fenceFor = (lines: readonly string[]): '"""' | "```" =>

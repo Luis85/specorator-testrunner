@@ -78,13 +78,41 @@ const EXAMPLES_RE = /^Examples:\s*(.*)$/;
 // `Rule:` blocks are NOT modelled (see the module doc); the `startsWith("Rule:")`
 // guards below exist so a Rule line is never mistaken for description text.
 
-/** Splits a `| a | b |` row into trimmed cells (escaped `\|` not supported). */
-const parseTableRow = (line: string): string[] =>
-  line
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((cell) => cell.trim());
+/**
+ * Splits a `| a | b |` row into trimmed cells, honouring the official
+ * Gherkin cell escapes: `\|` → `|`, `\\` → `\`, `\n` → newline (TD-001).
+ * Any other backslash sequence is kept verbatim (lenient parse).
+ */
+const parseTableRow = (line: string): string[] => {
+  const segments: string[] = [];
+  let current = "";
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === "\\") {
+      const next = line[i + 1];
+      if (next === "|" || next === "\\") {
+        current += next;
+        i++;
+      } else if (next === "n") {
+        current += "\n";
+        i++;
+      } else {
+        current += char;
+      }
+    } else if (char === "|") {
+      segments.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  segments.push(current);
+  // Drop the empty boundary segments produced by the leading `|` and (when
+  // present) the trailing `|`; inner empty cells survive.
+  if (segments.length > 0 && segments[0].trim() === "") segments.shift();
+  if (segments.length > 0 && segments[segments.length - 1].trim() === "") segments.pop();
+  return segments.map((cell) => cell.trim());
+};
 
 /** Drops leading/trailing blank entries; interior blanks are paragraph breaks. */
 const trimBlankEdges = (lines: string[]): string[] => {
@@ -101,6 +129,7 @@ const trimBlankEdges = (lines: string[]): string[] => {
  * `useCaseId` (ADR-0012); when the filename carries no `UC-NNN` prefix the
  * `useCaseId` is left empty so the validator can flag it as an orphan.
  */
+// fallow-ignore-next-line complexity
 export const parseFeature = (content: string, path: VaultPath): FeatureSpecification | null => {
   const lines = content.split(/\r?\n/);
 
@@ -149,7 +178,11 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
       docStringIndent = raw.slice(0, raw.length - raw.trimStart().length);
       // Without a preceding step the body is still consumed (it is an argument,
       // never steps) but cannot be attached — roundTripsLosslessly catches it.
-      if (lastStep) lastStep.docString = openDocString;
+      // First argument wins (TD-002): a doc string after a table is dropped and
+      // the round-trip guard sends the file to raw mode.
+      if (lastStep && lastStep.argument === undefined) {
+        lastStep.argument = { kind: "docString", docString: openDocString };
+      }
       continue;
     }
 
@@ -231,7 +264,14 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
         if (currentExamples.header.length === 0) currentExamples.header = cells;
         else currentExamples.rows.push(cells);
       } else if (lastStep) {
-        (lastStep.dataTable ??= []).push(cells);
+        if (lastStep.argument === undefined) {
+          lastStep.argument = { kind: "table", rows: [cells] };
+        } else if (lastStep.argument.kind === "table") {
+          lastStep.argument.rows.push(cells);
+        }
+        // else: the step already carries a doc string — Gherkin allows ONE
+        // argument (TD-002). Drop the row; the round-trip guard then fails the
+        // file into raw mode, which is correct (Cucumber rejects the file too).
       }
       descriptionTarget = null;
       continue;
@@ -291,32 +331,36 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
 };
 
 /**
- * A cell is written into a `|`-delimited row, where a literal `|` would split
- * it and change the table shape on the next parse. The V1 cell model cannot
- * represent escaped pipes (see {@link parseTableRow}), so the serializer
- * substitutes `/` — shape integrity outranks the glyph. Parsed models can
- * never contain a pipe cell; this guards cells constructed programmatically.
+ * Escapes a cell for a `|`-delimited row using the official Gherkin escapes
+ * (TD-001): `\` → `\\`, `|` → `\|`, newline → `\n`. Replaces the V1 lossy
+ * `/`-substitution — a literal pipe now round-trips instead of being
+ * rewritten.
  */
-export const serialiseCell = (cell: string): string => cell.replace(/\|/g, "/");
+const serialiseCell = (cell: string): string =>
+  cell.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, "\\n");
 
 /** Appends `| a | b |` rows at `indent`. */
 const pushTable = (lines: string[], rows: readonly (readonly string[])[], indent: string): void => {
   for (const row of rows) lines.push(`${indent}| ${row.map(serialiseCell).join(" | ")} |`);
 };
 
-/** Appends one step line plus its data-table / doc-string arguments. */
+/** Appends one step line plus its single table / doc-string argument. */
 const pushStep = (lines: string[], step: GherkinStep, indent: string): void => {
   lines.push(`${indent}${step.keyword} ${step.text}`.trimEnd());
   const inner = `${indent}  `;
-  if (step.dataTable && step.dataTable.length > 0) pushTable(lines, step.dataTable, inner);
-  if (step.docString) {
-    lines.push(`${inner}${step.docString.fence}${step.docString.mediaType ?? ""}`);
+  const argument = step.argument;
+  if (argument?.kind === "table" && argument.rows.length > 0) {
+    pushTable(lines, argument.rows, inner);
+  }
+  if (argument?.kind === "docString") {
+    const { fence, mediaType, lines: body } = argument.docString;
+    lines.push(`${inner}${fence}${mediaType ?? ""}`);
     // Body lines are emitted verbatim at the fence indent (no trimEnd): the
     // stored content is whitespace-faithful and must stay that way on disk.
-    for (const bodyLine of step.docString.lines) {
+    for (const bodyLine of body) {
       lines.push(bodyLine.length > 0 ? `${inner}${bodyLine}` : "");
     }
-    lines.push(`${inner}${step.docString.fence}`);
+    lines.push(`${inner}${fence}`);
   }
 };
 
@@ -325,6 +369,7 @@ const pushStep = (lines: string[], step: GherkinStep, indent: string): void => {
  * Lives next to {@link parseFeature} because the two form the load-bearing
  * round-trip invariant the Feature Editor's structured mode depends on.
  */
+// fallow-ignore-next-line complexity
 export const serialiseFeature = (specification: FeatureSpecification): string => {
   const lines: string[] = [];
   if (specification.tags.length > 0) lines.push(specification.tags.join(" "));
@@ -365,11 +410,9 @@ export const serialiseFeature = (specification: FeatureSpecification): string =>
  * spacing (indentation and blank-line placement are serializer-owned; cell
  * padding and tag spacing are cosmetic). INSIDE doc strings the body is
  * compared dedented-but-verbatim, so whitespace the parser cannot represent
- * fails the guard instead of being trimmed out of sight. A table row
- * containing a backslash is compared verbatim too: it may carry a `\|` escape
- * the cell model does not represent, and canonicalizing it would hide the
- * corruption.
+ * fails the guard instead of being trimmed out of sight.
  */
+// fallow-ignore-next-line complexity
 const significantLines = (text: string): string[] => {
   const result: string[] = [];
   let fence: string | null = null;
@@ -396,7 +439,7 @@ const significantLines = (text: string): string[] => {
       continue;
     }
     if (trimmed.startsWith("|")) {
-      result.push(trimmed.includes("\\") ? trimmed : `| ${parseTableRow(trimmed).join(" | ")} |`);
+      result.push(`| ${parseTableRow(trimmed).map(serialiseCell).join(" | ")} |`);
       continue;
     }
     result.push(trimmed.startsWith("@") ? trimmed.split(/\s+/).join(" ") : trimmed);

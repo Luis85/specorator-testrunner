@@ -829,3 +829,58 @@ describe("onboarding settings", () => {
     });
   });
 });
+
+describe("scalar shape repair (ci.* / automation.*)", () => {
+  const buildServiceWith = (store: FakeDataStore) =>
+    new DefaultSettingsService(store, new DefaultPathSafetyPolicy(), recordingEventBus().bus);
+
+  it("repairs tampered ci scalars to their defaults on load", async () => {
+    const store = new FakeDataStore();
+    await store.save({
+      ...DEFAULT_SETTINGS,
+      ci: { provider: "circleci", workflowPath: 42, nodeVersion: null },
+    });
+    const service = buildServiceWith(store);
+    const settings = await service.load();
+    expect(settings.ci).toEqual(DEFAULT_SETTINGS.ci);
+  });
+
+  it("repairs tampered automation flags and retention to safe values", async () => {
+    const store = new FakeDataStore();
+    await store.save({
+      ...DEFAULT_SETTINGS,
+      automation: {
+        ...DEFAULT_SETTINGS.automation,
+        autoCreateFolders: "yes",
+        generateEvidenceMarkdown: 1,
+        evidenceRetentionDays: "30",
+      },
+    });
+    const service = buildServiceWith(store);
+    const settings = await service.load();
+    expect(settings.automation.autoCreateFolders).toBe(
+      DEFAULT_SETTINGS.automation.autoCreateFolders,
+    );
+    expect(settings.automation.generateEvidenceMarkdown).toBe(
+      DEFAULT_SETTINGS.automation.generateEvidenceMarkdown,
+    );
+    expect(settings.automation.evidenceRetentionDays).toBeUndefined();
+  });
+
+  it("keeps valid ci/automation values untouched (incl. a real retention number)", async () => {
+    const store = new FakeDataStore();
+    await store.save({
+      ...DEFAULT_SETTINGS,
+      ci: { provider: "azure-devops", workflowPath: "pipelines/e2e.yml", nodeVersion: "20" },
+      automation: { ...DEFAULT_SETTINGS.automation, evidenceRetentionDays: 30 },
+    });
+    const service = buildServiceWith(store);
+    const settings = await service.load();
+    expect(settings.ci).toEqual({
+      provider: "azure-devops",
+      workflowPath: "pipelines/e2e.yml",
+      nodeVersion: "20",
+    });
+    expect(settings.automation.evidenceRetentionDays).toBe(30);
+  });
+});

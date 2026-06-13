@@ -1,4 +1,5 @@
 import { buildStarterFeature, featureFileName, nextFeatureSlug } from "../content/feature-content";
+import { structuralIssues } from "../content/feature-validation";
 import {
   collectStepTexts,
   parseFeature,
@@ -209,28 +210,17 @@ export class DefaultSpecificationService implements SpecificationService {
 
     const errors: SpecificationValidationError[] = [];
 
-    // ADR-0012: a Feature must back-reference exactly one Use Case via filename.
-    if (useCaseIdFromPath(featurePath) === null) {
-      errors.push({
-        message: `Feature "${featurePath}" has no "UC-NNN-" filename prefix (orphan).`,
-      });
-    }
-
     const feature = parseFeature(read.value, featurePath);
     if (feature === null) {
+      // structuralIssues needs a parsed spec; cover the two pre-parse facts here.
+      if (useCaseIdFromPath(featurePath) === null) {
+        errors.push({
+          message: 'No "UC-NNN-" filename prefix — this Feature is an orphan (ADR-0012).',
+        });
+      }
       errors.push({ message: "File does not contain a Feature: declaration." });
     } else {
-      if (feature.featureName === "") {
-        errors.push({ message: "Feature has no name." });
-      }
-      if (feature.scenarios.length === 0) {
-        errors.push({ message: "Feature has no scenarios." });
-      }
-      for (const scenario of feature.scenarios) {
-        if (scenario.steps.length === 0) {
-          errors.push({ message: `Scenario "${scenario.name}" has no steps.` });
-        }
-      }
+      errors.push(...structuralIssues(feature).map(({ message }) => ({ message })));
     }
 
     const result: SpecificationValidationResult = { valid: errors.length === 0, errors };

@@ -22,6 +22,9 @@ import { NodeAbsoluteFileSystem } from "../src/infrastructure/filesystem/node-ab
 vi.mock("obsidian", () => ({
   FileSystemAdapter: class {
     basePath = "/stub/vault/base";
+    constructor(basePath?: string) {
+      if (basePath !== undefined) this.basePath = basePath;
+    }
     getBasePath(): string {
       return this.basePath;
     }
@@ -117,5 +120,29 @@ describe("NodeAbsoluteFileSystem.getVaultBasePath", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("INIT_FAILED");
+  });
+
+  it("strips trailing separators from the base path so consumers can join without double slashes", async () => {
+    const { FileSystemAdapter } = await import("obsidian");
+    // The real obsidian type declares no constructor args, but our vi.mock above
+    // adds an optional `basePath` param for test control. Cast via `unknown` to
+    // satisfy the type-checker while retaining the mock's runtime behaviour.
+    const Adapter = FileSystemAdapter as unknown as new (
+      basePath: string,
+    ) => InstanceType<typeof FileSystemAdapter>;
+
+    // POSIX path with multiple trailing slashes.
+    const posixAdapter = new Adapter("/vaults/my vault///");
+    const posixResult = await new NodeAbsoluteFileSystem(appWith(posixAdapter)).getVaultBasePath();
+    expect(posixResult.ok).toBe(true);
+    if (!posixResult.ok) return;
+    expect(posixResult.value).toBe("/vaults/my vault");
+
+    // Windows-style path with a trailing backslash.
+    const winAdapter = new Adapter("C:\\vaults\\mine\\");
+    const winResult = await new NodeAbsoluteFileSystem(appWith(winAdapter)).getVaultBasePath();
+    expect(winResult.ok).toBe(true);
+    if (!winResult.ok) return;
+    expect(winResult.value).toBe("C:\\vaults\\mine");
   });
 });

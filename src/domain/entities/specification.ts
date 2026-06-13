@@ -22,14 +22,29 @@ export interface ExamplesBlock {
   rows: string[][];
 }
 
+/**
+ * A step's single argument (TD-002): Gherkin allows at most ONE — a data
+ * table or a doc string. The sum type makes the table+docString combination
+ * unrepresentable; `serialiseFeature` can no longer emit Gherkin Cucumber
+ * refuses to parse.
+ */
+export type StepArgument =
+  | { kind: "table"; rows: string[][] }
+  | { kind: "docString"; docString: DocString };
+
 export interface GherkinStep {
   keyword: "Given" | "When" | "Then" | "And" | "But" | "*";
   text: string;
-  /** Optional `|`-table argument attached to the step. */
-  dataTable?: string[][];
-  /** Optional doc-string argument attached to the step. */
-  docString?: DocString;
+  /** The step's at-most-one argument (TD-002). */
+  argument?: StepArgument;
 }
+
+/** Convenience accessors so consumers don't re-spell the discriminant. */
+export const stepTable = (step: GherkinStep): string[][] | undefined =>
+  step.argument?.kind === "table" ? step.argument.rows : undefined;
+
+export const stepDocString = (step: GherkinStep): DocString | undefined =>
+  step.argument?.kind === "docString" ? step.argument.docString : undefined;
 
 export interface ScenarioSpecification {
   /** Absent means a plain `Scenario` (backward compatible with V1 literals). */
@@ -42,6 +57,19 @@ export interface ScenarioSpecification {
   /** `Examples:` blocks (Scenario Outline only). */
   examples?: ExamplesBlock[];
 }
+
+/**
+ * THE "is this scenario an Outline" predicate (TD-005). Deliberately
+ * LENIENT: the `Scenario Outline` keyword OR attached `Examples:` blocks
+ * count. The lenient parser attaches Examples to a plain `Scenario:`
+ * (malformed Gherkin Cucumber rejects); treating it as an Outline keeps
+ * suite/tag match counts, the editor's Examples grid, and V2 scenario
+ * identity (`::row-N`, US-056) in agreement instead of hiding the blocks.
+ * Parse-time keyword normalisation was considered and rejected for now: it
+ * would change round-trip behaviour for malformed files.
+ */
+export const isScenarioOutline = (scenario: ScenarioSpecification): boolean =>
+  scenario.keyword === "Scenario Outline" || scenario.examples !== undefined;
 
 export interface FeatureSpecification {
   path: VaultPath;

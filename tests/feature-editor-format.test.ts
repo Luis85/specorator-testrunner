@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseFeature, serialiseFeature } from "../src/application/content/gherkin";
-import type { ExamplesBlock } from "../src/domain/entities/specification";
+import { type ExamplesBlock, stepDocString } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import {
   addExamplesColumn,
@@ -32,12 +32,12 @@ describe("projectValidation", () => {
     if (VALID) expect(projectValidation(VALID)).toEqual([]);
   });
 
-  it("warns about an orphan filename (ADR-0012)", () => {
+  it("flags an orphan filename as an ERROR (ADR-0012 — both surfaces agree now)", () => {
     const orphan = parseFeature("Feature: F\n\n  Scenario: S\n    Given x\n", vp("orphan.feature"));
     if (!orphan) return;
     const items = projectValidation(orphan);
     expect(items).toHaveLength(1);
-    expect(items[0].level).toBe("warning");
+    expect(items[0].level).toBe("error");
     expect(items[0].message).toContain("orphan");
   });
 
@@ -56,33 +56,17 @@ describe("projectValidation", () => {
     ]);
   });
 
-  it("flags a step carrying both a data table and a text block", () => {
+  it("warns about a rowless Outline implied only by attached Examples (TD-005 lenient predicate)", () => {
     const items = projectValidation({
-      path: vp("Specifications/features/UC-001-both.feature"),
+      path: vp("Specifications/features/UC-001-implied.feature"),
       useCaseId: "UC-001",
       featureName: "F",
       tags: [],
-      scenarios: [
-        {
-          name: "S",
-          tags: [],
-          steps: [
-            {
-              keyword: "Given",
-              text: "x",
-              dataTable: [["a"]],
-              docString: { fence: '"""', lines: ["body"] },
-            },
-          ],
-        },
-      ],
+      // No "Scenario Outline" keyword — but parsed Examples are attached.
+      scenarios: [{ name: "S", tags: [], steps: [{ keyword: "Given", text: "x" }], examples: [] }],
     });
     expect(items).toEqual([
-      {
-        level: "error",
-        message:
-          'A step in "S" has both a data table and a text block (Gherkin allows one argument).',
-      },
+      { level: "warning", message: 'Scenario Outline "S" has no Examples rows.' },
     ]);
   });
 });
@@ -145,8 +129,8 @@ describe("sanitizers", () => {
     expect(normalizeTag("@")).toBeNull();
   });
 
-  it("sanitizeCell strips pipes (they would break the row syntax)", () => {
-    expect(sanitizeCell(" a | b ")).toBe("a / b");
+  it("sanitizeCell trims only — pipes are handled by the serializer's escape (TD-001)", () => {
+    expect(sanitizeCell(" a | b ")).toBe("a | b");
   });
 
   it("fenceFor avoids the fence the body contains", () => {
@@ -182,13 +166,20 @@ describe("sanitizers", () => {
     expect(feature).not.toBeNull();
     if (!feature) return;
     const fence = fenceFor(['"""', "```"]);
-    feature.scenarios[0].steps[0].docString = {
-      fence,
-      lines: sanitizeDocStringLines(['"""', "```", "tail"], fence),
+    feature.scenarios[0].steps[0].argument = {
+      kind: "docString",
+      docString: {
+        fence,
+        lines: sanitizeDocStringLines(['"""', "```", "tail"], fence),
+      },
     };
     const text = serialiseFeature(feature);
     const reparsed = parseFeature(text, feature.path);
-    expect(reparsed?.scenarios[0].steps[0].docString?.lines).toEqual(['"""', "\\```", "tail"]);
+    expect(reparsed && stepDocString(reparsed.scenarios[0].steps[0])?.lines).toEqual([
+      '"""',
+      "\\```",
+      "tail",
+    ]);
     expect(reparsed?.scenarios[0].steps).toHaveLength(1);
   });
 });

@@ -4,6 +4,9 @@ import type { PathSafetyPolicy } from "../../domain/policies/path-safety-policy"
 import {
   authEnvKeyProblem,
   DEFAULT_SETTINGS,
+  type AutomationSettings,
+  type CiProvider,
+  type CiSettings,
   type OnboardingSequenceProgress,
   type OnboardingSettings,
   type SutEnvironment,
@@ -17,6 +20,7 @@ import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
+import { SerialQueue } from "../../shared/async/serial-queue";
 
 /** No-op logger so tests can construct the service without wiring one. */
 const NOOP_LOGGER: Logger = {
@@ -53,6 +57,17 @@ export interface SettingsValidationMessage {
 }
 
 /**
+ * Errors + warnings produced by one section validator. {@link
+ * DefaultSettingsService.validate} concatenates these; the per-section split
+ * keeps each validator a single-responsibility unit (the `valid` verdict is
+ * computed once, on the merged result).
+ */
+interface ValidationMessages {
+  errors: SettingsValidationMessage[];
+  warnings: SettingsValidationMessage[];
+}
+
+/**
  * True for a plain JSON record (not null, not an array). {@link mergeWithDefaults}
  * merges one level deep, so a tampered/synced `data.json` can place ANY JSON
  * shape at nested positions (`sut.environments: null`, an array, a string) —
@@ -64,6 +79,13 @@ const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** Runtime mirror of LoggingSettings["level"] for tamper repair on load. */
 const LOG_LEVELS: ReadonlySet<string> = new Set(["debug", "info", "warn", "error"]);
+
+/** Runtime mirror of {@link CiProvider} union for tamper repair on load. */
+const CI_PROVIDERS: ReadonlySet<string> = new Set([
+  "github-actions",
+  "azure-devops",
+  "none",
+] satisfies CiProvider[]);
 
 /** Shallow-by-section merge of persisted data over defaults. */
 const mergeWithDefaults = (raw: unknown): TestHubSettings => {
@@ -100,22 +122,78 @@ export class DefaultSettingsService implements SettingsService {
    * "previous", interleave their load→save→diff sections, and the last
    * whole-object write would win — silently dropping the first change (F2).
    */
-  private persistChain: Promise<unknown> = Promise.resolve();
-
-  /** Queues `task` behind every previously queued persistence task. */
-  private serialize<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.persistChain.then(task);
-    // The chain itself must survive a failed task; the failure still reaches
-    // the caller through `run`.
-    this.persistChain = run.catch(() => undefined);
-    return run;
-  }
+  private readonly persistQueue = new SerialQueue();
 
   async load(): Promise<TestHubSettings> {
-    const settings = this.sanitizeRunnerEnvInputs(
-      this.sanitizePaths(mergeWithDefaults(await this.store.load())),
+    const settings = this.sanitizeScalarShapes(
+      this.sanitizeRunnerEnvInputs(this.sanitizePaths(mergeWithDefaults(await this.store.load()))),
     );
     return { ...settings, onboarding: repairOnboardingShape(settings.onboarding) };
+  }
+
+  /**
+   * Repairs `ci.*` / `automation.*` scalars with the same log-and-fallback
+   * posture as {@link sanitizePaths} (review §4): a tampered/synced data.json
+   * must not crash `.trim()` call sites or flip automation behaviour with
+   * truthy garbage. V2 grows both sections; new scalars get screened here.
+   */
+  private sanitizeScalarShapes(settings: TestHubSettings): TestHubSettings {
+    const repair = <T>(field: string, value: unknown, valid: boolean, fallback: T): T => {
+      if (valid) return value as T;
+      this.logger.error(
+        `Configured "${field}" has an invalid value; falling back to the default.`,
+        undefined,
+        { field, value, fallback },
+      );
+      return fallback;
+    };
+    const booleanFlag = (field: keyof AutomationSettings): boolean =>
+      repair(
+        `automation.${field}`,
+        settings.automation[field],
+        typeof settings.automation[field] === "boolean",
+        DEFAULT_SETTINGS.automation[field] as boolean,
+      );
+    const retention = settings.automation.evidenceRetentionDays;
+    return {
+      ...settings,
+      ci: {
+        provider: repair(
+          "ci.provider",
+          settings.ci.provider,
+          typeof settings.ci.provider === "string" && CI_PROVIDERS.has(settings.ci.provider),
+          DEFAULT_SETTINGS.ci.provider,
+        ),
+        workflowPath: repair(
+          "ci.workflowPath",
+          settings.ci.workflowPath,
+          typeof settings.ci.workflowPath === "string",
+          DEFAULT_SETTINGS.ci.workflowPath,
+        ),
+        nodeVersion: repair(
+          "ci.nodeVersion",
+          settings.ci.nodeVersion,
+          typeof settings.ci.nodeVersion === "string",
+          DEFAULT_SETTINGS.ci.nodeVersion,
+        ),
+      } satisfies CiSettings,
+      automation: {
+        autoCreateFolders: booleanFlag("autoCreateFolders"),
+        autoCreateDocumentation: booleanFlag("autoCreateDocumentation"),
+        autoCreateDemoContent: booleanFlag("autoCreateDemoContent"),
+        updateUseCaseFrontmatterAfterRun: booleanFlag("updateUseCaseFrontmatterAfterRun"),
+        generateEvidenceMarkdown: booleanFlag("generateEvidenceMarkdown"),
+        openDashboardAfterInitialization: booleanFlag("openDashboardAfterInitialization"),
+        // undefined = keep forever (the V1 default) — also the repair fallback.
+        evidenceRetentionDays: repair<number | undefined>(
+          "automation.evidenceRetentionDays",
+          retention,
+          retention === undefined ||
+            (typeof retention === "number" && Number.isFinite(retention) && retention > 0),
+          undefined,
+        ),
+      } satisfies AutomationSettings,
+    };
   }
 
   /**
@@ -222,48 +300,67 @@ export class DefaultSettingsService implements SettingsService {
     const sut = this.repairSutShape(settings.sut);
     const environments: Record<string, SutEnvironment> = {};
     for (const [name, environment] of Object.entries(sut.environments)) {
-      let env = environment;
-
-      const authEnv = environment.auth?.env;
-      if (authEnv && Object.keys(authEnv).some((key) => authEnvKeyProblem(key) !== undefined)) {
-        const kept: Record<string, string> = {};
-        for (const [key, value] of Object.entries(authEnv)) {
-          const problem = authEnvKeyProblem(key);
-          if (!problem) {
-            kept[key] = value;
-          } else {
-            // Log the offending KEY + reason only — never its value (credential,
-            // ADR-0019). Reserved process-control keys (PATH, NODE_OPTIONS, …)
-            // are dropped here too, so they can't reach the runner env sink.
-            this.logger.error(
-              // Field name `entry`, not `key`: the logger's SENSITIVE_KEY
-              // pattern matches the field NAME "key" and would blank exactly
-              // the diagnostic this log exists to carry (F5). The env-var NAME
-              // is not a credential — only its value is (ADR-0019).
-              `Configured auth env key in "sut.environments.${name}" ${problem}; dropping that entry.`,
-              undefined,
-              { environment: name, entry: key },
-            );
-          }
-        }
-        env = { ...env, auth: { ...env.auth, env: kept } };
-      }
-
-      const urlProblem = baseUrlProblem(env.baseUrl);
-      if (urlProblem) {
-        const fallback = DEFAULT_SETTINGS.sut.environments[name]?.baseUrl ?? "";
-        this.logger.error(
-          `Configured "sut.environments.${name}.baseUrl" ${urlProblem}; falling back to ${JSON.stringify(fallback)}.`,
-          undefined,
-          { environment: name, value: env.baseUrl, fallback },
-        );
-        env = { ...env, baseUrl: fallback };
-      }
-
-      environments[name] = env;
+      environments[name] = this.screenEnvironmentValues(name, environment);
     }
 
     return { ...settings, runner, sut: { ...sut, environments } };
+  }
+
+  /**
+   * Value-level screening for a single (structurally-repaired) environment:
+   * screens the `auth.env` keys then the `baseUrl`, mirroring the
+   * {@link sanitizeRunnerEnvInputs} posture (log + drop/replace, never break
+   * startup). See that method's doc for the env-injection sink rationale.
+   */
+  private screenEnvironmentValues(name: string, environment: SutEnvironment): SutEnvironment {
+    let env = this.screenAuthEnvKeys(name, environment);
+
+    const urlProblem = baseUrlProblem(env.baseUrl);
+    if (urlProblem) {
+      const fallback = DEFAULT_SETTINGS.sut.environments[name]?.baseUrl ?? "";
+      this.logger.error(
+        `Configured "sut.environments.${name}.baseUrl" ${urlProblem}; falling back to ${JSON.stringify(fallback)}.`,
+        undefined,
+        { environment: name, value: env.baseUrl, fallback },
+      );
+      env = { ...env, baseUrl: fallback };
+    }
+
+    return env;
+  }
+
+  /**
+   * Drops any `auth.env` KEY that fails {@link authEnvKeyProblem}, keeping valid
+   * siblings. Reserved process-control keys (PATH, NODE_OPTIONS, …) are dropped
+   * here too, so they can't reach the runner env sink. Returns the environment
+   * unchanged when every key is valid.
+   */
+  private screenAuthEnvKeys(name: string, environment: SutEnvironment): SutEnvironment {
+    const authEnv = environment.auth?.env;
+    if (!authEnv || !Object.keys(authEnv).some((key) => authEnvKeyProblem(key) !== undefined)) {
+      return environment;
+    }
+    const kept: Record<string, string> = {};
+    for (const [key, value] of Object.entries(authEnv)) {
+      const problem = authEnvKeyProblem(key);
+      if (!problem) {
+        kept[key] = value;
+      } else {
+        // Log the offending KEY + reason only — never its value (credential,
+        // ADR-0019). Reserved process-control keys (PATH, NODE_OPTIONS, …)
+        // are dropped here too, so they can't reach the runner env sink.
+        this.logger.error(
+          // Field name `entry`, not `key`: the logger's SENSITIVE_KEY
+          // pattern matches the field NAME "key" and would blank exactly
+          // the diagnostic this log exists to carry (F5). The env-var NAME
+          // is not a credential — only its value is (ADR-0019).
+          `Configured auth env key in "sut.environments.${name}" ${problem}; dropping that entry.`,
+          undefined,
+          { environment: name, entry: key },
+        );
+      }
+    }
+    return { ...environment, auth: { ...environment.auth, env: kept } };
   }
 
   /**
@@ -294,55 +391,7 @@ export class DefaultSettingsService implements SettingsService {
       return DEFAULT_SETTINGS.sut;
     }
 
-    const environments: Record<string, SutEnvironment> = {};
-    for (const [name, candidate] of Object.entries<unknown>(sut.environments)) {
-      if (!isPlainRecord(candidate) || typeof candidate.baseUrl !== "string") {
-        const fallback = DEFAULT_SETTINGS.sut.environments[name];
-        this.logger.error(
-          `Configured "sut.environments.${name}" is not an environment object; ` +
-            (fallback ? `falling back to the default.` : `dropping it.`),
-          undefined,
-          { environment: name },
-        );
-        if (fallback) environments[name] = fallback;
-        continue;
-      }
-
-      const rawAuth = candidate.auth;
-      let auth: SutEnvironment["auth"];
-      if (rawAuth !== undefined) {
-        const rawEnv = isPlainRecord(rawAuth) ? rawAuth.env : undefined;
-        if (!isPlainRecord(rawEnv)) {
-          this.logger.error(
-            `Configured "sut.environments.${name}.auth" is malformed; removing it.`,
-            undefined,
-            { environment: name },
-          );
-        } else {
-          const env: Record<string, string> = {};
-          for (const [key, value] of Object.entries(rawEnv)) {
-            if (typeof value === "string") {
-              env[key] = value;
-            } else {
-              // KEY only — the value may be a credential (ADR-0019). Field
-              // name `entry`, not `key`, so SENSITIVE_KEY doesn't blank it (F5).
-              this.logger.error(
-                `Configured auth env value in "sut.environments.${name}" is not a string; dropping that entry.`,
-                undefined,
-                { environment: name, entry: key },
-              );
-            }
-          }
-          auth = { env };
-        }
-      }
-
-      // Rebuild from the known fields so junk keys a tampered data.json added
-      // to an environment object don't ride along into the typed settings.
-      environments[name] = auth
-        ? { baseUrl: candidate.baseUrl, auth }
-        : { baseUrl: candidate.baseUrl };
-    }
+    const environments = this.repairEnvironmentsRecord(sut.environments);
 
     if (Object.keys(environments).length === 0) {
       this.logger.error(
@@ -353,45 +402,141 @@ export class DefaultSettingsService implements SettingsService {
       return DEFAULT_SETTINGS.sut;
     }
 
-    if (typeof sut.active !== "string") {
+    return this.repairActive(sut.active, sut.environments, environments);
+  }
+
+  /**
+   * Repairs each entry of the (already-confirmed-record) `environments` map,
+   * dropping or defaulting malformed entries. See {@link repairSutShape} for
+   * the per-concern posture this implements.
+   */
+  private repairEnvironmentsRecord(
+    rawEnvironments: Record<string, unknown>,
+  ): Record<string, SutEnvironment> {
+    const environments: Record<string, SutEnvironment> = {};
+    for (const [name, candidate] of Object.entries<unknown>(rawEnvironments)) {
+      const repaired = this.repairEnvironmentEntry(name, candidate);
+      if (repaired) environments[name] = repaired;
+    }
+    return environments;
+  }
+
+  /**
+   * Repairs a single environment entry. A non-record entry (or one without a
+   * string `baseUrl`) is replaced with the same-named default when one exists,
+   * else dropped (returns `undefined`). Otherwise it is rebuilt from the known
+   * fields so junk keys a tampered data.json added don't ride along.
+   */
+  private repairEnvironmentEntry(name: string, candidate: unknown): SutEnvironment | undefined {
+    if (!isPlainRecord(candidate) || typeof candidate.baseUrl !== "string") {
+      const fallback = DEFAULT_SETTINGS.sut.environments[name];
+      this.logger.error(
+        `Configured "sut.environments.${name}" is not an environment object; ` +
+          (fallback ? `falling back to the default.` : `dropping it.`),
+        undefined,
+        { environment: name },
+      );
+      return fallback;
+    }
+
+    const auth = this.repairEnvironmentAuth(name, candidate.auth);
+    // Rebuild from the known fields so junk keys a tampered data.json added
+    // to an environment object don't ride along into the typed settings.
+    return auth ? { baseUrl: candidate.baseUrl, auth } : { baseUrl: candidate.baseUrl };
+  }
+
+  /**
+   * Repairs an environment's `auth`/`auth.env`: a malformed `auth`/`auth.env`
+   * is stripped (returns `undefined`); a non-string `auth.env` VALUE drops that
+   * entry (the subprocess env requires string values; only the KEY is logged —
+   * the value may be a credential, ADR-0019).
+   */
+  private repairEnvironmentAuth(name: string, rawAuth: unknown): SutEnvironment["auth"] {
+    if (rawAuth === undefined) return undefined;
+    const rawEnv = isPlainRecord(rawAuth) ? rawAuth.env : undefined;
+    if (!isPlainRecord(rawEnv)) {
+      this.logger.error(
+        `Configured "sut.environments.${name}.auth" is malformed; removing it.`,
+        undefined,
+        { environment: name },
+      );
+      return undefined;
+    }
+    const env: Record<string, string> = {};
+    for (const [key, value] of Object.entries(rawEnv)) {
+      if (typeof value === "string") {
+        env[key] = value;
+      } else {
+        // KEY only — the value may be a credential (ADR-0019). Field
+        // name `entry`, not `key`, so SENSITIVE_KEY doesn't blank it (F5).
+        this.logger.error(
+          `Configured auth env value in "sut.environments.${name}" is not a string; dropping that entry.`,
+          undefined,
+          { environment: name, entry: key },
+        );
+      }
+    }
+    return { env };
+  }
+
+  /**
+   * Resolves the active environment against the repaired map. A non-string
+   * `active`, or one whose entry existed but was dropped by THIS repair, is
+   * repointed to a surviving environment so startup always has an addressable
+   * active env. An `active` naming an entry that never existed is left as-is for
+   * validate() to flag (that dangle is user-authored, not repair-made).
+   */
+  private repairActive(
+    active: unknown,
+    rawEnvironments: Record<string, unknown>,
+    environments: Record<string, SutEnvironment>,
+  ): TestHubSettings["sut"] {
+    if (typeof active !== "string") {
       // Since WE pick the replacement here, it must point at a surviving
       // environment — the default name when it survived, else the first one.
       // (A user-authored active STRING that dangles is different: it is left
       // as-is below for validate() to flag, never silently rewritten.)
-      const active = environments[DEFAULT_SETTINGS.sut.active]
-        ? DEFAULT_SETTINGS.sut.active
-        : Object.keys(environments)[0];
+      const fallback = this.fallbackActive(environments);
       this.logger.error(
-        `Configured "sut.active" is not a string; falling back to ${JSON.stringify(active)}.`,
+        `Configured "sut.active" is not a string; falling back to ${JSON.stringify(fallback)}.`,
         undefined,
-        { value: sut.active, fallback: active },
+        { value: active, fallback },
       );
-      return { active, environments };
+      return { active: fallback, environments };
     }
     // Object.hasOwn (not `in`): an environment named "constructor"/"toString"
     // would hit the prototype chain with `in` and misreport as repair-dropped.
-    if (!environments[sut.active] && Object.hasOwn(sut.environments, sut.active)) {
+    if (!environments[active] && Object.hasOwn(rawEnvironments, active)) {
       // The active environment EXISTED in data.json but THIS repair just
       // dropped it as malformed (PR #18 review). Leaving the dangle would make
       // runEnv() silently execute with an empty env (no BASE_URL, no auth), so
       // repoint to a surviving environment exactly like the non-string repair
       // above. (An active naming an entry that never existed stays as-is for
       // validate() to flag — that dangle is user-authored, not repair-made.)
-      const active = environments[DEFAULT_SETTINGS.sut.active]
-        ? DEFAULT_SETTINGS.sut.active
-        : Object.keys(environments)[0];
+      const fallback = this.fallbackActive(environments);
       this.logger.error(
-        `Configured "sut.active" pointed at the malformed environment ${JSON.stringify(sut.active)} that was just dropped; falling back to ${JSON.stringify(active)}.`,
+        `Configured "sut.active" pointed at the malformed environment ${JSON.stringify(active)} that was just dropped; falling back to ${JSON.stringify(fallback)}.`,
         undefined,
-        { value: sut.active, fallback: active },
+        { value: active, fallback },
       );
-      return { active, environments };
+      return { active: fallback, environments };
     }
-    return { active: sut.active, environments };
+    return { active, environments };
+  }
+
+  /**
+   * The repair-chosen active environment: the default name when it survived,
+   * else the first surviving environment. Used only where THIS repair picks the
+   * replacement, so it must point at a surviving environment.
+   */
+  private fallbackActive(environments: Record<string, SutEnvironment>): string {
+    return environments[DEFAULT_SETTINGS.sut.active]
+      ? DEFAULT_SETTINGS.sut.active
+      : Object.keys(environments)[0];
   }
 
   save(settings: TestHubSettings): Promise<Result<void>> {
-    return this.serialize(async () => {
+    return this.persistQueue.run(async () => {
       const validation = await this.validate(settings);
       if (!validation.valid) {
         return err(
@@ -412,7 +557,7 @@ export class DefaultSettingsService implements SettingsService {
   }
 
   reset(correlationId?: string): Promise<Result<TestHubSettings>> {
-    return this.serialize(async () => {
+    return this.persistQueue.run(async () => {
       const saved = await this.store.save(DEFAULT_SETTINGS);
       if (!saved.ok) return saved;
       await this.eventBus.publish(
@@ -422,9 +567,9 @@ export class DefaultSettingsService implements SettingsService {
     });
   }
 
-  async validate(settings: TestHubSettings): Promise<SettingsValidationResult> {
+  /** Screens every configured path (and `logging.path`) through PathSafetyPolicy. */
+  private validatePaths(settings: TestHubSettings): ValidationMessages {
     const errors: SettingsValidationMessage[] = [];
-    const warnings: SettingsValidationMessage[] = [];
 
     for (const [field, value] of Object.entries(settings.paths) as [
       keyof TestHubPathSettings,
@@ -444,6 +589,18 @@ export class DefaultSettingsService implements SettingsService {
         severity: "error",
       });
     }
+
+    return { errors, warnings: [] };
+  }
+
+  /**
+   * Validates the `sut` section: the active environment resolves, and every
+   * environment's auth-env keys + baseUrl pass the same screens {@link
+   * sanitizeRunnerEnvInputs} would have to repair on load.
+   */
+  private validateSut(settings: TestHubSettings): ValidationMessages {
+    const errors: SettingsValidationMessage[] = [];
+    const warnings: SettingsValidationMessage[] = [];
 
     // Defensive shape guard: validate() is typed, but a caller can hand it a
     // pre-repair shape (raw merged data.json, adversarial tests). A non-record
@@ -467,81 +624,138 @@ export class DefaultSettingsService implements SettingsService {
     // so validate() must flag what {@link sanitizeRunnerEnvInputs} would have
     // to repair on load — keeping save() from ever persisting such a value.
     for (const [name, environment] of Object.entries(environments)) {
-      if (!isPlainRecord(environment)) {
-        errors.push({
-          field: `sut.environments.${name}`,
-          message: `Environment "${name}" is not an environment object.`,
-          severity: "error",
-        });
-        continue;
-      }
-      // auth.env KEYS become environment-variable names in the child process
-      // and `secrets.<KEY>` references in the generated workflow, so they must
-      // be identifier-shaped AND not a reserved process-control variable (PATH,
-      // NODE_OPTIONS, LD_*, …) that could redirect/inject the spawn. The rule is
-      // shared with pipeline generation via {@link authEnvKeyProblem} in the
-      // domain settings module. The CI-only `GITHUB_`-prefix rejection
-      // deliberately stays in pipeline-generation-service: locally a `GITHUB_*`
-      // env var is legitimate — it only fails as a GitHub repository SECRET name.
-      for (const key of Object.keys(environment.auth?.env ?? {})) {
-        const problem = authEnvKeyProblem(key);
-        if (problem) {
-          errors.push({
-            field: `sut.environments.${name}.auth.env.${key}`,
-            message: `Auth env key ${JSON.stringify(key)} ${problem}.`,
-            severity: "error",
-          });
-        }
-      }
+      const messages = this.validateSutEnvironment(name, environment);
+      errors.push(...messages.errors);
+      warnings.push(...messages.warnings);
+    }
 
-      const urlProblem = baseUrlProblem(environment.baseUrl);
-      if (urlProblem) {
+    return { errors, warnings };
+  }
+
+  /**
+   * Validates a single SUT environment's auth-env keys and baseUrl (the runner
+   * env-injection sink). See {@link validateSut} for the SEC rationale.
+   */
+  private validateSutEnvironment(name: string, environment: SutEnvironment): ValidationMessages {
+    if (!isPlainRecord(environment)) {
+      return {
+        errors: [
+          {
+            field: `sut.environments.${name}`,
+            message: `Environment "${name}" is not an environment object.`,
+            severity: "error",
+          },
+        ],
+        warnings: [],
+      };
+    }
+
+    const errors: SettingsValidationMessage[] = [];
+    const warnings: SettingsValidationMessage[] = [];
+
+    // auth.env KEYS become environment-variable names in the child process
+    // and `secrets.<KEY>` references in the generated workflow, so they must
+    // be identifier-shaped AND not a reserved process-control variable (PATH,
+    // NODE_OPTIONS, LD_*, …) that could redirect/inject the spawn. The rule is
+    // shared with pipeline generation via {@link authEnvKeyProblem} in the
+    // domain settings module. The CI-only `GITHUB_`-prefix rejection
+    // deliberately stays in pipeline-generation-service: locally a `GITHUB_*`
+    // env var is legitimate — it only fails as a GitHub repository SECRET name.
+    for (const key of Object.keys(environment.auth?.env ?? {})) {
+      const problem = authEnvKeyProblem(key);
+      if (problem) {
         errors.push({
-          field: `sut.environments.${name}.baseUrl`,
-          message: `Environment "${name}" baseUrl ${urlProblem}.`,
+          field: `sut.environments.${name}.auth.env.${key}`,
+          message: `Auth env key ${JSON.stringify(key)} ${problem}.`,
           severity: "error",
-        });
-      } else if (environment.baseUrl.trim() === "") {
-        // Empty baseUrl is a WARNING, not an error: it is incomplete
-        // configuration rather than an injection vector (an empty BASE_URL is
-        // inert in the child env), it is the load()-time fallback for a
-        // tampered non-default environment, and erroring would block saving a
-        // half-configured environment. DEFAULT_SETTINGS uses a non-empty
-        // file:// demo fixture, so the defaults hit neither branch.
-        warnings.push({
-          field: `sut.environments.${name}.baseUrl`,
-          message: `Environment "${name}" has an empty baseUrl; runs against it will receive an empty BASE_URL.`,
-          severity: "warning",
         });
       }
     }
 
+    const urlProblem = baseUrlProblem(environment.baseUrl);
+    if (urlProblem) {
+      errors.push({
+        field: `sut.environments.${name}.baseUrl`,
+        message: `Environment "${name}" baseUrl ${urlProblem}.`,
+        severity: "error",
+      });
+    } else if (environment.baseUrl.trim() === "") {
+      // Empty baseUrl is a WARNING, not an error: it is incomplete
+      // configuration rather than an injection vector (an empty BASE_URL is
+      // inert in the child env), it is the load()-time fallback for a
+      // tampered non-default environment, and erroring would block saving a
+      // half-configured environment. DEFAULT_SETTINGS uses a non-empty
+      // file:// demo fixture, so the defaults hit neither branch.
+      warnings.push({
+        field: `sut.environments.${name}.baseUrl`,
+        message: `Environment "${name}" has an empty baseUrl; runs against it will receive an empty BASE_URL.`,
+        severity: "warning",
+      });
+    }
+
+    return { errors, warnings };
+  }
+
+  /** Validates `runner.nodeExecutable` against what CommandSafetyPolicy can't see. */
+  private validateRunner(settings: TestHubSettings): ValidationMessages {
     // Bare names ("node") and absolute paths stay allowed — CommandSafetyPolicy
     // governs the basename at spawn time. Settings only reject what that check
     // cannot see: control characters/newlines and `..` traversal segments,
     // which could steer the spawn to a different binary than the basename
     // suggests.
     const nodeProblem = nodeExecutableProblem(settings.runner.nodeExecutable);
-    if (nodeProblem) {
-      errors.push({
-        field: "runner.nodeExecutable",
-        message: `Node executable ${nodeProblem}.`,
-        severity: "error",
-      });
-    }
+    if (!nodeProblem) return { errors: [], warnings: [] };
+    return {
+      errors: [
+        {
+          field: "runner.nodeExecutable",
+          message: `Node executable ${nodeProblem}.`,
+          severity: "error",
+        },
+      ],
+      warnings: [],
+    };
+  }
 
-    if (!settings.ci.nodeVersion.trim()) {
-      warnings.push({
-        field: "ci.nodeVersion",
-        message: "CI Node version is empty; the generated workflow may be invalid.",
-        severity: "warning",
-      });
-    }
+  /** Validates the `ci` section (currently the workflow Node version). */
+  private validateCi(settings: TestHubSettings): ValidationMessages {
+    if (settings.ci.nodeVersion.trim()) return { errors: [], warnings: [] };
+    return {
+      errors: [],
+      warnings: [
+        {
+          field: "ci.nodeVersion",
+          message: "CI Node version is empty; the generated workflow may be invalid.",
+          severity: "warning",
+        },
+      ],
+    };
+  }
 
-    // ADR-0015 one-project-per-vault: surface (as a WARNING, never an error so
-    // the plugin still loads) any sibling/duplicate Test Hub folder.
+  /**
+   * ADR-0015 one-project-per-vault: surface (as a WARNING, never an error so
+   * the plugin still loads) any sibling/duplicate Test Hub folder.
+   */
+  private async validateVaultLayout(settings: TestHubSettings): Promise<ValidationMessages> {
     const siblingWarning = await this.detectSiblingTestHub(settings);
-    if (siblingWarning) warnings.push(siblingWarning);
+    return { errors: [], warnings: siblingWarning ? [siblingWarning] : [] };
+  }
+
+  async validate(settings: TestHubSettings): Promise<SettingsValidationResult> {
+    const errors: SettingsValidationMessage[] = [];
+    const warnings: SettingsValidationMessage[] = [];
+
+    const sections: ValidationMessages[] = [
+      this.validatePaths(settings),
+      this.validateSut(settings),
+      this.validateRunner(settings),
+      this.validateCi(settings),
+      await this.validateVaultLayout(settings),
+    ];
+    for (const section of sections) {
+      errors.push(...section.errors);
+      warnings.push(...section.warnings);
+    }
 
     const result: SettingsValidationResult = {
       valid: errors.length === 0,
@@ -607,10 +821,9 @@ export class DefaultSettingsService implements SettingsService {
     const seen = new Set<string>();
     for (const folderPath of listed.value) {
       const trimmed = folderPath.trim();
-      if (trimmed === "") continue;
-      if (parentDir(trimmed) !== configuredParent) continue; // siblings only (same parent)
-      if (trimmed === configured) continue; // the canonical Test Hub itself
-      if (!isTestHubSibling(baseName(trimmed), configuredKey)) continue;
+      if (!isConflictingTestHubSibling(trimmed, configured, configuredParent, configuredKey)) {
+        continue;
+      }
       const key = trimmed.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -730,6 +943,26 @@ const isTestHubSibling = (folderBaseName: string, configuredKey: string): boolea
   if (!key.startsWith(configuredKey)) return false;
   const suffix = key.slice(configuredKey.length).trim();
   return /^[-_]?\s*(copy|\(?\d+\)?)?$/.test(suffix);
+};
+
+/**
+ * True when a listed vault folder is an ADDITIONAL Test Hub colliding with the
+ * configured one: it is non-empty, a SIBLING (same parent, so a relocated
+ * `QA/Test Hub` is handled), not the canonical Test Hub itself, and a
+ * sync/copy-style duplicate by base name ({@link isTestHubSibling}). Pure —
+ * see {@link DefaultSettingsService.detectSiblingTestHub} for the ADR-0015
+ * rationale this implements.
+ */
+const isConflictingTestHubSibling = (
+  trimmed: string,
+  configured: string,
+  configuredParent: string,
+  configuredKey: string,
+): boolean => {
+  if (trimmed === "") return false;
+  if (parentDir(trimmed) !== configuredParent) return false; // siblings only (same parent)
+  if (trimmed === configured) return false; // the canonical Test Hub itself
+  return isTestHubSibling(baseName(trimmed), configuredKey);
 };
 
 /**

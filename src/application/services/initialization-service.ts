@@ -67,6 +67,14 @@ export type InitializationStep =
   | "browsers"
   | "validate";
 
+/** Shared state threaded through the initialization step methods. */
+interface InitializationContext {
+  request: InitializeTestHubRequest;
+  correlationId: string;
+  onProgress: ProgressReporter;
+  result: InitializeTestHubResult;
+}
+
 export class DefaultInitializationService implements InitializationService {
   /**
    * Re-entrancy guard (entry-point review): two wizards (ribbon + palette) or a
@@ -151,114 +159,34 @@ export class DefaultInitializationService implements InitializationService {
     await this.eventBus.publish({ ...started, correlationId });
     this.logger.info("Initializing Test Hub", { correlationId });
 
-    const result: InitializeTestHubResult = {
-      createdFolders: [],
-      createdFiles: [],
-      defaultSuitesCreated: [],
-      runnerInstalled: false,
-      documentationGenerated: false,
-      demoGenerated: false,
+    const ctx: InitializationContext = {
+      request,
+      correlationId,
+      onProgress,
+      result: {
+        createdFolders: [],
+        createdFiles: [],
+        defaultSuitesCreated: [],
+        runnerInstalled: false,
+        documentationGenerated: false,
+        demoGenerated: false,
+      },
     };
 
-    const fail = async (step: InitializationStep, error: AppError) => {
-      onProgress({ step, label: step, status: "failed", detail: error.message });
-      this.logger.error("Initialization failed", error, { correlationId, step });
-      await this.eventBus.publish(
-        createEvent(
-          "testhub.initialization.failed",
-          { reason: error.message, step },
-          { correlationId },
-        ),
-      );
-      return err(error);
-    };
-
-    // 1. Persist settings (defaults loaded + validated).
-    onProgress({ step: "settings", label: "Saving settings", status: "running" });
-    const saved = await this.settingsService.save(request.settings);
-    if (!saved.ok) return fail("settings", saved.error);
-    onProgress({ step: "settings", label: "Saving settings", status: "done" });
-
-    // 2. Create the vault folder structure (US-005).
-    onProgress({ step: "folders", label: "Creating folders", status: "running" });
-    const folders = await this.createFolders(request.settings);
-    if (!folders.ok) return fail("folders", folders.error);
-    result.createdFolders = folders.value;
-    onProgress({
-      step: "folders",
-      label: "Creating folders",
-      status: "done",
-      detail: `${folders.value.length} folders`,
-    });
-
-    // 3. Documentation (US-009).
-    if (request.generateDocumentation) {
-      onProgress({ step: "documentation", label: "Generating documentation", status: "running" });
-      const docs = await this.documentation.generate(correlationId);
-      if (!docs.ok) return fail("documentation", docs.error);
-      result.createdFiles.push(...docs.value.documents);
-      result.documentationGenerated = true;
-      onProgress({ step: "documentation", label: "Generating documentation", status: "done" });
-    } else {
-      onProgress({ step: "documentation", label: "Generating documentation", status: "skipped" });
+    const steps: ((ctx: InitializationContext) => Promise<Result<void>>)[] = [
+      (c) => this.persistSettingsStep(c),
+      (c) => this.createFoldersStep(c),
+      (c) => this.documentationStep(c),
+      (c) => this.defaultSuitesStep(c),
+      (c) => this.demoContentStep(c),
+      (c) => this.createRunnerStep(c),
+      (c) => this.installDependenciesStep(c),
+      (c) => this.validateEnvironmentStep(c),
+    ];
+    for (const step of steps) {
+      const outcome = await step(ctx);
+      if (!outcome.ok) return outcome;
     }
-
-    // 4. Default suites (US-008): Smoke + Regression.
-    onProgress({ step: "suites", label: "Creating default suites", status: "running" });
-    const suites = await this.suites.createDefaults(correlationId);
-    if (!suites.ok) return fail("suites", suites.error);
-    result.defaultSuitesCreated = suites.value.map((suite) => suite.id);
-    result.createdFiles.push(...suites.value.map((suite) => suite.path));
-    onProgress({ step: "suites", label: "Creating default suites", status: "done" });
-
-    // 5. Demo content (US-006/US-007).
-    if (request.generateDemoContent) {
-      onProgress({ step: "demo", label: "Generating demo content", status: "running" });
-      const demo = await this.demo.generate();
-      if (!demo.ok) return fail("demo", demo.error);
-      result.createdFiles.push(demo.value.useCasePath, demo.value.featurePath);
-      result.demoGenerated = true;
-      onProgress({ step: "demo", label: "Generating demo content", status: "done" });
-    } else {
-      onProgress({ step: "demo", label: "Generating demo content", status: "skipped" });
-    }
-
-    // 6. Materialise the .testrunner project (US-010, RV-1).
-    onProgress({ step: "runner", label: "Creating runner project", status: "running" });
-    const runner = await this.runnerInstall.createRunner(request.settings, correlationId);
-    if (!runner.ok) return fail("runner", runner.error);
-    result.runnerInstalled = true;
-    result.createdFiles.push(...runner.value.createdFiles);
-    onProgress({ step: "runner", label: "Creating runner project", status: "done" });
-
-    // 7. Install dependencies (US-011). A non-zero exit fails init (RV-1).
-    if (request.installDependencies) {
-      onProgress({ step: "dependencies", label: "Installing dependencies", status: "running" });
-      const deps = await this.runnerInstall.installDependencies(request.settings);
-      if (!deps.ok) return fail("dependencies", deps.error);
-      onProgress({ step: "dependencies", label: "Installing dependencies", status: "done" });
-
-      // 8. Install Playwright browsers (US-012) — only after deps succeed.
-      if (request.installBrowsers) {
-        onProgress({ step: "browsers", label: "Installing browsers", status: "running" });
-        const browsers = await this.runnerInstall.installBrowsers(request.settings);
-        if (!browsers.ok) return fail("browsers", browsers.error);
-        onProgress({ step: "browsers", label: "Installing browsers", status: "done" });
-      }
-    } else {
-      onProgress({ step: "dependencies", label: "Installing dependencies", status: "skipped" });
-    }
-
-    // 9. Validate the environment (US-013, UC-002). Diagnostic only — an
-    //    incomplete environment (e.g. skipped install) does not fail init.
-    onProgress({ step: "validate", label: "Validating environment", status: "running" });
-    const validation = await this.validation.validateEnvironment(correlationId);
-    onProgress({
-      step: "validate",
-      label: "Validating environment",
-      status: "done",
-      detail: validation.valid ? "ready" : `${validation.issues.length} issue(s)`,
-    });
 
     await this.eventBus.publish(
       createEvent(
@@ -272,10 +200,151 @@ export class DefaultInitializationService implements InitializationService {
     );
     this.logger.info("Test Hub initialized", {
       correlationId,
-      folders: result.createdFolders.length,
-      files: result.createdFiles.length,
+      folders: ctx.result.createdFolders.length,
+      files: ctx.result.createdFiles.length,
     });
-    return ok(result);
+    return ok(ctx.result);
+  }
+
+  /** Reports + publishes a step failure (UC-001 failure shape) and returns it. */
+  private async failStep(
+    ctx: InitializationContext,
+    step: InitializationStep,
+    error: AppError,
+  ): Promise<Result<never>> {
+    ctx.onProgress({ step, label: step, status: "failed", detail: error.message });
+    this.logger.error("Initialization failed", error, {
+      correlationId: ctx.correlationId,
+      step,
+    });
+    await this.eventBus.publish(
+      createEvent(
+        "testhub.initialization.failed",
+        { reason: error.message, step },
+        { correlationId: ctx.correlationId },
+      ),
+    );
+    return err(error);
+  }
+
+  /** 1. Persist settings (defaults loaded + validated). */
+  private async persistSettingsStep(ctx: InitializationContext): Promise<Result<void>> {
+    ctx.onProgress({ step: "settings", label: "Saving settings", status: "running" });
+    const saved = await this.settingsService.save(ctx.request.settings);
+    if (!saved.ok) return this.failStep(ctx, "settings", saved.error);
+    ctx.onProgress({ step: "settings", label: "Saving settings", status: "done" });
+    return ok(undefined);
+  }
+
+  /** 2. Create the vault folder structure (US-005). */
+  private async createFoldersStep(ctx: InitializationContext): Promise<Result<void>> {
+    ctx.onProgress({ step: "folders", label: "Creating folders", status: "running" });
+    const folders = await this.createFolders(ctx.request.settings);
+    if (!folders.ok) return this.failStep(ctx, "folders", folders.error);
+    ctx.result.createdFolders = folders.value;
+    ctx.onProgress({
+      step: "folders",
+      label: "Creating folders",
+      status: "done",
+      detail: `${folders.value.length} folders`,
+    });
+    return ok(undefined);
+  }
+
+  /** 3. Documentation (US-009) — optional. */
+  private async documentationStep(ctx: InitializationContext): Promise<Result<void>> {
+    if (!ctx.request.generateDocumentation) {
+      ctx.onProgress({
+        step: "documentation",
+        label: "Generating documentation",
+        status: "skipped",
+      });
+      return ok(undefined);
+    }
+    ctx.onProgress({ step: "documentation", label: "Generating documentation", status: "running" });
+    const docs = await this.documentation.generate(ctx.correlationId);
+    if (!docs.ok) return this.failStep(ctx, "documentation", docs.error);
+    ctx.result.createdFiles.push(...docs.value.documents);
+    ctx.result.documentationGenerated = true;
+    ctx.onProgress({ step: "documentation", label: "Generating documentation", status: "done" });
+    return ok(undefined);
+  }
+
+  /** 4. Default suites (US-008): Smoke + Regression. */
+  private async defaultSuitesStep(ctx: InitializationContext): Promise<Result<void>> {
+    ctx.onProgress({ step: "suites", label: "Creating default suites", status: "running" });
+    const suites = await this.suites.createDefaults(ctx.correlationId);
+    if (!suites.ok) return this.failStep(ctx, "suites", suites.error);
+    ctx.result.defaultSuitesCreated = suites.value.map((suite) => suite.id);
+    ctx.result.createdFiles.push(...suites.value.map((suite) => suite.path));
+    ctx.onProgress({ step: "suites", label: "Creating default suites", status: "done" });
+    return ok(undefined);
+  }
+
+  /** 5. Demo content (US-006/US-007) — optional. */
+  private async demoContentStep(ctx: InitializationContext): Promise<Result<void>> {
+    if (!ctx.request.generateDemoContent) {
+      ctx.onProgress({ step: "demo", label: "Generating demo content", status: "skipped" });
+      return ok(undefined);
+    }
+    ctx.onProgress({ step: "demo", label: "Generating demo content", status: "running" });
+    const demo = await this.demo.generate();
+    if (!demo.ok) return this.failStep(ctx, "demo", demo.error);
+    ctx.result.createdFiles.push(demo.value.useCasePath, demo.value.featurePath);
+    ctx.result.demoGenerated = true;
+    ctx.onProgress({ step: "demo", label: "Generating demo content", status: "done" });
+    return ok(undefined);
+  }
+
+  /** 6. Materialise the .testrunner project (US-010, RV-1). */
+  private async createRunnerStep(ctx: InitializationContext): Promise<Result<void>> {
+    ctx.onProgress({ step: "runner", label: "Creating runner project", status: "running" });
+    const runner = await this.runnerInstall.createRunner(ctx.request.settings, ctx.correlationId);
+    if (!runner.ok) return this.failStep(ctx, "runner", runner.error);
+    ctx.result.runnerInstalled = true;
+    ctx.result.createdFiles.push(...runner.value.createdFiles);
+    ctx.onProgress({ step: "runner", label: "Creating runner project", status: "done" });
+    return ok(undefined);
+  }
+
+  /**
+   * 7. Install dependencies (US-011). Handles browser installation (original
+   * phase 8, US-012) inline — browsers only run after deps succeed. A
+   * non-zero exit fails init (RV-1).
+   */
+  private async installDependenciesStep(ctx: InitializationContext): Promise<Result<void>> {
+    if (!ctx.request.installDependencies) {
+      ctx.onProgress({ step: "dependencies", label: "Installing dependencies", status: "skipped" });
+      return ok(undefined);
+    }
+    ctx.onProgress({ step: "dependencies", label: "Installing dependencies", status: "running" });
+    const deps = await this.runnerInstall.installDependencies(ctx.request.settings);
+    if (!deps.ok) return this.failStep(ctx, "dependencies", deps.error);
+    ctx.onProgress({ step: "dependencies", label: "Installing dependencies", status: "done" });
+
+    if (ctx.request.installBrowsers) {
+      ctx.onProgress({ step: "browsers", label: "Installing browsers", status: "running" });
+      const browsers = await this.runnerInstall.installBrowsers(ctx.request.settings);
+      if (!browsers.ok) return this.failStep(ctx, "browsers", browsers.error);
+      ctx.onProgress({ step: "browsers", label: "Installing browsers", status: "done" });
+    }
+    return ok(undefined);
+  }
+
+  /**
+   * 9. Validate the environment (US-013, UC-002). Diagnostic only — an
+   * incomplete environment (e.g. skipped install) does not fail init.
+   */
+  private async validateEnvironmentStep(ctx: InitializationContext): Promise<Result<void>> {
+    ctx.onProgress({ step: "validate", label: "Validating environment", status: "running" });
+    const validation = await this.validation.validateEnvironment(ctx.correlationId);
+    ctx.onProgress({
+      step: "validate",
+      label: "Validating environment",
+      status: "done",
+      detail: validation.valid ? "ready" : `${validation.issues.length} issue(s)`,
+    });
+    return ok(undefined);
   }
 
   /** Creates each configured folder (idempotent), validating paths first. */

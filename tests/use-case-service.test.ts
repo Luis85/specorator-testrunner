@@ -480,4 +480,62 @@ describe("DefaultUseCaseService", () => {
       expect(types()).not.toContain("usecase.updated");
     });
   });
+
+  it("serializes overlapping writes to the same note so read-modify-write can't interleave", async () => {
+    const { service, fs } = build();
+    const created = await service.create({ title: "Order checkout" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const { id, path } = created.value;
+
+    // Record the note's read/write order. The one-tick delay on the 2nd
+    // path-read (the gate resolves before any read runs) makes the overtake
+    // deterministic instead of scheduler-dependent; the discriminating power
+    // is the natural interleaving of two concurrent read-modify-write
+    // sections when nothing serializes them.
+    const order: string[] = [];
+    let releaseSecondRead: () => void = () => {};
+    const secondReadGate = new Promise<void>((resolve) => (releaseSecondRead = resolve));
+    let reads = 0;
+    const realRead = fs.readFile.bind(fs);
+    const realWrite = fs.writeFile.bind(fs);
+    fs.readFile = async (p) => {
+      if (p === path) {
+        reads += 1;
+        if (reads === 2) await secondReadGate;
+        order.push("read");
+      }
+      return realRead(p);
+    };
+    fs.writeFile = async (p, content) => {
+      if (p === path) order.push("write");
+      return realWrite(p, content);
+    };
+
+    // Fire both writers without awaiting. Unserialized, both RMW reads land
+    // before either write (observed pre-fix tail: read,read,write,write) —
+    // the second write clobbers the first writer's change.
+    const first = service.updateMetadata(id, { title: "Renamed by writer one" });
+    const second = service.updateMetadata(id, { status: "specified" });
+    releaseSecondRead();
+    expect((await first).ok).toBe(true);
+    expect((await second).ok).toBe(true);
+
+    // Serialized sequence (8 ops total):
+    //   [0] Writer 1 pre-lock findById → findAll → readFile (outside lock)
+    //   [1] Writer 2 pre-lock findById → findAll → readFile (outside lock; gate is
+    //       already released so no blocking occurs — the gate only adds a microtask
+    //       tick to make scheduling deterministic in the unserialized case)
+    //   [2] Writer 1 inside lock: locked findById → findAll → readFile
+    //   [3] Writer 1 inside lock: readFile for frontmatter update
+    //   [4] Writer 1 inside lock: writeFile
+    //   [5] Writer 2 inside lock: locked findById → findAll → readFile
+    //   [6] Writer 2 inside lock: readFile for frontmatter update
+    //   [7] Writer 2 inside lock: writeFile
+    // Without the noteWrites.run wrapper, both writers' reads land before either
+    // write (observed: read,read,read,read,read,read,write,write) — the second
+    // write clobbers the first writer's change. Fix 1 moves findById inside the
+    // lock, adding two more recorded reads (one per writer) vs. the original four.
+    expect(order).toEqual(["read", "read", "read", "read", "write", "read", "read", "write"]);
+  });
 });

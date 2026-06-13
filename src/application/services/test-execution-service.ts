@@ -17,6 +17,7 @@ import type { Logger } from "../../shared/logging/logger";
 import { redactSecrets } from "../../shared/logging/redact";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
+import { KeyedSerialQueue } from "../../shared/async/serial-queue";
 
 /** Test execution contract (TIS §8.10). */
 export interface TestExecutionService {
@@ -227,6 +228,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
   // execute() reads it before reserving its slot so a run started concurrently
   // with maintenance is rejected with MAINTENANCE_IN_PROGRESS (security L1).
   private maintenanceActive = false;
+  // testrun.output.received publishes were fire-and-forget; chain them per run
+  // so the terminal publish can await the tail — a late output line can never
+  // land after the completed/failed/cancelled banner (review §4; EPIC-014 needs
+  // deterministic output ordering for scenario attribution).
+  private readonly outputPublishes = new KeyedSerialQueue();
 
   readonly maintenanceLock: MaintenanceLock = {
     inProgress: () => this.maintenanceActive,
@@ -405,11 +411,16 @@ export class DefaultTestExecutionService implements TestExecutionService {
       const result = await this.childProcess.runStreaming(
         { args: argv, cwd: cwd.value, env: this.runEnv(settings), processId: run.id },
         (output) => {
-          void this.publish("testrun.output.received", run.id, {
-            runId: run.id,
-            stream: output.stream,
-            line: redactSecrets(output.line, runSecrets),
-          });
+          if (activeRun.terminated) return;
+          void this.outputPublishes
+            .run(run.id, () =>
+              this.publish("testrun.output.received", run.id, {
+                runId: run.id,
+                stream: output.stream,
+                line: redactSecrets(output.line, runSecrets),
+              }),
+            )
+            .catch(() => undefined); // fire-and-forget: bus errors are already routed via onHandlerError
         },
       );
 
@@ -756,6 +767,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
   ): Promise<void> {
     if (activeRun.terminated) return;
     activeRun.terminated = true;
+    // Drain the run's chained output publishes so no testrun.output.received
+    // can be delivered after the terminal event; then drop the run's queue.
+    await this.outputPublishes.whenSettled(activeRun.run.id);
+    this.outputPublishes.delete(activeRun.run.id);
     // Record the just-finished run BEFORE publishing the terminal event so a
     // subscriber (the PostRunCoordinator) reading lastRun() inside its
     // synchronously-awaited handler sees this run, not the previous one.

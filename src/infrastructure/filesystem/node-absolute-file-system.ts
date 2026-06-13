@@ -15,7 +15,11 @@ export class NodeAbsoluteFileSystem implements AbsoluteFileSystem {
 
   async getVaultBasePath(): Promise<Result<string>> {
     const adapter = this.app.vault.adapter;
-    if (adapter instanceof FileSystemAdapter) return ok(adapter.getBasePath());
+    // Normalize the trailing separator ONCE at the source (review §4) so every
+    // consumer can join `${base}/${vaultRelative}` without double separators.
+    if (adapter instanceof FileSystemAdapter) {
+      return ok(adapter.getBasePath().replace(/[\\/]+$/, ""));
+    }
     return err(appError("INIT_FAILED", "Vault base path is only available on desktop."));
   }
 

@@ -17,16 +17,17 @@ commit/PR in the item before closing).
 
 | Id | Title | Area | Effort |
 | --- | --- | --- | --- |
-| [[TD-001]] | Support escaped pipes (`\|`) in Gherkin table cells | gherkin | medium |
-| [[TD-002]] | Enforce the one-argument-per-step rule in the domain model | gherkin | medium |
-| [[TD-003]] | Single source of truth for structural Feature validation | specifications | medium |
-| [[TD-004]] | Replace the Feature Editor's `commit(structureChanged)` flag | feature-editor | large |
-| [[TD-005]] | Unify the "is this scenario an Outline" predicate | specifications | small |
+| [[TD-007]] | gherkin.ts parser/serializer complexity is suppressed, not solved | gherkin | large |
 
 ## Resolved items
 
 | Id | Title | Area | Resolved |
 | --- | --- | --- | --- |
+| [[TD-001]] | Support escaped pipes (`\|`) in Gherkin table cells | gherkin | pre-V2 Phase 1 increment (2026-06-12) |
+| [[TD-002]] | Enforce the one-argument-per-step rule in the domain model | gherkin | pre-V2 Phase 1 increment (2026-06-12) |
+| [[TD-003]] | Single source of truth for structural Feature validation | specifications | pre-V2 Phase 1 increment (2026-06-12) |
+| [[TD-005]] | Unify the "is this scenario an Outline" predicate | specifications | pre-V2 Phase 1 increment (2026-06-12) |
+| [[TD-004]] | Replace the Feature Editor's `commit(structureChanged)` flag | feature-editor | pre-V2 Phase 1 increment (2026-06-12) |
 | [[TD-006]] | Flip the advisory quality gates to blocking and tighten them | quality | pre-V2 Phase 0 increment (2026-06-12) |
 
 ## Minor notes (not worth an item yet)

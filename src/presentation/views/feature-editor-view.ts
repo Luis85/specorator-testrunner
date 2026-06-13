@@ -14,7 +14,9 @@ import type {
   GherkinStep,
   ScenarioSpecification,
 } from "../../domain/entities/specification";
+import { isScenarioOutline, stepDocString, stepTable } from "../../domain/entities/specification";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
+import { captureFocus, restoreFocus } from "./focus-restore";
 import {
   addExamplesColumn,
   addExamplesRow,
@@ -127,16 +129,20 @@ export class FeatureEditorView extends TextFileView {
   }
 
   /**
-   * Serialises the working spec into the view data and schedules a debounced
-   * save. Structural changes re-render; field edits only refresh validation
-   * (a full re-render would steal focus from the input being edited).
+   * Serialises the working spec, schedules a debounced save, and re-renders.
+   * Re-rendering is always safe (TD-004): focus/caret are captured by
+   * `data-focus-key` and restored after the rebuild, so call sites no longer
+   * classify their change as structural vs field-level.
    */
-  private commit(structureChanged: boolean): void {
+  private commit(): void {
     if (!this.specification) return;
     this.data = serialiseFeature(this.specification);
     this.requestSave();
-    if (structureChanged) this.render();
-    else this.refreshValidation();
+    // `activeDocument` (not the global `document`) keeps focus capture correct
+    // when the editor is torn out into an Obsidian popout window.
+    const snapshot = captureFocus(this.contentEl, activeDocument.activeElement);
+    this.render();
+    restoreFocus(this.contentEl, snapshot);
   }
 
   private async loadAids(): Promise<void> {
@@ -190,13 +196,13 @@ export class FeatureEditorView extends TextFileView {
   private renderToolbar(root: HTMLElement): void {
     const bar = root.createDiv({ cls: "e2e-test-hub-feature-editor-toolbar" });
     const structuredActive = this.mode === "structured" && this.specification !== null;
-    const make = (label: string, active: boolean): HTMLButtonElement =>
+    const make = (label: string, action: string, active: boolean): HTMLButtonElement =>
       bar.createEl("button", {
         text: label,
         ...(active ? { cls: "mod-cta" } : {}),
-        attr: { "aria-pressed": String(active) },
+        attr: { "aria-pressed": String(active), "data-focus-key": `toolbar:${action}` },
       });
-    make("Structured", structuredActive).addEventListener("click", () => {
+    make("Structured", "structured", structuredActive).addEventListener("click", () => {
       const spec = this.project();
       if (spec === null) {
         new Notice(
@@ -210,7 +216,7 @@ export class FeatureEditorView extends TextFileView {
       this.mode = "structured";
       this.render();
     });
-    make("Raw text", !structuredActive).addEventListener("click", () => {
+    make("Raw text", "raw", !structuredActive).addEventListener("click", () => {
       this.mode = "raw";
       this.render();
     });
@@ -259,19 +265,24 @@ export class FeatureEditorView extends TextFileView {
       type: "text",
       value: spec.featureName,
       cls: "e2e-test-hub-feature-editor-name",
-      attr: { placeholder: "Feature name", "aria-label": "Feature name" },
+      attr: {
+        placeholder: "Feature name",
+        "aria-label": "Feature name",
+        "data-focus-key": "feature:name",
+      },
     });
     name.addEventListener("change", () => {
       spec.featureName = name.value.trim();
-      this.commit(false);
+      this.commit();
     });
-    this.renderTagEditor(header, spec.tags, "Feature tags");
+    this.renderTagEditor(header, spec.tags, "Feature tags", "feature");
     const description = header.createEl("textarea", {
       cls: "e2e-test-hub-feature-editor-description",
       attr: {
         placeholder: "Description (optional)",
         "aria-label": "Feature description",
         rows: "2",
+        "data-focus-key": "feature:description",
       },
     });
     description.value = (spec.description ?? []).join("\n");
@@ -280,7 +291,7 @@ export class FeatureEditorView extends TextFileView {
       if (lines.length > 0) spec.description = lines;
       else delete spec.description;
       description.value = lines.join("\n"); // reflect dropped non-description lines
-      this.commit(false);
+      this.commit();
     });
 
     // Background.
@@ -288,15 +299,18 @@ export class FeatureEditorView extends TextFileView {
     backgroundCard.createEl("h3", { text: "Background" });
     if (spec.background) {
       const steps = spec.background;
-      this.renderStepList(backgroundCard, steps, () => {
+      this.renderStepList(backgroundCard, steps, "background", () => {
         // Serialisation omits an empty Background; drop it from the model too.
         if (steps.length === 0) delete spec.background;
       });
     } else {
-      const add = backgroundCard.createEl("button", { text: "+ Background" });
+      const add = backgroundCard.createEl("button", {
+        text: "+ Background",
+        attr: { "data-focus-key": "background:add" },
+      });
       add.addEventListener("click", () => {
         spec.background = [newStep([])];
-        this.commit(true);
+        this.commit();
       });
     }
 
@@ -307,10 +321,11 @@ export class FeatureEditorView extends TextFileView {
     const addScenario = body.createEl("button", {
       text: "+ Scenario",
       cls: "e2e-test-hub-feature-editor-add",
+      attr: { "data-focus-key": "feature:add-scenario" },
     });
     addScenario.addEventListener("click", () => {
       spec.scenarios.push(newScenario());
-      this.commit(true);
+      this.commit();
     });
   }
 
@@ -332,12 +347,22 @@ export class FeatureEditorView extends TextFileView {
   }
 
   /** Tag chips + a datalist-backed input; click a chip to remove its tag. */
-  private renderTagEditor(parent: HTMLElement, tags: string[], label: string): void {
+  private renderTagEditor(
+    parent: HTMLElement,
+    tags: string[],
+    label: string,
+    keyPrefix: string,
+  ): void {
     const wrap = parent.createDiv({ cls: "e2e-test-hub-feature-editor-tags" });
     const chips = wrap.createDiv({ cls: "e2e-test-hub-feature-editor-tag-chips" });
     const input = wrap.createEl("input", {
       type: "text",
-      attr: { placeholder: "Add tag…", list: TAG_DATALIST_ID, "aria-label": label },
+      attr: {
+        placeholder: "Add tag…",
+        list: TAG_DATALIST_ID,
+        "aria-label": label,
+        "data-focus-key": `${keyPrefix}:tags:add`,
+      },
     });
     const renderChips = (): void => {
       chips.empty();
@@ -345,12 +370,15 @@ export class FeatureEditorView extends TextFileView {
         const chip = chips.createEl("button", {
           text: `${tag} ×`,
           cls: "e2e-test-hub-feature-editor-tag-chip",
-          attr: { "aria-label": `Remove ${tag}` },
+          attr: {
+            "aria-label": `Remove ${tag}`,
+            "data-focus-key": `${keyPrefix}:tags:${index}:remove`,
+          },
         });
         chip.addEventListener("click", () => {
           tags.splice(index, 1);
           renderChips();
-          this.commit(false);
+          this.commit();
         });
       });
     };
@@ -360,7 +388,7 @@ export class FeatureEditorView extends TextFileView {
       if (tag === null || tags.includes(tag)) return;
       tags.push(tag);
       renderChips();
-      this.commit(false);
+      this.commit();
     };
     input.addEventListener("change", addTag);
     input.addEventListener("keydown", (event) => {
@@ -378,17 +406,21 @@ export class FeatureEditorView extends TextFileView {
     noun: string,
     array: unknown[],
     index: number,
+    keyPrefix: string,
   ): void {
-    const up = parent.createEl("button", { text: "↑", attr: { "aria-label": `Move ${noun} up` } });
+    const up = parent.createEl("button", {
+      text: "↑",
+      attr: { "aria-label": `Move ${noun} up`, "data-focus-key": `${keyPrefix}:up` },
+    });
     up.addEventListener("click", () => {
-      if (moveItem(array, index, -1)) this.commit(true);
+      if (moveItem(array, index, -1)) this.commit();
     });
     const down = parent.createEl("button", {
       text: "↓",
-      attr: { "aria-label": `Move ${noun} down` },
+      attr: { "aria-label": `Move ${noun} down`, "data-focus-key": `${keyPrefix}:down` },
     });
     down.addEventListener("click", () => {
-      if (moveItem(array, index, 1)) this.commit(true);
+      if (moveItem(array, index, 1)) this.commit();
     });
   }
 
@@ -398,10 +430,13 @@ export class FeatureEditorView extends TextFileView {
     scenario: ScenarioSpecification,
     index: number,
   ): void {
+    const owner = `scenario:${index}`;
     const card = parent.createDiv({ cls: "e2e-test-hub-feature-editor-card" });
     const head = card.createDiv({ cls: "e2e-test-hub-feature-editor-scenario-head" });
 
-    const keyword = head.createEl("select", { attr: { "aria-label": "Scenario type" } });
+    const keyword = head.createEl("select", {
+      attr: { "aria-label": "Scenario type", "data-focus-key": `${owner}:keyword` },
+    });
     for (const value of ["Scenario", "Scenario Outline"] as const) {
       const option = keyword.createEl("option", { text: value, attr: { value } });
       option.selected = (scenario.keyword ?? "Scenario") === value;
@@ -416,53 +451,70 @@ export class FeatureEditorView extends TextFileView {
         delete scenario.keyword;
         delete scenario.examples;
       }
-      this.commit(true);
+      this.commit();
     });
 
     const name = head.createEl("input", {
       type: "text",
       value: scenario.name,
-      attr: { placeholder: "Scenario name", "aria-label": "Scenario name" },
+      attr: {
+        placeholder: "Scenario name",
+        "aria-label": "Scenario name",
+        "data-focus-key": `${owner}:name`,
+      },
     });
     name.addEventListener("change", () => {
       scenario.name = name.value.trim();
-      this.commit(false);
+      this.commit();
     });
 
-    this.appendMoveButtons(head, "scenario", spec.scenarios, index);
+    this.appendMoveButtons(head, "scenario", spec.scenarios, index, owner);
     const remove = head.createEl("button", {
       text: "Delete",
-      attr: { "aria-label": "Delete scenario" },
+      attr: { "aria-label": "Delete scenario", "data-focus-key": `${owner}:remove` },
     });
     remove.addEventListener("click", () => {
       spec.scenarios.splice(index, 1);
-      this.commit(true);
+      this.commit();
     });
 
-    this.renderTagEditor(card, scenario.tags, "Scenario tags");
-    this.renderStepList(card, scenario.steps);
+    this.renderTagEditor(card, scenario.tags, "Scenario tags", owner);
+    this.renderStepList(card, scenario.steps, owner);
 
-    if ((scenario.keyword ?? "Scenario") === "Scenario Outline") {
+    if (isScenarioOutline(scenario)) {
       const blocks = (scenario.examples ??= []);
-      blocks.forEach((block, blockIndex) => this.renderExamples(card, blocks, block, blockIndex));
-      const addBlock = card.createEl("button", { text: "+ Examples block" });
+      blocks.forEach((block, blockIndex) =>
+        this.renderExamples(card, blocks, block, blockIndex, owner),
+      );
+      const addBlock = card.createEl("button", {
+        text: "+ Examples block",
+        attr: { "data-focus-key": `${owner}:add-examples` },
+      });
       addBlock.addEventListener("click", () => {
         blocks.push(newExamplesBlock());
-        this.commit(true);
+        this.commit();
       });
     }
   }
 
-  private renderStepList(parent: HTMLElement, steps: GherkinStep[], onRemoved?: () => void): void {
+  private renderStepList(
+    parent: HTMLElement,
+    steps: GherkinStep[],
+    keyPrefix: string,
+    onRemoved?: () => void,
+  ): void {
     const list = parent.createDiv({ cls: "e2e-test-hub-feature-editor-steps" });
-    steps.forEach((step, index) => this.renderStepRow(list, steps, step, index, onRemoved));
+    steps.forEach((step, index) =>
+      this.renderStepRow(list, steps, step, index, `${keyPrefix}/step:${index}`, onRemoved),
+    );
     const add = list.createEl("button", {
       text: "+ step",
       cls: "e2e-test-hub-feature-editor-add",
+      attr: { "data-focus-key": `${keyPrefix}:add-step` },
     });
     add.addEventListener("click", () => {
       steps.push(newStep(steps));
-      this.commit(true);
+      this.commit();
     });
   }
 
@@ -471,25 +523,33 @@ export class FeatureEditorView extends TextFileView {
     steps: GherkinStep[],
     step: GherkinStep,
     index: number,
+    keyPrefix: string,
     onRemoved?: () => void,
   ): void {
     const row = list.createDiv({ cls: "e2e-test-hub-feature-editor-step" });
 
-    const keyword = row.createEl("select", { attr: { "aria-label": "Step keyword" } });
+    const keyword = row.createEl("select", {
+      attr: { "aria-label": "Step keyword", "data-focus-key": `${keyPrefix}:keyword` },
+    });
     for (const value of ["Given", "When", "Then", "And", "But", "*"] as const) {
       const option = keyword.createEl("option", { text: value, attr: { value } });
       option.selected = step.keyword === value;
     }
     keyword.addEventListener("change", () => {
       step.keyword = keyword.value as GherkinStep["keyword"];
-      this.commit(false);
+      this.commit();
     });
 
     const text = row.createEl("input", {
       type: "text",
       value: step.text,
       cls: "e2e-test-hub-feature-editor-step-text",
-      attr: { placeholder: "Step text", list: STEP_DATALIST_ID, "aria-label": "Step text" },
+      attr: {
+        placeholder: "Step text",
+        list: STEP_DATALIST_ID,
+        "aria-label": "Step text",
+        "data-focus-key": `${keyPrefix}:text`,
+      },
     });
     const flag = row.createSpan({ cls: "e2e-test-hub-feature-editor-step-flag" });
     const refreshFlag = (): void => {
@@ -501,27 +561,33 @@ export class FeatureEditorView extends TextFileView {
     refreshFlag();
     text.addEventListener("change", () => {
       step.text = text.value.trim();
-      this.commit(false);
+      this.commit();
       refreshFlag();
     });
 
-    this.appendMoveButtons(row, "step", steps, index);
-    const remove = row.createEl("button", { text: "×", attr: { "aria-label": "Delete step" } });
+    this.appendMoveButtons(row, "step", steps, index, keyPrefix);
+    const remove = row.createEl("button", {
+      text: "×",
+      attr: { "aria-label": "Delete step", "data-focus-key": `${keyPrefix}:remove` },
+    });
     remove.addEventListener("click", () => {
       steps.splice(index, 1);
       onRemoved?.();
-      this.commit(true);
+      this.commit();
     });
 
-    this.renderStepExtras(list, step);
+    this.renderStepExtras(list, step, keyPrefix);
   }
 
   /** The optional data-table / doc-string argument editors under one step. */
-  private renderStepExtras(parent: HTMLElement, step: GherkinStep): void {
+  private renderStepExtras(parent: HTMLElement, step: GherkinStep, keyPrefix: string): void {
     const extras = parent.createDiv({ cls: "e2e-test-hub-feature-editor-step-extras" });
 
-    if (step.dataTable) {
-      const table = step.dataTable;
+    const table = stepTable(step);
+    const docString = stepDocString(step);
+
+    if (table) {
+      const tableKey = `${keyPrefix}/table`;
       const grid = extras.createEl("table", { cls: "e2e-test-hub-feature-editor-grid" });
       table.forEach((cells, rowIndex) => {
         const tr = grid.createEl("tr");
@@ -530,46 +596,48 @@ export class FeatureEditorView extends TextFileView {
           const input = td.createEl("input", {
             type: "text",
             value: cell,
-            attr: { "aria-label": `Table cell ${rowIndex + 1},${cellIndex + 1}` },
+            attr: {
+              "aria-label": `Table cell ${rowIndex + 1},${cellIndex + 1}`,
+              "data-focus-key": `${tableKey}:${rowIndex}:${cellIndex}`,
+            },
           });
           input.addEventListener("change", () => {
             cells[cellIndex] = sanitizeCell(input.value);
             input.value = cells[cellIndex];
-            this.commit(false);
+            this.commit();
           });
         });
       });
-      const addRow = extras.createEl("button", { text: "+ row" });
+      const addRow = extras.createEl("button", {
+        text: "+ row",
+        attr: { "data-focus-key": `${tableKey}:add-row` },
+      });
       addRow.addEventListener("click", () => {
         table.push((table[0] ?? [""]).map(() => ""));
-        this.commit(true);
+        this.commit();
       });
-      const addColumn = extras.createEl("button", { text: "+ column" });
+      const addColumn = extras.createEl("button", {
+        text: "+ column",
+        attr: { "data-focus-key": `${tableKey}:add-column` },
+      });
       addColumn.addEventListener("click", () => {
         for (const cells of table) cells.push("");
-        this.commit(true);
+        this.commit();
       });
-      const removeTable = extras.createEl("button", { text: "Remove table" });
+      const removeTable = extras.createEl("button", {
+        text: "Remove table",
+        attr: { "data-focus-key": `${tableKey}:remove` },
+      });
       removeTable.addEventListener("click", () => {
-        delete step.dataTable;
-        this.commit(true);
-      });
-      // A Gherkin step carries at most ONE argument: each add button renders
-      // only while the step has neither, so the editor cannot produce a
-      // table + doc string combination Cucumber would refuse to parse.
-    } else if (!step.docString) {
-      const addTable = extras.createEl("button", { text: "+ data table" });
-      addTable.addEventListener("click", () => {
-        step.dataTable = [["value"]];
-        this.commit(true);
+        delete step.argument;
+        this.commit();
       });
     }
 
-    if (step.docString) {
-      const docString = step.docString;
+    if (docString) {
       const textarea = extras.createEl("textarea", {
         cls: "e2e-test-hub-feature-editor-docstring",
-        attr: { "aria-label": "Doc string", rows: "4" },
+        attr: { "aria-label": "Doc string", rows: "4", "data-focus-key": `${keyPrefix}:doc-text` },
       });
       textarea.value = docString.lines.join("\n");
       textarea.addEventListener("change", () => {
@@ -578,18 +646,37 @@ export class FeatureEditorView extends TextFileView {
         docString.lines = sanitizeDocStringLines(lines, fence);
         docString.fence = fence;
         textarea.value = docString.lines.join("\n"); // reflect escaped delimiter lines
-        this.commit(false);
+        this.commit();
       });
-      const removeDoc = extras.createEl("button", { text: "Remove text block" });
+      const removeDoc = extras.createEl("button", {
+        text: "Remove text block",
+        attr: { "data-focus-key": `${keyPrefix}:doc-remove` },
+      });
       removeDoc.addEventListener("click", () => {
-        delete step.docString;
-        this.commit(true);
+        delete step.argument;
+        this.commit();
       });
-    } else if (!step.dataTable) {
-      const addDoc = extras.createEl("button", { text: "+ text block" });
+    }
+
+    // A Gherkin step carries at most ONE argument (TD-002): the add buttons
+    // render only while the step has no argument, so the editor cannot produce
+    // a table + doc string combination Cucumber would refuse to parse.
+    if (step.argument === undefined) {
+      const addTable = extras.createEl("button", {
+        text: "+ data table",
+        attr: { "data-focus-key": `${keyPrefix}:add-table` },
+      });
+      addTable.addEventListener("click", () => {
+        step.argument = { kind: "table", rows: [["value"]] };
+        this.commit();
+      });
+      const addDoc = extras.createEl("button", {
+        text: "+ text block",
+        attr: { "data-focus-key": `${keyPrefix}:add-doc` },
+      });
       addDoc.addEventListener("click", () => {
-        step.docString = { fence: '"""', lines: [""] };
-        this.commit(true);
+        step.argument = { kind: "docString", docString: { fence: '"""', lines: [""] } };
+        this.commit();
       });
     }
   }
@@ -599,31 +686,37 @@ export class FeatureEditorView extends TextFileView {
     blocks: ExamplesBlock[],
     block: ExamplesBlock,
     blockIndex: number,
+    keyPrefix: string,
   ): void {
+    const blockKey = `${keyPrefix}/examples:${blockIndex}`;
     const wrap = parent.createDiv({ cls: "e2e-test-hub-feature-editor-examples" });
     const head = wrap.createDiv({ cls: "e2e-test-hub-feature-editor-examples-head" });
     head.createEl("h4", { text: "Examples" });
     const name = head.createEl("input", {
       type: "text",
       value: block.name ?? "",
-      attr: { placeholder: "Examples name (optional)", "aria-label": "Examples name" },
+      attr: {
+        placeholder: "Examples name (optional)",
+        "aria-label": "Examples name",
+        "data-focus-key": `${blockKey}:name`,
+      },
     });
     name.addEventListener("change", () => {
       const trimmed = name.value.trim();
       if (trimmed) block.name = trimmed;
       else delete block.name;
-      this.commit(false);
+      this.commit();
     });
     const remove = head.createEl("button", {
       text: "Delete",
-      attr: { "aria-label": "Delete Examples block" },
+      attr: { "aria-label": "Delete Examples block", "data-focus-key": `${blockKey}:remove` },
     });
     remove.addEventListener("click", () => {
       blocks.splice(blockIndex, 1);
-      this.commit(true);
+      this.commit();
     });
 
-    this.renderTagEditor(wrap, block.tags, "Examples tags");
+    this.renderTagEditor(wrap, block.tags, "Examples tags", blockKey);
 
     const grid = wrap.createEl("table", { cls: "e2e-test-hub-feature-editor-grid" });
     const headerRow = grid.createEl("tr");
@@ -632,22 +725,28 @@ export class FeatureEditorView extends TextFileView {
       const input = th.createEl("input", {
         type: "text",
         value: column,
-        attr: { "aria-label": `Column ${columnIndex + 1} name` },
+        attr: {
+          "aria-label": `Column ${columnIndex + 1} name`,
+          "data-focus-key": `${blockKey}/head:${columnIndex}`,
+        },
       });
       input.addEventListener("change", () => {
         // Fall back to the CURRENT model value, not the render-time capture,
         // so clearing the input cannot revert an earlier rename.
         block.header[columnIndex] = sanitizeCell(input.value) || block.header[columnIndex];
         input.value = block.header[columnIndex];
-        this.commit(false);
+        this.commit();
       });
       const removeColumn = th.createEl("button", {
         text: "×",
-        attr: { "aria-label": `Remove column ${column}` },
+        attr: {
+          "aria-label": `Remove column ${column}`,
+          "data-focus-key": `${blockKey}/head:${columnIndex}:remove`,
+        },
       });
       removeColumn.addEventListener("click", () => {
         removeExamplesColumn(block, columnIndex);
-        this.commit(true);
+        this.commit();
       });
     });
     headerRow.createEl("th"); // actions column
@@ -658,33 +757,45 @@ export class FeatureEditorView extends TextFileView {
         const input = td.createEl("input", {
           type: "text",
           value: cell,
-          attr: { "aria-label": `Examples cell ${rowIndex + 1},${cellIndex + 1}` },
+          attr: {
+            "aria-label": `Examples cell ${rowIndex + 1},${cellIndex + 1}`,
+            "data-focus-key": `${blockKey}/cell:${rowIndex}:${cellIndex}`,
+          },
         });
         input.addEventListener("change", () => {
           cells[cellIndex] = sanitizeCell(input.value);
           input.value = cells[cellIndex];
-          this.commit(false);
+          this.commit();
         });
       });
       const actions = tr.createEl("td");
       const removeRow = actions.createEl("button", {
         text: "×",
-        attr: { "aria-label": `Remove row ${rowIndex + 1}` },
+        attr: {
+          "aria-label": `Remove row ${rowIndex + 1}`,
+          "data-focus-key": `${blockKey}/cell:${rowIndex}:remove`,
+        },
       });
       removeRow.addEventListener("click", () => {
         block.rows.splice(rowIndex, 1);
-        this.commit(true);
+        this.commit();
       });
     });
-    const addRow = wrap.createEl("button", { text: "+ row" });
+    const addRow = wrap.createEl("button", {
+      text: "+ row",
+      attr: { "data-focus-key": `${blockKey}:add-row` },
+    });
     addRow.addEventListener("click", () => {
       addExamplesRow(block);
-      this.commit(true);
+      this.commit();
     });
-    const addColumn = wrap.createEl("button", { text: "+ column" });
+    const addColumn = wrap.createEl("button", {
+      text: "+ column",
+      attr: { "data-focus-key": `${blockKey}:add-column` },
+    });
     addColumn.addEventListener("click", () => {
       addExamplesColumn(block);
-      this.commit(true);
+      this.commit();
     });
   }
 }

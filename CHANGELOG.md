@@ -6,6 +6,67 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- A Gherkin step's argument is modelled as a sum type (data table OR text
+  block, TD-002): the serializer can no longer emit a step with both, which
+  Cucumber — and the V2 playwright-bdd runner — refuse to parse.
+- Structural Feature validation has one implementation shared by the
+  Validate action and the editor's live strip (TD-003); whitespace-only
+  feature names are now flagged on both surfaces, and an orphan filename is
+  consistently an error (ADR-0012).
+- One domain predicate decides "is this scenario an Outline" everywhere
+  (TD-005, lenient semantics): suite/tag match counts, the validation strip,
+  and the editor's Examples grid can no longer disagree.
+- Command registration is covered by a smoke test (unique ids, full surface,
+  callbacks invocable), and the vault adapter's existence checks now resolve
+  through the Vault API first, keeping adapter access to the documented
+  unindexed-path cases only.
+- The six event-driven views now share one `LiveRefresh` helper for the
+  subscribe/coalesce/teardown lifecycle instead of six hand-copied
+  implementations; V2's new views build on the same helper.
+- `runInitialization` is decomposed into per-phase step methods (behaviour
+  unchanged), retiring the known complexity hot spot that tripped the
+  blocking quality gate on any edit to `initialization-service.ts`.
+- The hand-rolled persistence chains in `SettingsService` and
+  `PostRunCoordinator` now share one `SerialQueue` utility
+  (`src/shared/async/serial-queue.ts`), extracted now that per-note Use Case
+  write serialization is its third user.
+- `SettingsService`'s repair/validation hot spots (`repairSutShape`,
+  `validate`, `sanitizeRunnerEnvInputs`, `detectSiblingTestHub`) are
+  decomposed into focused helpers, clearing the remaining complexity findings
+  the blocking quality gate would attribute to any future edit of the file.
+- The Feature Editor always re-renders on commit and restores focus/caret
+  via stable control keys (TD-004): edit handlers no longer classify
+  changes as structural vs field-level, eliminating the stale-DOM and
+  focus-steal bug class the flag invited.
+- The pre-existing complexity of the hand-rolled Gherkin parser/serializer
+  is recorded as explicit debt (TD-007) behind visible audit suppressions;
+  its resolution rides the V2 playwright-bdd parser replacement rather than
+  a throwaway decomposition now.
+
+### Fixed
+
+- Gherkin table cells support the official escapes (`\|`, `\\`, `\n`): a
+  literal pipe in table data round-trips through the structured editor
+  instead of being silently rewritten to `/`, and files already using the
+  standard escape are no longer locked out of structured mode (TD-001).
+- Path plumbing hardening: the vault base path is normalized (no trailing
+  separator) at its single source, and `joinVaultPath` rejects absolute and
+  `..` segments outright — closing the gaps before the V2 migration and MCP
+  server mint new paths.
+- Settings repair on load now also screens `ci.*` and `automation.*` scalars
+  (provider/workflow/node-version strings, automation booleans, evidence
+  retention), so a tampered or synced `data.json` falls back to defaults
+  instead of crashing or silently flipping automation behaviour.
+- Concurrent writers to the same Use Case note (post-run evidence linking,
+  the edit modal, feature linking) are now serialized per note path, so
+  overlapping read-modify-write updates can no longer drop each other's
+  frontmatter changes.
+- Streamed runner output events are now chained per run and drained before
+  the terminal run event, so a late output line can no longer arrive after
+  the completed/failed/cancelled banner.
+
 ## [1.0.0] — 2026-06-12
 
 ### Added
