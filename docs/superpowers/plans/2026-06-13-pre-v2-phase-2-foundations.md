@@ -13,8 +13,8 @@
 **Decisions locked in by this plan** (from the design spec; flag in review if any should change):
 
 1. **`schemaVersion` is a persistence-envelope key, not a `TestHubSettings` field.** It lives in the saved `data.json` blob alongside the settings fields, handled entirely in `SettingsService.load`/`save`. The domain `TestHubSettings` type stays clean (it is the user-facing settings shape, not metadata).
-2. **First run is silent; a stale envelope resets loudly.** Absent `data.json` (`raw === undefined`) → defaults, no log (normal first run). A *present* blob whose `schemaVersion` is absent or mismatched → reset to defaults **and** `logger.error` a clear report (beta break). A matching version → merge + sanitize as today.
-3. **`DATA_SCHEMA_VERSION = 1` and `TESTRUNNER_MANIFEST_VERSION = 1`.** This is the first stamped version; nothing pre-existing carried one, so everything older is "version 0 / absent" and resets/repairs.
+2. **A present, *different* version resets; an absent version is forward-compatible.** Absent `data.json` (`raw === undefined`) → defaults, no log (normal first run). A blob carrying a `schemaVersion` that **differs** from the code → reset to defaults **and** `logger.error` a clear report (beta break, no migration). A blob with **no** `schemaVersion` (a pre-versioning V1 blob) **or** a matching version → merge + sanitize as today. V2 settings changes are additive so far, so forward-compatible data is preserved rather than nuked, and the reset is reserved for a genuine future incompatible bump. (This also keeps the existing unversioned settings fixtures valid — raised by the codex review on PR #38.)
+3. **`DATA_SCHEMA_VERSION = 1` and `TESTRUNNER_MANIFEST_VERSION = 1`.** The first stamped versions. For `data.json`, an *absent* version means a forward-compatible V1 blob (merged, per Decision 2) — not a reset. For the `.testrunner` **manifest**, an absent/older version means an old runner → a Repair signal (Task 5); the manifest has no additive-merge story, so absence there is treated as outdated.
 4. **The manifest file is `.testrunner/testrunner-manifest.json`**, content `{ "manifestVersion": <n> }`, generated like every other managed file (`overwrite: true`). It is validation-relevant but **not** added to `VALIDATED_RUNNER_FILES` (whose absence hard-fails a run); a missing/old manifest is a *repair* signal, not a run-blocker.
 5. **The `ReportParser` port owns `ScenarioResult` and a new `ParsedReport`;** `ImportedReport` becomes `ParsedReport & { runId }`. The parser is pure (string in, `Result<ParsedReport>` out); all filesystem I/O and event emission stay in `DefaultReportImportService`.
 
@@ -206,7 +206,7 @@ export interface ImportedReport extends ParsedReport {
 }
 ```
 
-(The file will not compile until Task 3 finishes rewiring `import()` — that is expected; this step is the deletion half.)
+(The service does not compile between this deletion and Task 3's rewiring of `import()` — that is fine because **Tasks 2 and 3 share one commit**, made at the end of Task 3. No broken state is ever committed, and the after-task gate runs once, there.)
 
 - [ ] **Step 3: Write the parser unit tests**
 
@@ -279,16 +279,13 @@ describe("CucumberJsonReportParser", () => {
 Run: `npx vitest run tests/cucumber-json-report-parser.test.ts`
 Expected: all pass. (`report-import-service.ts` still won't compile — fixed in Task 3; that is fine for running this isolated test file only if it doesn't import the service. It doesn't.)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Do NOT commit yet — Tasks 2 and 3 are one atomic extraction**
 
-```bash
-git add src/application/services/cucumber-json-report-parser.ts src/application/services/report-import-service.ts tests/cucumber-json-report-parser.test.ts
-git commit -m "refactor: extract CucumberJsonReportParser from the import service (pre-V2 2.3)"
-```
+The deletion in Step 2 leaves `report-import-service.ts` non-compiling until Task 3 rewires `import()`. To never commit a broken state — and to satisfy the after-every-task gate — Tasks 2 and 3 share a **single commit** made at the end of Task 3, where the full gate runs once. Proceed to Task 3 without committing or running the project-wide gate.
 
 ---
 
-### Task 3: Wire `DefaultReportImportService` to the port (item 2.3)
+### Task 3: Wire `DefaultReportImportService` to the port, then commit the whole extraction (item 2.3)
 
 **Files:**
 - Modify: `src/application/services/report-import-service.ts` (constructor + `import()`)
@@ -388,7 +385,7 @@ Expected: all green — `report-import-service.test.ts` passes with only the con
 Run: `npm run test:coverage && npx fallow audit --base origin/main`
 Expected: audit exit 0. (The extraction *reduces* `report-import-service.ts` complexity; if the audit now flags `toParsedReport` in the new parser file as introduced complexity, decompose it below cognitive 15 — it was already large in the service, so this is the moment to split the feature/scenario loops if the gate asks.)
 
-- [ ] **Step 5: CHANGELOG + commit**
+- [ ] **Step 5: CHANGELOG + single atomic commit (Tasks 2 + 3)**
 
 Under `## [Unreleased]` add a `### Changed` entry:
 
@@ -399,9 +396,11 @@ Under `## [Unreleased]` add a `### Changed` entry:
   it without touching the import pipeline (ADR-0021/0022; opens EPIC-019).
 ```
 
+Commit the whole extraction at once — the parser, the rewired service, the composition-root wiring, and both test files — so the committed state compiles:
+
 ```bash
-git add src/application/services/report-import-service.ts src/main.ts tests/report-import-service.test.ts CHANGELOG.md
-git commit -m "refactor: ReportImportService delegates to the ReportParser port (pre-V2 2.3)"
+git add src/application/services/cucumber-json-report-parser.ts src/application/services/report-import-service.ts src/main.ts tests/cucumber-json-report-parser.test.ts tests/report-import-service.test.ts CHANGELOG.md
+git commit -m "refactor: extract CucumberJsonReportParser behind the ReportParser port (pre-V2 2.3)"
 ```
 
 ---
@@ -412,7 +411,7 @@ git commit -m "refactor: ReportImportService delegates to the ReportParser port 
 - Modify: `src/application/services/settings-service.ts` (`load`, the two `store.save` sites, a new constant + helper)
 - Test: `tests/settings-service.test.ts`
 
-Stamp a schema version into the persisted blob; on a present-but-mismatched version, reset to defaults with a logged report. No migration framework (beta).
+Stamp a schema version into the persisted blob; on a present blob whose version **differs** from the code, reset to defaults with a logged report. An unversioned (V1) blob merges forward-compatibly — it is not reset. No migration framework (beta).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -429,7 +428,7 @@ describe("schemaVersion envelope (2.1)", () => {
     expect(raw.schemaVersion).toBe(1);
   });
 
-  it("resets a present blob whose schemaVersion is stale, and logs it", async () => {
+  it("resets a present blob whose schemaVersion differs from the code, and logs it", async () => {
     const store = new FakeDataStore();
     const logger = recordingLogger();
     await store.save({
@@ -463,10 +462,24 @@ describe("schemaVersion envelope (2.1)", () => {
     const settings = await service.load();
     expect(settings.ci.nodeVersion).toBe("20"); // valid value preserved
   });
+
+  it("merges an unversioned (V1) blob forward-compatibly instead of resetting it", async () => {
+    const store = new FakeDataStore();
+    const logger = recordingLogger();
+    await store.save({
+      // no schemaVersion — a pre-versioning V1 blob
+      ...DEFAULT_SETTINGS,
+      ci: { ...DEFAULT_SETTINGS.ci, nodeVersion: "20" },
+    });
+    const service = buildServiceWith(store, logger);
+    const settings = await service.load();
+    expect(settings.ci.nodeVersion).toBe("20"); // preserved, not reset
+    expect(logger.errorCalls.some((m) => m.includes("schema"))).toBe(false); // not a reset
+  });
 });
 ```
 
-(Adapt `buildServiceWith` / `recordingLogger` to the file's existing helpers — if the logger spy is shaped differently, match it; the assertion is "an error was logged mentioning schema".)
+(Adapt `buildServiceWith` / `recordingLogger` to the file's existing helpers — if the logger spy is shaped differently, match it; the assertion is "an error was logged mentioning schema".) The existing unversioned settings fixtures (scalar/sut/path repair, F2 serialization) stay green unchanged: an absent version is forward-compatible, so they flow through merge + sanitize exactly as today.
 
 - [ ] **Step 2: Run them to verify they fail**
 
@@ -492,12 +505,14 @@ Rewrite `load()` so the version gate runs before merge:
 ```ts
 async load(): Promise<TestHubSettings> {
   const raw = await this.store.load();
-  // First run (no data.json) → defaults, silently. A PRESENT blob whose
-  // schemaVersion doesn't match the code → beta reset: log and use defaults
-  // (no migration). A matching version → merge + sanitize as before.
-  if (raw !== undefined && !this.schemaVersionMatches(raw)) {
+  // A blob carrying a DIFFERENT schemaVersion than the code → beta reset (log
+  // + defaults, no migration). An ABSENT version (pre-versioning V1 blob) or a
+  // matching version → merge + sanitize as before: V2 settings changes are
+  // additive, so forward-compatible data is preserved, not nuked. First run
+  // (no data.json) falls through to defaults silently.
+  if (this.schemaVersionIsStale(raw)) {
     this.logger.error(
-      "data.json schemaVersion mismatch; resetting settings to defaults (beta: no migration).",
+      "data.json schemaVersion differs from this build; resetting settings to defaults (beta: no migration).",
       undefined,
       { expected: DATA_SCHEMA_VERSION },
     );
@@ -509,14 +524,15 @@ async load(): Promise<TestHubSettings> {
   return { ...settings, onboarding: repairOnboardingShape(settings.onboarding) };
 }
 
-/** True when a present persisted blob carries the current schema version. */
-private schemaVersionMatches(raw: unknown): boolean {
-  return (
-    typeof raw === "object" &&
-    raw !== null &&
-    !Array.isArray(raw) &&
-    (raw as Record<string, unknown>).schemaVersion === DATA_SCHEMA_VERSION
-  );
+/**
+ * True only for a present blob carrying a schemaVersion DIFFERENT from the
+ * code. An absent version = a pre-versioning V1 blob (forward-compatible via
+ * the additive merge), not stale; `undefined` raw = first run, not stale.
+ */
+private schemaVersionIsStale(raw: unknown): boolean {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return false;
+  const version = (raw as Record<string, unknown>).schemaVersion;
+  return version !== undefined && version !== DATA_SCHEMA_VERSION;
 }
 ```
 
@@ -532,6 +548,8 @@ private persist(settings: TestHubSettings): Promise<Result<void>> {
 In `save()`, replace `const saved = await this.store.save(settings);` with `const saved = await this.persist(settings);`. In `reset()`, replace `const saved = await this.store.save(DEFAULT_SETTINGS);` with `const saved = await this.persist(DEFAULT_SETTINGS);`.
 
 Confirm `mergeWithDefaults` ignores the extra `schemaVersion` key (it selects known `TestHubSettings` fields, so a sibling key is dropped) — read it and verify; if it spreads `raw` wholesale, add `schemaVersion` to the keys it strips.
+
+Because `save()`/`reset()` now stamp `schemaVersion` into the persisted blob, grep `tests/settings-service.test.ts` for any assertion on the **exact** saved payload (e.g. `expect(await store.load()).toEqual(settings)` or a deep-equal on the `store.save` argument) and update it to expect the `schemaVersion: 1` key. Assertions that check the read-back *settings* (not the raw blob) are unaffected.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
