@@ -370,4 +370,34 @@ describe("DefaultPrdService.deletePrd", () => {
     // The PRD note must survive — we couldn't prove it had no linked Use Cases.
     expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(true);
   });
+
+  it("serializes delete with create so a concurrent sub-PRD can't be orphaned", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs); // PRD-001 under PRD-000
+
+    // Concurrently create a sub-PRD under PRD-001 and delete PRD-001. The shared
+    // mutation lock makes these atomic: exactly one wins and the tree stays
+    // consistent — no PRD is ever left pointing at a deleted parent.
+    const [created, deleted] = await Promise.all([
+      service.create({
+        title: "Grandchild",
+        parentPrdId: "PRD-001",
+        domains: ["d"],
+        vision: "v",
+        scopeIn: ["a"],
+        scopeOut: ["b"],
+      }),
+      service.deletePrd("PRD-001"),
+    ]);
+
+    if (created.ok) {
+      // create landed first → PRD-001 now has a child, so delete must refuse.
+      expect(deleted.ok).toBe(false);
+    } else {
+      // delete landed first → create must reject the now-missing parent.
+      expect(deleted.ok).toBe(true);
+      expect(created.ok).toBe(false);
+    }
+  });
 });

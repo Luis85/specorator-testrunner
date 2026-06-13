@@ -44,8 +44,8 @@ export interface PrdService {
 
 const PRD_ID_RE = /^PRD-(\d{3,})$/;
 
-/** Single queue key so all PRD creates serialize (atomic id allocation). */
-const PRD_CREATE_KEY = "prd:create";
+/** Single queue key so all PRD hierarchy mutations (create + delete) serialize. */
+const PRD_MUTATE_KEY = "prd:mutate";
 
 /** Drop blanks and collapse newlines so each item is a single parser-safe line. */
 const normalizeLines = (values: string[] | undefined): string[] =>
@@ -75,10 +75,11 @@ export class DefaultPrdService implements PrdService {
 
     const settings = await this.settingsService.load();
 
-    // Allocate the ID inside a SINGLE shared queue key so concurrent creates
-    // (any titles) serialize — two creates must never read the same id set and
-    // both pick the same next id. Returns the PRD directly from the callback.
-    return this.noteWrites.run(PRD_CREATE_KEY, async () => {
+    // Allocate the ID inside the shared mutation queue key so concurrent creates
+    // AND deletes serialize — two creates must never read the same id set and
+    // both pick the same next id, and a delete must not interleave with a create
+    // (see deletePrd). Returns the PRD directly from the callback.
+    return this.noteWrites.run(PRD_MUTATE_KEY, async () => {
       const existing = await this.findAll();
       if (!existing.ok) return existing;
 
@@ -217,35 +218,40 @@ export class DefaultPrdService implements PrdService {
   }
 
   async deletePrd(id: PrdId): Promise<Result<DeletePrdResult>> {
-    const all = await this.findAll();
-    if (!all.ok) return all;
-    const target = all.value.find((p) => p.id === id);
-    if (!target) {
-      return err(appError("VALIDATION_FAILED", `PRD ${id} was not found.`));
-    }
-    // The root PRD anchors the Explorer/Dashboard; it is never deletable.
-    if (id === "PRD-000" || target.parentPrdId === undefined) {
-      return err(appError("VALIDATION_FAILED", "The root PRD (PRD-000) cannot be deleted."));
-    }
-    if (all.value.some((p) => p.parentPrdId === id)) {
-      return err(
-        appError("VALIDATION_FAILED", `PRD ${id} has child PRDs; delete or reassign them first.`),
-      );
-    }
-    const linkedUcs = await this.countLinkedUseCases(id);
-    if (!linkedUcs.ok) return linkedUcs;
-    if (linkedUcs.value > 0) {
-      return err(
-        appError(
-          "VALIDATION_FAILED",
-          `PRD ${id} still has ${linkedUcs.value} linked Use Case(s); reassign them first.`,
-        ),
-      );
-    }
+    // Run the guard checks AND the delete inside the SAME critical section as
+    // create() (PRD_MUTATE_KEY) so a concurrent create(parent=id) can't slip a
+    // new sub-PRD past the child scan and then be orphaned by this delete:
+    // either the create lands first and the child scan refuses, or the delete
+    // lands first and the create rejects the now-missing parent.
+    return this.noteWrites.run(PRD_MUTATE_KEY, async () => {
+      const all = await this.findAll();
+      if (!all.ok) return all;
+      const target = all.value.find((p) => p.id === id);
+      if (!target) {
+        return err(appError("VALIDATION_FAILED", `PRD ${id} was not found.`));
+      }
+      // The root PRD anchors the Explorer/Dashboard; it is never deletable.
+      if (id === "PRD-000" || target.parentPrdId === undefined) {
+        return err(appError("VALIDATION_FAILED", "The root PRD (PRD-000) cannot be deleted."));
+      }
+      if (all.value.some((p) => p.parentPrdId === id)) {
+        return err(
+          appError("VALIDATION_FAILED", `PRD ${id} has child PRDs; delete or reassign them first.`),
+        );
+      }
+      const linkedUcs = await this.countLinkedUseCases(id);
+      if (!linkedUcs.ok) return linkedUcs;
+      if (linkedUcs.value > 0) {
+        return err(
+          appError(
+            "VALIDATION_FAILED",
+            `PRD ${id} still has ${linkedUcs.value} linked Use Case(s); reassign them first.`,
+          ),
+        );
+      }
 
-    // Delete only the PRD note; leave any sibling attachments (diagrams, etc.).
-    const folder = parentFolder(target.path);
-    return this.noteWrites.run(target.path, async () => {
+      // Delete only the PRD note; leave any sibling attachments (diagrams, etc.).
+      const folder = parentFolder(target.path);
       const deleted = await this.fs.deleteFile(target.path);
       if (!deleted.ok) return deleted;
 
