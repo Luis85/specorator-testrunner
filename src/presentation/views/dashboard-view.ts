@@ -1,5 +1,8 @@
 import { type App, FuzzySuggestModal, ItemView, type WorkspaceLeaf } from "obsidian";
 import type { TraceabilityService } from "../../application/services/traceability-service";
+import type { PrdService } from "../../application/services/prd-service";
+import type { UseCaseService } from "../../application/services/use-case-service";
+import { projectPrdRoadmap } from "./dashboard-prd-projection";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { createEvent } from "../../shared/event-bus/create-event";
@@ -52,6 +55,9 @@ const REFRESH_ON: DomainEventType[] = [
   // The Guided Tour CTA disappears once the tour completes; repaint on it so
   // an already-open dashboard hides the banner without a manual refresh.
   "tour.completed",
+  // Keep the PRD & roadmap section live as PRDs are created/deleted.
+  "prd.created",
+  "prd.deleted",
 ];
 
 /** The documentation entry points reachable from the dashboard (AC-016). */
@@ -65,6 +71,12 @@ export type DashboardDocumentType = "getting-started" | "manual" | "troubleshoot
  */
 export interface DashboardViewDeps {
   traceabilityService: TraceabilityService;
+  // PRD & roadmap section (Task 15): the root vision card + sub-PRD list.
+  prdService: Pick<PrdService, "findAll">;
+  useCaseService: Pick<UseCaseService, "countUseCasesByPrd">;
+  // Opens the PRD Builder and navigates to the PRD Explorer from the section.
+  openPrdBuilder: () => void;
+  navigateToPrds: () => void | Promise<void>;
   eventBus: EventBus;
   // AC-016: open the Getting Started guide / User Manual straight from the
   // dashboard.
@@ -239,6 +251,9 @@ export class DashboardView extends ItemView {
       });
     }
 
+    // PRD & roadmap (Task 15): the product-vision card + sub-PRD list.
+    await this.renderPrdSection(container);
+
     // Recent runs (US-038).
     container.createEl("h3", { text: "Recent runs" });
     if (view.recentRuns.length === 0) {
@@ -304,6 +319,62 @@ export class DashboardView extends ItemView {
         attr: { "data-status": run.status },
       });
       tr.createEl("td", { text: run.date });
+    }
+  }
+
+  /**
+   * Task 15: the "PRD & roadmap" section — the root product-vision card with its
+   * sub-PRD count + total Use Cases, the ordered sub-PRD list, and entry points
+   * to create a PRD or open the PRD Explorer. When no PRDs exist yet, shows a
+   * single call-to-action to create the root. Skipped silently on a load error.
+   */
+  private async renderPrdSection(container: HTMLElement): Promise<void> {
+    const [prds, counts] = await Promise.all([
+      this.deps.prdService.findAll(),
+      this.deps.useCaseService.countUseCasesByPrd(),
+    ]);
+    if (!prds.ok) return;
+
+    container.createEl("h3", { text: "PRDs & roadmap" });
+    const roadmap = projectPrdRoadmap(
+      prds.value,
+      counts.ok ? counts.value : new Map<string, number>(),
+    );
+    const section = container.createDiv({ cls: "e2e-test-hub-prd-roadmap" });
+
+    if (!roadmap.root) {
+      section.createEl("p", { text: "No PRDs yet. Start with the product vision." });
+      section
+        .createEl("button", { text: "Create prd-000 (product vision)", cls: "mod-cta" })
+        .addEventListener("click", () => this.deps.openPrdBuilder());
+      return;
+    }
+
+    section.createEl("h4", { text: `${roadmap.root.id}: ${roadmap.root.title}` });
+    if (roadmap.root.vision) {
+      section.createEl("p", { text: roadmap.root.vision, cls: "e2e-test-hub-prd-vision" });
+    }
+    const uc = roadmap.root.totalUseCases;
+    section.createEl("p", {
+      text: `${roadmap.root.subPrdCount} sub-PRDs · ${uc} use case${uc === 1 ? "" : "s"}`,
+    });
+
+    const actions = section.createDiv({ cls: "e2e-test-hub-prd-roadmap-actions" });
+    actions
+      .createEl("button", { text: "New prd", cls: "mod-cta" })
+      .addEventListener("click", () => this.deps.openPrdBuilder());
+    actions
+      .createEl("button", { text: "View prd tree", cls: "e2e-test-hub-doc-button" })
+      .addEventListener("click", () => void this.deps.navigateToPrds());
+
+    if (roadmap.children.length > 0) {
+      const list = section.createEl("ul", { cls: "e2e-test-hub-prd-roadmap-list" });
+      for (const child of roadmap.children) {
+        const ucs = child.ucCount === 1 ? "1 UC" : `${child.ucCount} UCs`;
+        list.createEl("li", {
+          text: `${child.id}: ${child.title} (${ucs}) — ${child.status}`,
+        });
+      }
     }
   }
 

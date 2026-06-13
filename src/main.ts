@@ -511,6 +511,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         // helpers + the Wave B RunLauncher (no run/create logic is duplicated).
         new DashboardView(leaf, {
           traceabilityService: this.traceabilityService,
+          prdService: this.prdService,
+          useCaseService: this.useCaseService,
+          openPrdBuilder: () => this.openPrdBuilder(),
+          navigateToPrds: () => void this.workspaceAdapter.openView(PRD_VIEW_TYPE, "sidebar"),
           eventBus,
           // Real initialization signal: the Use Cases folder the snapshot reads
           // exists once the wizard has scaffolded the vault. A fresh vault lists
