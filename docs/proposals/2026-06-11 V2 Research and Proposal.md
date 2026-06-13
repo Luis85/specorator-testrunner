@@ -443,7 +443,7 @@ builds directly on top of them.
 | 2.1 | Settings/data versioning: add a `schemaVersion` to `data.json` with an explicit, tested migration-step framework (tech review flagged "no versioning scheme") | Every V2 epic changes the settings shape; without versioned migrations each change is a fresh ad-hoc repair hack |
 | 2.2 | Versioned `.testrunner` manifest + repair-driven upgrade framework: runner templates carry a version; `Repair installation` can apply guided, non-destructive upgrades and report what changed | This is the exact mechanism the playwright-bdd migration (3.x) rides on — build the rails before the train |
 | 2.3 | Extract a `ReportParser` port with the current cucumber-JSON parser as its first implementation | Lets the migration add Cucumber Messages alongside JSON without touching the evidence pipeline twice (and opens EPIC-019 later) |
-| 2.4 | Write and accept the V2 ADRs: playwright-bdd adoption, scenario identity & history store, opt-in local MCP / no in-plugin AI runtime, credential storage, browser-matrix default | These are hard-to-reverse decisions; per the project's own ADR discipline they precede implementation |
+| 2.4 | Write and accept the V2 ADRs: playwright-bdd adoption, scenario identity & history store, opt-in local MCP / no in-plugin AI runtime, credential storage, browser-matrix default **— delivered 2026-06-13 as ADR-0021…0025 (design spec: `docs/superpowers/specs/2026-06-13-v2-foundational-adrs-design.md`).** | These are hard-to-reverse decisions; per the project's own ADR discipline they precede implementation |
 
 ### Phase 3 — The playwright-bdd migration (last item)
 
