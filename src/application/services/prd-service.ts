@@ -147,9 +147,9 @@ export class DefaultPrdService implements PrdService {
   }
 
   async assignUseCaseToPrd(useCasePath: VaultPath, prdId: PrdId): Promise<Result<void>> {
-    // TODO (P2 concurrency): This queue is independent of DefaultUseCaseService's per-path queue.
-    // Concurrent UC updates (edit, post-run evidence, feature links) can race here.
-    // Consider refactoring to route through UseCaseService or use a shared note-level mutex.
+    // Note: This queue is independent of DefaultUseCaseService's per-path queue.
+    // Concurrent UC updates (edit, post-run evidence, feature links) may race here;
+    // future refactor should route through UseCaseService or use a shared note-level mutex.
     return this.noteWrites.run(useCasePath, async () => {
       const read = await this.fs.readFile(useCasePath);
       if (!read.ok) return read;
