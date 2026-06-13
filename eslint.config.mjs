@@ -84,7 +84,7 @@ export default tseslint.config(
             "GitHub",
             "Node.js",
           ],
-          acronyms: ["E2E", "CI", "KPI", "SUT", "URL", "ID", "MB"],
+          acronyms: ["E2E", "CI", "KPI", "SUT", "URL", "ID", "MB", "PRD"],
           // Environment-variable names quoted verbatim in copy, and Feature
           // Editor labels naming Gherkin keywords (Background:, Scenario:,
           // Examples:) — syntax tokens that are always capitalized.

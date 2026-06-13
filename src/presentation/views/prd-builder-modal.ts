@@ -170,7 +170,7 @@ export class PrdBuilderModal extends Modal {
     this.renderParentSelector(contentEl);
 
     this.renderError(contentEl, "selectedDomains");
-    contentEl.createEl("p", { text: "Select the domain(s) this prd covers:" });
+    contentEl.createEl("p", { text: "Select the domain(s) this PRD covers:" });
     if (this.domains.length === 0) {
       contentEl.createEl("p", {
         text: "No domains found in existing Use Cases yet — add one below.",
@@ -220,7 +220,7 @@ export class PrdBuilderModal extends Modal {
 
     new Setting(contentEl)
       .setName("Add a domain")
-      .setDesc("Add a new domain for a prd-first vault or a brand-new area.")
+      .setDesc("Add a new domain for a PRD-first vault or a brand-new area.")
       .addText((text) => {
         text.setPlaceholder("New domain name");
         inputEl = text.inputEl;
@@ -242,13 +242,13 @@ export class PrdBuilderModal extends Modal {
   private renderParentSelector(contentEl: HTMLElement): void {
     if (this.prds.length === 0) {
       contentEl.createEl("p", {
-        text: "This is the first prd — it will become the root product vision (prd-000).",
+        text: "This is the first PRD — it will become the root product vision (PRD-000).",
       });
       return;
     }
 
     new Setting(contentEl)
-      .setName("Parent prd")
+      .setName("Parent PRD")
       .setDesc("Sub-PRDs hang under a parent (defaults to the product vision).")
       .addDropdown((dropdown) => {
         for (const prd of this.prds) {
@@ -340,7 +340,7 @@ export class PrdBuilderModal extends Modal {
 
   private renderStep6AssignUseCases(contentEl: HTMLElement): void {
     this.renderError(contentEl, "selectedUcs");
-    contentEl.createEl("p", { text: "Select Use Cases to assign to this prd:" });
+    contentEl.createEl("p", { text: "Select Use Cases to assign to this PRD:" });
 
     // Scope the list to the chosen domains (all UCs when no domain is selected).
     const filtered = this.useCases.filter((uc) => {
@@ -364,7 +364,7 @@ export class PrdBuilderModal extends Modal {
   }
 
   private renderStep7Review(contentEl: HTMLElement): void {
-    contentEl.createEl("h3", { text: "Review prd details" });
+    contentEl.createEl("h3", { text: "Review PRD details" });
 
     const summary = contentEl.createEl("div", { cls: "prd-summary" });
     summary.createEl("p", { text: `Title: ${this.state.title || "(none)"}` });

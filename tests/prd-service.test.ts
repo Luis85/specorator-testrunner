@@ -71,6 +71,32 @@ describe("DefaultPrdService.create", () => {
     });
     expect(result.ok && result.value.id).toBe("PRD-002");
   });
+
+  it("cleans up the new folder when the note write fails (no orphaned empty folder)", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "PRDs/PRD-000-vision/PRD-000-vision.md",
+      "---\nid: PRD-000\ntype: prd\nparent-prd:\n---\n",
+    );
+    // The note write fails after the folder is created.
+    fs.failOn = {
+      path: "PRDs/PRD-001-cleanup-test/PRD-001-cleanup-test.md",
+      message: "disk full",
+    };
+
+    const result = await service.create({
+      title: "Cleanup Test",
+      parentPrdId: "PRD-000",
+      domains: ["d"],
+      vision: "v",
+      scopeIn: ["a"],
+      scopeOut: ["b"],
+    });
+
+    expect(result.ok).toBe(false);
+    // The just-created folder must not be left behind on a note-write failure.
+    expect([...fs.folders].some((f) => f.startsWith("PRDs/PRD-001"))).toBe(false);
+  });
 });
 
 describe("DefaultPrdService.findAll/parse", () => {

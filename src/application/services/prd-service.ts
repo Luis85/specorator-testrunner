@@ -140,6 +140,9 @@ export class DefaultPrdService implements PrdService {
         vision,
         scopeIn,
         scopeOut,
+        // Allocation order only (V1 has no reparent/reorder); siblings are
+        // sorted by `displayOrder || id.localeCompare`, so a value reused after
+        // a delete still resolves deterministically by the immutable id.
         displayOrder: existing.value.length,
         path,
       };
@@ -149,7 +152,12 @@ export class DefaultPrdService implements PrdService {
       if (!folderResult.ok) return folderResult;
 
       const createResult = await this.fs.createFile(path, buildPrdNote(prd, request.research));
-      if (!createResult.ok) return createResult;
+      if (!createResult.ok) {
+        // Don't leave an orphaned empty PRD folder behind on a note-write
+        // failure; best-effort cleanup (the original error is what we return).
+        await this.fs.deleteFolder(folderPath);
+        return createResult;
+      }
 
       await this.eventBus.publish(
         createEvent(

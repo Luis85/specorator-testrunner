@@ -403,7 +403,7 @@ export function registerCommands(
   });
   plugin.addCommand({
     id: "create-prd",
-    name: "Create prd",
+    name: "New PRD",
     callback: () => deps.openPrdBuilder(),
   });
   plugin.addCommand({
