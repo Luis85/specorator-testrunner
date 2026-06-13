@@ -566,3 +566,34 @@ describe("domain field and listDomains", () => {
     ]);
   });
 });
+
+describe("prdId field and countUseCasesByPrd", () => {
+  it("reads prd-id frontmatter and counts use cases per PRD", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Use Cases/UC-001 A.md",
+      "---\nid: UC-001\ntype: use-case\ntitle: A\nprd-id: PRD-001\nstatus: specified\n---\n# UC-001 A\n",
+    );
+    fs.files.set(
+      "Use Cases/UC-002 B.md",
+      "---\nid: UC-002\ntype: use-case\ntitle: B\nprd-id: PRD-001\nstatus: specified\n---\n# UC-002 B\n",
+    );
+    fs.files.set(
+      "Use Cases/UC-003 C.md",
+      "---\nid: UC-003\ntype: use-case\ntitle: C\nprd-id: PRD-002\nstatus: specified\n---\n# UC-003 C\n",
+    );
+    fs.files.set(
+      "Use Cases/UC-004 D.md",
+      "---\nid: UC-004\ntype: use-case\ntitle: D\nstatus: specified\n---\n# UC-004 D\n",
+    );
+
+    const all = await service.findAll();
+    expect(all.ok && all.value.find((u) => u.id === "UC-001")?.prdId).toBe("PRD-001");
+    expect(all.ok && all.value.find((u) => u.id === "UC-004")?.prdId).toBeUndefined();
+
+    const counts = await service.countUseCasesByPrd();
+    expect(counts.ok && counts.value.get("PRD-001")).toBe(2);
+    expect(counts.ok && counts.value.get("PRD-002")).toBe(1);
+    expect(counts.ok && counts.value.has("")).toBe(false);
+  });
+});

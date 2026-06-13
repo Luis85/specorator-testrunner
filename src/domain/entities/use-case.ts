@@ -49,5 +49,7 @@ export interface UseCase {
   lastTestRun?: TestRunSummary;
   /** Optional research-domain classification (frontmatter `domain:`). */
   domain?: string;
+  /** Optional parent PRD id (frontmatter `prd-id:`); absent until assigned. */
+  prdId?: string;
   path: VaultPath;
 }

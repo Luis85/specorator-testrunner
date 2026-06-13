@@ -51,6 +51,8 @@ export interface UseCaseService {
   updateMetadata(id: UseCaseId, changes: UseCaseMetadataChanges): Promise<Result<UseCase>>;
   /** List unique domains from all use cases with their counts. */
   listDomains(): Promise<Result<{ domain: string; count: number }[]>>;
+  /** Count use cases grouped by their assigned PRD id (`prd-id` frontmatter). */
+  countUseCasesByPrd(): Promise<Result<Map<string, number>>>;
 }
 
 const ID_PATTERN = /^UC-(\d+)$/;
@@ -372,6 +374,10 @@ export class DefaultUseCaseService implements UseCaseService {
       lastTestRun,
       domain:
         typeof fm.domain === "string" && fm.domain.trim() !== "" ? fm.domain.trim() : undefined,
+      prdId:
+        typeof fm["prd-id"] === "string" && fm["prd-id"].trim() !== ""
+          ? fm["prd-id"].trim()
+          : undefined,
       path,
     };
   }
@@ -388,5 +394,16 @@ export class DefaultUseCaseService implements UseCaseService {
       .map(([domain, count]) => ({ domain, count }))
       .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
     return ok(list);
+  }
+
+  async countUseCasesByPrd(): Promise<Result<Map<string, number>>> {
+    const all = await this.findAll();
+    if (!all.ok) return all;
+    const counts = new Map<string, number>();
+    for (const uc of all.value) {
+      if (!uc.prdId) continue;
+      counts.set(uc.prdId, (counts.get(uc.prdId) ?? 0) + 1);
+    }
+    return ok(counts);
   }
 }
