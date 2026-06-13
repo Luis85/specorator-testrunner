@@ -532,6 +532,20 @@ export class DefaultPrdService implements PrdService {
   async create(request: CreatePrdRequest): Promise<Result<Prd>> {
     const title = request.title.trim();
     if (title === "") return err(/* use the same error helper shape as use-case-service */ new Error("A PRD title is required."));
+    
+    const vision = request.vision.trim();
+    if (vision === "") return err(new Error("PRD vision statement is required."));
+    
+    const scopeIn = (request.scopeIn || []).filter((s) => s.trim() !== "");
+    if (scopeIn.length === 0) return err(new Error("At least one item must be in scope."));
+    
+    const scopeOut = (request.scopeOut || []).filter((s) => s.trim() !== "");
+    if (scopeOut.length === 0) return err(new Error("At least one item must be out of scope."));
+    
+    if (request.parentPrdId) {
+      const domains = (request.domains || []).filter((d) => d.trim() !== "");
+      if (domains.length === 0) return err(new Error("Sub-PRDs must be linked to at least one domain."));
+    }
 
     const settings = await this.settingsService.load();
     const existing = await this.findAll();
@@ -546,10 +560,10 @@ export class DefaultPrdService implements PrdService {
       title,
       status: "draft",
       parentPrdId: request.parentPrdId,
-      domains: request.domains,
-      vision: request.vision,
-      scopeIn: request.scopeIn,
-      scopeOut: request.scopeOut,
+      domains: scopeIn.length > 0 ? request.domains : undefined,
+      vision,
+      scopeIn,
+      scopeOut,
       displayOrder: existing.value.length,
       path,
     };
@@ -773,7 +787,15 @@ And to `DefaultPrdService` (import `updateNoteFrontmatter` from the shared util)
       const read = await this.fs.readFile(useCasePath);
       if (!read.ok) return read;
       const next = updateNoteFrontmatter(read.value, { "prd-id": prdId });
-      return this.fs.writeFile(useCasePath, next);
+      const write = await this.fs.writeFile(useCasePath, next);
+      if (!write.ok) return write;
+      
+      // Emit usecase.updated so Explorer live-refresh recomputes counts & breadcrumbs
+      this.eventBus.publish({
+        type: "usecase.updated",
+        payload: { useCasePath },
+      });
+      return ok(undefined);
     });
   }
 ```
@@ -787,7 +809,7 @@ Expected: PASS.
 
 ```bash
 git add src/application/services/prd-service.ts tests/prd-service.test.ts
-git commit -m "feat(application): assignUseCaseToPrd writes prd-id, preserving frontmatter"
+git commit -m "feat(application): assignUseCaseToPrd emits usecase.updated for live refresh"
 ```
 
 ---
@@ -1349,9 +1371,40 @@ git commit -m "feat(dashboard): add PRD & Roadmap section"
 
 ## Phase 5 — Use Case detail breadcrumb
 
+### Task 15.5: Add `deleteFile` to VaultFileSystem port
+
+(Prerequisite for Task 16a's delete implementation.)
+
+**Files:**
+- Modify: `src/infrastructure/ports/vault-file-system.ts` (add `deleteFile(path): Promise<Result<void>>` to interface)
+- Modify: `src/infrastructure/adapters/obsidian-vault-file-system.ts` (implement using `vault.adapter.remove(...)` or trash)
+- Modify: `tests/__stubs__/fake-vault-file-system.ts` (implement stub for testing)
+
+- [ ] **Step 1: Read the existing port** to understand the interface pattern and error handling.
+
+- [ ] **Step 2: Add the interface method** to `VaultFileSystem`:
+```typescript
+deleteFile(path: VaultPath): Promise<Result<void>>;
+```
+
+- [ ] **Step 3: Implement in Obsidian adapter** (use Obsidian's `adapter.remove()` or vault methods; wrap in Result/error handling).
+
+- [ ] **Step 4: Implement in FakeVaultFileSystem** (track deletions in an internal Set for test verification).
+
+- [ ] **Step 5: Verify** with a simple integration test that deletes a file and checks it's gone.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/infrastructure/ports/vault-file-system.ts src/infrastructure/adapters/obsidian-vault-file-system.ts tests/__stubs__/fake-vault-file-system.ts
+git commit -m "feat(infrastructure): add deleteFile to VaultFileSystem port"
+```
+
+---
+
 ### Task 16a: PRD delete flow that preserves user files
 
-(Referenced by Task 13's Delete button; implement before wiring it.)
+(Referenced by Task 13's Delete button; implement after Task 15.5.)
 
 **Files:**
 - Modify: `src/application/services/prd-service.ts` (add `deletePrd(id)` to interface + impl; add `prd.deleted` event per Task 2's pattern — register the event type/payload/catalog first via a small TDD step mirroring Task 2)
@@ -1361,7 +1414,7 @@ git commit -m "feat(dashboard): add PRD & Roadmap section"
 
 - [ ] **Step 2: Run** → FAIL.
 
-- [ ] **Step 3: Implement** `deletePrd`: **refuse if `id === "PRD-000"` or the PRD's `parentPrdId` is undefined (the root is never deletable — it anchors the Explorer/Dashboard)**; refuse if `findAll` shows any child `parentPrdId === id` or `countUseCasesByPrd` shows `> 0` for `id`; otherwise list the folder (`fs.listFilesRecursive(folder)`), delete only the `PRD-*.md` note (`fs.deleteFile` if available, else overwrite-then-remove per the port's API), and if other files remain leave the folder. Return `{ preservedFiles: number }`. Publish `prd.deleted`.
+- [ ] **Step 3: Implement** `deletePrd`: **refuse if `id === "PRD-000"` or the PRD's `parentPrdId` is undefined (the root is never deletable — it anchors the Explorer/Dashboard)**; refuse if `findAll` shows any child `parentPrdId === id` or `countUseCasesByPrd` shows `> 0` for `id`; otherwise list the folder (`fs.listFilesRecursive(folder)`), delete only the `PRD-*.md` note using `fs.deleteFile(notePath)`, and if other files remain leave the folder. Return `{ preservedFiles: number }`. Publish `prd.deleted`.
 
 - [ ] **Step 4: Run** → PASS.
 
@@ -1496,14 +1549,14 @@ git commit -m "feat(migrate): Phases 4-5 create sub-PRDs and link Use Cases"
 ### Task 20: ADR for the PRD hierarchy artifact model
 
 **Files:**
-- Create: `docs/adr/0021-prd-hierarchy-artifact-model.md` (use the next free ADR number — `ls docs/adr` to confirm; the spec assumes ≥ 0021)
+- Create: `docs/adr/0026-prd-hierarchy-artifact-model.md` (0021–0025 already exist; this is the next free slot)
 
 - [ ] **Step 1:** Write the ADR following the existing ADR format in `docs/adr/0001-*.md`. Cover: context (gap between Domain research and Use Cases), decision (three-layer Domain → PRD → Use Case; PRDs as synthesis artifacts; one-folder-per-PRD; immutable ids + `display_order`; root identified by empty `parent-prd`; `domains` optional for root), consequences, and alternatives considered (PRDs replace domains — rejected; multi-parent UCs — rejected).
 
 - [ ] **Step 2: Commit**
 
 ```bash
-git add docs/adr/0021-prd-hierarchy-artifact-model.md
+git add docs/adr/0026-prd-hierarchy-artifact-model.md
 git commit -m "docs(adr): record PRD hierarchy artifact model decision"
 ```
 
