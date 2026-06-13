@@ -1,9 +1,30 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
+import type { Prd } from "../../domain/entities/prd";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { CreatePrdRequest, PrdService } from "../../application/services/prd-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { PrdBuilderState } from "../../application/services/prd-builder";
 import { prdBuilderStepTitle } from "../../application/services/prd-builder";
+
+/**
+ * Resolve the parent for a new PRD. An explicit parent (Explorer "＋ sub-PRD")
+ * always wins. Otherwise, when PRDs already exist the new PRD defaults to a child
+ * of the root (PRD-000 if present, else the first parentless PRD) so it is never
+ * accidentally created as a second root; with no PRDs yet it stays parentless
+ * (it becomes the root product vision).
+ */
+export const resolveParentPrdId = (
+  explicit: string | undefined,
+  prds: Prd[],
+): string | undefined => {
+  if (explicit !== undefined) return explicit;
+  if (prds.length === 0) return undefined;
+  return (
+    prds.find((p) => p.id === "PRD-000")?.id ??
+    prds.find((p) => p.parentPrdId === undefined)?.id ??
+    prds[0]?.id
+  );
+};
 
 /**
  * Dependencies for {@link PrdBuilderModal}. Mirrors the narrow-contract pattern
@@ -13,6 +34,12 @@ import { prdBuilderStepTitle } from "../../application/services/prd-builder";
 export interface PrdBuilderDeps {
   prdService: PrdService;
   useCaseService: UseCaseService;
+  /**
+   * Parent for the new PRD. Passed by the Explorer's "＋ sub-PRD" action. When
+   * omitted, the builder defaults to the root PRD as parent (or, if no PRDs
+   * exist yet, creates the root itself).
+   */
+  parentPrdId?: string;
 }
 
 /**
@@ -27,9 +54,10 @@ export interface PrdBuilderDeps {
 export class PrdBuilderModal extends Modal {
   private state: PrdBuilderState;
   private submitting = false;
-  private domainsLoaded = false;
+  private catalogLoaded = false;
   private domains: string[] = [];
   private useCases: UseCase[] = [];
+  private prds: Prd[] = [];
 
   constructor(
     app: App,
@@ -39,7 +67,7 @@ export class PrdBuilderModal extends Modal {
     this.state = {
       currentStep: 1,
       title: "",
-      parentPrdId: undefined,
+      parentPrdId: deps.parentPrdId,
       selectedDomains: [],
       research: "",
       vision: "",
@@ -63,15 +91,25 @@ export class PrdBuilderModal extends Modal {
   }
 
   private async ensureCatalogLoaded(): Promise<void> {
-    if (this.domainsLoaded) return;
-    const result = await this.deps.useCaseService.findAll();
-    if (result.ok) {
-      this.useCases = result.value;
+    if (this.catalogLoaded) return;
+    const [ucs, prds] = await Promise.all([
+      this.deps.useCaseService.findAll(),
+      this.deps.prdService.findAll(),
+    ]);
+    if (ucs.ok) {
+      this.useCases = ucs.value;
       this.domains = Array.from(
-        new Set(result.value.map((uc) => uc.domain).filter((d): d is string => Boolean(d))),
+        new Set(ucs.value.map((uc) => uc.domain).filter((d): d is string => Boolean(d))),
       ).sort();
     }
-    this.domainsLoaded = true;
+    if (prds.ok) {
+      this.prds = prds.value;
+      this.state = {
+        ...this.state,
+        parentPrdId: resolveParentPrdId(this.deps.parentPrdId, this.prds),
+      };
+    }
+    this.catalogLoaded = true;
     this.render();
   }
 
@@ -145,6 +183,8 @@ export class PrdBuilderModal extends Modal {
       text.inputEl.focus();
     });
 
+    this.renderParentSelector(contentEl);
+
     this.renderError(contentEl, "selectedDomains");
     contentEl.createEl("p", { text: "Select the domain(s) this prd covers:" });
 
@@ -161,6 +201,33 @@ export class PrdBuilderModal extends Modal {
         };
       },
     );
+  }
+
+  /**
+   * Lets the user choose this PRD's parent. With no existing PRDs the new PRD is
+   * the root (no control). Otherwise a dropdown lists existing PRDs, defaulting
+   * to the root, so a sub-PRD is never accidentally created as a second root.
+   */
+  private renderParentSelector(contentEl: HTMLElement): void {
+    if (this.prds.length === 0) {
+      contentEl.createEl("p", {
+        text: "This is the first prd — it will become the root product vision (prd-000).",
+      });
+      return;
+    }
+
+    new Setting(contentEl)
+      .setName("Parent prd")
+      .setDesc("Sub-PRDs hang under a parent (defaults to the product vision).")
+      .addDropdown((dropdown) => {
+        for (const prd of this.prds) {
+          dropdown.addOption(prd.id, `${prd.id}: ${prd.title}`);
+        }
+        if (this.state.parentPrdId) dropdown.setValue(this.state.parentPrdId);
+        dropdown.onChange((value) => {
+          this.state = { ...this.state, parentPrdId: value };
+        });
+      });
   }
 
   private renderStep2Research(contentEl: HTMLElement): void {
@@ -270,6 +337,9 @@ export class PrdBuilderModal extends Modal {
 
     const summary = contentEl.createEl("div", { cls: "prd-summary" });
     summary.createEl("p", { text: `Title: ${this.state.title || "(none)"}` });
+    summary.createEl("p", {
+      text: `Parent: ${this.state.parentPrdId ?? "None (root product vision)"}`,
+    });
     summary.createEl("p", { text: `Domains: ${this.state.selectedDomains.join(", ") || "None"}` });
     summary.createEl("p", { text: `Vision: ${this.state.vision || "(none)"}` });
     summary.createEl("p", { text: `Scope In: ${this.state.scopeIn.join(", ") || "None"}` });
@@ -323,6 +393,7 @@ export class PrdBuilderModal extends Modal {
         vision: this.state.vision,
         scopeIn: this.state.scopeIn,
         scopeOut: this.state.scopeOut,
+        research: this.state.research,
       };
       const result = await this.deps.prdService.create(request);
 

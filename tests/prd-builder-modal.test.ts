@@ -1,8 +1,27 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { UseCaseService } from "../src/application/services/use-case-service";
 import type { PrdService } from "../src/application/services/prd-service";
-import { PrdBuilderModal, type PrdBuilderDeps } from "../src/presentation/views/prd-builder-modal";
+import {
+  PrdBuilderModal,
+  resolveParentPrdId,
+  type PrdBuilderDeps,
+} from "../src/presentation/views/prd-builder-modal";
+import type { Prd } from "../src/domain/entities/prd";
+import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
 import type { App } from "obsidian";
+
+const prd = (id: string, parent: string | undefined): Prd => ({
+  id,
+  title: id,
+  status: "draft",
+  parentPrdId: parent,
+  domains: [],
+  vision: "",
+  scopeIn: [],
+  scopeOut: [],
+  displayOrder: 0,
+  path: unsafeVaultPath(`PRDs/${id}/${id}.md`),
+});
 
 // Type alias for accessing private members in tests
 type ModalWithPrivates = Record<string, unknown>;
@@ -13,6 +32,7 @@ const createMockPrdService = () => ({
     ok: true,
     value: { id: "PRD-001", title: "Test PRD", path: "prds/test-prd.md" },
   }),
+  findAll: vi.fn().mockResolvedValue({ ok: true, value: [] }),
   assignUseCaseToPrd: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
 });
 
@@ -63,6 +83,12 @@ describe("PrdBuilderModal", () => {
 
   it("can be instantiated with dependencies", () => {
     expect(makeModal()).toBeTruthy();
+  });
+
+  it("honors an explicitly provided parent PRD id in initial state", () => {
+    const mockApp = { workspace: { activeEditor: null } } as App;
+    const modal = new PrdBuilderModal(mockApp, { ...makeDeps(), parentPrdId: "PRD-003" });
+    expect((getState(modal) as Record<string, string>).parentPrdId).toBe("PRD-003");
   });
 
   it("has initial state with step 1 and empty fields", () => {
@@ -176,6 +202,7 @@ describe("PrdBuilderModal", () => {
       vision: "Clear vision",
       scopeIn: ["Feature A"],
       scopeOut: ["Legacy"],
+      research: "Some research",
     });
   });
 
@@ -204,6 +231,18 @@ describe("PrdBuilderModal", () => {
       "Use Cases/UC-001.md",
       "PRD-001",
     );
+  });
+
+  it("resolveParentPrdId defaults new PRDs under the root and respects explicit parents", () => {
+    const tree = [prd("PRD-000", undefined), prd("PRD-001", "PRD-000")];
+    // No PRDs yet → the new PRD is the root (parentless).
+    expect(resolveParentPrdId(undefined, [])).toBeUndefined();
+    // PRDs exist, no explicit parent → default under PRD-000.
+    expect(resolveParentPrdId(undefined, tree)).toBe("PRD-000");
+    // Explicit parent (Explorer "＋ sub-PRD") always wins.
+    expect(resolveParentPrdId("PRD-001", tree)).toBe("PRD-001");
+    // Root resolution falls back to the first parentless PRD when PRD-000 is absent.
+    expect(resolveParentPrdId(undefined, [prd("PRD-007", undefined)])).toBe("PRD-007");
   });
 
   it("closes modal after successful PRD creation", async () => {
