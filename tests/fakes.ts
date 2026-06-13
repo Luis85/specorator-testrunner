@@ -115,6 +115,14 @@ export class FakeVaultFileSystem implements VaultFileSystem {
     }
     return ok(undefined);
   }
+
+  async deleteFile(path: VaultPath): Promise<Result<void>> {
+    if (this.failOn?.path === path) {
+      return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
+    }
+    this.files.delete(path); // idempotent: missing file is not an error
+    return ok(undefined);
+  }
 }
 
 /** In-memory {@link DataStore}. */

@@ -161,3 +161,101 @@ describe("DefaultPrdService.assignUseCaseToPrd", () => {
     expect(updated).toContain("# UC-001 Init"); // body preserved
   });
 });
+
+describe("DefaultPrdService.deletePrd", () => {
+  const seedRoot = (fs: FakeVaultFileSystem) =>
+    fs.files.set(
+      "PRDs/PRD-000-vision/PRD-000-vision.md",
+      [
+        "---",
+        "id: PRD-000",
+        "type: prd",
+        "title: Vision",
+        "parent-prd:",
+        "---",
+        "# PRD-000",
+        "",
+      ].join("\n"),
+    );
+  const seedSub = (fs: FakeVaultFileSystem, id = "PRD-001", folder = "PRD-001-dash") =>
+    fs.files.set(
+      `PRDs/${folder}/${folder}.md`,
+      [
+        "---",
+        `id: ${id}`,
+        "type: prd",
+        "title: Dash",
+        "parent-prd: PRD-000",
+        "---",
+        "# Dash",
+        "",
+      ].join("\n"),
+    );
+
+  it("deletes a leaf sub-PRD note and emits prd.deleted", async () => {
+    const { service, fs, types, events } = build();
+    seedRoot(fs);
+    seedSub(fs);
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.preservedFiles).toBe(0);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
+    expect(types()).toContain("prd.deleted");
+    expect(events.find((e) => e.type === "prd.deleted")?.payload).toEqual({
+      prdId: "PRD-001",
+      path: "PRDs/PRD-001-dash/PRD-001-dash.md",
+      preservedFiles: 0,
+    });
+  });
+
+  it("preserves sibling attachments and reports the count", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    fs.files.set("PRDs/PRD-001-dash/diagram.png", "binary");
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok && result.value.preservedFiles).toBe(1);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
+    expect(fs.files.has("PRDs/PRD-001-dash/diagram.png")).toBe(true);
+  });
+
+  it("refuses to delete a PRD with children", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs, "PRD-001", "PRD-001-dash");
+    fs.files.set(
+      "PRDs/PRD-002-child/PRD-002-child.md",
+      ["---", "id: PRD-002", "type: prd", "title: Child", "parent-prd: PRD-001", "---", ""].join(
+        "\n",
+      ),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses to delete a PRD that still has linked use cases", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    fs.files.set(
+      "Use Cases/UC-001.md",
+      ["---", "id: UC-001", "type: use-case", "title: A", "prd-id: PRD-001", "---", ""].join("\n"),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok).toBe(false);
+  });
+
+  it("never deletes the root PRD-000", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+
+    const result = await service.deletePrd("PRD-000");
+    expect(result.ok).toBe(false);
+    expect(fs.files.has("PRDs/PRD-000-vision/PRD-000-vision.md")).toBe(true);
+  });
+});

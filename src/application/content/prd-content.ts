@@ -10,8 +10,12 @@ export const prdFolderName = (id: string, title: string): string => {
   return slug ? `${id}-${slug}` : id;
 };
 
-/** Serialize a PRD entity to a frontmatter+markdown note. Parser-safe forms only. */
-export const buildPrdNote = (prd: Prd): string => {
+/**
+ * Serialize a PRD entity to a frontmatter+markdown note. Parser-safe forms only.
+ * `research` (free text captured by the builder) seeds the Research Summary body
+ * section; it is not frontmatter and is never round-tripped by the read model.
+ */
+export const buildPrdNote = (prd: Prd, research?: string): string => {
   const fields: Record<string, FrontmatterValue> = {
     id: prd.id,
     type: "prd",
@@ -26,6 +30,7 @@ export const buildPrdNote = (prd: Prd): string => {
     display_order: prd.displayOrder,
   };
 
+  const researchText = research?.trim() ?? "";
   const body = [
     `# ${prd.id}: ${prd.title}`,
     "",
@@ -33,6 +38,7 @@ export const buildPrdNote = (prd: Prd): string => {
     "",
     "## Research Summary",
     "",
+    ...(researchText ? [researchText, ""] : []),
     "## Scope",
     "- **In:**",
     ...prd.scopeIn.map((s) => `  - ${s}`),

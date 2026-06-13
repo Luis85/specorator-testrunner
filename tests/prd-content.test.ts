@@ -47,4 +47,19 @@ describe("buildPrdNote", () => {
     expect(note).not.toContain("null");
     expect(note).not.toContain("domains:");
   });
+
+  it("seeds the Research Summary section with provided research text", () => {
+    const note = buildPrdNote(
+      samplePrd(),
+      "Competitors ship a static report; users want live KPIs.",
+    );
+    expect(note).toContain(
+      "## Research Summary\n\nCompetitors ship a static report; users want live KPIs.\n",
+    );
+  });
+
+  it("leaves the Research Summary empty when no research is provided", () => {
+    const note = buildPrdNote(samplePrd());
+    expect(note).toContain("## Research Summary\n\n## Scope");
+  });
 });

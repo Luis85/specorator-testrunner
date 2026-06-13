@@ -153,6 +153,22 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     }
   }
 
+  async deleteFile(path: VaultPath): Promise<Result<void>> {
+    const normalized = normalizePath(path);
+    try {
+      const file = this.app.vault.getAbstractFileByPath(normalized);
+      // Idempotent: a missing/unindexed file is not an error.
+      if (!file) return ok(undefined);
+      // PRD notes are user-authored content, so move them to the configured
+      // trash (FileManager.trashFile) rather than hard-deleting like the
+      // regenerable runtime folders above.
+      await this.app.fileManager.trashFile(file);
+      return ok(undefined);
+    } catch (cause) {
+      return err(appError("INIT_FAILED", `Could not delete file "${path}".`, { cause }));
+    }
+  }
+
   /**
    * Vault-API-first existence check (community guideline): indexed files and
    * folders resolve via the Vault index without a filesystem round-trip; the

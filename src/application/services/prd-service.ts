@@ -20,6 +20,14 @@ export interface CreatePrdRequest {
   vision: string;
   scopeIn: string[];
   scopeOut: string[];
+  /** Optional free-text research synthesis; seeds the note's Research Summary. */
+  research?: string;
+}
+
+/** Outcome of a successful {@link PrdService.deletePrd}. */
+export interface DeletePrdResult {
+  /** Non-PRD files left untouched in the PRD's folder (e.g. diagrams). */
+  preservedFiles: number;
 }
 
 export interface PrdService {
@@ -27,6 +35,11 @@ export interface PrdService {
   findAll(): Promise<Result<Prd[]>>;
   findById(id: PrdId): Promise<Result<Prd | null>>;
   assignUseCaseToPrd(useCasePath: VaultPath, prdId: PrdId): Promise<Result<void>>;
+  /**
+   * Deletes a PRD note, preserving sibling attachments in its folder. Refuses
+   * the root PRD, a PRD with child PRDs, or a PRD with linked Use Cases.
+   */
+  deletePrd(id: PrdId): Promise<Result<DeletePrdResult>>;
 }
 
 const PRD_ID_RE = /^PRD-(\d{3,})$/;
@@ -34,6 +47,13 @@ const PRD_ID_RE = /^PRD-(\d{3,})$/;
 /** Drop blanks and collapse newlines so each item is a single parser-safe line. */
 const normalizeLines = (values: string[] | undefined): string[] =>
   (values ?? []).filter((s) => s.trim() !== "").map((s) => s.replace(/\n+/g, " ").trim());
+
+/** The folder containing a note path, e.g. `PRDs/PRD-001-x/PRD-001-x.md` → `PRDs/PRD-001-x`. */
+const parentFolder = (path: VaultPath): VaultPath => {
+  const s = String(path);
+  const idx = s.lastIndexOf("/");
+  return (idx === -1 ? s : s.slice(0, idx)) as VaultPath;
+};
 
 export class DefaultPrdService implements PrdService {
   private readonly noteWrites = new KeyedSerialQueue();
@@ -80,7 +100,7 @@ export class DefaultPrdService implements PrdService {
       const folderResult = await this.fs.createFolder(folderPath);
       if (!folderResult.ok) return folderResult;
 
-      const createResult = await this.fs.createFile(path, buildPrdNote(prd));
+      const createResult = await this.fs.createFile(path, buildPrdNote(prd, request.research));
       if (!createResult.ok) return createResult;
 
       await this.eventBus.publish(
@@ -192,6 +212,77 @@ export class DefaultPrdService implements PrdService {
       }
       return ok(undefined);
     });
+  }
+
+  async deletePrd(id: PrdId): Promise<Result<DeletePrdResult>> {
+    const all = await this.findAll();
+    if (!all.ok) return all;
+    const target = all.value.find((p) => p.id === id);
+    if (!target) {
+      return err(appError("VALIDATION_FAILED", `PRD ${id} was not found.`));
+    }
+    // The root PRD anchors the Explorer/Dashboard; it is never deletable.
+    if (id === "PRD-000" || target.parentPrdId === undefined) {
+      return err(appError("VALIDATION_FAILED", "The root PRD (PRD-000) cannot be deleted."));
+    }
+    if (all.value.some((p) => p.parentPrdId === id)) {
+      return err(
+        appError("VALIDATION_FAILED", `PRD ${id} has child PRDs; delete or reassign them first.`),
+      );
+    }
+    const linkedUcs = await this.countLinkedUseCases(id);
+    if (!linkedUcs.ok) return linkedUcs;
+    if (linkedUcs.value > 0) {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `PRD ${id} still has ${linkedUcs.value} linked Use Case(s); reassign them first.`,
+        ),
+      );
+    }
+
+    // Delete only the PRD note; leave any sibling attachments (diagrams, etc.).
+    const folder = parentFolder(target.path);
+    return this.noteWrites.run(target.path, async () => {
+      const deleted = await this.fs.deleteFile(target.path);
+      if (!deleted.ok) return deleted;
+
+      let preservedFiles = 0;
+      const listed = await this.fs.listFilesRecursive(folder);
+      if (listed.ok) {
+        preservedFiles = listed.value.filter((p) => p !== target.path).length;
+      }
+
+      await this.eventBus.publish(
+        createEvent(
+          "prd.deleted",
+          { prdId: id, path: String(target.path), preservedFiles },
+          { correlationId: id },
+        ),
+      );
+      this.logger.info("PRD deleted", { id, preservedFiles });
+      return ok({ preservedFiles });
+    });
+  }
+
+  /** Counts Use Case notes whose `prd-id` frontmatter points at `prdId`. */
+  private async countLinkedUseCases(prdId: PrdId): Promise<Result<number>> {
+    const settings = await this.settingsService.load();
+    const listed = await this.fs.listFilesRecursive(settings.paths.useCasesPath);
+    if (!listed.ok) {
+      const messageLC = listed.error.message.toLowerCase();
+      if (messageLC.includes("enoent") || messageLC.includes("not found")) return ok(0);
+      return listed;
+    }
+    let count = 0;
+    for (const path of listed.value) {
+      if (!String(path).endsWith(".md")) continue;
+      const read = await this.fs.readFile(path);
+      if (!read.ok) continue;
+      const { frontmatter: fm } = parseNote(read.value);
+      if (typeof fm["prd-id"] === "string" && fm["prd-id"].trim() === prdId) count++;
+    }
+    return ok(count);
   }
 
   private nextId(ids: PrdId[]): PrdId {
