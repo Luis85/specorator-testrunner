@@ -22,6 +22,8 @@ The natural key is the **Scenario Reference**: `<featurePath>::<scenarioName>`, 
 
 The key is name-based, so scenario names must be **unique within a Feature**: two plain scenarios sharing a name would collide on one Scenario Reference and merge their distinct history, flakiness, and quarantine state. This is closed by **validation, not disambiguation** — a duplicate scenario name is a structural Feature error (the `structuralIssues` rule set, TD-003), making the collision unrepresentable rather than papering over it with a positional key that would be fragile to reordering. Parameterized scenarios use a Scenario Outline (whose rows are already disambiguated by `::row-<index>`), never repeated names.
 
+The `::` delimiter and the `::row-<index>` suffix are likewise **reserved**: a plain scenario literally named `Login::row-1` would otherwise produce the same `<featurePath>::Login::row-1` reference as the first example row of `Scenario Outline: Login`, a residual collision the uniqueness rule alone does not catch. `structuralIssues` therefore also rejects a scenario name containing the reserved `::` delimiter, so the key stays unambiguous (raised by the codex review on PR #38).
+
 ## Report format
 
 The runner emits **Cucumber Messages** (the NDJSON message stream), not just cucumber-JSON. JSON is lossy for the outline-row and retry granularity that per-scenario history and flakiness require. The ReportParser port (proposal §9 2.3) gains a Cucumber Messages implementation alongside the JSON one.
@@ -40,7 +42,7 @@ This **honors ADR-0007** ("events are not persisted; the Markdown is the durable
 
 ## Consequences
 
-- Scenario names must be **unique within a Feature**: `structuralIssues` (TD-003) gains a duplicate-scenario-name error so the name-based key stays collision-free (raised by the codex review on PR #38). The rule lands with the scenario-identity work (EPIC-014, US-056).
+- Scenario names must be **unique within a Feature** and must **not contain the reserved `::` delimiter**: `structuralIssues` (TD-003) gains a duplicate-scenario-name error and a reserved-delimiter error so the name-based key stays collision-free (both raised by the codex review on PR #38). The rules land with the scenario-identity work (EPIC-014, US-056).
 - **EPIC-014 depends on EPIC-015**: per-scenario evidence stamps (US-060) land before or with per-scenario history (US-057).
 - Flakiness scoring (US-058) and the history view (US-057) are projection builders over Evidence notes and can be recomputed wholesale — a scoring change needs no data migration.
 - The Feature-frontmatter rollup is a derived, regenerable field, not a hand-migrated one; it participates in the `schemaVersion` story only as a projection.

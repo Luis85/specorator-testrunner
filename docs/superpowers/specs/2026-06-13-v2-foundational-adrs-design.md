@@ -124,9 +124,11 @@ stable across renames — a rename mints a new identity and drops prior history
 once (accepted, per CONTEXT.md). This activates the currently-deferred
 Scenario Reference concept and gives EPIC-014 its unit of identity below the
 Feature. Because the key is name-based, scenario names must be unique within a
-Feature; the collision is closed by validation (a duplicate-name
-`structuralIssues` error, TD-003), not by a positional disambiguator — raised
-by the codex review on PR #38.
+Feature **and must not contain the reserved `::` delimiter** (else a scenario
+named `Login::row-1` collides with an Outline row); both collisions are closed
+by validation (duplicate-name and reserved-delimiter `structuralIssues`
+errors, TD-003), not by a positional disambiguator — raised by the codex
+review on PR #38.
 
 **Decision — report format.** The runner emits **Cucumber Messages** (the
 NDJSON message stream), not just cucumber-JSON. JSON is lossy for outline-row
@@ -217,6 +219,13 @@ values in `data.json` are dropped on the cut-over; users re-enter via
 - `SutAuth` changes shape: `env: Record<string, string>` (name→value) becomes
   name→secret-name references resolved through `secretStorage` at spawn time.
   `EnvironmentValidationService` validates that referenced secrets exist.
+- **Redaction must follow the resolved values (ADR-0019).** The per-run
+  `runSecrets` and the Logger secret set are built today from
+  `collectCredentialValues(settings)`, which reads `auth.env` *values*. With
+  values in `secretStorage` and settings holding only names, that path would
+  redact nothing — a credential echoed by the runner could reach live output
+  and logs in the clear. The values resolved from `secretStorage` for the
+  spawn env MUST enter the redaction set at fetch time (codex review, PR #38).
 - **Verify-at-build:** the `minAppVersion` that `app.secretStorage` /
   `SecretComponent` require (likely a `manifest.json` bump — feeds the
   manifest-version stamp in scope §7); and that retrieval works on desktop,

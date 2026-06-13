@@ -744,6 +744,8 @@ it("generates testrunner-manifest.json carrying the current manifest version", (
 
 Add validation tests to `tests/environment-validation-service.test.ts` (match its existing setup), covering all three mismatch directions and the equal case: manifest **absent** → warning present; manifest **older** (e.g. `manifestVersion: 0`) → warning present; manifest **newer** (e.g. `manifestVersion: 99`) → warning present; manifest at the **current** version → no manifest warning. (Mirror the file's existing "missing required file" warning test for shape.)
 
+**First, fix the existing healthy fixture:** the file's `markFullyInstalled` helper seeds only `VALIDATED_RUNNER_FILES`, and the manifest is deliberately *not* in that list — so once an absent manifest is a warning, every existing "healthy environment has no issues" assertion would start failing with the absent-manifest warning. Update `markFullyInstalled` (or the healthy setup) to also seed a current `testrunner-manifest.json` body (`testrunnerManifestContent()`) before those assertions, so the only test that sees the manifest warning is the one that deliberately omits/staledates it.
+
 Add a projection test to `tests/settings-rows.test.ts` proving the advisory is surfaced when valid:
 
 ```ts
