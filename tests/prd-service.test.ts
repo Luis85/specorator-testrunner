@@ -55,3 +55,34 @@ describe("DefaultPrdService.create", () => {
     expect(result.ok && result.value.id).toBe("PRD-002");
   });
 });
+
+describe("DefaultPrdService.findAll/parse", () => {
+  it("parses PRD notes and normalizes empty parent-prd to root", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "PRDs/PRD-000-product-vision/PRD-000-product-vision.md",
+      ["---", "id: PRD-000", "type: prd", "title: Vision", "status: active", "parent-prd:", "vision: V", "display_order: 0", "---", "# PRD-000: Vision", ""].join("\n"),
+    );
+    fs.files.set(
+      "PRDs/PRD-001-dash/PRD-001-dash.md",
+      ["---", "id: PRD-001", "type: prd", "title: Dash", "status: draft", "parent-prd: PRD-000", "domains:", "  - dashboard", "vision: V", "scope_in:", "  - tiles", "scope_out:", "  - exports", "display_order: 1", "---", "# PRD-001: Dash", ""].join("\n"),
+    );
+
+    const result = await service.findAll();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const root = result.value.find((p) => p.id === "PRD-000");
+    const sub = result.value.find((p) => p.id === "PRD-001");
+    expect(root?.parentPrdId).toBeUndefined();
+    expect(sub?.parentPrdId).toBe("PRD-000");
+    expect(sub?.domains).toEqual(["dashboard"]);
+    expect(sub?.scopeIn).toEqual(["tiles"]);
+  });
+
+  it("drops notes whose type is not prd", async () => {
+    const { service, fs } = build();
+    fs.files.set("PRDs/not-a-prd.md", "---\ntype: use-case\nid: UC-001\n---\n");
+    const result = await service.findAll();
+    expect(result.ok && result.value).toEqual([]);
+  });
+});
