@@ -10,6 +10,8 @@ export type CiProvider = "github-actions" | "azure-devops" | "none";
 export interface TestHubPathSettings {
   testHubPath: VaultPath;
   useCasesPath: VaultPath;
+  prdsPath: VaultPath;
+  domainsPath: VaultPath;
   specificationsPath: VaultPath;
   featureFilesPath: VaultPath;
   testSuitesPath: VaultPath;
@@ -206,6 +208,8 @@ export const DEFAULT_SETTINGS: TestHubSettings = {
   paths: {
     testHubPath: unsafeVaultPath("Test Hub"),
     useCasesPath: unsafeVaultPath("Use Cases"),
+    prdsPath: unsafeVaultPath("PRDs"),
+    domainsPath: unsafeVaultPath("Domains"),
     specificationsPath: unsafeVaultPath("Specifications"),
     featureFilesPath: unsafeVaultPath("Specifications/features"),
     testSuitesPath: unsafeVaultPath("Test Suites"),
