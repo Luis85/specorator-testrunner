@@ -128,7 +128,10 @@ Feature **and must not contain the reserved `::` delimiter** (else a scenario
 named `Login::row-1` collides with an Outline row); both collisions are closed
 by validation (duplicate-name and reserved-delimiter `structuralIssues`
 errors, TD-003), not by a positional disambiguator — raised by the codex
-review on PR #38.
+review on PR #38. The `::row-<index>` suffix is itself positional and
+**provisional**: a row reorder would mis-attribute history, so a reorder-stable
+(content-based) row key is deferred to EPIC-014 (US-056), which owns the
+final row-keying decision.
 
 **Decision — report format.** The runner emits **Cucumber Messages** (the
 NDJSON message stream), not just cucumber-JSON. JSON is lossy for outline-row

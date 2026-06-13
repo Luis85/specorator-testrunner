@@ -24,6 +24,8 @@ The key is name-based, so scenario names must be **unique within a Feature**: tw
 
 The `::` delimiter and the `::row-<index>` suffix are likewise **reserved**: a plain scenario literally named `Login::row-1` would otherwise produce the same `<featurePath>::Login::row-1` reference as the first example row of `Scenario Outline: Login`, a residual collision the uniqueness rule alone does not catch. `structuralIssues` therefore also rejects a scenario name containing the reserved `::` delimiter, so the key stays unambiguous (raised by the codex review on PR #38).
 
+The `::row-<index>` suffix is **positional and provisional**: tying an Outline row's identity to its index means inserting or reordering example rows re-attributes a row's prior history, flakiness, and quarantine state to a *different* parameter set even with no rename — a silent mis-attribution, not a clean loss. Resolving this — preferably with a **content-stable row key** (derived from the example's values rather than its position), or otherwise detecting reorders — is **deferred to the scenario-identity implementation (EPIC-014, US-056)**, which owns the final row-keying decision; `::row-<index>` is the provisional form until then (raised by the codex review on PR #38).
+
 ## Report format
 
 The runner emits **Cucumber Messages** (the NDJSON message stream), not just cucumber-JSON. JSON is lossy for the outline-row and retry granularity that per-scenario history and flakiness require. The ReportParser port (proposal §9 2.3) gains a Cucumber Messages implementation alongside the JSON one.
@@ -43,6 +45,7 @@ This **honors ADR-0007** ("events are not persisted; the Markdown is the durable
 ## Consequences
 
 - Scenario names must be **unique within a Feature** and must **not contain the reserved `::` delimiter**: `structuralIssues` (TD-003) gains a duplicate-scenario-name error and a reserved-delimiter error so the name-based key stays collision-free (both raised by the codex review on PR #38). The rules land with the scenario-identity work (EPIC-014, US-056).
+- The Outline-row key (`::row-<index>`) is **provisional and positional**; EPIC-014 (US-056) must replace it with a reorder-stable row identity (content-based preferred) before history/flakiness/quarantine rely on it, so a row reorder cannot silently mis-attribute history (codex review on PR #38).
 - **EPIC-014 depends on EPIC-015**: per-scenario evidence stamps (US-060) land before or with per-scenario history (US-057).
 - Flakiness scoring (US-058) and the history view (US-057) are projection builders over Evidence notes and can be recomputed wholesale — a scoring change needs no data migration.
 - The Feature-frontmatter rollup is a derived, regenerable field, not a hand-migrated one; it participates in the `schemaVersion` story only as a projection.
