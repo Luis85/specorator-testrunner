@@ -80,10 +80,10 @@ export const prdBreadcrumbLabel = (
 export interface UseCaseDetailDeps {
   // findById powers the render; updateMetadata backs the header's quick-edit
   // modal (Wave G §3).
-  useCaseService: Pick<UseCaseService, "findById" | "updateMetadata">;
+  useCaseService: Pick<UseCaseService, "findById" | "updateMetadata" | "assignToPrd">;
   // Resolves the parent PRD's title for the header breadcrumb (Task 16b) and
-  // backs the Use Case editor's Parent PRD selector (Task 16c).
-  prdService: Pick<PrdService, "findById" | "findAll" | "assignUseCaseToPrd">;
+  // lists PRDs for the Use Case editor's Parent PRD selector (Task 16c).
+  prdService: Pick<PrdService, "findById" | "findAll">;
   specificationService: Pick<
     SpecificationService,
     "listFeatures" | "validate" | "detectMissingSteps"

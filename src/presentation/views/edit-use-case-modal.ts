@@ -9,11 +9,13 @@ import {
 import { submitOnEnter } from "./modal-helpers";
 
 export interface EditUseCaseDeps {
-  useCaseService: Pick<UseCaseService, "updateMetadata">;
-  // Lists PRDs for the Parent PRD dropdown and persists a re-link (Task 16c).
-  prdService: Pick<PrdService, "findAll" | "assignUseCaseToPrd">;
+  // updateMetadata edits title/status; assignToPrd persists a PRD re-link
+  // (Task 16c) through the Use Case note's own write queue.
+  useCaseService: Pick<UseCaseService, "updateMetadata" | "assignToPrd">;
+  // Lists PRDs for the Parent PRD dropdown (Task 16c).
+  prdService: Pick<PrdService, "findAll">;
   /** The Use Case being edited (prefills the fields). */
-  useCase: Pick<UseCase, "id" | "title" | "status" | "path" | "prdId">;
+  useCase: Pick<UseCase, "id" | "title" | "status" | "prdId">;
 }
 
 /**
@@ -147,8 +149,8 @@ export class EditUseCaseModal extends Modal {
     // Clearing to "none" is intentionally a no-op for V1 (a required link
     // shouldn't be silently dropped from the editor).
     if (this.selectedPrdId !== "" && this.selectedPrdId !== this.originalPrdId) {
-      const linked = await this.deps.prdService.assignUseCaseToPrd(
-        this.deps.useCase.path,
+      const linked = await this.deps.useCaseService.assignToPrd(
+        this.deps.useCase.id,
         this.selectedPrdId,
       );
       if (!linked.ok) {

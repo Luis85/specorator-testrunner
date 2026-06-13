@@ -33,10 +33,9 @@ const createMockPrdService = () => ({
     value: { id: "PRD-001", title: "Test PRD", path: "prds/test-prd.md" },
   }),
   findAll: vi.fn().mockResolvedValue({ ok: true, value: [] }),
-  assignUseCaseToPrd: vi.fn().mockResolvedValue({ ok: true, value: undefined }),
 });
 
-/** Mock Use Case Service that returns domains. */
+/** Mock Use Case Service that returns domains and accepts PRD links. */
 const createMockUseCaseService = (): Partial<UseCaseService> => ({
   findAll: vi.fn().mockResolvedValue({
     ok: true,
@@ -46,6 +45,7 @@ const createMockUseCaseService = (): Partial<UseCaseService> => ({
       { id: "UC-003", title: "API Gateway", domain: "api", path: "Use Cases/UC-003.md" },
     ],
   }),
+  assignToPrd: vi.fn().mockResolvedValue({ ok: true, value: { id: "UC-001" } }),
 });
 
 describe("PrdBuilderModal", () => {
@@ -208,10 +208,6 @@ describe("PrdBuilderModal", () => {
 
   it("assigns selected use cases to the new PRD after creation", async () => {
     const modal = makeModal();
-    // Populate the loaded catalog so selected UC ids resolve to paths.
-    (modal as unknown as ModalWithPrivates).useCases = [
-      { id: "UC-001", title: "Auth Flow", domain: "auth", path: "Use Cases/UC-001.md" },
-    ];
     setState(modal, {
       currentStep: 7,
       title: "Test PRD",
@@ -227,10 +223,8 @@ describe("PrdBuilderModal", () => {
 
     await invokeCreate(modal);
 
-    expect(mockPrdService.assignUseCaseToPrd).toHaveBeenCalledWith(
-      "Use Cases/UC-001.md",
-      "PRD-001",
-    );
+    // Linking is owned by UseCaseService (the note's owner), keyed by UC id.
+    expect(mockUseCaseService.assignToPrd).toHaveBeenCalledWith("UC-001", "PRD-001");
   });
 
   it("resolveParentPrdId defaults new PRDs under the root and respects explicit parents", () => {

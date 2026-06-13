@@ -567,6 +567,72 @@ describe("domain field and listDomains", () => {
   });
 });
 
+describe("assignToPrd", () => {
+  it("writes prd-id to the use case note, preserving other frontmatter and body", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "Use Cases/UC-001 Init.md",
+      [
+        "---",
+        "id: UC-001",
+        "type: use-case",
+        "title: Init",
+        "domain: Installation",
+        "status: specified",
+        "---",
+        "# UC-001 Init",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await service.assignToPrd("UC-001", "PRD-001");
+    expect(result.ok).toBe(true);
+    const updated = fs.files.get("Use Cases/UC-001 Init.md") ?? "";
+    expect(updated).toContain("prd-id: PRD-001");
+    expect(updated).toContain("domain: Installation"); // preserved
+    expect(updated).toContain("# UC-001 Init"); // body preserved
+  });
+
+  it("emits usecase.updated with the prd-id change", async () => {
+    const { service, fs, events } = build();
+    fs.files.set(
+      "Use Cases/UC-001.md",
+      ["---", "id: UC-001", "type: use-case", "title: A", "status: specified", "---", ""].join(
+        "\n",
+      ),
+    );
+    await service.assignToPrd("UC-001", "PRD-002");
+    const updated = events.find((e) => e.type === "usecase.updated");
+    expect(updated?.payload).toMatchObject({ useCaseId: "UC-001", changedFields: ["prd-id"] });
+  });
+
+  it("is a no-op when the use case is already linked to that PRD", async () => {
+    const { service, fs, types } = build();
+    fs.files.set(
+      "Use Cases/UC-001.md",
+      [
+        "---",
+        "id: UC-001",
+        "type: use-case",
+        "title: A",
+        "prd-id: PRD-001",
+        "status: specified",
+        "---",
+        "",
+      ].join("\n"),
+    );
+    const result = await service.assignToPrd("UC-001", "PRD-001");
+    expect(result.ok).toBe(true);
+    expect(types().filter((t) => t === "usecase.updated")).toHaveLength(0);
+  });
+
+  it("errors for an unknown use case", async () => {
+    const { service } = build();
+    const result = await service.assignToPrd("UC-404", "PRD-001");
+    expect(result.ok).toBe(false);
+  });
+});
+
 describe("prdId field and countUseCasesByPrd", () => {
   it("reads prd-id frontmatter and counts use cases per PRD", async () => {
     const { service, fs } = build();

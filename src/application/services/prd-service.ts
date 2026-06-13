@@ -7,7 +7,7 @@ import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
-import { parseNote, updateNoteFrontmatter } from "../../shared/utils/frontmatter";
+import { parseNote } from "../../shared/utils/frontmatter";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath } from "../../shared/utils/vault-path";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
@@ -34,7 +34,6 @@ export interface PrdService {
   create(request: CreatePrdRequest): Promise<Result<Prd>>;
   findAll(): Promise<Result<Prd[]>>;
   findById(id: PrdId): Promise<Result<Prd | null>>;
-  assignUseCaseToPrd(useCasePath: VaultPath, prdId: PrdId): Promise<Result<void>>;
   /**
    * Deletes a PRD note, preserving sibling attachments in its folder. Refuses
    * the root PRD, a PRD with child PRDs, or a PRD with linked Use Cases.
@@ -43,6 +42,9 @@ export interface PrdService {
 }
 
 const PRD_ID_RE = /^PRD-(\d{3,})$/;
+
+/** Single queue key so all PRD creates serialize (atomic id allocation). */
+const PRD_CREATE_KEY = "prd:create";
 
 /** Drop blanks and collapse newlines so each item is a single parser-safe line. */
 const normalizeLines = (values: string[] | undefined): string[] =>
@@ -72,14 +74,19 @@ export class DefaultPrdService implements PrdService {
 
     const settings = await this.settingsService.load();
 
-    // Allocate ID inside write queue to serialize against concurrent creates (race prevention).
-    // Returns the created PRD directly from queue callback to avoid null-checking.
-    const queueKey = `prd:create:${title}`; // Serialize all PRD creates together
-    return this.noteWrites.run(queueKey, async () => {
+    // Allocate the ID inside a SINGLE shared queue key so concurrent creates
+    // (any titles) serialize — two creates must never read the same id set and
+    // both pick the same next id. Returns the PRD directly from the callback.
+    return this.noteWrites.run(PRD_CREATE_KEY, async () => {
       const existing = await this.findAll();
       if (!existing.ok) return existing;
 
-      const id = this.nextId(existing.value.map((p) => p.id));
+      // The first root PRD claims the reserved PRD-000 (the product vision);
+      // every other PRD takes the next sequential id. A sub-PRD never becomes
+      // PRD-000 even in an empty vault.
+      const isRoot = request.parentPrdId === undefined;
+      const hasRoot = existing.value.some((p) => p.id === "PRD-000" || p.parentPrdId === undefined);
+      const id = isRoot && !hasRoot ? "PRD-000" : this.nextId(existing.value.map((p) => p.id));
       const folder = prdFolderName(id, title);
       const path = joinVaultPath(settings.paths.prdsPath, folder, `${folder}.md`);
 
@@ -182,36 +189,6 @@ export class DefaultPrdService implements PrdService {
     const all = await this.findAll();
     if (!all.ok) return all;
     return ok(all.value.find((p) => p.id === id) ?? null);
-  }
-
-  async assignUseCaseToPrd(useCasePath: VaultPath, prdId: PrdId): Promise<Result<void>> {
-    // Note: This queue is independent of DefaultUseCaseService's per-path queue.
-    // Concurrent UC updates (edit, post-run evidence, feature links) may race here;
-    // future refactor should route through UseCaseService or use a shared note-level mutex.
-    return this.noteWrites.run(useCasePath, async () => {
-      const read = await this.fs.readFile(useCasePath);
-      if (!read.ok) return read;
-      const next = updateNoteFrontmatter(read.value, { "prd-id": prdId });
-      const write = await this.fs.writeFile(useCasePath, next);
-      if (!write.ok) return write;
-
-      // Emit usecase.updated so Explorer live-refresh recomputes counts & breadcrumbs
-      // Extract useCaseId from the frontmatter to emit a properly-typed event
-      const readForId = await this.fs.readFile(useCasePath);
-      if (readForId.ok) {
-        const { frontmatter: fm } = parseNote(readForId.value);
-        if (typeof fm.id === "string") {
-          await this.eventBus.publish(
-            createEvent("usecase.updated", {
-              useCaseId: fm.id,
-              path: String(useCasePath),
-              changedFields: ["prd-id"],
-            }),
-          );
-        }
-      }
-      return ok(undefined);
-    });
   }
 
   async deletePrd(id: PrdId): Promise<Result<DeletePrdResult>> {

@@ -63,6 +63,9 @@ const stubUseCaseService = (useCases: UseCase[]): UseCaseService => ({
   async countUseCasesByPrd(): Promise<Result<Map<string, number>>> {
     return ok(new Map());
   },
+  async assignToPrd() {
+    throw new Error("not used");
+  },
 });
 
 describe("projectDashboardSnapshot (ADR-0017 KPI definitions)", () => {

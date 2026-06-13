@@ -48,7 +48,7 @@ export interface PrdBuilderDeps {
  *
  * The wizard collects everything {@link PrdService.create} needs (title, domains,
  * vision, scope) and, on success, links the chosen Use Cases to the new PRD via
- * {@link PrdService.assignUseCaseToPrd}. Research/success-criteria are surfaced as
+ * {@link UseCaseService.assignToPrd}. Research/success-criteria are surfaced as
  * editable sections in the generated note rather than service inputs.
  */
 export class PrdBuilderModal extends Modal {
@@ -414,12 +414,13 @@ export class PrdBuilderModal extends Modal {
     }
   }
 
-  /** Links each chosen Use Case to the new PRD, reporting any per-UC failure. */
+  /**
+   * Links each chosen Use Case to the new PRD via UseCaseService (the note's
+   * owner, so the write shares its per-note queue), reporting per-UC failures.
+   */
   private async assignSelectedUseCases(prdId: string): Promise<void> {
     for (const ucId of this.state.selectedUcs) {
-      const uc = this.useCases.find((u) => u.id === ucId);
-      if (!uc) continue;
-      const assigned = await this.deps.prdService.assignUseCaseToPrd(uc.path, prdId);
+      const assigned = await this.deps.useCaseService.assignToPrd(ucId, prdId);
       if (!assigned.ok) {
         new Notice(`Created ${prdId} but could not assign ${ucId}: ${assigned.error.message}`);
       }

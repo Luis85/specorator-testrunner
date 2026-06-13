@@ -129,36 +129,36 @@ describe("DefaultPrdService.findAll/parse", () => {
   });
 });
 
-describe("DefaultPrdService.assignUseCaseToPrd", () => {
-  it("adds prd-id to the use case note, preserving other frontmatter", async () => {
+describe("DefaultPrdService.create id allocation", () => {
+  it("gives the first root PRD the reserved PRD-000", async () => {
     const { service, fs } = build();
-    const ucPath = "Use Cases/UC-001 Init.md";
-    fs.files.set(
-      ucPath,
-      [
-        "---",
-        "id: UC-001",
-        "type: use-case",
-        "title: Init",
-        "domain: Installation",
-        "status: specified",
-        "---",
-        "# UC-001 Init",
-        "",
-      ].join("\n"),
-    );
+    const result = await service.create({
+      title: "Product Vision",
+      // a root: no parent
+      domains: [],
+      vision: "The single source of truth",
+      scopeIn: ["everything in"],
+      scopeOut: ["everything out"],
+    });
+    expect(result.ok && result.value.id).toBe("PRD-000");
+    expect(fs.files.has("PRDs/PRD-000-product-vision/PRD-000-product-vision.md")).toBe(true);
+  });
 
-    const result = await service.assignUseCaseToPrd(
-      // pass a VaultPath; in tests use unsafeVaultPath
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ucPath as any,
-      "PRD-001",
+  it("gives the first sub-PRD PRD-001 once the root exists", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      "PRDs/PRD-000-vision/PRD-000-vision.md",
+      ["---", "id: PRD-000", "type: prd", "title: V", "parent-prd:", "---", ""].join("\n"),
     );
-    expect(result.ok).toBe(true);
-    const updated = fs.files.get(ucPath) ?? "";
-    expect(updated).toContain("prd-id: PRD-001");
-    expect(updated).toContain("domain: Installation"); // preserved
-    expect(updated).toContain("# UC-001 Init"); // body preserved
+    const result = await service.create({
+      title: "Dashboard",
+      parentPrdId: "PRD-000",
+      domains: ["dashboard"],
+      vision: "v",
+      scopeIn: ["a"],
+      scopeOut: ["b"],
+    });
+    expect(result.ok && result.value.id).toBe("PRD-001");
   });
 });
 
