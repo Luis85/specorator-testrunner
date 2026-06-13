@@ -157,12 +157,22 @@ export class ObsidianVaultAdapter implements VaultFileSystem {
     const normalized = normalizePath(path);
     try {
       const file = this.app.vault.getAbstractFileByPath(normalized);
-      // Idempotent: a missing/unindexed file is not an error.
-      if (!file) return ok(undefined);
-      // PRD notes are user-authored content, so move them to the configured
-      // trash (FileManager.trashFile) rather than hard-deleting like the
-      // regenerable runtime folders above.
-      await this.app.fileManager.trashFile(file);
+      if (file instanceof TFile) {
+        // PRD notes are user-authored content, so move them to the configured
+        // trash (FileManager.trashFile) rather than hard-deleting like the
+        // regenerable runtime folders above.
+        await this.app.fileManager.trashFile(file);
+        return ok(undefined);
+      }
+      // Vault-API resolved null: an unindexed file (e.g. a dot-folder prdsPath)
+      // can still exist on disk. Remove it via the adapter so deletePrd does not
+      // report success while the note lingers and is rediscovered on the next
+      // refresh (mirrors the readFile / deleteFolder fallback).
+      if (await this.app.vault.adapter.exists(normalized)) {
+        // adapter API: unindexed file removal is not in Obsidian's index
+        await this.app.vault.adapter.remove(normalized);
+      }
+      // Genuinely missing → idempotent success.
       return ok(undefined);
     } catch (cause) {
       return err(appError("INIT_FAILED", `Could not delete file "${path}".`, { cause }));
