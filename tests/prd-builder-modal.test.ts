@@ -56,9 +56,9 @@ describe("PrdBuilderModal", () => {
 
   it("can be instantiated with dependencies", () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
@@ -71,9 +71,9 @@ describe("PrdBuilderModal", () => {
 
   it("has initial state with step 1 and empty fields", () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
@@ -91,9 +91,9 @@ describe("PrdBuilderModal", () => {
 
   it("can navigate between steps", () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
@@ -119,9 +119,9 @@ describe("PrdBuilderModal", () => {
 
   it("can update title in state", () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
@@ -139,9 +139,9 @@ describe("PrdBuilderModal", () => {
 
   it("can update domains in state", () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
@@ -159,9 +159,9 @@ describe("PrdBuilderModal", () => {
 
   it("can update vision in state", () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
@@ -179,9 +179,9 @@ describe("PrdBuilderModal", () => {
 
   it("can update scope items in state", () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
@@ -201,9 +201,9 @@ describe("PrdBuilderModal", () => {
 
   it("can update selected use cases in state", () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
@@ -221,9 +221,9 @@ describe("PrdBuilderModal", () => {
 
   it("can store error messages", () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
@@ -241,9 +241,9 @@ describe("PrdBuilderModal", () => {
 
   it("calls prdService.create when state is submitted", async () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };
@@ -272,9 +272,9 @@ describe("PrdBuilderModal", () => {
 
   it("closes modal after successful PRD creation", async () => {
     const deps: PrdBuilderDeps = {
-      prdService: mockPrdService as any,
+      prdService: mockPrdService,
       useCaseService: mockUseCaseService as any,
-      settingsService: mockSettingsService as any,
+      settingsService: mockSettingsService,
       eventBus,
       openPrdBuilder: openPrdBuilderCallback,
     };

@@ -721,9 +721,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
 
   private openPrdBuilder(): void {
     new PrdBuilderModal(this.app, {
-      prdService: {} as any, // Stub: PrdService wired in Task 12
+      prdService: {} as unknown, // Stub: PrdService wired in Task 12
       useCaseService: this.useCaseService,
-      settingsService: this.hubSettingsService as any,
+      settingsService: this.hubSettingsService as unknown,
       eventBus: this.eventBus,
       openPrdBuilder: () => this.openPrdBuilder(),
     }).open();

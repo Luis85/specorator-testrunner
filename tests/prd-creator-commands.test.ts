@@ -13,7 +13,7 @@ import { silentLogger } from "./fakes";
  */
 describe("Create PRD command", () => {
   let plugin: Plugin;
-  let commands: Array<{ id: string; name: string; callback: () => void }>;
+  let commands: { id: string; name: string; callback: () => void }[];
 
   beforeEach(() => {
     commands = [];
@@ -43,9 +43,9 @@ describe("Create PRD command", () => {
       openCreateSuite: vi.fn(),
       openDocumentation: vi.fn(),
       openPrdBuilder: vi.fn(),
-    } as unknown as TestHubCommandDeps;
+    };
 
-    registerCommands(plugin, mockDeps as any);
+    registerCommands(plugin, mockDeps);
 
     const createPrdCommand = commands.find((cmd) => cmd.id === "create-prd");
     expect(createPrdCommand).toBeTruthy();
@@ -73,9 +73,9 @@ describe("Create PRD command", () => {
       openCreateSuite: vi.fn(),
       openDocumentation: vi.fn(),
       openPrdBuilder,
-    } as unknown as TestHubCommandDeps;
+    };
 
-    registerCommands(plugin, mockDeps as any);
+    registerCommands(plugin, mockDeps);
 
     const createPrdCommand = commands.find((cmd) => cmd.id === "create-prd");
     expect(createPrdCommand).toBeTruthy();
@@ -104,9 +104,9 @@ describe("Create PRD command", () => {
       openCreateSuite: vi.fn(),
       openDocumentation: vi.fn(),
       openPrdBuilder: vi.fn(),
-    } as unknown as TestHubCommandDeps;
+    };
 
-    registerCommands(plugin, mockDeps as any);
+    registerCommands(plugin, mockDeps);
 
     // Verify the command has the right structure
     const createPrdCommand = commands.find((cmd) => cmd.id === "create-prd");

@@ -50,7 +50,7 @@ export class PrdBuilderModal extends Modal {
   private state: PrdBuilderState;
   private submitting = false;
   private domains: string[] = [];
-  private useCases: Array<{ id: string; title: string; domain?: string }> = [];
+  private useCases: { id: string; title: string; domain?: string }[] = [];
 
   constructor(
     app: App,
@@ -118,12 +118,12 @@ export class PrdBuilderModal extends Modal {
       // Extract unique domains from use cases
       const domainSet = new Set<string>();
       for (const uc of result.value) {
-        if ((uc as any).domain) {
-          domainSet.add((uc as any).domain);
+        if ((uc as unknown).domain) {
+          domainSet.add((uc as unknown).domain);
         }
       }
       this.domains = Array.from(domainSet).sort();
-      this.useCases = result.value as any;
+      this.useCases = result.value;
     }
   }
 
@@ -203,10 +203,7 @@ export class PrdBuilderModal extends Modal {
     this.renderScopeItems(contentEl, "scopeOut");
   }
 
-  private renderScopeItems(
-    contentEl: HTMLElement,
-    field: "scopeIn" | "scopeOut",
-  ): void {
+  private renderScopeItems(contentEl: HTMLElement, field: "scopeIn" | "scopeOut"): void {
     const items = this.state[field];
     const container = contentEl.createEl("div", { cls: "scope-items" });
 
@@ -274,7 +271,7 @@ export class PrdBuilderModal extends Modal {
     // Filter use cases by selected domains
     const filtered = this.useCases.filter((uc) => {
       if (this.state.selectedDomains.length === 0) return true;
-      return this.state.selectedDomains.includes((uc as any).domain || "");
+      return this.state.selectedDomains.includes((uc as unknown).domain || "");
     });
 
     for (const uc of filtered) {
