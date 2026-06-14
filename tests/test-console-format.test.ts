@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  extractCucumberSummary,
+  extractRunSummary,
   formatElapsed,
   formatOutputLine,
   formatStatusBanner,
@@ -49,23 +49,32 @@ describe("test-console-format", () => {
   });
 });
 
-describe("extractCucumberSummary / summaryHint (testvault demo-run feedback)", () => {
-  it("recognizes Cucumber's end-of-run summary lines and nothing else", () => {
-    expect(extractCucumberSummary("1 scenario (1 undefined)")).toBe("1 scenario (1 undefined)");
-    expect(extractCucumberSummary("  3 steps (1 failed, 2 skipped)  ")).toBe(
-      "3 steps (1 failed, 2 skipped)",
-    );
-    expect(extractCucumberSummary("12 scenarios (12 passed)")).toBe("12 scenarios (12 passed)");
-    expect(extractCucumberSummary("Failures:")).toBeNull();
-    expect(extractCucumberSummary("0m00.005s (executing steps: 0m00.000s)")).toBeNull();
-    expect(extractCucumberSummary("> node --import tsx …")).toBeNull();
+describe("extractRunSummary / summaryHint (playwright-bdd live console)", () => {
+  it("recognizes Playwright's list-reporter summary counts and nothing else", () => {
+    expect(extractRunSummary("1 passed (2.0s)")).toBe("1 passed (2.0s)");
+    expect(extractRunSummary("  3 failed  ")).toBe("3 failed");
+    expect(extractRunSummary("2 flaky")).toBe("2 flaky");
+    expect(extractRunSummary("5 skipped")).toBe("5 skipped");
+    expect(extractRunSummary("1 interrupted")).toBe("1 interrupted");
+    expect(extractRunSummary("4 did not run")).toBe("4 did not run");
+    expect(extractRunSummary("Running 3 tests using 2 workers")).toBeNull();
+    expect(extractRunSummary("✓  1 [chromium] › UC-001.feature:3:1 › Demo (1.2s)")).toBeNull();
+    expect(extractRunSummary("> playwright test")).toBeNull();
   });
 
-  it("hints at the step-definition flow only when steps were undefined", () => {
-    expect(summaryHint(["1 scenario (1 undefined)", "3 steps (3 undefined)"])).toContain(
+  it("surfaces playwright-bdd's missing-step header so the banner shows it", () => {
+    expect(extractRunSummary("Missing step definitions: 2")).toBe("Missing step definitions: 2");
+    expect(extractRunSummary("  Missing step definitions: 1  ")).toBe(
+      "Missing step definitions: 1",
+    );
+  });
+
+  it("hints at the step-definition flow only when steps are missing", () => {
+    expect(summaryHint(["Missing step definitions: 2", "1 failed"])).toContain(
       "Generate step definitions",
     );
-    expect(summaryHint(["1 scenario (1 failed)", "3 steps (1 failed, 2 skipped)"])).toBeNull();
+    expect(summaryHint(["1 failed", "2 passed (3.0s)"])).toBeNull();
+    expect(summaryHint(["Missing step definitions: 0"])).toBeNull();
     expect(summaryHint([])).toBeNull();
   });
 });
