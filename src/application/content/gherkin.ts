@@ -6,6 +6,7 @@ import type {
   ScenarioSpecification,
 } from "../../domain/entities/specification";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
+import { trimBlankEdges } from "../../shared/utils/lines";
 
 /**
  * I/O-free Gherkin parser + serializer (UC-006/UC-007, TIS §6.4–§6.6).
@@ -112,15 +113,6 @@ const parseTableRow = (line: string): string[] => {
   if (segments.length > 0 && segments[0].trim() === "") segments.shift();
   if (segments.length > 0 && segments[segments.length - 1].trim() === "") segments.pop();
   return segments.map((cell) => cell.trim());
-};
-
-/** Drops leading/trailing blank entries; interior blanks are paragraph breaks. */
-const trimBlankEdges = (lines: string[]): string[] => {
-  const start = lines.findIndex((line) => line !== "");
-  if (start === -1) return [];
-  let end = lines.length - 1;
-  while (lines[end] === "") end -= 1;
-  return lines.slice(start, end + 1);
 };
 
 /**

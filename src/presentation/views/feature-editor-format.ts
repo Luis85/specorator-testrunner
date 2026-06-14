@@ -14,6 +14,7 @@ import type {
   ScenarioSpecification,
 } from "../../domain/entities/specification";
 import { isScenarioOutline } from "../../domain/entities/specification";
+import { trimBlankEdges } from "../../shared/utils/lines";
 
 /**
  * Pure helpers for the Feature Editor (the `.feature` file handler's
@@ -136,11 +137,7 @@ export const asDescriptionLines = (value: string): string[] => {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line === "" || isPlainDescriptionLine(line));
-  const start = lines.findIndex((line) => line !== "");
-  if (start === -1) return [];
-  let end = lines.length - 1;
-  while (lines[end] === "") end -= 1;
-  return lines.slice(start, end + 1);
+  return trimBlankEdges(lines);
 };
 
 /** De-duplicated datalist suggestions for the step-text inputs. */
