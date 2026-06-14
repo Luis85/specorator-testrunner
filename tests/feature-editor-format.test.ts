@@ -206,8 +206,11 @@ describe("step suggestions & flags", () => {
 });
 
 describe("renameAdvisory (US-056)", () => {
-  const feature = (body: string) =>
-    parseFeature(`Feature: F\n${body}`, vp("Specifications/features/UC-001-r.feature"))!;
+  const feature = (body: string) => {
+    const parsed = parseFeature(`Feature: F\n${body}`, vp("Specifications/features/UC-001-r.feature"));
+    if (!parsed) throw new Error("parse failed");
+    return parsed;
+  };
 
   it("returns nothing when there is no baseline", () => {
     expect(renameAdvisory(null, feature("  Scenario: A\n    Given x\n"))).toEqual([]);

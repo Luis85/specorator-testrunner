@@ -14,11 +14,11 @@ const logger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.
 const fsWith = (files: Record<string, string>) =>
   ({
     readFile: async (path: string) =>
-      path in files ? ok(files[path]) : err(appError("FILE_NOT_FOUND", `missing ${path}`)),
+      path in files ? ok(files[path]) : err(appError("REPORT_NOT_FOUND", `missing ${path}`)),
   }) as never;
 
 const report = (scenarioResults: ScenarioResult[]): ParsedReport => ({
-  result: { total: scenarioResults.length, passed: 0, failed: 0, skipped: 0, durationMs: 0 },
+  result: { total: scenarioResults.length, passed: 0, failed: 0, skipped: 0 },
   scenarioResults,
   artifacts: [],
 });

@@ -4,6 +4,7 @@ import {
   type PostRunCoordinatorDeps,
 } from "../src/application/services/post-run-coordinator";
 import type { EvidenceGenerationService } from "../src/application/services/evidence-generation-service";
+import type { ScenarioIdentityResolver } from "../src/application/services/scenario-identity-resolver";
 import type {
   ImportedReport,
   ReportImportService,
@@ -117,14 +118,13 @@ const build = (overrides: Partial<PostRunCoordinatorDeps> = {}) => {
   let lastRun: TestRun | null = null;
   let active: string | null = null;
   let markdownEnabled = true;
+  const enrichSpy = vi.fn((r: unknown) => Promise.resolve(r));
 
   const deps: PostRunCoordinatorDeps = {
     reportImportService: reportImport,
     evidenceGenerationService: evidenceGen,
     traceabilityService: traceability,
-    scenarioIdentityResolver: {
-      enrich: vi.fn(async (r: unknown) => r),
-    },
+    scenarioIdentityResolver: { enrich: enrichSpy } as unknown as ScenarioIdentityResolver,
     eventBus: bus,
     logger: silentLogger,
     lastRun: () => lastRun,
@@ -140,6 +140,7 @@ const build = (overrides: Partial<PostRunCoordinatorDeps> = {}) => {
     events,
     types,
     deps,
+    enrichSpy,
     reportImport,
     evidenceGen,
     traceability,
@@ -195,7 +196,7 @@ describe("PostRunCoordinator", () => {
       await publishTerminal(env.bus, "testrun.completed");
       await env.coordinator.whenSettled();
 
-      expect(env.deps.scenarioIdentityResolver.enrich).toHaveBeenCalledTimes(1);
+      expect(env.enrichSpy).toHaveBeenCalledTimes(1);
       expect(env.evidenceGen.calls).toHaveLength(1);
     });
 

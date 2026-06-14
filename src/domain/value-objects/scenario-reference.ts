@@ -18,7 +18,7 @@ const fnv1a = (input: string): number => {
  * separators unable to alias one row onto another. Reorder-stable: a row's
  * digest depends only on its content, never its position.
  */
-export const rowDigest = (cells: ReadonlyArray<readonly [string, string]>): string => {
+export const rowDigest = (cells: readonly (readonly [string, string])[]): string => {
   const sorted = [...cells].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   return fnv1a(JSON.stringify(sorted)).toString(36);
 };
@@ -31,7 +31,7 @@ export const scenarioRef = (featurePath: string, scenarioName: string): string =
 export const outlineRowRef = (
   featurePath: string,
   scenarioName: string,
-  cells: ReadonlyArray<readonly [string, string]>,
+  cells: readonly (readonly [string, string])[],
 ): string => `${scenarioRef(featurePath, scenarioName)}::row-${rowDigest(cells)}`;
 
 export interface ParsedScenarioReference {
@@ -53,7 +53,7 @@ export const parseScenarioReference = (ref: string): ParsedScenarioReference => 
     scenarioName: parts[1] ?? "",
   };
   const rowToken = parts[2];
-  if (rowToken !== undefined && rowToken.startsWith("row-")) {
+  if (rowToken?.startsWith("row-")) {
     return { ...base, rowDigest: rowToken.slice("row-".length) };
   }
   return base;
