@@ -74,8 +74,6 @@ const buildDeps = (): TestHubCommandDeps => ({
         repairedFiles: [],
         reinstalledPackages: false,
         reinstalledBrowsers: false,
-        migratedFromV1: false,
-        removedFiles: [],
       }),
     ),
     reset: vi.fn(async () => ok({ deletedFolders: [], recreatedFiles: [], correlationId: "stub" })),

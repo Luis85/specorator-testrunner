@@ -47,21 +47,13 @@ export const REQUIRED_RUNNER_DEPENDENCIES = [
 
 /**
  * The `.testrunner` manifest version. Stamped into `testrunner-manifest.json`
- * at generation; read back by validation to detect a runner produced by an
- * older plugin (the Phase 3 playwright-bdd migration keys on this). Bumped
- * whenever the generated runtime shape changes incompatibly.
+ * at generation; read back by validation to detect a runner produced by a
+ * different plugin version, which flags Repair to regenerate the managed files
+ * (overwrite:false steps/pages are preserved). Bumped whenever the generated
+ * runtime shape changes. There is deliberately no cross-runtime migration: an
+ * incompatible pre-playwright-bdd runner is rebuilt from scratch via Reset.
  */
 export const TESTRUNNER_MANIFEST_VERSION = 3;
-
-/**
- * Manifest versions BELOW this are the V1 (cucumber-js) era and need the
- * clean-cut migration (deleting `@cucumber/cucumber`-era files before re-sync).
- * FIXED at the first V2 (playwright-bdd) manifest version — deliberately NOT
- * {@link TESTRUNNER_MANIFEST_VERSION}: bumping the current version for a managed
- * shape change (e.g. 2→3 for the US-055 browser matrix) must NOT make a healthy
- * V2 runner look like V1 and clean-cut the user's `overwrite:false` steps/pages.
- */
-export const V1_MANIFEST_CUTOFF = 2;
 
 /** The generated manifest file (vault-relative to the runner root). */
 export const TESTRUNNER_MANIFEST_FILE = "testrunner-manifest.json";
