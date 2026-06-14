@@ -5,6 +5,7 @@ import {
   outlineRowRef,
   parseScenarioReference,
   featureScenarioRefs,
+  expandScenarioName,
 } from "../src/domain/value-objects/scenario-reference";
 import { parseFeature } from "../src/application/content/gherkin";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
@@ -109,7 +110,23 @@ describe("featureScenarioRefs", () => {
     const entries = featureScenarioRefs(feature);
     expect(entries).toHaveLength(2);
     expect(entries.every((e) => e.scenarioName === "Login as <role>")).toBe(true);
+    // matchName is the EXPANDED name the run report carries (Cucumber pickle naming).
+    expect(entries.map((e) => e.matchName)).toEqual(["Login as admin", "Login as user"]);
     expect(entries[0]?.ref).toContain("::row-");
     expect(entries[0]?.ref).not.toBe(entries[1]?.ref);
+  });
+});
+
+describe("expandScenarioName (mirrors Cucumber pickle naming, US-056)", () => {
+  it("substitutes <param> tokens with the row's values", () => {
+    expect(expandScenarioName("Login as <role>", [["role", "admin"]])).toBe("Login as admin");
+  });
+
+  it("leaves a plain name untouched", () => {
+    expect(expandScenarioName("Login", [["role", "admin"]])).toBe("Login");
+  });
+
+  it("leaves an unknown token literal, as Cucumber does", () => {
+    expect(expandScenarioName("Hi <missing>", [["role", "admin"]])).toBe("Hi <missing>");
   });
 });

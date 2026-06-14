@@ -86,7 +86,13 @@ export class ScenarioIdentityResolver {
     return feature;
   }
 
-  /** Zips a feature's ordered refs onto report rows grouped by scenario name. */
+  /**
+   * Zips a feature's ordered refs onto report rows grouped by the name the report
+   * carries. For an Outline row that name is the EXPANDED name (Cucumber pickle
+   * naming), so the lookup keys on `matchName`, not the template name; rows that
+   * share a name (e.g. an Outline whose name omits the varying param) still zip
+   * by line order within the group.
+   */
   private assign(
     results: ScenarioResult[],
     feature: FeatureSpecification,
@@ -94,9 +100,9 @@ export class ScenarioIdentityResolver {
   ): void {
     const refsByName = new Map<string, string[]>();
     for (const entry of featureScenarioRefs(feature)) {
-      const list = refsByName.get(entry.scenarioName) ?? [];
+      const list = refsByName.get(entry.matchName) ?? [];
       list.push(entry.ref);
-      refsByName.set(entry.scenarioName, list);
+      refsByName.set(entry.matchName, list);
     }
 
     const groups = new Map<string, ScenarioResult[]>();

@@ -68,16 +68,35 @@ export const parseScenarioReference = (ref: string): ParsedScenarioReference => 
 export const rowCells = (header: readonly string[], row: readonly string[]): [string, string][] =>
   header.map((value, i) => [value, row[i] ?? ""]);
 
+/**
+ * Substitutes `<param>` tokens in a Scenario Outline name with an example row's
+ * values, mirroring how Cucumber compiles a pickle's name (US-056). This is the
+ * name a run report carries for an Outline row (e.g. `Login as <role>` with
+ * `role=admin` becomes `Login as admin`), so the resolver can match report rows
+ * back to their reference. An unknown `<token>` is left literal, as Cucumber does.
+ */
+export const expandScenarioName = (
+  name: string,
+  cells: readonly (readonly [string, string])[],
+): string => {
+  const values = new Map(cells.map(([header, value]) => [header, value]));
+  return name.replace(/<([^>]+)>/g, (whole, key: string) => values.get(key) ?? whole);
+};
+
 export interface ScenarioRefEntry {
+  /** The Outline template / plain scenario name (for display). */
   scenarioName: string;
+  /** The name a run report carries for this row — expanded for Outline rows. */
+  matchName: string;
   ref: string;
 }
 
 /**
  * All scenario references for a parsed Feature, in declaration order: one entry
  * per plain scenario, one per Outline example row (across every `Examples`
- * block). The order matches the order a report expands rows, so a resolver can
- * zip report rows onto these entries by position within a scenario name.
+ * block). Each entry carries the `matchName` a run report uses (expanded for
+ * Outline rows) so a resolver can join report rows to references by that name,
+ * and the order matches report row expansion so same-name rows zip by position.
  */
 export const featureScenarioRefs = (feature: FeatureSpecification): ScenarioRefEntry[] => {
   const path = String(feature.path);
@@ -86,14 +105,20 @@ export const featureScenarioRefs = (feature: FeatureSpecification): ScenarioRefE
     if (isScenarioOutline(scenario)) {
       for (const block of scenario.examples ?? []) {
         for (const row of block.rows) {
+          const cells = rowCells(block.header, row);
           entries.push({
             scenarioName: scenario.name,
-            ref: outlineRowRef(path, scenario.name, rowCells(block.header, row)),
+            matchName: expandScenarioName(scenario.name, cells),
+            ref: outlineRowRef(path, scenario.name, cells),
           });
         }
       }
     } else {
-      entries.push({ scenarioName: scenario.name, ref: scenarioRef(path, scenario.name) });
+      entries.push({
+        scenarioName: scenario.name,
+        matchName: scenario.name,
+        ref: scenarioRef(path, scenario.name),
+      });
     }
   }
   return entries;

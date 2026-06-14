@@ -66,14 +66,14 @@ describe("ScenarioIdentityResolver", () => {
         {
           feature: "F",
           featureUri: "features/UC-001-login.feature",
-          scenario: "Login as <role>",
+          scenario: "Login as user", // report carries the EXPANDED pickle name
           status: "passed",
           line: 7,
         },
         {
           feature: "F",
           featureUri: "features/UC-001-login.feature",
-          scenario: "Login as <role>",
+          scenario: "Login as admin", // report carries the EXPANDED pickle name
           status: "passed",
           line: 6,
         },
