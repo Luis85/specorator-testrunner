@@ -240,6 +240,37 @@ describe("DefaultMaintenanceService", () => {
     expect(await absoluteFs.existsAbsolute("/vault/.testrunner/cucumber.mjs")).toBe(true);
   });
 
+  it("does NOT clean-cut a healthy V2 runner when the current version bumps (2 → 3): preserves user steps/pages (codex P1)", async () => {
+    const { service, absoluteFs } = build();
+    seedHealthyRunner(absoluteFs);
+    // A V2 (playwright-bdd era) runner stamped at the PREVIOUS current version.
+    // The bump to 3 flags RUNNER_MANIFEST_OUTDATED → repair regenerates managed
+    // files, but a V2 runner is NOT V1, so the clean-cut must NOT delete the
+    // user's overwrite:false steps/pages.
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 2}');
+    absoluteFs.seed(
+      "/vault/.testrunner/src/steps/example.steps.ts",
+      "// user-edited steps — must survive",
+    );
+    absoluteFs.seed(
+      "/vault/.testrunner/src/pages/ExamplePage.ts",
+      "// user-edited page object — must survive",
+    );
+
+    const result = await service.repair();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.migratedFromV1).toBe(false);
+    expect(result.value.removedFiles).toEqual([]);
+    expect(await absoluteFs.existsAbsolute("/vault/.testrunner/src/steps/example.steps.ts")).toBe(
+      true,
+    );
+    expect(await absoluteFs.existsAbsolute("/vault/.testrunner/src/pages/ExamplePage.ts")).toBe(
+      true,
+    );
+  });
+
   it("does not clean-cut a healthy current-version runner: deletes nothing and reports no migration", async () => {
     const { service, absoluteFs, templates } = build();
     seedHealthyRunner(absoluteFs);

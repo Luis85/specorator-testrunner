@@ -6,7 +6,7 @@ import type { SettingsService } from "./settings-service";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import { resolveRunnerCwd } from "./runner-paths";
-import { TESTRUNNER_MANIFEST_FILE, TESTRUNNER_MANIFEST_VERSION } from "../content/runner-manifest";
+import { TESTRUNNER_MANIFEST_FILE, V1_MANIFEST_CUTOFF } from "../content/runner-manifest";
 import { parseManifestVersion } from "../content/runner-manifest-version";
 import { appError } from "../../shared/errors/errors";
 import { DEFAULT_SETTINGS } from "../../domain/settings/settings";
@@ -424,8 +424,12 @@ export class DefaultMaintenanceService implements MaintenanceService {
     if (!cwd.ok) return ok({ migrated: false, removed: [] });
     const manifest = await this.absoluteFs.readAbsolute(`${cwd.value}/${TESTRUNNER_MANIFEST_FILE}`);
     const version = parseManifestVersion(manifest.ok ? manifest.value : undefined);
-    // Clean-cut only an OLDER/unversioned runner. A newer manifest is NOT V1.
-    if (version !== null && version >= TESTRUNNER_MANIFEST_VERSION) {
+    // Clean-cut only a GENUINE V1 (cucumber-js) runner: a version BELOW the V2
+    // cutoff (or unversioned). Deliberately NOT `< TESTRUNNER_MANIFEST_VERSION`
+    // (the moving current version) — a V2→V3 bump (e.g. US-055) must not make a
+    // healthy V2 runner look like V1 and clean-cut the user's overwrite:false
+    // steps/pages. A newer-than-current manifest (downgrade/Sync) is also not V1.
+    if (version !== null && version >= V1_MANIFEST_CUTOFF) {
       return ok({ migrated: false, removed: [] });
     }
     const removed: VaultPath[] = [];
