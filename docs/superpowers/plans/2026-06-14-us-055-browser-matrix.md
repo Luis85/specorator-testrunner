@@ -28,6 +28,7 @@
 | `src/application/content/ci-workflow-content.ts` | Install + run-env honor `browsers` |
 | `src/presentation/settings/settings-tab.ts` | Browser checkboxes + install button |
 | `src/application/content/documentation-content.ts` | `browserInstallCommand` reference wording |
+| `src/application/services/environment-validation-service.ts` | Validate the selected browsers (not just chromium) |
 
 ---
 
@@ -375,6 +376,49 @@ Refactor `spawnInRunner` to delegate: keep `spawnInRunner(settings, command, cod
 - [ ] **Step 4: Run — expect PASS** (all three); `npm test`.
 - [ ] **Step 5: Commit** — `git commit -am "feat(runner): install the selected browser matrix, migration-free (US-055)"`
 
+## Task 5b: Environment validation honors the selected browsers
+
+**Files:** Modify `src/application/services/environment-validation-service.ts`; Test `tests/environment-validation-service.test.ts`.
+
+`detectBrowsers(runnerAbs)` (lines ~516-525) returns true when any cache entry starts with `chromium` (AD-5 legacy). With the matrix it must require **every selected browser** to be cached, else a firefox-only install still reports `BROWSER_NOT_INSTALLED` / "Chromium is not installed."
+
+- [ ] **Step 1: Write the failing tests** — in `tests/environment-validation-service.test.ts`, using the file's existing build/fake helpers for the Playwright browser cache (the fake `AbsoluteFileSystem` whose `listAbsolute` returns cache entries) and settings:
+
+```ts
+it("validates browsers as installed when every selected browser is cached (firefox-only)", async () => {
+  // settings.runner.browsers = ["firefox"]; cache dir lists ["firefox-1234"]
+  // → result.browsersInstalled === true
+});
+it("reports browsers missing when a selected browser is absent (firefox selected, only chromium cached)", async () => {
+  // settings.runner.browsers = ["firefox"]; cache dir lists ["chromium-1234"]
+  // → result.browsersInstalled === false (and the surfaced message names firefox)
+});
+```
+
+(Match the file's existing assertion style for `browsersInstalled` and the `BROWSER_NOT_INSTALLED` message; reuse its cache-population helper.)
+
+- [ ] **Step 2: Run — expect FAIL** (`npx vitest run tests/environment-validation-service.test.ts -t "selected browser"`)
+
+- [ ] **Step 3: Implement** — give `detectBrowsers` the selection and require all present:
+
+```ts
+private async detectBrowsers(runnerAbs: string, browsers: readonly BrowserName[]): Promise<boolean> {
+  const found = new Set<string>();
+  for (const candidate of playwrightBrowsersCandidates(this.platform, this.env, runnerAbs)) {
+    const entries = await this.absoluteFs.listAbsolute(candidate);
+    for (const browser of browsers) {
+      if (entries.some((entry) => entry.toLowerCase().startsWith(browser))) found.add(browser);
+    }
+  }
+  return browsers.every((browser) => found.has(browser));
+}
+```
+
+Update its caller to pass `settings.runner.browsers` (import `BrowserName` from the settings module). Update the `BROWSER_NOT_INSTALLED` message and any "Chromium is not installed" / Chromium-specific settings-row wording to name the selected/missing browser(s) (e.g. interpolate the selection). Keep the AD-5 comment honest (no longer chromium-only).
+
+- [ ] **Step 4: Run — expect PASS**; `npm test`; `npm run typecheck`.
+- [ ] **Step 5: Commit** — `git commit -am "feat(validation): validate the selected browser matrix (US-055)"`
+
 ## Task 6: `ScenarioResult` carries a row identity
 
 **Files:** Modify `src/application/ports/report-parser.ts`, `src/application/services/cucumber-json-report-parser.ts`; Test `tests/cucumber-json-report-parser.test.ts` + `tests/cucumber-report-fixtures.ts`.
@@ -617,6 +661,6 @@ it("CI workflow installs the selected browsers and sets TESTRUNNER_BROWSERS", ()
 ---
 
 ## Self-review notes
-- **Spec coverage:** data model (T1), repair (T2), config projects (T3), generated install scripts (T3b), manifest bump (T3c), run wiring (T4), install incl. old-Vault normalization (T5), row-identity + collapse incl. outline rows (T6-T8), CI wiring (T9), UI (T10), docs (T11), spike + gate (T12). All §1-§9 + testing items covered.
+- **Spec coverage:** data model (T1), repair (T2), config projects (T3), generated install scripts (T3b), manifest bump (T3c), run wiring (T4), install incl. old-Vault normalization (T5), validation honors the selection (T5b), row-identity + collapse incl. outline rows (T6-T8), CI wiring (T9), UI (T10), docs (T11), spike + gate (T12). All §1-§9 + testing items covered.
 - **Type consistency:** `BrowserName`/`BROWSER_NAMES` defined in `settings.ts` (T1) and reused in T2/T5; `collapseByScenario` signature matches `ScenarioResult` (T6/T7); `TESTRUNNER_BROWSERS` spelled identically in T3 (read) and T4/T9 (write).
 - **Risk:** T8 changes the parser's counting locus — existing single-browser fixture tests are the guard (collapse is a no-op for one project). T5 refactors `spawnInRunner`; the existing install tests guard it.
