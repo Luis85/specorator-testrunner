@@ -14,6 +14,7 @@ import {
   normalizeTag,
   projectValidation,
   removeExamplesColumn,
+  renameAdvisory,
   sanitizeCell,
   sanitizeDocStringLines,
   stepIsImplemented,
@@ -201,5 +202,35 @@ describe("step suggestions & flags", () => {
 
   it("treats an empty step as not-missing (incomplete, not unimplemented)", () => {
     expect(stepIsImplemented("  ", patterns)).toBe(true);
+  });
+});
+
+describe("renameAdvisory (US-056)", () => {
+  const feature = (body: string) =>
+    parseFeature(`Feature: F\n${body}`, vp("Specifications/features/UC-001-r.feature"))!;
+
+  it("returns nothing when there is no baseline", () => {
+    expect(renameAdvisory(null, feature("  Scenario: A\n    Given x\n"))).toEqual([]);
+  });
+
+  it("returns nothing when scenario names are unchanged", () => {
+    const next = feature("  Scenario: A\n    Given x\n    Then y\n");
+    expect(renameAdvisory(["A"], next)).toEqual([]);
+  });
+
+  it("warns when a scenario name disappears", () => {
+    const next = feature("  Scenario: B\n    Given x\n");
+    expect(renameAdvisory(["A"], next)).toEqual([
+      {
+        level: "warning",
+        message:
+          'Scenario "A" was renamed or removed — its run history and quarantine state won\'t carry over.',
+      },
+    ]);
+  });
+
+  it("de-duplicates repeated removed names", () => {
+    const next = feature("  Scenario: B\n    Given x\n");
+    expect(renameAdvisory(["A", "A"], next)).toHaveLength(1);
   });
 });
