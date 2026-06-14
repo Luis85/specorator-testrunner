@@ -49,6 +49,9 @@ export class Setting {
   addDropdown(_cb: (dd: unknown) => void): this {
     return this;
   }
+  addToggle(_cb: (toggle: unknown) => void): this {
+    return this;
+  }
   setName(_name: string): this {
     return this;
   }

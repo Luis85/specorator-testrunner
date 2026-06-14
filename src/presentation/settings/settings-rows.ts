@@ -71,7 +71,7 @@ export const repairRows = (result: RepairResult): ChecklistRow[] => [
     ? checklistRow("ok", "Reinstalled npm dependencies.")
     : checklistRow("info", "Dependencies were intact; no reinstall was needed."),
   result.reinstalledBrowsers
-    ? checklistRow("ok", "Verified the Chromium browser installation.")
+    ? checklistRow("ok", "Verified the browser installation.")
     : checklistRow("info", "Browser installation was not re-run."),
   // A V1→V2 migration deletes legacy cucumber files and the user may have custom
   // V1 steps that no longer run — surface it (a warning, not just a log) so they

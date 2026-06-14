@@ -118,7 +118,7 @@ describe("repairRows", () => {
     expect(rows).toEqual([
       checklistRow("ok", "Repaired 2 .testrunner files."),
       checklistRow("ok", "Reinstalled npm dependencies."),
-      checklistRow("ok", "Verified the Chromium browser installation."),
+      checklistRow("ok", "Verified the browser installation."),
     ]);
   });
 

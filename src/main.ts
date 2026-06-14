@@ -170,6 +170,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // an in-flight `npm install` on the shared runner, which no command path can
   // reach once the plugin is gone (A6).
   private readonly processRunners: NodeChildProcessRunner[] = [];
+  // Kept as a class field so the settings tab can invoke installBrowsers
+  // directly (US-055 browser matrix "Install selected browsers" button).
+  private runnerInstallService!: DefaultRunnerInstallationService;
 
   async onload(): Promise<void> {
     this.eventBus = new InMemoryEventBus((error) =>
@@ -232,6 +235,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    this.runnerInstallService = runnerInstall;
     this.validationService = new DefaultEnvironmentValidationService(
       this.hubSettingsService,
       childProcess,
@@ -624,6 +628,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
         validation: this.validationService,
         maintenance: this.maintenanceService,
         pipeline: this.pipelineService,
+        installation: this.runnerInstallService,
       }),
     );
 

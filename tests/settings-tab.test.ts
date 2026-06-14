@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestHubSettingTab } from "../src/presentation/settings/settings-tab";
+import type { SettingsHost } from "../src/presentation/settings/settings-tab";
+import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
+import { ok } from "../src/shared/result/result";
 import { PluginSettingTab } from "./__stubs__/obsidian";
 
 /**
@@ -146,5 +149,82 @@ describe("TestHubSettingTab.markDestructive()", () => {
     const setWarning = vi.fn();
     markDestructive(tab, { setWarning });
     expect(setWarning).toHaveBeenCalledOnce();
+  });
+});
+
+// ── Browser matrix (US-055) ────────────────────────────────────────────────
+
+/**
+ * Helper that builds a tab wired to a controllable host so
+ * persistBrowser() can be exercised through the private seam.
+ * Returns the mock fns separately so callers can assert on them directly
+ * (avoiding the `@typescript-eslint/unbound-method` rule that fires when an
+ * interface method property is passed straight to `expect()`).
+ */
+const makeTabWithHost = (
+  initialBrowsers: string[],
+): {
+  tab: TestHubSettingTab;
+  updateSettingsMock: ReturnType<typeof vi.fn>;
+} => {
+  const fakePlugin = { app: {} } as unknown as ConstructorParameters<typeof TestHubSettingTab>[0];
+  let currentSettings = {
+    ...DEFAULT_SETTINGS,
+    runner: { ...DEFAULT_SETTINGS.runner, browsers: initialBrowsers as never },
+  };
+  const updateSettingsMock = vi.fn(async (next: typeof currentSettings) => {
+    currentSettings = next;
+    return ok(undefined as never);
+  });
+  const host: SettingsHost = {
+    getSettings: vi.fn(() => currentSettings),
+    updateSettings: updateSettingsMock,
+    resetSettings: vi.fn(async () => {}),
+  };
+  const fakeServices = {} as unknown as ConstructorParameters<typeof TestHubSettingTab>[2];
+  return { tab: new TestHubSettingTab(fakePlugin, host, fakeServices), updateSettingsMock };
+};
+
+/** Reach the private persistBrowser method via a type-cast escape hatch. */
+const persistBrowser = (tab: TestHubSettingTab, browser: string, enabled: boolean): Promise<void> =>
+  (
+    tab as unknown as {
+      persistBrowser(browser: string, enabled: boolean): Promise<void>;
+    }
+  ).persistBrowser(browser, enabled);
+
+describe("TestHubSettingTab browser toggles (US-055)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("adds a browser to the selection when toggled on", async () => {
+    const { tab, updateSettingsMock } = makeTabWithHost(["chromium"]);
+    await persistBrowser(tab, "firefox", true);
+    expect(updateSettingsMock).toHaveBeenCalledOnce();
+    const saved = updateSettingsMock.mock.calls[0][0] as { runner: { browsers: string[] } };
+    expect(saved.runner.browsers).toContain("firefox");
+    expect(saved.runner.browsers).toContain("chromium");
+  });
+
+  it("removes a browser from the selection when toggled off", async () => {
+    const { tab, updateSettingsMock } = makeTabWithHost(["chromium", "firefox"]);
+    await persistBrowser(tab, "firefox", false);
+    const saved = updateSettingsMock.mock.calls[0][0] as { runner: { browsers: string[] } };
+    expect(saved.runner.browsers).not.toContain("firefox");
+    expect(saved.runner.browsers).toContain("chromium");
+  });
+
+  it("does NOT allow the last browser to be removed (non-empty invariant)", async () => {
+    const { tab, updateSettingsMock } = makeTabWithHost(["chromium"]);
+    await persistBrowser(tab, "chromium", false);
+    // updateSettings must NOT be called — disabling the last toggle is a no-op.
+    expect(updateSettingsMock).not.toHaveBeenCalled();
+  });
+
+  it("is idempotent when enabling an already-enabled browser", async () => {
+    const { tab, updateSettingsMock } = makeTabWithHost(["chromium"]);
+    await persistBrowser(tab, "chromium", true);
+    expect(updateSettingsMock).not.toHaveBeenCalled();
   });
 });
