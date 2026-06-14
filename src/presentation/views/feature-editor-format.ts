@@ -120,7 +120,7 @@ export const fenceFor = (lines: readonly string[]): '"""' | "```" =>
 /**
  * Escapes body lines that would terminate the chosen fence early (Gherkin's
  * own `\"""` convention). Needed when the body contains BOTH delimiters, so
- * no fence choice alone is safe; Cucumber unescapes the backslash at runtime
+ * no fence choice alone is safe; the Gherkin parser unescapes the backslash at runtime
  * while our parser keeps the line literal (trim ≠ fence → round-trip safe).
  */
 export const sanitizeDocStringLines = (lines: readonly string[], fence: '"""' | "```"): string[] =>

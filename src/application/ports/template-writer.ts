@@ -10,7 +10,7 @@ import type { Result } from "../../shared/result/result";
  * `buildRunnerTemplates` is the seam (P3-7) that keeps the runtime-technology
  * SOURCE in infrastructure: the application services call this port to obtain
  * the `.testrunner` template set for the given settings instead of importing
- * the Playwright/Cucumber content module (which now lives under
+ * the Playwright/playwright-bdd content module (which now lives under
  * `infrastructure/runner/templates/`). The infra adapter produces them; the
  * application never depends on infrastructure.
  */

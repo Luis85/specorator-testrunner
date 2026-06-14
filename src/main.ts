@@ -683,7 +683,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // "wait for the child to exit before teardown" guarantee would not hold.
     //
     // Instead: issue the kill signal immediately so a run active during a
-    // disable/reload doesn't leave the runner's npm/Cucumber child alive inside
+    // disable/reload doesn't leave the runner's npm/Playwright child alive inside
     // Obsidian with no console subscribers and no command path to stop it. We
     // `void` the discarded promise — cancel() reserves nothing and only signals
     // the child; the service's single-active-run slot (reserved synchronously in

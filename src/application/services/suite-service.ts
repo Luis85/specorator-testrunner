@@ -139,8 +139,8 @@ export class DefaultSuiteService implements SuiteService {
   }
 
   /**
-   * Returns a suite's Cucumber tag expression verbatim (AD-4): this is the exact
-   * `--tags` argument a run uses, so it is never rewritten (e.g. no implicit
+   * Returns a suite's tag expression verbatim (AD-4): this is the exact
+   * `BDD_TAGS` value a run applies, so it is never rewritten (e.g. no implicit
    * `and not @wip`). Errors when no suite has the given id.
    */
   async resolveTagExpression(suiteId: SuiteId): Promise<Result<string>> {

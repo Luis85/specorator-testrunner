@@ -152,7 +152,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
    */
   private displayStatus(run: TestRun, result: TestRunResult): TestRunStatus | "skipped" {
     // A terminal failed/cancelled/errored run status is authoritative: a run can
-    // fail (e.g. a posttest/wrapper step) after Cucumber wrote an all-passing
+    // fail (e.g. a posttest/wrapper step) after the runner wrote an all-passing
     // report, so the count-derived status would otherwise mislabel it passed.
     if (run.status === "failed" || run.status === "cancelled" || run.status === "errored") {
       return run.status;

@@ -271,7 +271,7 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
         }
         // else: the step already carries a doc string — Gherkin allows ONE
         // argument (TD-002). Drop the row; the round-trip guard then fails the
-        // file into raw mode, which is correct (Cucumber rejects the file too).
+        // file into raw mode, which is correct (the Gherkin parser rejects the file too).
       }
       descriptionTarget = null;
       continue;

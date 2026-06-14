@@ -113,7 +113,7 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
   /**
    * Terminates a child and the whole process tree it launched. On Windows the
    * tracked child is the `cmd.exe` shim wrapper (`.cmd` shims need a shell), and
-   * `child.kill()` only stops that wrapper — leaving the npm/node/Cucumber tree
+   * `child.kill()` only stops that wrapper — leaving the npm/node/Playwright tree
    * running and still writing the shared reports directory. `taskkill /T` kills
    * the wrapper and its descendants; `/F` forces it (asynchronously — a
    * synchronous spawn would freeze Obsidian's renderer thread for taskkill's
@@ -132,7 +132,7 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
     }
     // POSIX: the child was spawned `detached`, so it leads its own process
     // group. Signal the whole group (negative pid) to terminate npm AND the
-    // Cucumber/node process it launched, not just the wrapper.
+    // Playwright/node process it launched, not just the wrapper.
     if (child.pid !== undefined) {
       const pid = child.pid;
       try {
@@ -231,7 +231,7 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
         } else {
           // POSIX: no shell — args are literal, never re-parsed (TIS §13.2).
           // `detached` puts the child in its own process group so cancel() can
-          // signal the WHOLE tree (npm → node → Cucumber), not just the wrapper.
+          // signal the WHOLE tree (npm → node → Playwright), not just the wrapper.
           child = this.spawnFn(program, args, {
             ...spawnOptions,
             shell: false,
@@ -251,7 +251,7 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       let stderr = "";
       // In streaming mode the full output already reaches the caller line by
       // line, and the aggregate result is only read for exit code / duration /
-      // error context — yet a long Cucumber run can stream tens of thousands of
+      // error context — yet a long Playwright run can stream tens of thousands of
       // lines (the console caps its DOM for the same reason). Keep only a
       // bounded TAIL of each stream so memory stays flat (A5); non-streaming
       // callers (install/validate) still get the complete output.
@@ -259,7 +259,7 @@ export class NodeChildProcessRunner implements ChildProcessRunner {
       const capTail = (text: string) =>
         text.length > maxAggregate ? text.slice(text.length - maxAggregate) : text;
       // Stream `data` chunks are NOT guaranteed to land on newline boundaries —
-      // a Cucumber line can split across two chunks, and a chunk can end mid-line.
+      // a Playwright output line can split across two chunks, and a chunk can end mid-line.
       // Buffer each stream's tail and only publish COMPLETE lines, holding the
       // trailing partial until the next chunk (flushed on close) so the live
       // console never shows a half-line or splits one line into two.

@@ -281,7 +281,7 @@ export class DefaultSettingsService implements SettingsService {
   /**
    * Screens every configured path through PathSafetyPolicy on load. A
    * tampered/synced `data.json` could otherwise carry an unsafe path straight
-   * into a code-generation sink (e.g. the `cucumber.mjs` feature glob, SEC-1 /
+   * into a code-generation sink (e.g. the `playwright.config.ts` feature glob, SEC-1 /
    * P0-1) — `save()` validates, but `load()` historically did not. Any unsafe
    * path is logged and replaced with its `DEFAULT_SETTINGS` value so the unsafe
    * value never reaches the runner generator, without breaking normal startup.

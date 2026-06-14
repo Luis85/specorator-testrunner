@@ -127,12 +127,12 @@ const displayCommand = (args: string[]): string =>
 
 /**
  * Tokenizes a configured runner command into argv with shell-style quoting, so
- * a value like `npm run test -- --format "json:reports/cucumber report.json"`
- * keeps the quoted path as ONE argument (the runner spawns with `shell: false`,
- * so a naive whitespace split would hand Cucumber broken `"json:reports/cucumber`
- * + `report.json"` tokens). Single quotes are literal; double quotes allow `\"`
+ * a value like `npm run test -- --grep "Open Example Page"`
+ * keeps the quoted title as ONE argument (the runner spawns with `shell: false`,
+ * so a naive whitespace split would hand Playwright broken `"Open` + `Example`
+ * + `Page"` tokens). Single quotes are literal; double quotes allow `\"`
  * and `\\`. An UNquoted backslash is kept literal so Windows path arguments
- * (e.g. `json:C:\tmp\cucumber.json`) survive — it never escapes outside quotes.
+ * (e.g. `C:\tmp\specs`) survive — it never escapes outside quotes.
  */
 export const tokenizeCommand = (command: string): string[] => {
   const tokens: string[] = [];

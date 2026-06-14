@@ -100,7 +100,7 @@ const record = (payload: unknown): Record<string, unknown> | null =>
     : null;
 
 /**
- * True when a Cucumber Tag Expression would SELECT the authored `@tour`
+ * True when a Tag Expression would SELECT the authored `@tour`
  * scenario — evaluated with the real tag-expression semantics, not a token
  * scan, so `not @tour` (token present, scenario excluded) is rejected while
  * `@smoke or @tour` (scenario included) passes (PR #31 Codex review).
@@ -424,7 +424,7 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
     id: "create-suite",
     title: "Create a Test Suite",
     teach:
-      "Suites select scenarios by Cucumber tag expression, never by explicit list. Create a " +
+      "Suites select scenarios by tag expression, never by explicit list. Create a " +
       'suite named "Tour" with the tag expression @tour — it matches exactly the scenario ' +
       "you authored.",
     action: { id: "open-create-suite", label: "New Test Suite" },

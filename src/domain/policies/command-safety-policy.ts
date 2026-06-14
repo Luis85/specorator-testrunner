@@ -71,7 +71,7 @@ export class DefaultCommandSafetyPolicy implements CommandSafetyPolicy {
     switch (basename) {
       case "node":
         // The runner only ever probes the Node version; nothing else (no `-e`,
-        // `--eval`, `-p`, script files). Cucumber/tsx run *inside* an npm script.
+        // `--eval`, `-p`, script files). Playwright/bddgen run *inside* an npm script.
         if (rest.length !== 1 || rest[0] !== "--version") {
           return disallow(`Node may only be invoked as "<node> --version": "${display}".`);
         }

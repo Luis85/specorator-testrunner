@@ -70,7 +70,7 @@ const scenarioHasWip = (scenario: ScenarioSpecification): boolean =>
 
 /**
  * A scenario's EFFECTIVE tags: feature-level tags inherit to every scenario
- * per Gherkin semantics (Cucumber evaluates `--tags` against this union).
+ * per Gherkin semantics (a Tag Expression is evaluated against this union).
  */
 export const effectiveScenarioTags = (
   feature: FeatureSpecification,
@@ -78,7 +78,7 @@ export const effectiveScenarioTags = (
 ): string[] => [...feature.tags, ...scenario.tags];
 
 /**
- * The tag sets Cucumber evaluates for a scenario. A plain scenario
+ * The tag sets a Tag Expression evaluates for a scenario. A plain scenario
  * contributes its single inherited set. An Outline expands once per Examples
  * ROW, so only blocks that HAVE rows contribute (feature + scenario + block
  * tags) — a rowless block, or an Outline with no usable Examples at all,
@@ -107,7 +107,7 @@ export const projectFeatureHealth = (feature: FeatureSpecification): FeatureHeal
  * Counts the scenarios in ONE parsed Feature that a parsed Tag Expression
  * matches. An outline still counts as ONE scenario (matching scenarioCount
  * semantics), but it matches when any of its Examples blocks' effective tag
- * sets match — mirroring how Cucumber selects tagged Examples rows.
+ * sets match — mirroring how a Tag Expression selects tagged Examples rows.
  */
 export const countMatchingScenariosInFeature = (
   expression: TagExpression,

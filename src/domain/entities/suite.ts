@@ -7,7 +7,7 @@ export interface TestSuite {
   id: SuiteId;
   name: string;
   description?: string;
-  tagExpression: string; // Cucumber tag expression per AD-4 (e.g. "@smoke and not @wip")
+  tagExpression: string; // tag expression per AD-4 (e.g. "@smoke and not @wip")
   path: VaultPath;
 }
 

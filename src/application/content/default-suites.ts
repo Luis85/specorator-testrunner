@@ -6,7 +6,7 @@ export interface DefaultSuiteSeed {
   id: SuiteId;
   name: string;
   description: string;
-  tagExpression: string; // Cucumber tag expression per AD-4
+  tagExpression: string; // tag expression per AD-4
 }
 
 /** Smoke + Regression, per G1 / UC-001 step 6. */

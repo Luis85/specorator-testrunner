@@ -337,9 +337,9 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     if (!(await this.absoluteFs.existsAbsolute(runnerAbs))) {
       missingItems.push(`Runner folder is missing at ${runnerRel}.`);
     }
-    // The CI `test:ci` script runs `cucumber-js --config cucumber.mjs` against
-    // the support files, so a runner missing any managed file (cucumber.mjs,
-    // world/hooks/paths, tsconfig) fails CI immediately. Verify the same files
+    // The CI `test:ci` script runs `bddgen && playwright test` against the
+    // generated config, so a runner missing any managed file (playwright.config.ts,
+    // paths, tsconfig) fails CI immediately. Verify the same files
     // the local validator checks (package.json is asserted in detail below).
     for (const file of VALIDATED_RUNNER_FILES) {
       if (file === "package.json") continue;
@@ -351,7 +351,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     // UC-020). The job runs the configured `runner.ciRunCommand` (default
     // `npm run test:ci`). Only validate a package script when that command
     // actually parses as `npm run <script>`; a custom non-npm command (e.g.
-    // `npx cucumber-js …`) doesn't depend on a package script, so skip it.
+    // `npx playwright test …`) doesn't depend on a package script, so skip it.
     const effectiveCiCommand = settings.runner.ciRunCommand.trim() || "npm run test:ci";
     // Generate CI Workflow refuses commands that aren't a shell-safe npm
     // ci/run shape, so readiness must flag the same ones rather than
