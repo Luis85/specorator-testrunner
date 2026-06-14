@@ -407,7 +407,7 @@ The runner must execute independently of Obsidian — both on the user's machine
 ### Runtime contract
 
 - Reads feature files from the vault path `Specifications/features` (configurable via FR-014).
-- Writes the cucumber-JSON report into `.testrunner/reports`; Playwright screenshots and traces go under `test-results/`.
+- Writes the cucumber-JSON report into `.testrunner/reports` (the artifact the generated CI workflow uploads, §17 / TIS §12.1); Playwright also writes screenshots/traces to its local `test-results/` — a local debug aid, not published by CI.
 - Exits with non-zero on failure (CI-friendly).
 
 ### V1 fixed choices
