@@ -38,6 +38,66 @@ const ALLOWED_NPM_SCRIPTS = new Set(["test", "test:smoke", "test:ci"]);
 // NUL / newline / carriage return in an argv entry would be a smuggling attempt.
 const CONTROL_CHARS = /[\0\n\r]/;
 
+/** Rejects one argv shape with the shared `COMMAND_DISALLOWED` error. */
+type Disallow = (reason: string) => Result<void>;
+
+// Per-program argv-shape validators (ADR-0010). Split out of `assertSafe` so
+// each allowlist branch stays small and independently readable; `assertSafe`
+// owns the shared guards (empty/control-char/basename/path) and dispatches here.
+
+const validateNode = (rest: string[], display: string, disallow: Disallow): Result<void> => {
+  // The runner only ever probes the Node version; nothing else (no `-e`,
+  // `--eval`, `-p`, script files). Playwright/bddgen run *inside* an npm script.
+  if (rest.length !== 1 || rest[0] !== "--version") {
+    return disallow(`Node may only be invoked as "<node> --version": "${display}".`);
+  }
+  return ok(undefined);
+};
+
+const validateNpm = (rest: string[], display: string, disallow: Disallow): Result<void> => {
+  const sub = rest[0];
+  if (sub === undefined || !ALLOWED_NPM_SUBCOMMANDS.has(sub)) {
+    return disallow(`npm subcommand is not allowed: "${display}".`);
+  }
+  if (sub === "run") {
+    // `npm run <script> [-- …]` — the script must be one the runner owns;
+    // anything after `--` is forwarded literally to the runner (shell:false).
+    const script = rest[1];
+    if (script === undefined || !ALLOWED_NPM_SCRIPTS.has(script)) {
+      return disallow(`npm run script is not allowed: "${display}".`);
+    }
+    // Tokens after the script must be introduced by the `--` forwarding
+    // separator. A bare npm option (e.g. `--script-shell ./evil.sh`) would
+    // make npm run an arbitrary shell, bypassing the allowlist (ADR-0010).
+    if (rest.length > 2 && rest[2] !== "--") {
+      return disallow(`npm run options before "--" are not allowed: "${display}".`);
+    }
+  } else if (sub === "install" || sub === "ci") {
+    // Only the bare runner install form. A package spec or flag (e.g.
+    // `npm install <pkg>`, `npm install -g <pkg>`) would install arbitrary
+    // packages and run their lifecycle scripts from tampered settings
+    // (ADR-0010) — reject anything past the subcommand.
+    if (rest.length !== 1) {
+      return disallow(`npm ${sub} must take no extra arguments: "${display}".`);
+    }
+  }
+  return ok(undefined);
+};
+
+const validateNpx = (rest: string[], display: string, disallow: Disallow): Result<void> => {
+  // Only the bundled Playwright CLI — never an arbitrary fetched package.
+  if (rest[0] !== "playwright") {
+    return disallow(`npx may only run "playwright": "${display}".`);
+  }
+  // And only the install/probe subcommands the runner uses. Other subcommands
+  // (e.g. `uninstall --all`) could delete the browsers the runner needs, so
+  // reject them (ADR-0010).
+  if (rest[1] !== "--version" && rest[1] !== "install") {
+    return disallow(`npx playwright subcommand is not allowed: "${display}".`);
+  }
+  return ok(undefined);
+};
+
 export class DefaultCommandSafetyPolicy implements CommandSafetyPolicy {
   assertSafe(args: string[]): Result<void> {
     const program = args[0]?.trim();
@@ -70,53 +130,11 @@ export class DefaultCommandSafetyPolicy implements CommandSafetyPolicy {
     const rest = args.slice(1);
     switch (basename) {
       case "node":
-        // The runner only ever probes the Node version; nothing else (no `-e`,
-        // `--eval`, `-p`, script files). Cucumber/tsx run *inside* an npm script.
-        if (rest.length !== 1 || rest[0] !== "--version") {
-          return disallow(`Node may only be invoked as "<node> --version": "${display}".`);
-        }
-        return ok(undefined);
-      case "npm": {
-        const sub = rest[0];
-        if (sub === undefined || !ALLOWED_NPM_SUBCOMMANDS.has(sub)) {
-          return disallow(`npm subcommand is not allowed: "${display}".`);
-        }
-        if (sub === "run") {
-          // `npm run <script> [-- …]` — the script must be one the runner owns;
-          // anything after `--` is forwarded literally to the runner (shell:false).
-          const script = rest[1];
-          if (script === undefined || !ALLOWED_NPM_SCRIPTS.has(script)) {
-            return disallow(`npm run script is not allowed: "${display}".`);
-          }
-          // Tokens after the script must be introduced by the `--` forwarding
-          // separator. A bare npm option (e.g. `--script-shell ./evil.sh`) would
-          // make npm run an arbitrary shell, bypassing the allowlist (ADR-0010).
-          if (rest.length > 2 && rest[2] !== "--") {
-            return disallow(`npm run options before "--" are not allowed: "${display}".`);
-          }
-        } else if (sub === "install" || sub === "ci") {
-          // Only the bare runner install form. A package spec or flag (e.g.
-          // `npm install <pkg>`, `npm install -g <pkg>`) would install arbitrary
-          // packages and run their lifecycle scripts from tampered settings
-          // (ADR-0010) — reject anything past the subcommand.
-          if (rest.length !== 1) {
-            return disallow(`npm ${sub} must take no extra arguments: "${display}".`);
-          }
-        }
-        return ok(undefined);
-      }
+        return validateNode(rest, display, disallow);
+      case "npm":
+        return validateNpm(rest, display, disallow);
       case "npx":
-        // Only the bundled Playwright CLI — never an arbitrary fetched package.
-        if (rest[0] !== "playwright") {
-          return disallow(`npx may only run "playwright": "${display}".`);
-        }
-        // And only the install/probe subcommands the runner uses. Other
-        // subcommands (e.g. `uninstall --all`) could delete the browsers the
-        // runner needs, so reject them (ADR-0010).
-        if (rest[1] !== "--version" && rest[1] !== "install") {
-          return disallow(`npx playwright subcommand is not allowed: "${display}".`);
-        }
-        return ok(undefined);
+        return validateNpx(rest, display, disallow);
       default:
         return disallow(`Command program is not allowed: "${program}".`);
     }
