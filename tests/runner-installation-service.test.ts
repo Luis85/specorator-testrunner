@@ -82,4 +82,39 @@ describe("DefaultRunnerInstallationService", () => {
     if (!result.ok) expect(result.error.code).toBe("COMMAND_DISALLOWED");
     expect(childProcess.calls).toHaveLength(0); // never spawned
   });
+
+  it("installs only the selected browsers, stripping a baked-in chromium (old Vault)", async () => {
+    const { service, childProcess } = build();
+    const settings: TestHubSettings = {
+      ...DEFAULT_SETTINGS,
+      runner: {
+        ...DEFAULT_SETTINGS.runner,
+        browserInstallCommand: "npx playwright install chromium",
+        browsers: ["firefox"],
+      },
+    };
+    await service.installBrowsers(settings);
+    expect(childProcess.calls[0].args).toEqual(["npx", "playwright", "install", "firefox"]);
+  });
+
+  it("preserves flags like --with-deps while swapping browsers", async () => {
+    const { service, childProcess } = build();
+    const settings: TestHubSettings = {
+      ...DEFAULT_SETTINGS,
+      runner: {
+        ...DEFAULT_SETTINGS.runner,
+        browserInstallCommand: "npx playwright install --with-deps",
+        browsers: ["chromium", "webkit"],
+      },
+    };
+    await service.installBrowsers(settings);
+    expect(childProcess.calls[0].args).toEqual([
+      "npx",
+      "playwright",
+      "install",
+      "--with-deps",
+      "chromium",
+      "webkit",
+    ]);
+  });
 });

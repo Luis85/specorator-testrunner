@@ -138,6 +138,18 @@ describe("DefaultCommandSafetyPolicy", () => {
     }
   });
 
+  it("allows npx playwright install with multiple browser args", () => {
+    expect(
+      new DefaultCommandSafetyPolicy().assertSafe([
+        "npx",
+        "playwright",
+        "install",
+        "firefox",
+        "webkit",
+      ]).ok,
+    ).toBe(true);
+  });
+
   it("accepts shell metacharacters as literal args (no shell to interpret them, PR #7)", () => {
     // Under shell: false these are literal feature-path/tag args — $, &, |, ;,
     // backticks, spaces are NOT interpolated and must NOT be rejected.
