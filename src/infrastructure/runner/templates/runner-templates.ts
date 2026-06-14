@@ -102,6 +102,11 @@ const testDir = defineBddConfig({
   tags: process.env.BDD_TAGS || undefined,
 });
 
+const VALID_BROWSERS = new Set(["chromium", "firefox", "webkit"]);
+const requestedBrowsers = (process.env.TESTRUNNER_BROWSERS?.split(",").map((b) => b.trim()) ?? [])
+  .filter((b) => VALID_BROWSERS.has(b));
+const projectBrowsers = requestedBrowsers.length > 0 ? requestedBrowsers : ["chromium"];
+
 export default defineConfig({
   testDir,
   reporter: [
@@ -112,7 +117,7 @@ export default defineConfig({
     }),
   ],
   use: { screenshot: "only-on-failure", trace: "retain-on-failure" },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+  projects: projectBrowsers.map((name) => ({ name, use: { browserName: name } })),
 });
 `;
 

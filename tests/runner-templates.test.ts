@@ -187,6 +187,14 @@ describe("buildRunnerTemplates", () => {
     expect(config).toContain('"]};import(');
   });
 
+  it("config builds projects[] from process.env.TESTRUNNER_BROWSERS", () => {
+    const config = configFor(DEFAULT_SETTINGS);
+    expect(config).toContain("process.env.TESTRUNNER_BROWSERS");
+    expect(config).toContain('["chromium"]'); // fallback present
+    expect(config).not.toContain('projects: [{ name: "chromium"'); // no hardcoded single project
+    expect(config).toContain('new Set(["chromium", "firefox", "webkit"])'); // valid-set filter
+  });
+
   it("generates testrunner-manifest.json carrying the current manifest version", () => {
     const files = buildRunnerTemplates(DEFAULT_SETTINGS);
     const manifest = files.find((f) => f.path === "testrunner-manifest.json");
