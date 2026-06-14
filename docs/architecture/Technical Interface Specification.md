@@ -818,6 +818,12 @@ export interface SpecificationService {
   update(specification: FeatureSpecification): Promise<Result<void>>;
   validate(featurePath: VaultPath): Promise<Result<SpecificationValidationResult>>;
   detectMissingSteps(featurePath: VaultPath): Promise<Result<MissingStepResult>>;
+  // Feature Editor authoring aids: announce a committed save (drives the
+  // refresh events) and scrape step-definition patterns from
+  // `.testrunner/src/steps`. The scrape is best-effort and infallible
+  // (unreadable files are skipped), so it returns the array directly — no Result.
+  announceUpdated(specification: FeatureSpecification): Promise<void>;
+  listStepPatterns(): Promise<StepDefinitionPattern[]>;
 }
 
 export interface SpecificationValidationResult {
@@ -833,6 +839,12 @@ export interface SpecificationValidationError {
 export interface MissingStepResult {
   featurePath: VaultPath;
   missingSteps: string[];
+}
+
+export interface StepDefinitionPattern {
+  kind: "expression" | "regex";
+  source: string;
+  flags?: string; // regex flags (e.g. "i") for kind: "regex"
 }
 ```
 
