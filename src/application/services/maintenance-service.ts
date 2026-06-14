@@ -205,7 +205,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
         reinstalledPackages = true;
       }
 
-      // The cache heuristic cannot prove the cached Chromium revision matches the
+      // The cache heuristic cannot prove the cached browser revisions match the
       // installed Playwright, so repair always runs the idempotent browser
       // installer (a no-op when the correct browser is already present) — making
       // repair the authoritative path to a launchable browser.

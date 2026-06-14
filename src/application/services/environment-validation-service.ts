@@ -40,7 +40,7 @@ export interface RunnerValidationResult {
   packageJsonExists: boolean;
   dependenciesInstalled: boolean;
   playwrightAvailable: boolean; // package + binary resolve (`npx playwright --version`)
-  browsersInstalled: boolean; // Chromium per AD-5
+  browsersInstalled: boolean; // every selected runner.browsers entry is cached (US-055)
   issues: RunnerValidationIssue[];
 }
 
