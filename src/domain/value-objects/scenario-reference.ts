@@ -22,3 +22,39 @@ export const rowDigest = (cells: ReadonlyArray<readonly [string, string]>): stri
   const sorted = [...cells].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   return fnv1a(JSON.stringify(sorted)).toString(36);
 };
+
+/** Plain scenario identity: `<featurePath>::<scenarioName>` (ADR-0022). */
+export const scenarioRef = (featurePath: string, scenarioName: string): string =>
+  `${featurePath}::${scenarioName}`;
+
+/** Outline row identity: `<featurePath>::<scenarioName>::row-<digest>`. */
+export const outlineRowRef = (
+  featurePath: string,
+  scenarioName: string,
+  cells: ReadonlyArray<readonly [string, string]>,
+): string => `${scenarioRef(featurePath, scenarioName)}::row-${rowDigest(cells)}`;
+
+export interface ParsedScenarioReference {
+  featurePath: string;
+  scenarioName: string;
+  /** Present only for an Outline row reference. */
+  rowDigest?: string;
+}
+
+/**
+ * Inverse of {@link scenarioRef} / {@link outlineRowRef}. Safe because the `::`
+ * delimiter is reserved in scenario names (validation, US-056) and vault paths
+ * never contain `::`, so the split is unambiguous.
+ */
+export const parseScenarioReference = (ref: string): ParsedScenarioReference => {
+  const parts = ref.split("::");
+  const base: ParsedScenarioReference = {
+    featurePath: parts[0] ?? "",
+    scenarioName: parts[1] ?? "",
+  };
+  const rowToken = parts[2];
+  if (rowToken !== undefined && rowToken.startsWith("row-")) {
+    return { ...base, rowDigest: rowToken.slice("row-".length) };
+  }
+  return base;
+};

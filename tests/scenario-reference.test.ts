@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { rowDigest } from "../src/domain/value-objects/scenario-reference";
+import {
+  rowDigest,
+  scenarioRef,
+  outlineRowRef,
+  parseScenarioReference,
+} from "../src/domain/value-objects/scenario-reference";
 
 describe("rowDigest (content-stable Outline row key, US-056)", () => {
   it("is deterministic for the same cells", () => {
@@ -23,5 +28,33 @@ describe("rowDigest (content-stable Outline row key, US-056)", () => {
 
   it("returns a compact base36 string", () => {
     expect(rowDigest([["role", "admin"]])).toMatch(/^[0-9a-z]+$/);
+  });
+});
+
+describe("scenarioRef / outlineRowRef / parseScenarioReference", () => {
+  const path = "Specifications/features/UC-001-login.feature";
+
+  it("formats a plain scenario reference", () => {
+    expect(scenarioRef(path, "Login")).toBe(`${path}::Login`);
+  });
+
+  it("formats an Outline row reference with the row- prefix", () => {
+    const ref = outlineRowRef(path, "Login", [["role", "admin"]]);
+    expect(ref.startsWith(`${path}::Login::row-`)).toBe(true);
+  });
+
+  it("round-trips a plain reference", () => {
+    expect(parseScenarioReference(scenarioRef(path, "Login"))).toEqual({
+      featurePath: path,
+      scenarioName: "Login",
+    });
+  });
+
+  it("round-trips an Outline row reference", () => {
+    const ref = outlineRowRef(path, "Login", [["role", "admin"]]);
+    const parsed = parseScenarioReference(ref);
+    expect(parsed.featurePath).toBe(path);
+    expect(parsed.scenarioName).toBe("Login");
+    expect(parsed.rowDigest).toBe(rowDigest([["role", "admin"]]));
   });
 });
