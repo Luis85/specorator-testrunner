@@ -139,7 +139,8 @@ const projectBrowsers = requested.length > 0 ? requested : ["chromium"];
 projects: projectBrowsers.map((name) => ({ name, use: { browserName: name } })),
 ```
 
-`featuresRoot`, reporter, screenshot/trace config are unchanged.
+`featuresRoot`, reporter, screenshot/trace config are unchanged. Existing Vaults
+pick up this new config via a manifest-version bump → repair — see §9.
 
 ### 6. Result collapse — report import path
 
@@ -189,6 +190,26 @@ defaults to `["chromium"]` when `TESTRUNNER_BROWSERS` is unset). Drive both from
 The workflow is a snapshot of settings at generation time, so changing `browsers`
 later requires regenerating the CI workflow — same as any other runner setting
 (call this out in the generated workflow header / docs).
+
+### 9. Runner manifest + generated install scripts — `runner-manifest.ts`, `runner-templates.ts`
+
+Two managed-file changes existing Vaults must pick up:
+
+- **Generated `package.json` scripts + README** (`runner-templates.ts`): the
+  `install:browsers` / `install:browsers:ci` scripts hardcode `chromium`. Bake the
+  selected browsers instead — `playwright install <selected…>` /
+  `playwright install --with-deps <selected…>` — and update the README wording, so
+  a standalone Vault that follows the generated scripts installs the right binaries.
+- **Manifest version bump** (`runner-manifest.ts`): the generated
+  `playwright.config.ts` and these scripts are *managed* files, and
+  `EnvironmentValidationService` only flags a runner outdated when its stamped
+  `manifestVersion !== TESTRUNNER_MANIFEST_VERSION` (currently `2`). Changing the
+  config contract WITHOUT bumping the version leaves existing V2 Vaults stamped at
+  the current value — never flagged, never repaired — so their on-disk config
+  stays chromium-only and a firefox/webkit selection only sets an env var the
+  stale config ignores. **Bump `TESTRUNNER_MANIFEST_VERSION` 2 → 3** so those
+  Vaults are flagged outdated and the user's repair regenerates the env-driven
+  config + matrix-aware scripts.
 
 ## Error handling
 

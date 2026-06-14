@@ -18,7 +18,8 @@
 | --- | --- |
 | `src/domain/settings/settings.ts` | Add `BrowserName` + `RunnerSettings.browsers`; defaults |
 | `src/application/services/settings-service.ts` | Repair `runner.browsers` |
-| `src/infrastructure/runner/templates/runner-templates.ts` | `projects[]` from `TESTRUNNER_BROWSERS` |
+| `src/infrastructure/runner/templates/runner-templates.ts` | `projects[]` from `TESTRUNNER_BROWSERS`; matrix-aware install scripts + README |
+| `src/application/content/runner-manifest.ts` | Bump `TESTRUNNER_MANIFEST_VERSION` 2→3 (config contract change) |
 | `src/application/services/test-execution-service.ts` | Set `TESTRUNNER_BROWSERS` on every spawn |
 | `src/application/services/runner-installation-service.ts` | Strip baked-in browser, append selection |
 | `src/application/ports/report-parser.ts` | `ScenarioResult.scenarioId?`/`line?` |
@@ -201,6 +202,76 @@ with:
 
 - [ ] **Step 4: Run — expect PASS**; `npm test`.
 - [ ] **Step 5: Commit** — `git commit -am "feat(runner): generate Playwright projects[] from TESTRUNNER_BROWSERS (US-055)"`
+
+## Task 3b: Generated package.json install scripts + README honor the matrix
+
+**Files:** Modify `src/infrastructure/runner/templates/runner-templates.ts`; Test `tests/runner-templates.test.ts`.
+
+The generated `package.json` (lines ~35-40) hardcodes `"install:browsers": "playwright install chromium"` and `"install:browsers:ci": "playwright install --with-deps chromium"`; the README (~216, 225) says "Chromium download". Bake the selected browsers.
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+it("generated package.json install scripts install the selected browsers", () => {
+  const pkg = buildRunnerTemplates({
+    ...DEFAULT_SETTINGS,
+    runner: { ...DEFAULT_SETTINGS.runner, browsers: ["chromium", "firefox"] },
+  }).find((t) => t.path === "package.json")?.content ?? "";
+  expect(pkg).toContain('"install:browsers": "playwright install chromium firefox"');
+  expect(pkg).toContain('"install:browsers:ci": "playwright install --with-deps chromium firefox"');
+});
+```
+
+- [ ] **Step 2: Run — expect FAIL** (`npx vitest run tests/runner-templates.test.ts -t "install scripts install the selected"`)
+
+- [ ] **Step 3: Implement** — in the package.json template (find where its content string is built from `settings`), compute `const browserArgs = settings.runner.browsers.join(" ");` and interpolate it:
+
+```ts
+    "install:browsers": `playwright install ${browserArgs}`,
+    "install:browsers:ci": `playwright install --with-deps ${browserArgs}`,
+```
+
+Update the README template lines (~216, 225) to read "the configured browsers" instead of "Chromium". (If the package.json template currently takes only specific fields rather than full `settings`, thread `settings.runner.browsers` through to it.)
+
+- [ ] **Step 4: Run — expect PASS**; `npm test`.
+- [ ] **Step 5: Commit** — `git commit -am "feat(runner): generated install scripts honor the browser matrix (US-055)"`
+
+## Task 3c: Bump the runner manifest version (existing Vaults repair into the new config)
+
+**Files:** Modify `src/application/content/runner-manifest.ts`; Test `tests/environment-validation-service.test.ts`, `tests/runner-manifest.test.ts` (and any test asserting the version).
+
+The generated `playwright.config.ts` + install scripts are *managed* files; `EnvironmentValidationService` (line ~244) flags a runner outdated only when `manifestVersion !== TESTRUNNER_MANIFEST_VERSION`. Without a bump, existing V2 Vaults (stamped `2`) are never flagged → they keep the chromium-only config and ignore the new env var. Bump `2 → 3`.
+
+- [ ] **Step 1: Write the failing test** — in `tests/environment-validation-service.test.ts`, find the existing outdated-manifest case and add one stamping the *previous* version:
+
+```ts
+it("flags a runner stamped at the previous manifest version (2) as needing repair", async () => {
+  // Arrange a .testrunner whose testrunner-manifest.json is { manifestVersion: 2 },
+  // using this file's existing build/fake helper for an installed runner.
+  // Assert the validation result reports the runner as outdated / repair-needed,
+  // matching the assertion shape the existing outdated-manifest test uses.
+});
+```
+
+Also add, in `tests/runner-manifest.test.ts` (or wherever the constant/stamp is asserted):
+
+```ts
+it("stamps manifest version 3", () => {
+  expect(TESTRUNNER_MANIFEST_VERSION).toBe(3);
+});
+```
+
+- [ ] **Step 2: Run — expect FAIL** (constant is still `2`).
+
+- [ ] **Step 3: Implement** — `src/application/content/runner-manifest.ts` line ~54:
+
+```ts
+export const TESTRUNNER_MANIFEST_VERSION = 3;
+```
+
+- [ ] **Step 4: Run — expect PASS**; then `npm test` — search the suite for any expectation hardcoding `2` / `manifestVersion: 2` as the *current* version and bump to `3` (a v2 stamp is now the outdated case, not current).
+
+- [ ] **Step 5: Commit** — `git commit -am "feat(runner): bump manifest version for the browser-matrix config change (US-055)"`
 
 ## Task 4: Set `TESTRUNNER_BROWSERS` on every spawn
 
@@ -546,6 +617,6 @@ it("CI workflow installs the selected browsers and sets TESTRUNNER_BROWSERS", ()
 ---
 
 ## Self-review notes
-- **Spec coverage:** data model (T1), repair (T2), config projects (T3), run wiring (T4), install incl. old-Vault normalization (T5), row-identity + collapse incl. outline rows (T6-T8), CI wiring (T9), UI (T10), docs (T11), spike + gate (T12). All §1-§8 + testing items covered.
+- **Spec coverage:** data model (T1), repair (T2), config projects (T3), generated install scripts (T3b), manifest bump (T3c), run wiring (T4), install incl. old-Vault normalization (T5), row-identity + collapse incl. outline rows (T6-T8), CI wiring (T9), UI (T10), docs (T11), spike + gate (T12). All §1-§9 + testing items covered.
 - **Type consistency:** `BrowserName`/`BROWSER_NAMES` defined in `settings.ts` (T1) and reused in T2/T5; `collapseByScenario` signature matches `ScenarioResult` (T6/T7); `TESTRUNNER_BROWSERS` spelled identically in T3 (read) and T4/T9 (write).
 - **Risk:** T8 changes the parser's counting locus — existing single-browser fixture tests are the guard (collapse is a no-op for one project). T5 refactors `spawnInRunner`; the existing install tests guard it.
