@@ -12,7 +12,7 @@ import { isSafeCiCommand } from "./pipeline-generation-service";
 import { playwrightBrowsersCandidates } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
-import type { TestHubSettings } from "../../domain/settings/settings";
+import type { BrowserName, TestHubSettings } from "../../domain/settings/settings";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 
@@ -60,6 +60,7 @@ interface RunnerProbe {
   missingDependencies: string[];
   playwrightAvailable: boolean;
   browsersInstalled: boolean;
+  selectedBrowsers: readonly BrowserName[];
 }
 
 export interface CiReadinessResult {
@@ -126,7 +127,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     const playwrightAvailable =
       dependenciesInstalled &&
       (await this.commandSucceeds(["npx", "playwright", "--version"], runnerAbs));
-    const browsersInstalled = await this.detectBrowsers(runnerAbs);
+    const browsersInstalled = await this.detectBrowsers(runnerAbs, settings.runner.browsers);
 
     issues.push(
       ...(await this.collectRunnerIssues(runnerAbs, {
@@ -138,6 +139,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
         missingDependencies,
         playwrightAvailable,
         browsersInstalled,
+        selectedBrowsers: settings.runner.browsers,
       })),
     );
 
@@ -223,7 +225,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     if (!probe.browsersInstalled)
       issues.push({
         code: "BROWSER_NOT_INSTALLED",
-        message: "Chromium is not installed.",
+        message: `Selected browser(s) not installed: ${probe.selectedBrowsers.join(", ")}.`,
         severity: "error",
       });
     return issues;
@@ -513,14 +515,20 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     return result.ok && result.value.exitCode === 0;
   }
 
-  private async detectBrowsers(runnerAbs: string): Promise<boolean> {
-    // Look for an actual `chromium-*` browser entry, not just the cache root:
-    // a partial cache, or one holding only Firefox/WebKit, must NOT count
-    // (the runner only ever launches Chromium, AD-5).
+  private async detectBrowsers(
+    runnerAbs: string,
+    browsers: readonly BrowserName[],
+  ): Promise<boolean> {
+    // Require every selected browser to have a cache entry (AD-5, US-055).
+    // Previously only Chromium was checked; now the selected browser set drives
+    // validation so a firefox-only or webkit-only install is correctly accepted.
+    const found = new Set<string>();
     for (const candidate of playwrightBrowsersCandidates(this.platform, this.env, runnerAbs)) {
       const entries = await this.absoluteFs.listAbsolute(candidate);
-      if (entries.some((entry) => entry.toLowerCase().startsWith("chromium"))) return true;
+      for (const browser of browsers) {
+        if (entries.some((entry) => entry.toLowerCase().startsWith(browser))) found.add(browser);
+      }
     }
-    return false;
+    return browsers.every((browser) => found.has(browser));
   }
 }

@@ -248,6 +248,59 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(result.issues.some((i) => i.code === "BROWSER_NOT_INSTALLED")).toBe(true);
   });
 
+  it("validates browsers installed when every selected browser is cached (firefox-only)", async () => {
+    // settings.runner.browsers = ["firefox"]; cache lists e.g. ["firefox-1438"]
+    const { absoluteFs, childProcess, types } = build();
+    const { bus } = recordingEventBus();
+    const store = new FakeDataStore({ runner: { browsers: ["firefox"] } });
+    const settingsService = new DefaultSettingsService(store, new DefaultPathSafetyPolicy(), bus);
+    const svc = new DefaultEnvironmentValidationService(
+      settingsService,
+      childProcess,
+      absoluteFs,
+      new DefaultCommandSafetyPolicy(),
+      recordingEventBus().bus,
+      ENV,
+      "linux",
+    );
+    addManagedFiles(absoluteFs);
+    addDependencies(absoluteFs);
+    absoluteFs.existing.add("/home/u/.cache/ms-playwright/firefox-1438/firefox");
+
+    const result = await svc.validateEnvironment();
+
+    expect(result.browsersInstalled).toBe(true);
+    void types; // consumed by other tests via build()
+  });
+
+  it("reports browsers missing when a selected browser is absent (firefox selected, only chromium cached)", async () => {
+    // settings.runner.browsers = ["firefox"]; cache lists ["chromium-1124"]
+    const { absoluteFs, childProcess } = build();
+    const store = new FakeDataStore({ runner: { browsers: ["firefox"] } });
+    const settingsService = new DefaultSettingsService(
+      store,
+      new DefaultPathSafetyPolicy(),
+      recordingEventBus().bus,
+    );
+    const svc = new DefaultEnvironmentValidationService(
+      settingsService,
+      childProcess,
+      absoluteFs,
+      new DefaultCommandSafetyPolicy(),
+      recordingEventBus().bus,
+      ENV,
+      "linux",
+    );
+    addManagedFiles(absoluteFs);
+    addDependencies(absoluteFs);
+    absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1124/chrome-linux/chrome");
+
+    const result = await svc.validateEnvironment();
+
+    expect(result.browsersInstalled).toBe(false);
+    expect(result.issues.some((i) => i.code === "BROWSER_NOT_INSTALLED")).toBe(true);
+  });
+
   it("validateCiReadiness reports the missing workflow", async () => {
     const { service, absoluteFs } = build();
     markFullyInstalled(absoluteFs);
