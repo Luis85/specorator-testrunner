@@ -69,10 +69,11 @@ export interface RunnerSettings {
 ```
 
 - `DEFAULT_SETTINGS.runner.browsers = ["chromium"]`.
-- Change `DEFAULT_SETTINGS.runner.browserInstallCommand` from
-  `"npx playwright install chromium"` to the browser-agnostic base
-  `"npx playwright install"` (the selected browsers are appended at install time,
-  see §3).
+- Leave `DEFAULT_SETTINGS.runner.browserInstallCommand` as
+  `"npx playwright install chromium"`. §3's install flow strips baked-in
+  browser-name tokens before appending the selection, so the default works
+  unchanged in every state. (Changing it to a bare `npx playwright install`
+  before that strip lands would over-install ALL browsers on init/repair.)
 
 ### 2. Settings repair — `src/application/services/settings-service.ts`
 
@@ -101,8 +102,9 @@ concern: existing Vaults whose persisted `browserInstallCommand` still reads
 `npx playwright install chromium` are normalized at use-time, so a firefox-only
 selection installs *only* firefox (honoring "no forced chromium") without a
 settings migration. User-added flags (e.g. `--with-deps`) survive the filter.
-The default also changes to the browser-agnostic `"npx playwright install"` for
-new Vaults.
+The default `browserInstallCommand` stays `"npx playwright install chromium"`;
+the strip makes it browser-agnostic at use-time, so no default change (or
+migration) is needed.
 
 - `CommandSafetyPolicy.validateNpx` already permits `npx playwright install <args…>`
   — **no policy change**. Add a regression test asserting

@@ -42,9 +42,9 @@
 // tests/settings-service.test.ts — add inside an existing describe or a new one
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 
-it("defaults runner.browsers to chromium-only and a browser-agnostic install command", () => {
+it("defaults runner.browsers to chromium-only", () => {
   expect(DEFAULT_SETTINGS.runner.browsers).toEqual(["chromium"]);
-  expect(DEFAULT_SETTINGS.runner.browserInstallCommand).toBe("npx playwright install");
+  expect(DEFAULT_SETTINGS.runner.browserInstallCommand).toBe("npx playwright install chromium");
 });
 ```
 
@@ -76,10 +76,11 @@ export interface RunnerSettings {
 }
 ```
 
-In `DEFAULT_SETTINGS.runner` (lines ~220-229) change two lines:
+In `DEFAULT_SETTINGS.runner` (lines ~220-229) add the `browsers` field; **leave
+`browserInstallCommand` as `"npx playwright install chromium"`** (Task 5 strips
+the browser name before appending the selection, so the default needs no change):
 
 ```ts
-    browserInstallCommand: "npx playwright install",
     browsers: ["chromium"],
 ```
 
