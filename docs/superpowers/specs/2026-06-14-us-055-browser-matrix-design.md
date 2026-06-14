@@ -163,6 +163,23 @@ Three checkboxes (chromium / firefox / webkit) bound to `runner.browsers`, with
 the last-checked one non-removable (enforce non-empty in the UI as well as
 repair). An "Install selected browsers" button invokes the install flow (§3).
 
+### 8. Generated CI workflow — `src/application/content/ci-workflow-content.ts`
+
+The generated GitHub Actions workflow runs the standalone runner in CI, so it
+must honor the same matrix — otherwise a firefox/webkit selection runs locally
+(via `TestExecutionService`) but CI silently installs/runs chromium only (§5
+defaults to `["chromium"]` when `TESTRUNNER_BROWSERS` is unset). Drive both from
+`settings.runner.browsers` when generating the workflow:
+
+- **Install step:** `npx playwright install --with-deps <selected…>` instead of
+  the hard-coded `… chromium` (build the browser list as in §3).
+- **Run-tests step env:** add `TESTRUNNER_BROWSERS: <csv>` alongside the existing
+  `BASE_URL`/auth env, so the generated `playwright.config.ts` builds the matrix.
+
+The workflow is a snapshot of settings at generation time, so changing `browsers`
+later requires regenerating the CI workflow — same as any other runner setting
+(call this out in the generated workflow header / docs).
+
 ## Error handling
 
 - Empty/invalid `browsers` → repaired to `["chromium"]` (settings) and defaulted
