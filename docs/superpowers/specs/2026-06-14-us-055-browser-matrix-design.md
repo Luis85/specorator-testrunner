@@ -113,18 +113,28 @@ new Vaults.
 
 ### 4. Run wiring — `src/application/services/test-execution-service.ts`
 
-- On every spawn, set scope-env `TESTRUNNER_BROWSERS = settings.runner.browsers.join(",")`.
-- Add `TESTRUNNER_BROWSERS` to the cleared baseline (the existing block that sets
-  `BDD_FEATURES=""`/`BDD_TAGS=""`) so an ambient shell value never leaks — it is
-  set explicitly from settings on every run, for every scope.
+`TESTRUNNER_BROWSERS` is global (from settings), so set it in `runEnv(settings)`
+— the per-run env that already carries `BASE_URL`/auth and is spread into every
+spawn (`{ ...runEnv(settings), ...scopeEnv }`). Setting it there means every
+scope inherits it, and any ambient `TESTRUNNER_BROWSERS` is always overridden
+from settings:
+
+```ts
+TESTRUNNER_BROWSERS: settings.runner.browsers.join(","),
+```
+
+Not `CLEARED_BDD_SCOPE` — that is a static const with no access to settings
+(it exists only to clear the conditionally-set `BDD_FEATURES`/`BDD_TAGS`).
 
 ### 5. Generated config — `src/infrastructure/runner/templates/runner-templates.ts`
 
 Replace the hardcoded single-project array with a matrix built from the env var:
 
 ```ts
-const browsers = process.env.TESTRUNNER_BROWSERS?.split(",").map((b) => b.trim()).filter(Boolean) ?? [];
-const projectBrowsers = browsers.length > 0 ? browsers : ["chromium"];
+const VALID_BROWSERS = new Set(["chromium", "firefox", "webkit"]);
+const requested = (process.env.TESTRUNNER_BROWSERS?.split(",").map((b) => b.trim()) ?? [])
+  .filter((b) => VALID_BROWSERS.has(b)); // drop unknown names (e.g. "chrome")
+const projectBrowsers = requested.length > 0 ? requested : ["chromium"];
 // …
 projects: projectBrowsers.map((name) => ({ name, use: { browserName: name } })),
 ```

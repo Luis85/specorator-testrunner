@@ -166,28 +166,37 @@ it("config builds projects[] from process.env.TESTRUNNER_BROWSERS", () => {
   expect(config).toContain('["chromium"]');
   // does NOT hardcode a single chromium project literal anymore
   expect(config).not.toContain('projects: [{ name: "chromium"');
+  // unknown names are filtered out at runtime (valid-set guard)
+  expect(config).toContain('new Set(["chromium", "firefox", "webkit"])');
 });
 ```
 
 - [ ] **Step 2: Run — expect FAIL** (`npx vitest run tests/runner-templates.test.ts -t "TESTRUNNER_BROWSERS"`)
 
-- [ ] **Step 3: Implement** — in the `PLAYWRIGHT_CONFIG` template (lines ~78-117), replace the hardcoded projects line. Inside the template string, just before `export default defineConfig({`, the template currently closes the `defineBddConfig` call; add a browsers const and use it. Replace:
+- [ ] **Step 3: Implement** — in the `PLAYWRIGHT_CONFIG` template (lines ~78-117). This text lives INSIDE the backtick template (literal config source — no `\\n` escaping). First, just before `export default defineConfig({`, add the browser resolution (drops unknown names, falls back to chromium — matches the spec's Error-handling promise):
 
 ```ts
-  use: { screenshot: "only-on-failure", trace: "retain-on-failure" },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
-});
+// The Test Hub sets TESTRUNNER_BROWSERS (comma-separated) from
+// RunnerSettings.browsers; unknown names are dropped and an empty/unset value
+// falls back to chromium (US-055, ADR-0025).
+const VALID_BROWSERS = new Set(["chromium", "firefox", "webkit"]);
+const requestedBrowsers = (process.env.TESTRUNNER_BROWSERS?.split(",").map((b) => b.trim()) ?? [])
+  .filter((b) => VALID_BROWSERS.has(b));
+const projectBrowsers = requestedBrowsers.length > 0 ? requestedBrowsers : ["chromium"];
+
+export default defineConfig({
 ```
 
-with (note: this text lives INSIDE the backtick template, so `\\n`-style escaping is not needed here — it is literal config source):
+Then replace the hardcoded projects line:
 
 ```ts
-  use: { screenshot: "only-on-failure", trace: "retain-on-failure" },
-  // The Test Hub sets TESTRUNNER_BROWSERS (comma-separated) from
-  // RunnerSettings.browsers; unset → chromium only (US-055, ADR-0025).
-  projects: (process.env.TESTRUNNER_BROWSERS?.split(",").map((b) => b.trim()).filter(Boolean) ?? ["chromium"])
-    .map((name) => ({ name, use: { browserName: name } })),
-});
+  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+```
+
+with:
+
+```ts
+  projects: projectBrowsers.map((name) => ({ name, use: { browserName: name } })),
 ```
 
 - [ ] **Step 4: Run — expect PASS**; `npm test`.
