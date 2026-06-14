@@ -18,7 +18,7 @@ export interface CreateSuiteDeps {
 
 /**
  * Prompts for a suite name/description and tag expression, then creates it
- * (US-022/US-023, UC-008). Membership is the tag expression (AD-4):
+ * (US-022/US-023, UC-008). Membership is the Cucumber tag expression (AD-4):
  * the suite includes exactly the scenarios that expression matches — never an
  * explicit scenario list. `create` slugifies the name into the suite id.
  */
@@ -65,7 +65,7 @@ export class CreateSuiteModal extends Modal {
       );
     new Setting(contentEl)
       .setName("Tag Expression")
-      .setDesc("Tag Expression deciding membership.")
+      .setDesc("Cucumber Tag Expression deciding membership.")
       .addText((text) => {
         text.setPlaceholder("@smoke and not @wip").onChange((value) => {
           this.tagExpression = value;

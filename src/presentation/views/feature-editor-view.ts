@@ -660,7 +660,7 @@ export class FeatureEditorView extends TextFileView {
 
     // A Gherkin step carries at most ONE argument (TD-002): the add buttons
     // render only while the step has no argument, so the editor cannot produce
-    // a table + doc string combination the Gherkin parser would refuse to parse.
+    // a table + doc string combination Cucumber would refuse to parse.
     if (step.argument === undefined) {
       const addTable = extras.createEl("button", {
         text: "+ data table",
