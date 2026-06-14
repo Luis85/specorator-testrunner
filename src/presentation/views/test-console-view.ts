@@ -7,7 +7,7 @@ import { vaultPath } from "../../domain/value-objects/vault-path";
 import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
 import { RunLauncher, scopeLabel } from "../run/run-launcher";
 import {
-  extractCucumberSummary,
+  extractRunSummary,
   formatElapsed,
   formatOutputLine,
   formatStatusBanner,
@@ -118,9 +118,10 @@ export class TestConsoleView extends ItemView {
   private runStartMs: number | null = null;
   private activeScopeLabel: string | null = null;
   private timerHandle: number | null = null;
-  // Cucumber's end-of-run summary lines ("1 scenario (1 undefined)", …),
-  // captured from the stream so the terminal banner can show the OUTCOME at
-  // the top instead of only "Run failed" (testvault demo-run feedback).
+  // Runner summary lines (Playwright list counts like "1 passed (2.0s)", or
+  // playwright-bdd's "Missing step definitions: N"), captured from the stream
+  // so the terminal banner shows the OUTCOME at the top instead of only
+  // "Run failed" (testvault demo-run feedback).
   private summaryLines: string[] = [];
 
   constructor(
@@ -307,7 +308,7 @@ export class TestConsoleView extends ItemView {
     const pinnedToBottom =
       this.output.scrollHeight - this.output.scrollTop - this.output.clientHeight < 4;
 
-    const summary = extractCucumberSummary(event.payload.line);
+    const summary = extractRunSummary(event.payload.line);
     if (summary !== null) this.summaryLines.push(summary);
 
     this.output.createEl("div", {
@@ -371,9 +372,9 @@ export class TestConsoleView extends ItemView {
   private setBanner(status: TestRunStatus, durationMs?: number): void {
     this.banner.empty();
     const headline = formatStatusBanner(status, durationMs);
-    // On a terminal state, append Cucumber's own counts so the WHY is readable
-    // at the top ("Run failed (0.1s) — 1 scenario (1 undefined), 3 steps
-    // (3 undefined)"), plus an actionable hint for undefined steps.
+    // On a terminal state, append the runner's own counts so the WHY is readable
+    // at the top ("Run failed (0.3s) — 1 failed, Missing step definitions: 2"),
+    // plus an actionable hint when steps are missing.
     const isTerminal = status !== "running" && status !== "queued";
     const summary = isTerminal && this.summaryLines.length > 0 ? this.summaryLines : [];
     this.banner.createDiv({

@@ -11,7 +11,7 @@ export const DEMO_SUITE_IDS = ["smoke"] as const;
 
 /**
  * Demo Feature Specification (TIS §11.10). Plain Gherkin — no YAML frontmatter,
- * so Cucumber parses it directly; the Use Case back-reference lives in the
+ * so the Gherkin parser parses it directly; the Use Case back-reference lives in the
  * filename and the `@demo @smoke` tags.
  */
 export const DEMO_FEATURE_CONTENT = `@demo @smoke

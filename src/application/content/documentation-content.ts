@@ -99,7 +99,7 @@ passing test.
 - \`${paths.featureFilesPath}/\` — Gherkin Feature Specifications.
 - \`${paths.testSuitesPath}/\` — tag-driven Test Suites (Smoke, Regression).
 - \`${paths.evidencePath}/\` — audit trail for each Test Run.
-- \`${paths.testRunnerPath}/\` — the self-contained Playwright + Cucumber-JS runner.
+- \`${paths.testRunnerPath}/\` — the self-contained Playwright + playwright-bdd runner.
 
 ## Install the runner
 
@@ -152,7 +152,7 @@ The Test Hub turns requirements into executable specifications:
   Specifications.
 - **Feature Specification** — a \`.feature\` file in Gherkin. Each Feature belongs
   to exactly one Use Case (filename \`<UC-id>-<slug>.feature\`).
-- **Test Suite** — a named set of scenarios selected by a Cucumber **tag
+- **Test Suite** — a named set of scenarios selected by a **tag
   expression** (e.g. \`@smoke and not @wip\`). Membership is by tag, never an
   explicit list.
 - **Test Run** — one invocation of the runner against a scope.

@@ -25,8 +25,8 @@ export interface ExamplesBlock {
 /**
  * A step's single argument (TD-002): Gherkin allows at most ONE — a data
  * table or a doc string. The sum type makes the table+docString combination
- * unrepresentable; `serialiseFeature` can no longer emit Gherkin Cucumber
- * refuses to parse.
+ * unrepresentable; `serialiseFeature` can no longer emit Gherkin the Gherkin
+ * parser refuses to parse.
  */
 export type StepArgument =
   | { kind: "table"; rows: string[][] }
@@ -62,7 +62,7 @@ export interface ScenarioSpecification {
  * THE "is this scenario an Outline" predicate (TD-005). Deliberately
  * LENIENT: the `Scenario Outline` keyword OR attached `Examples:` blocks
  * count. The lenient parser attaches Examples to a plain `Scenario:`
- * (malformed Gherkin Cucumber rejects); treating it as an Outline keeps
+ * (malformed Gherkin the parser rejects); treating it as an Outline keeps
  * suite/tag match counts, the editor's Examples grid, and V2 scenario
  * identity (`::row-N`, US-056) in agreement instead of hiding the blocks.
  * Parse-time keyword normalisation was considered and rejected for now: it

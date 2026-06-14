@@ -2,11 +2,11 @@ import { appError } from "../../shared/errors/errors";
 import { err, ok, type Result } from "../../shared/result/result";
 
 /**
- * Cucumber tag-expression evaluator (Wave F insight; AD-4 / CONTEXT.md "Tag
+ * Tag-expression evaluator (Wave F insight; AD-4 / CONTEXT.md "Tag
  * Expression"). A Test Suite's Tag Expression IS its membership, and the runner
- * resolves it via Cucumber's `--tags` — but the Test Hub itself never evaluated
- * one, so dashboards could not show how many scenarios a suite actually
- * matches. This pure policy implements the documented Cucumber grammar:
+ * resolves it via bddgen's `tags` filter (BDD_TAGS) — but the Test Hub itself
+ * never evaluated one, so dashboards could not show how many scenarios a suite
+ * actually matches. This pure policy implements the documented tag-expression grammar:
  *
  *   expression := or
  *   or         := and ("or" and)*
@@ -17,12 +17,12 @@ import { err, ok, type Result } from "../../shared/result/result";
  * case-sensitive (Cucumber semantics: `@Smoke` ≠ `@smoke`); the operators
  * `and` / `or` / `not` are the lowercase reserved words. An EMPTY (or
  * whitespace-only) expression matches every scenario, mirroring how an empty
- * `--tags` filters nothing. Cucumber's `\(`-style escapes are not supported in
+ * tag filter selects everything. `\(`-style escapes are not supported in
  * V1 (no shipped content uses them).
  *
  * Pure domain logic: no I/O, unit-testable in isolation (BBV §10). This module
- * is INSIGHT-only — runs still pass the expression verbatim to Cucumber
- * (AD-4), which stays authoritative for execution-time membership.
+ * is INSIGHT-only — runs still pass the expression verbatim to bddgen (via
+ * BDD_TAGS, AD-4), which stays authoritative for execution-time membership.
  */
 
 /** Parsed tag-expression AST. `all` is the empty expression (matches everything). */
@@ -72,7 +72,7 @@ const fail = (message: string): never => {
 };
 
 /**
- * Parses a Cucumber tag expression into a {@link TagExpression}. Returns a
+ * Parses a tag expression into a {@link TagExpression}. Returns a
  * VALIDATION_FAILED error naming the structural problem for malformed input
  * (dangling operator, unbalanced parentheses, two adjacent operands, …).
  */

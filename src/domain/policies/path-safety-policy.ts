@@ -15,7 +15,7 @@ export interface PathSafetyPolicy {
 
 /**
  * Characters that must never reach a generated artifact. A path can be
- * interpolated into a `cucumber.mjs` feature glob (a JS string literal), so we
+ * interpolated into a `playwright.config.ts` feature glob (a JS string literal), so we
  * reject the JS/shell/YAML metacharacters that could break out of a literal —
  * `"` `'` `` ` `` `$` `{` `}` `\` — plus control characters and newlines.
  *
@@ -53,7 +53,7 @@ export class DefaultPathSafetyPolicy implements PathSafetyPolicy {
         }),
       );
     }
-    // A path travels into generated artifacts — notably the `cucumber.mjs`
+    // A path travels into generated artifacts — notably the `playwright.config.ts`
     // feature glob (a JS string literal) — so it must not carry control
     // characters, newlines, or metacharacters (`"` `'` `` ` `` `$` `{` `}` `\`)
     // that could break out of a literal and inject code (SEC-1 / P0-1).

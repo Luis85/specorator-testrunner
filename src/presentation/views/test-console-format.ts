@@ -28,25 +28,39 @@ export const formatStatusBanner = (status: TestRunStatus, durationMs?: number): 
   }
 };
 
+// Playwright's list reporter ends a run with one summary line per non-zero
+// outcome category (the `passed` line also carries the total duration). These
+// are the lines worth lifting into the banner so the OUTCOME reads at the top
+// instead of only "Run failed" (testvault demo-run feedback).
+const PLAYWRIGHT_SUMMARY = /^\d+ (?:passed|failed|flaky|skipped|interrupted|did not run)\b/;
+
+// playwright-bdd's `bddgen` prints this header (+ step snippets) when a feature
+// references steps with no definition — the SAME signal `SpecificationService`
+// keys on. bddgen still exits 0, so those scenarios fail under `playwright test`;
+// surfacing the header explains WHY the run failed and drives the hint below.
+const BDDGEN_MISSING_STEPS = /^Missing step definitions: (\d+)/;
+
 /**
- * Recognizes Cucumber's end-of-run summary lines ("1 scenario (1 undefined)",
- * "3 steps (3 undefined)") in the streamed output. The banner appends them so
- * the OUTCOME is readable at the top — without this, "Run failed" gives no
- * reason and the explanation sits at the bottom of a long stream (testvault
- * demo-run feedback). Returns the trimmed line, or null for any other line.
+ * Lifts a runner summary line out of the stream: a Playwright list-reporter
+ * count (`12 passed (3.4s)`, `1 failed`, …) or playwright-bdd's
+ * `Missing step definitions: N` header. Returns the trimmed line, or null for
+ * any other output.
  */
-export const extractCucumberSummary = (line: string): string | null => {
+export const extractRunSummary = (line: string): string | null => {
   const trimmed = line.trim();
-  return /^\d+ (scenarios?|steps?) \(.+\)$/.test(trimmed) ? trimmed : null;
+  return PLAYWRIGHT_SUMMARY.test(trimmed) || BDDGEN_MISSING_STEPS.test(trimmed) ? trimmed : null;
 };
 
 /**
- * An actionable hint derived from the run's Cucumber summary, or null when no
- * guidance applies. "undefined" steps are the one outcome a normal user can't
- * decode from the summary alone — point them at the step-definition flow.
+ * An actionable hint derived from the lifted summary lines, or null when none
+ * applies. Missing step definitions are the one outcome a normal user can't
+ * decode alone — point them at the step-definition flow.
  */
 export const summaryHint = (summaryLines: readonly string[]): string | null =>
-  summaryLines.some((line) => line.includes("undefined"))
+  summaryLines.some((line) => {
+    const match = BDDGEN_MISSING_STEPS.exec(line.trim());
+    return match !== null && Number(match[1]) > 0;
+  })
     ? "Some steps have no step definition. Open the Use Case and use “Generate step definitions”, then implement the stubs in .testrunner/src/steps."
     : null;
 

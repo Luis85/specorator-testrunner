@@ -18,6 +18,7 @@ commit/PR in the item before closing).
 | Id | Title | Area | Effort |
 | --- | --- | --- | --- |
 | [[TD-007]] | gherkin.ts parser/serializer complexity is suppressed, not solved | gherkin | large |
+| [[TD-008]] | Stale cucumber-js comments deferred in fallow-flagged files | quality | medium |
 
 ## Resolved items
 
