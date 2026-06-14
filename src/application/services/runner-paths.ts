@@ -1,4 +1,5 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
+import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { err, ok, type Result } from "../../shared/result/result";
 
@@ -10,6 +11,22 @@ export const resolveRunnerCwd = async (
   const base = await absoluteFs.getVaultBasePath();
   if (!base.ok) return err(base.error);
   return ok(`${base.value.replace(/[/\\]$/, "")}/${runnerPath}`);
+};
+
+/**
+ * Guards an argv (defense in depth: allowed program, no control chars) and then
+ * resolves the runner cwd — the shared spawn preamble every runner invocation
+ * shares before it diverges. The safety error takes precedence over the cwd one.
+ */
+export const assertSafeAndResolveCwd = async (
+  commandSafety: CommandSafetyPolicy,
+  absoluteFs: AbsoluteFileSystem,
+  argv: string[],
+  runnerPath: VaultPath,
+): Promise<Result<string>> => {
+  const safe = commandSafety.assertSafe(argv);
+  if (!safe.ok) return err(safe.error);
+  return resolveRunnerCwd(absoluteFs, runnerPath);
 };
 
 /**

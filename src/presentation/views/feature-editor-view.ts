@@ -592,20 +592,7 @@ export class FeatureEditorView extends TextFileView {
       table.forEach((cells, rowIndex) => {
         const tr = grid.createEl("tr");
         cells.forEach((cell, cellIndex) => {
-          const td = tr.createEl("td");
-          const input = td.createEl("input", {
-            type: "text",
-            value: cell,
-            attr: {
-              "aria-label": `Table cell ${rowIndex + 1},${cellIndex + 1}`,
-              "data-focus-key": `${tableKey}:${rowIndex}:${cellIndex}`,
-            },
-          });
-          input.addEventListener("change", () => {
-            cells[cellIndex] = sanitizeCell(input.value);
-            input.value = cells[cellIndex];
-            this.commit();
-          });
+          this.renderGridCell(tr, cells, cellIndex, cell, rowIndex, "Table", tableKey);
         });
       });
       const addRow = extras.createEl("button", {
@@ -660,7 +647,7 @@ export class FeatureEditorView extends TextFileView {
 
     // A Gherkin step carries at most ONE argument (TD-002): the add buttons
     // render only while the step has no argument, so the editor cannot produce
-    // a table + doc string combination Cucumber would refuse to parse.
+    // a table + doc string combination the Gherkin parser would refuse to parse.
     if (step.argument === undefined) {
       const addTable = extras.createEl("button", {
         text: "+ data table",
@@ -679,6 +666,37 @@ export class FeatureEditorView extends TextFileView {
         this.commit();
       });
     }
+  }
+
+  /**
+   * One editable `<td>` of a data-table / Examples grid: a text input seeded
+   * with `cell`, labelled `<labelPrefix> cell r,c`, focus-keyed under
+   * `focusKeyBase`, that sanitises and commits the row back on change. Shared by
+   * the step data-table and the scenario-outline Examples grids.
+   */
+  private renderGridCell(
+    tr: HTMLElement,
+    cells: string[],
+    cellIndex: number,
+    cell: string,
+    rowIndex: number,
+    labelPrefix: string,
+    focusKeyBase: string,
+  ): void {
+    const td = tr.createEl("td");
+    const input = td.createEl("input", {
+      type: "text",
+      value: cell,
+      attr: {
+        "aria-label": `${labelPrefix} cell ${rowIndex + 1},${cellIndex + 1}`,
+        "data-focus-key": `${focusKeyBase}:${rowIndex}:${cellIndex}`,
+      },
+    });
+    input.addEventListener("change", () => {
+      cells[cellIndex] = sanitizeCell(input.value);
+      input.value = cells[cellIndex];
+      this.commit();
+    });
   }
 
   private renderExamples(
@@ -753,20 +771,7 @@ export class FeatureEditorView extends TextFileView {
     block.rows.forEach((cells, rowIndex) => {
       const tr = grid.createEl("tr");
       cells.forEach((cell, cellIndex) => {
-        const td = tr.createEl("td");
-        const input = td.createEl("input", {
-          type: "text",
-          value: cell,
-          attr: {
-            "aria-label": `Examples cell ${rowIndex + 1},${cellIndex + 1}`,
-            "data-focus-key": `${blockKey}/cell:${rowIndex}:${cellIndex}`,
-          },
-        });
-        input.addEventListener("change", () => {
-          cells[cellIndex] = sanitizeCell(input.value);
-          input.value = cells[cellIndex];
-          this.commit();
-        });
+        this.renderGridCell(tr, cells, cellIndex, cell, rowIndex, "Examples", `${blockKey}/cell`);
       });
       const actions = tr.createEl("td");
       const removeRow = actions.createEl("button", {

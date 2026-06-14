@@ -18,12 +18,12 @@ commit/PR in the item before closing).
 | Id | Title | Area | Effort |
 | --- | --- | --- | --- |
 | [[TD-007]] | gherkin.ts parser/serializer complexity is suppressed, not solved | gherkin | large |
-| [[TD-008]] | Stale cucumber-js comments deferred in fallow-flagged files | quality | medium |
 
 ## Resolved items
 
 | Id | Title | Area | Resolved |
 | --- | --- | --- | --- |
+| [[TD-008]] | Stale cucumber-js comments deferred in fallow-flagged files | quality | TD-008 refactor increment (2026-06-14) |
 | [[TD-001]] | Support escaped pipes (`\|`) in Gherkin table cells | gherkin | pre-V2 Phase 1 increment (2026-06-12) |
 | [[TD-002]] | Enforce the one-argument-per-step rule in the domain model | gherkin | pre-V2 Phase 1 increment (2026-06-12) |
 | [[TD-003]] | Single source of truth for structural Feature validation | specifications | pre-V2 Phase 1 increment (2026-06-12) |

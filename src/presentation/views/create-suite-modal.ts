@@ -2,7 +2,7 @@ import { type App, Modal, Notice, Setting } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SuiteService } from "../../application/services/suite-service";
-import { openOrNotice, submitOnEnter } from "./modal-helpers";
+import { descriptionField, openOrNotice, submitOnEnter } from "./modal-helpers";
 import { tagExpressionPreview } from "./suite-rows";
 
 /** Debounce for the live Tag Expression preview (Wave F). */
@@ -18,7 +18,7 @@ export interface CreateSuiteDeps {
 
 /**
  * Prompts for a suite name/description and tag expression, then creates it
- * (US-022/US-023, UC-008). Membership is the Cucumber tag expression (AD-4):
+ * (US-022/US-023, UC-008). Membership is the tag expression (AD-4):
  * the suite includes exactly the scenarios that expression matches — never an
  * explicit scenario list. `create` slugifies the name into the suite id.
  */
@@ -58,14 +58,10 @@ export class CreateSuiteModal extends Modal {
       // instead of tabbing/clicking into the field first.
       text.inputEl.focus();
     });
-    new Setting(contentEl)
-      .setName("Description")
-      .addTextArea((area) =>
-        area.setPlaceholder("Optional summary").onChange((value) => (this.description = value)),
-      );
+    descriptionField(contentEl, (value) => (this.description = value));
     new Setting(contentEl)
       .setName("Tag Expression")
-      .setDesc("Cucumber Tag Expression deciding membership.")
+      .setDesc("Tag Expression deciding membership.")
       .addText((text) => {
         text.setPlaceholder("@smoke and not @wip").onChange((value) => {
           this.tagExpression = value;

@@ -1,5 +1,6 @@
 import { buildUseCaseNote, useCaseFileName } from "../content/use-case-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
+import { collectReadableMarkdown } from "./markdown-notes";
 import type { SettingsService } from "./settings-service";
 import { EXECUTION_SCOPES, USE_CASE_RUN_OUTCOMES } from "../../domain/entities/test-run";
 import {
@@ -162,14 +163,11 @@ export class DefaultUseCaseService implements UseCaseService {
     const listed = await this.fs.listFilesRecursive(settings.paths.useCasesPath);
     if (!listed.ok) return err(listed.error);
 
-    const useCases: UseCase[] = [];
-    for (const path of listed.value) {
-      if (!path.endsWith(".md")) continue;
-      const read = await this.fs.readFile(path);
-      if (!read.ok) continue; // index is best-effort; skip unreadable notes
-      const useCase = this.parse(read.value, path);
-      if (useCase) useCases.push(useCase);
-    }
+    const useCases = await collectReadableMarkdown(
+      this.fs,
+      listed.value,
+      (path, content) => this.parse(content, path) ?? undefined,
+    );
     useCases.sort((a, b) => a.id.localeCompare(b.id));
     return ok(useCases);
   }

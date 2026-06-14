@@ -15,6 +15,7 @@ import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
+import { readFeatureFile } from "./feature-loading";
 import { resolveRunnerCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { TestHubSettings } from "../../domain/settings/settings";
@@ -340,13 +341,8 @@ export class DefaultSpecificationService implements SpecificationService {
 
   /** US-021 / UC-010: list feature steps that no step definition matches. */
   async detectMissingSteps(featurePath: VaultPath): Promise<Result<MissingStepResult>> {
-    const read = await this.fs.readFile(featurePath);
-    if (!read.ok) return err(read.error);
-
-    const feature = parseFeature(read.value, featurePath);
-    if (feature === null) {
-      return err(appError("VALIDATION_FAILED", `"${featurePath}" is not a valid Feature.`));
-    }
+    const feature = await readFeatureFile(this.fs, featurePath);
+    if (!feature.ok) return err(feature.error);
 
     // bddgen regenerates `.features-gen/**` in the shared runner cwd, so a
     // diagnostic launched during a run would replace the specs the live
@@ -404,7 +400,7 @@ export class DefaultSpecificationService implements SpecificationService {
     const missingPatterns: StepDefinitionPattern[] = parseBddgenMissingSteps(ran.value.stdout).map(
       (source) => ({ kind: "expression", source }),
     );
-    const missingSteps = keepFeatureSteps(collectStepTexts(feature), missingPatterns);
+    const missingSteps = keepFeatureSteps(collectStepTexts(feature.value), missingPatterns);
 
     const detectionEvent = createEvent("specification.missingSteps.detected", {
       featurePath,
