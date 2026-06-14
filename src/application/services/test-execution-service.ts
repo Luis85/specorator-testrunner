@@ -624,7 +624,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
     // prototype member (truthy) and build the env from `undefined` fields.
     if (!Object.hasOwn(settings.sut.environments, settings.sut.active)) return {};
     const active = settings.sut.environments[settings.sut.active];
-    return { BASE_URL: active.baseUrl, ...(active.auth?.env ?? {}) };
+    return {
+      BASE_URL: active.baseUrl,
+      ...(active.auth?.env ?? {}),
+      TESTRUNNER_BROWSERS: settings.runner.browsers.join(","),
+    };
   }
 
   /**

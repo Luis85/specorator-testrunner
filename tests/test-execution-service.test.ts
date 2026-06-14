@@ -771,6 +771,17 @@ describe("DefaultTestExecutionService", () => {
     expect(service.activeRunId()).toBeNull();
   });
 
+  it("passes TESTRUNNER_BROWSERS from settings on every run", async () => {
+    const { service, childProcess, settings } = build();
+    const current = await settings.load();
+    await settings.save({
+      ...current,
+      runner: { ...current.runner, browsers: ["chromium", "firefox"] },
+    });
+    await service.execute({ scope: "demo", target: "demo" });
+    expect(childProcess.calls[0].env?.TESTRUNNER_BROWSERS).toBe("chromium,firefox");
+  });
+
   it("publishes the terminal event only after every streamed output event has been delivered", async () => {
     const { service, childProcess, bus } = build();
     // Emit multiple output lines so there are several output events to drain.
