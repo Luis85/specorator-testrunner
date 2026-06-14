@@ -164,6 +164,9 @@ const isValidAuthEnvKey = (key: string): boolean => /^[A-Za-z_][A-Za-z0-9_]*$/.t
  * injects `{ BASE_URL: active.baseUrl, ...auth.env }`, so an `auth.env.BASE_URL`
  * would silently override the SELECTED environment's URL (and the generated CI
  * workflow already filters it out to avoid exactly this conflict).
+ * `TESTRUNNER_BROWSERS` is likewise reserved for correctness: the runner injects
+ * it via `runEnv` and the generated CI workflow, so an `auth.env` copy would
+ * override the configured browser matrix (US-055).
  * `auth.env` is for SUT credentials only; these are rejected outright.
  */
 const RESERVED_ENV_KEYS = new Set([
@@ -177,6 +180,7 @@ const RESERVED_ENV_KEYS = new Set([
   "NODE_PATH",
   "NODE_REPL_EXTERNAL_MODULE",
   "BASE_URL",
+  "TESTRUNNER_BROWSERS",
 ]);
 const RESERVED_ENV_PREFIXES = ["LD_", "DYLD_", "NPM_CONFIG_"];
 

@@ -128,4 +128,30 @@ describe("buildGitHubActionsWorkflow", () => {
     expect(yaml).toContain("npx playwright install --with-deps chromium firefox");
     expect(yaml).toContain("TESTRUNNER_BROWSERS: chromium,firefox");
   });
+
+  it("never emits a second TESTRUNNER_BROWSERS line from the auth-env block", () => {
+    // TESTRUNNER_BROWSERS is a runner-control key injected by the matrix line;
+    // an auth.env copy must not double-emit it and override the configured matrix.
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      sut: {
+        ...DEFAULT_SETTINGS.sut,
+        environments: {
+          ...DEFAULT_SETTINGS.sut.environments,
+          staging: {
+            baseUrl: "https://staging.example.com",
+            auth: { kind: "env", env: { TESTRUNNER_BROWSERS: "chromium", E2E_TOKEN: "t" } },
+          },
+        },
+      },
+    } as typeof DEFAULT_SETTINGS;
+    const yaml = buildGitHubActionsWorkflow(settings);
+    // The matrix-controlled line should appear exactly once (from the runner section).
+    const count = (yaml.match(/TESTRUNNER_BROWSERS:/g) ?? []).length;
+    expect(count).toBe(1);
+    // Must not appear as a secret reference from the auth block.
+    expect(yaml).not.toContain("secrets.TESTRUNNER_BROWSERS");
+    // Other non-reserved auth keys still come through.
+    expect(yaml).toContain("E2E_TOKEN: ${{ secrets.E2E_TOKEN }}");
+  });
 });

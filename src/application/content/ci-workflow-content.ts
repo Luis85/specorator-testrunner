@@ -65,7 +65,9 @@ export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string =>
     // BASE_URL is already mapped from the repository variable (ADR-0011); a
     // configured auth.env key named BASE_URL would emit a second, conflicting
     // line that overrides it, so skip reserved keys.
-    .filter((key) => key !== "BASE_URL")
+    // TESTRUNNER_BROWSERS is injected by the browser-matrix step; filtering it
+    // here is defence-in-depth so even a raw settings object can't double-emit it.
+    .filter((key) => key !== "BASE_URL" && key !== "TESTRUNNER_BROWSERS")
     .sort();
   const authEnvLines =
     authKeys.length > 0

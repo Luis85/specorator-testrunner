@@ -281,6 +281,8 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
       "COMSPEC",
       "BASE_URL", // the runner injects BASE_URL from the active environment
       "base_url", // case-insensitive
+      "TESTRUNNER_BROWSERS", // runner-control key: injected by the browser-matrix line
+      "testrunner_browsers", // case-insensitive
     ])(
       "flags reserved process-control auth.env key %j as an error (PR #18 review)",
       async (key) => {

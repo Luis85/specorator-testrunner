@@ -196,6 +196,25 @@ describe("buildRunnerTemplates", () => {
     expect(config).toContain('new Set(["chromium", "firefox", "webkit"])'); // valid-set filter
   });
 
+  it("bakes the configured browsers as the fallback (standalone direct run honours the matrix)", () => {
+    const config = configFor({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, browsers: ["firefox", "webkit"] },
+    });
+    // The env-override path must still be present.
+    expect(config).toContain("process.env.TESTRUNNER_BROWSERS");
+    // The baked fallback must reflect the configured selection.
+    expect(config).toContain('["firefox","webkit"]');
+    // Must NOT fall back to chromium-only when firefox+webkit are configured.
+    expect(config).not.toContain(': ["chromium"]');
+  });
+
+  it("baked browser fallback is chromium when default settings are used", () => {
+    const config = configFor(DEFAULT_SETTINGS);
+    // Default browsers are ["chromium"], so the baked fallback is still ["chromium"].
+    expect(config).toContain('["chromium"]');
+  });
+
   it("generated package.json install scripts install the selected browsers", () => {
     const pkg =
       buildRunnerTemplates({

@@ -78,6 +78,7 @@ const TSCONFIG_JSON = `{
 const PLAYWRIGHT_CONFIG = (
   featuresGlob: string,
   featuresRoot: string,
+  browsersFallback: string,
 ): string => `import { defineConfig } from "@playwright/test";
 import { defineBddConfig, cucumberReporter } from "playwright-bdd";
 
@@ -106,7 +107,7 @@ const testDir = defineBddConfig({
 const VALID_BROWSERS = new Set(["chromium", "firefox", "webkit"]);
 const requestedBrowsers = (process.env.TESTRUNNER_BROWSERS?.split(",").map((b) => b.trim()) ?? [])
   .filter((b) => VALID_BROWSERS.has(b));
-const projectBrowsers = requestedBrowsers.length > 0 ? requestedBrowsers : ["chromium"];
+const projectBrowsers = requestedBrowsers.length > 0 ? requestedBrowsers : ${browsersFallback};
 
 export default defineConfig({
   testDir,
@@ -250,6 +251,10 @@ export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] 
   );
   const featuresGlob = `${featuresRoot}/**/*.feature`;
   const browserArgs = settings.runner.browsers.join(" ");
+  // Bake the validated browser selection as the fallback so `npm run test`
+  // (standalone direct run, TESTRUNNER_BROWSERS unset) honours the configured
+  // matrix instead of silently defaulting to chromium-only (US-055).
+  const browsersFallback = JSON.stringify(settings.runner.browsers);
 
   return [
     // Template paths are trusted compile-time literals relative to the runner root.
@@ -266,7 +271,7 @@ export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] 
     { path: unsafeVaultPath("tsconfig.json"), content: TSCONFIG_JSON, overwrite: true },
     {
       path: unsafeVaultPath("playwright.config.ts"),
-      content: PLAYWRIGHT_CONFIG(featuresGlob, featuresRoot),
+      content: PLAYWRIGHT_CONFIG(featuresGlob, featuresRoot, browsersFallback),
       overwrite: true,
     },
     { path: unsafeVaultPath("README.md"), content: README_MD, overwrite: true },
