@@ -58,3 +58,37 @@ export const parseScenarioReference = (ref: string): ParsedScenarioReference => 
   }
   return base;
 };
+
+export interface ScenarioRefEntry {
+  scenarioName: string;
+  ref: string;
+}
+
+/**
+ * All scenario references for a parsed Feature, in declaration order: one entry
+ * per plain scenario, one per Outline example row (across every `Examples`
+ * block). The order matches the order a report expands rows, so a resolver can
+ * zip report rows onto these entries by position within a scenario name.
+ */
+export const featureScenarioRefs = (feature: FeatureSpecification): ScenarioRefEntry[] => {
+  const path = String(feature.path);
+  const entries: ScenarioRefEntry[] = [];
+  for (const scenario of feature.scenarios) {
+    if (isScenarioOutline(scenario)) {
+      for (const block of scenario.examples ?? []) {
+        for (const row of block.rows) {
+          const cells = block.header.map(
+            (header, i) => [header, row[i] ?? ""] as [string, string],
+          );
+          entries.push({
+            scenarioName: scenario.name,
+            ref: outlineRowRef(path, scenario.name, cells),
+          });
+        }
+      }
+    } else {
+      entries.push({ scenarioName: scenario.name, ref: scenarioRef(path, scenario.name) });
+    }
+  }
+  return entries;
+};

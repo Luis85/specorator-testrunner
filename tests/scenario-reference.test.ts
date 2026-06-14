@@ -4,7 +4,10 @@ import {
   scenarioRef,
   outlineRowRef,
   parseScenarioReference,
+  featureScenarioRefs,
 } from "../src/domain/value-objects/scenario-reference";
+import { parseFeature } from "../src/application/content/gherkin";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 describe("rowDigest (content-stable Outline row key, US-056)", () => {
   it("is deterministic for the same cells", () => {
@@ -56,5 +59,41 @@ describe("scenarioRef / outlineRowRef / parseScenarioReference", () => {
     expect(parsed.featurePath).toBe(path);
     expect(parsed.scenarioName).toBe("Login");
     expect(parsed.rowDigest).toBe(rowDigest([["role", "admin"]]));
+  });
+});
+
+describe("featureScenarioRefs", () => {
+  it("yields one entry per plain scenario", () => {
+    const feature = parseFeature(
+      "Feature: F\n  Scenario: Login\n    Given x\n  Scenario: Logout\n    Given y\n",
+      vp("Specifications/features/UC-001-f.feature"),
+    );
+    if (!feature) throw new Error("parse failed");
+    expect(featureScenarioRefs(feature).map((e) => e.ref)).toEqual([
+      "Specifications/features/UC-001-f.feature::Login",
+      "Specifications/features/UC-001-f.feature::Logout",
+    ]);
+  });
+
+  it("yields one entry per Outline example row, in declared order", () => {
+    const feature = parseFeature(
+      [
+        "Feature: F",
+        "  Scenario Outline: Login as <role>",
+        "    Given I am <role>",
+        "    Examples:",
+        "      | role  |",
+        "      | admin |",
+        "      | user  |",
+        "",
+      ].join("\n"),
+      vp("Specifications/features/UC-001-f.feature"),
+    );
+    if (!feature) throw new Error("parse failed");
+    const entries = featureScenarioRefs(feature);
+    expect(entries).toHaveLength(2);
+    expect(entries.every((e) => e.scenarioName === "Login as <role>")).toBe(true);
+    expect(entries[0]?.ref).toContain("::row-");
+    expect(entries[0]?.ref).not.toBe(entries[1]?.ref);
   });
 });
