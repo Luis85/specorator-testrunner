@@ -231,11 +231,15 @@ describe("buildRunnerTemplates", () => {
     expect(TESTRUNNER_MANIFEST_VERSION).toBe(3);
   });
 
-  it("generates testrunner-manifest.json carrying the current manifest version", () => {
-    const files = buildRunnerTemplates(DEFAULT_SETTINGS);
+  it("generates testrunner-manifest.json carrying the current manifest version and selected browsers", () => {
+    const files = buildRunnerTemplates({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, browsers: ["chromium", "firefox"] },
+    });
     const manifest = files.find((f) => f.path === "testrunner-manifest.json");
     expect(manifest).toBeDefined();
-    expect(JSON.parse(manifest?.content ?? "{}")).toEqual({ manifestVersion: 3 });
+    const parsed = JSON.parse(manifest?.content ?? "{}") as unknown;
+    expect(parsed).toEqual({ manifestVersion: 3, browsers: ["chromium", "firefox"] });
   });
 
   it("ExamplePage uses Playwright Page import, not Cucumber World", () => {

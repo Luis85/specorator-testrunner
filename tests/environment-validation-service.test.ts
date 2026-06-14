@@ -66,8 +66,12 @@ const markHealthyRunnerWithoutManifest = (absoluteFs: FakeAbsoluteFileSystem) =>
 const markFullyInstalled = (absoluteFs: FakeAbsoluteFileSystem) => {
   markHealthyRunnerWithoutManifest(absoluteFs);
   // Seed the CURRENT manifest content so an otherwise-healthy runner does not
-  // emit a spurious RUNNER_MANIFEST_OUTDATED advisory.
-  absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", testrunnerManifestContent());
+  // emit a spurious RUNNER_MANIFEST_OUTDATED advisory. Pass the default browsers
+  // so the stamped selection matches what the default settings service reports.
+  absoluteFs.seed(
+    "/vault/.testrunner/testrunner-manifest.json",
+    testrunnerManifestContent(DEFAULT_SETTINGS.runner.browsers),
+  );
 };
 
 /** Seeds the managed runner files the CI readiness check requires (except
@@ -203,6 +207,76 @@ describe("DefaultEnvironmentValidationService", () => {
 
     expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(false);
     expect(result.valid).toBe(true);
+  });
+
+  it("flags RUNNER_MANIFEST_OUTDATED when manifest browsers differ from settings browsers", async () => {
+    // settings.runner.browsers = ["chromium"] (default); manifest stamps ["firefox"]
+    const { service, absoluteFs } = build();
+    markHealthyRunnerWithoutManifest(absoluteFs);
+    absoluteFs.seed(
+      "/vault/.testrunner/testrunner-manifest.json",
+      JSON.stringify({ manifestVersion: 3, browsers: ["firefox"] }),
+    );
+
+    const result = await service.validateEnvironment();
+
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(true);
+  });
+
+  it("does NOT flag RUNNER_MANIFEST_OUTDATED when manifest browsers match settings browsers", async () => {
+    // settings.runner.browsers = ["chromium"] (default); manifest stamps ["chromium"]
+    const { service, absoluteFs } = build();
+    markHealthyRunnerWithoutManifest(absoluteFs);
+    absoluteFs.seed(
+      "/vault/.testrunner/testrunner-manifest.json",
+      JSON.stringify({ manifestVersion: 3, browsers: ["chromium"] }),
+    );
+
+    const result = await service.validateEnvironment();
+
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(false);
+    expect(result.valid).toBe(true);
+  });
+
+  it("does NOT flag RUNNER_MANIFEST_OUTDATED when browsers match but are in a different order", async () => {
+    // Order-insensitive set comparison: ["firefox","chromium"] vs ["chromium","firefox"] = no drift
+    const { absoluteFs, childProcess } = build();
+    const store = new FakeDataStore({ runner: { browsers: ["chromium", "firefox"] } });
+    const svc = new DefaultEnvironmentValidationService(
+      new DefaultSettingsService(store, new DefaultPathSafetyPolicy(), recordingEventBus().bus),
+      childProcess,
+      absoluteFs,
+      new DefaultCommandSafetyPolicy(),
+      recordingEventBus().bus,
+      ENV,
+      "linux",
+    );
+    markHealthyRunnerWithoutManifest(absoluteFs);
+    // Also seed the firefox browser cache so browsersInstalled passes and valid can be true.
+    absoluteFs.existing.add("/home/u/.cache/ms-playwright/firefox-1438/firefox");
+    absoluteFs.seed(
+      "/vault/.testrunner/testrunner-manifest.json",
+      JSON.stringify({ manifestVersion: 3, browsers: ["firefox", "chromium"] }),
+    );
+
+    const result = await svc.validateEnvironment();
+
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(false);
+    expect(result.valid).toBe(true);
+  });
+
+  it("flags RUNNER_MANIFEST_OUTDATED when manifest has no browsers stamp (current manifest must stamp it)", async () => {
+    // A current-version manifest MUST include browsers; missing stamp = drift
+    const { service, absoluteFs } = build();
+    markHealthyRunnerWithoutManifest(absoluteFs);
+    absoluteFs.seed(
+      "/vault/.testrunner/testrunner-manifest.json",
+      JSON.stringify({ manifestVersion: 3 }),
+    );
+
+    const result = await service.validateEnvironment();
+
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(true);
   });
 
   it("is invalid when node_modules exists but playwright-bdd/Playwright are missing", async () => {

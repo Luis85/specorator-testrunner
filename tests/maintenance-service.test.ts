@@ -92,7 +92,12 @@ const seedHealthyRunner = (absoluteFs: FakeAbsoluteFileSystem) => {
   absoluteFs.existing.add("/home/u/.cache/ms-playwright/chromium-1148/chrome");
   // Seed the CURRENT manifest so validateEnvironment() does not push a stale
   // RUNNER_MANIFEST_OUTDATED warning that would itself trigger a reinstall.
-  absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", testrunnerManifestContent());
+  // Pass the default browsers so the stamped selection matches what the default
+  // settings service reports (browsers stamp is now required by US-055).
+  absoluteFs.seed(
+    "/vault/.testrunner/testrunner-manifest.json",
+    testrunnerManifestContent(DEFAULT_SETTINGS.runner.browsers),
+  );
 };
 
 describe("DefaultMaintenanceService", () => {

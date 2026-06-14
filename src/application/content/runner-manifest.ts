@@ -56,6 +56,6 @@ export const TESTRUNNER_MANIFEST_VERSION = 3;
 /** The generated manifest file (vault-relative to the runner root). */
 export const TESTRUNNER_MANIFEST_FILE = "testrunner-manifest.json";
 
-/** Canonical manifest content for the current version. */
-export const testrunnerManifestContent = (): string =>
-  JSON.stringify({ manifestVersion: TESTRUNNER_MANIFEST_VERSION }, null, 2) + "\n";
+/** Canonical manifest content for the current version, stamping the selected browsers. */
+export const testrunnerManifestContent = (browsers: readonly string[]): string =>
+  JSON.stringify({ manifestVersion: TESTRUNNER_MANIFEST_VERSION, browsers }, null, 2) + "\n";

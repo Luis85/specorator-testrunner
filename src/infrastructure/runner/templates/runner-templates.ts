@@ -265,7 +265,7 @@ export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] 
     },
     {
       path: unsafeVaultPath(TESTRUNNER_MANIFEST_FILE),
-      content: testrunnerManifestContent(),
+      content: testrunnerManifestContent(settings.runner.browsers),
       overwrite: true,
     },
     { path: unsafeVaultPath("tsconfig.json"), content: TSCONFIG_JSON, overwrite: true },
