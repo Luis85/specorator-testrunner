@@ -56,6 +56,8 @@ export interface FeatureHealth {
  * exclusion check (ADR-0017) so the badge and the KPI roll-up agree.
  */
 const WIP_TAG = "@wip";
+/** The smoke-suite convention tag, seeded into the known-tags vocabulary. */
+const SMOKE_TAG = "@smoke";
 const hasWipTag = (tags: string[]): boolean => tags.some((tag) => tag.toLowerCase() === WIP_TAG);
 
 /**
@@ -216,7 +218,7 @@ export class DefaultFeatureInsightService implements FeatureInsightService {
     const features = await this.loadValidFeatures();
     if (!features.ok) return err(features.error);
 
-    const tags = new Set<string>(["@smoke", "@wip"]);
+    const tags = new Set<string>([SMOKE_TAG, WIP_TAG]);
     for (const feature of features.value) {
       collectFeatureTags(feature, tags);
     }

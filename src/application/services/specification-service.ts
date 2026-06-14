@@ -112,8 +112,10 @@ export interface SpecificationService {
    * — the SAME source `detectMissingSteps` matches against, so the Feature
    * Editor's autocomplete/missing-step flags and the Detect action agree.
    * A missing steps folder yields an empty list (every step reads missing).
+   * Best-effort and infallible (unreadable files are skipped), so it returns
+   * the list directly rather than a `Result`.
    */
-  listStepPatterns(): Promise<Result<StepDefinitionPattern[]>>;
+  listStepPatterns(): Promise<StepDefinitionPattern[]>;
 }
 
 /**
@@ -299,10 +301,10 @@ export class DefaultSpecificationService implements SpecificationService {
     );
   }
 
-  async listStepPatterns(): Promise<Result<StepDefinitionPattern[]>> {
+  async listStepPatterns(): Promise<StepDefinitionPattern[]> {
     const settings = await this.settingsService.load();
     const stepsDir = joinVaultPath(settings.paths.testRunnerPath, "src/steps");
-    return ok(await this.loadStepDefinitions(stepsDir));
+    return this.loadStepDefinitions(stepsDir);
   }
 
   /** UC-007 / US-020: parse the Feature and report structural errors. */

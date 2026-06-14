@@ -33,13 +33,6 @@ commit/PR in the item before closing).
 
 ## Minor notes (not worth an item yet)
 
-- `SpecificationService.listStepPatterns` returns `Result` but has no
-  reachable error path (`loadStepDefinitions` collapses failures to `[]`);
-  the `patterns.ok ? … : []` fallback in `detectMissingSteps` is dead code.
-  Revisit if step scraping ever gains a real failure mode.
-- `listKnownTags` seeds the `@smoke`/`@wip` conventions as string literals;
-  if the tag vocabulary grows, extract shared constants (a `WIP_TAG` constant
-  already exists privately in `feature-insight-service.ts`).
 - Several Feature Editor container classes (`-body`, `-add`, `-steps`,
   `-validation`, `-examples`, `-examples-head`, `-tag-chip`) are emitted but
   unstyled in `styles.css` — intentional today, listed here so the next
