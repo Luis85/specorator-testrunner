@@ -1,4 +1,6 @@
 import type { Prd } from "../../domain/entities/prd";
+import type { UseCase } from "../../domain/entities/use-case";
+import type { CreatePrdRequest } from "./prd-service";
 
 /**
  * Pure state machine capturing the 7-step PRD builder wizard state.
@@ -93,3 +95,75 @@ export const addDomainOption = (
   const nextSelected = selected.includes(value) ? selected : [...selected, value];
   return { available: nextAvailable, selected: nextSelected };
 };
+
+/**
+ * The domain options for the builder's Domains step: the distinct, sorted
+ * `domain` values across existing Use Cases. Use Cases without a domain
+ * contribute nothing. The modal derives these once the catalog loads, then
+ * {@link addDomainOption} extends them for a PRD-first vault. Pure: no I/O.
+ */
+export const deriveDomains = (useCases: readonly UseCase[]): string[] =>
+  Array.from(
+    new Set(useCases.map((uc) => uc.domain).filter((d): d is string => Boolean(d))),
+  ).sort();
+
+/**
+ * Narrows the assign-Use-Cases step to the chosen domains: every Use Case when
+ * nothing is selected, otherwise those whose domain is among `selectedDomains`
+ * (a domainless Use Case never matches a non-empty selection). Pure: no I/O.
+ */
+export const filterUseCasesByDomains = (
+  useCases: readonly UseCase[],
+  selectedDomains: readonly string[],
+): UseCase[] => {
+  if (selectedDomains.length === 0) return [...useCases];
+  return useCases.filter((uc) => selectedDomains.includes(uc.domain ?? ""));
+};
+
+/**
+ * Adds or removes `id` from a selection list, mirroring a checkbox toggle:
+ * `present` true ensures membership (never duplicating), false removes it.
+ * Shared by the Domains and assign-Use-Cases checkbox lists. Pure: no I/O.
+ */
+export const toggleMembership = (
+  list: readonly string[],
+  id: string,
+  present: boolean,
+): string[] => {
+  if (present) return list.includes(id) ? [...list] : [...list, id];
+  return list.filter((item) => item !== id);
+};
+
+/**
+ * The review step's summary lines — one per PRD field in form order, with the
+ * same human-readable placeholders the wizard shows for empty fields. Keeping
+ * the copy here makes the verbatim text testable; the modal only renders each
+ * line into a paragraph. Pure: no I/O.
+ */
+export const prdReviewLines = (state: PrdBuilderState): string[] => [
+  `Title: ${state.title || "(none)"}`,
+  `Parent: ${state.parentPrdId ?? "None (root product vision)"}`,
+  `Domains: ${state.selectedDomains.join(", ") || "None"}`,
+  `Vision: ${state.vision || "(none)"}`,
+  `Scope In: ${state.scopeIn.join(", ") || "None"}`,
+  `Scope Out: ${state.scopeOut.join(", ") || "None"}`,
+  `Use Cases: ${state.selectedUcs.join(", ") || "None"}`,
+];
+
+/**
+ * Projects the collected wizard state onto the {@link CreatePrdRequest} the
+ * service validates. Only the create-time fields cross over: the selected Use
+ * Cases are linked separately AFTER creation (UseCaseService owns that write),
+ * and currentStep/errorMessages are pure UI state. Type-only import of the
+ * request shape keeps this a compile-time contract with no runtime coupling.
+ * Pure: no I/O.
+ */
+export const toCreatePrdRequest = (state: PrdBuilderState): CreatePrdRequest => ({
+  title: state.title,
+  parentPrdId: state.parentPrdId,
+  domains: state.selectedDomains,
+  vision: state.vision,
+  scopeIn: state.scopeIn,
+  scopeOut: state.scopeOut,
+  research: state.research,
+});

@@ -60,6 +60,30 @@ export const renderLoadError = (
 };
 
 /**
+ * Renders a vertical list of labelled checkboxes — each `<input>` tied to its
+ * `<label>` through a unique id — and reports every toggle. Shared by the PRD
+ * wizard's Domains and assign-Use-Cases steps; `idPrefix` namespaces the
+ * generated ids so two lists rendered together can't collide.
+ */
+export const renderCheckboxList = (
+  parent: HTMLElement,
+  idPrefix: string,
+  rows: { id: string; label: string }[],
+  isChecked: (id: string) => boolean,
+  onToggle: (id: string, checked: boolean) => void,
+): void => {
+  for (const row of rows) {
+    const container = parent.createEl("div");
+    const checkbox = container.createEl("input", { attr: { type: "checkbox" } });
+    checkbox.id = `${idPrefix}-${row.id}`;
+    checkbox.checked = isChecked(row.id);
+    checkbox.addEventListener("change", () => onToggle(row.id, checkbox.checked));
+    const label = container.createEl("label", { text: row.label });
+    label.htmlFor = checkbox.id;
+  }
+};
+
+/**
  * Opens a file through the workspace port and surfaces a FAILED open as a
  * Notice instead of dropping the Result silently — a button that does nothing
  * (e.g. the note was moved or deleted underneath the view) must say why.
