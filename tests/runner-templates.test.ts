@@ -195,6 +195,18 @@ describe("buildRunnerTemplates", () => {
     expect(config).toContain('new Set(["chromium", "firefox", "webkit"])'); // valid-set filter
   });
 
+  it("generated package.json install scripts install the selected browsers", () => {
+    const pkg =
+      buildRunnerTemplates({
+        ...DEFAULT_SETTINGS,
+        runner: { ...DEFAULT_SETTINGS.runner, browsers: ["chromium", "firefox"] },
+      }).find((t) => t.path === "package.json")?.content ?? "";
+    expect(pkg).toContain('"install:browsers": "playwright install chromium firefox"');
+    expect(pkg).toContain(
+      '"install:browsers:ci": "playwright install --with-deps chromium firefox"',
+    );
+  });
+
   it("generates testrunner-manifest.json carrying the current manifest version", () => {
     const files = buildRunnerTemplates(DEFAULT_SETTINGS);
     const manifest = files.find((f) => f.path === "testrunner-manifest.json");

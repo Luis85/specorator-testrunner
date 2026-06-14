@@ -28,7 +28,7 @@ import { relativeVaultPath } from "../../../shared/utils/vault-path";
  * during a repair (Runtime View RV-8); managed files are re-synced.
  */
 
-const PACKAGE_JSON = `{
+const buildPackageJson = (browserArgs: string): string => `{
   "name": "obsidian-e2e-test-runner",
   "private": true,
   "type": "module",
@@ -36,8 +36,8 @@ const PACKAGE_JSON = `{
     "test": "bddgen && playwright test --pass-with-no-tests",
     "test:smoke": "bddgen && playwright test --grep @smoke --pass-with-no-tests",
     "test:ci": "bddgen && playwright test --pass-with-no-tests",
-    "install:browsers": "playwright install chromium",
-    "install:browsers:ci": "playwright install --with-deps chromium"
+    "install:browsers": "playwright install ${browserArgs}",
+    "install:browsers:ci": "playwright install --with-deps ${browserArgs}"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
@@ -218,7 +218,7 @@ Specorator Testrunner**. It runs identically inside Obsidian and in CI.
 
 \`\`\`bash
 npm install
-npm run install:browsers     # one-time Chromium download (AD-5)
+npm run install:browsers     # one-time download of the configured browsers (AD-5)
 npm run test                 # all scenarios
 npm run test:smoke           # @smoke only
 \`\`\`
@@ -248,10 +248,15 @@ export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] 
     settings.paths.featureFilesPath,
   );
   const featuresGlob = `${featuresRoot}/**/*.feature`;
+  const browserArgs = settings.runner.browsers.join(" ");
 
   return [
     // Template paths are trusted compile-time literals relative to the runner root.
-    { path: unsafeVaultPath("package.json"), content: PACKAGE_JSON, overwrite: true },
+    {
+      path: unsafeVaultPath("package.json"),
+      content: buildPackageJson(browserArgs),
+      overwrite: true,
+    },
     {
       path: unsafeVaultPath(TESTRUNNER_MANIFEST_FILE),
       content: testrunnerManifestContent(),
