@@ -20,9 +20,9 @@ describe("DefaultSettingsService", () => {
     expect(String(DEFAULT_SETTINGS.paths.domainsPath)).toBe("Domains");
   });
 
-  it("defaults runner.browsers to chromium-only and a browser-agnostic install command", () => {
+  it("defaults runner.browsers to chromium-only", () => {
     expect(DEFAULT_SETTINGS.runner.browsers).toEqual(["chromium"]);
-    expect(DEFAULT_SETTINGS.runner.browserInstallCommand).toBe("npx playwright install");
+    expect(DEFAULT_SETTINGS.runner.browserInstallCommand).toBe("npx playwright install chromium");
   });
 
   it("returns defaults when nothing is stored", async () => {
@@ -483,7 +483,9 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
     });
 
     it("filters unknown browsers and dedupes runner.browsers, preserving order", async () => {
-      const { service } = makeService({ runner: { ...DEFAULT_SETTINGS.runner, browsers: ["firefox", "ie", "firefox", "webkit"] } });
+      const { service } = makeService({
+        runner: { ...DEFAULT_SETTINGS.runner, browsers: ["firefox", "ie", "firefox", "webkit"] },
+      });
       const s = await service.load();
       expect(s.runner.browsers).toEqual(["firefox", "webkit"]);
     });

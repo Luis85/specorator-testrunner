@@ -226,7 +226,7 @@ export const DEFAULT_SETTINGS: TestHubSettings = {
     nodeExecutable: "node",
     installCommand: "npm install",
     ciInstallCommand: "npm ci",
-    browserInstallCommand: "npx playwright install",
+    browserInstallCommand: "npx playwright install chromium",
     browsers: ["chromium"],
     defaultRunCommand: "npm run test",
     smokeRunCommand: "npm run test:smoke",
