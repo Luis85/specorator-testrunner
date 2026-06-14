@@ -165,6 +165,29 @@ describe("CucumberJsonReportParser", () => {
     expect(result.value.scenarioResults[0]?.status).toBe("passed");
   });
 
+  it("carries the element id and line onto ScenarioResult", () => {
+    const report = JSON.stringify([
+      {
+        name: "F",
+        uri: "features/UC-1-x.feature",
+        elements: [
+          {
+            name: "S",
+            type: "scenario",
+            id: "f;s;;2",
+            line: 7,
+            steps: [{ keyword: "Given ", result: { status: "passed", duration: 1000000 } }],
+          },
+        ],
+      },
+    ]);
+    const parsed = parser.parse(report, ctx());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.scenarioResults[0].scenarioId).toBe("f;s;;2");
+    expect(parsed.value.scenarioResults[0].line).toBe(7);
+  });
+
   it("tolerates malformed embeddings/attachments (non-array / null) without throwing", () => {
     const raw = singleFeature([
       {

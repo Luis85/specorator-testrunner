@@ -31,6 +31,8 @@ interface CucumberAttachment {
 interface CucumberScenario {
   name?: string;
   type?: string; // "scenario" | "background"
+  id?: string; // cucumber-JSON element id (e.g. "feature;scenario;;2") — stable per-row identity
+  line?: number; // feature-file line of the scenario / outline row
   steps?: CucumberStep[];
   before?: CucumberStep[]; // Before hooks (carry result/embeddings like steps)
   after?: CucumberStep[]; // After hooks
@@ -223,6 +225,8 @@ export class CucumberJsonReportParser implements ReportParser {
       status,
       durationMs,
       errorMessage,
+      ...(typeof scenario.id === "string" ? { scenarioId: scenario.id } : {}),
+      ...(typeof scenario.line === "number" ? { line: scenario.line } : {}),
     });
     result[status] += 1;
     result.total += 1;
