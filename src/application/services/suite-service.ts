@@ -4,6 +4,7 @@ import { slugify } from "../content/feature-content";
 // separators / filename-reserved chars, collapse spaces) — reuse it.
 import { sanitizeTitle as sanitizeFileName } from "../content/use-case-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
+import { collectReadableMarkdown } from "./markdown-notes";
 import type { SettingsService } from "./settings-service";
 import { createSuite, type TestSuite } from "../../domain/entities/suite";
 import type { SuiteId, VaultPath } from "../../domain/value-objects/identifiers";
@@ -126,15 +127,11 @@ export class DefaultSuiteService implements SuiteService {
     const listed = await this.fs.listFilesRecursive(settings.paths.testSuitesPath);
     if (!listed.ok) return err(listed.error);
 
-    const notes: SuiteNote[] = [];
-    for (const path of listed.value) {
-      if (!path.endsWith(".md")) continue;
-      const read = await this.fs.readFile(path);
-      if (!read.ok) continue; // index is best-effort; skip unreadable notes
-      const fm = parseFrontmatter(read.value);
-      if (fm.type !== "test-suite" || typeof fm.id !== "string") continue;
-      notes.push({ id: fm.id, path, suite: this.parse(read.value, path) });
-    }
+    const notes = await collectReadableMarkdown(this.fs, listed.value, (path, content) => {
+      const fm = parseFrontmatter(content);
+      if (fm.type !== "test-suite" || typeof fm.id !== "string") return undefined;
+      return { id: fm.id, path, suite: this.parse(content, path) };
+    });
     return ok(notes);
   }
 
