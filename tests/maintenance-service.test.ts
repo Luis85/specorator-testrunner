@@ -149,6 +149,32 @@ describe("DefaultMaintenanceService", () => {
     expect(childProcess.calls.map((c) => c.args.join(" "))).toContain("npm install");
   });
 
+  it("does NOT npm-install on a browser-only change (current version, browser drift) — repair stays green offline (codex P2)", async () => {
+    const { service, absoluteFs, childProcess } = build();
+    seedHealthyRunner(absoluteFs);
+    // Current-version manifest, but the stamped browser set differs from settings
+    // (default ["chromium"]) → RUNNER_BROWSERS_OUTDATED, NOT a version mismatch.
+    absoluteFs.seed(
+      "/vault/.testrunner/testrunner-manifest.json",
+      JSON.stringify({ manifestVersion: 3, browsers: ["firefox"] }),
+    );
+    // npm install would FAIL (e.g. offline) — proving a browser-only repair never
+    // calls it. Before the fix, browser drift reused RUNNER_MANIFEST_OUTDATED, so
+    // repair force-ran npm install and errored here before installing browsers.
+    childProcess.exitCodes.set("npm install", 1);
+
+    const result = await service.repair();
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.reinstalledPackages).toBe(false);
+    const commands = childProcess.calls.map((c) => c.args.join(" "));
+    expect(commands).not.toContain("npm install");
+    // The browser matrix is still (re)installed by repair's unconditional pass.
+    expect(result.value.reinstalledBrowsers).toBe(true);
+    expect(commands).toContain("npx playwright install chromium");
+  });
+
   it("clean-cuts a V1 runner to V2: deletes cucumber-era files, recreates the demo, reinstalls (US-051)", async () => {
     const { service, absoluteFs, childProcess, templates } = build();
     seedHealthyRunner(absoluteFs);

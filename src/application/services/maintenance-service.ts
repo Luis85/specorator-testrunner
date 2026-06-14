@@ -164,12 +164,16 @@ export class DefaultMaintenanceService implements MaintenanceService {
       // 1. Diagnose what's broken (RV-8 step 1).
       const before = await this.validation.validateEnvironment();
 
-      // A manifest-version mismatch means the on-disk runtime predates the
+      // A manifest-VERSION mismatch means the on-disk runtime shape predates the
       // current version. We use it for BOTH the V1→V2 clean-cut migration
       // (below, before createRunner) AND the dependency reinstall (further down).
       // validateEnvironment() already read the manifest before createRunner
       // overwrites it, so detect the mismatch from `before.issues` rather than
-      // re-reading — DRY and reader-consistent.
+      // re-reading — DRY and reader-consistent. Browser-selection drift is a
+      // SEPARATE code (RUNNER_BROWSERS_OUTDATED) deliberately excluded here: it
+      // needs no npm install and no clean-cut — the unconditional createRunner
+      // (re-stamp + regenerate baked config/scripts) and installBrowsers below
+      // heal it, so a browser-only repair stays green offline.
       const manifestMismatch = before.issues.some(
         (issue) => issue.code === "RUNNER_MANIFEST_OUTDATED",
       );

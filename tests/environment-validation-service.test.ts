@@ -209,8 +209,10 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("flags RUNNER_MANIFEST_OUTDATED when manifest browsers differ from settings browsers", async () => {
-    // settings.runner.browsers = ["chromium"] (default); manifest stamps ["firefox"]
+  it("flags RUNNER_BROWSERS_OUTDATED (not the version code) when browsers drift on a current manifest", async () => {
+    // settings.runner.browsers = ["chromium"] (default); manifest stamps ["firefox"].
+    // Browser-only drift must NOT reuse RUNNER_MANIFEST_OUTDATED, or repair would
+    // force an (offline-fragile) npm install for a browser-only change (codex P2).
     const { service, absoluteFs } = build();
     markHealthyRunnerWithoutManifest(absoluteFs);
     absoluteFs.seed(
@@ -220,10 +222,11 @@ describe("DefaultEnvironmentValidationService", () => {
 
     const result = await service.validateEnvironment();
 
-    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(true);
+    expect(result.issues.some((i) => i.code === "RUNNER_BROWSERS_OUTDATED")).toBe(true);
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(false);
   });
 
-  it("does NOT flag RUNNER_MANIFEST_OUTDATED when manifest browsers match settings browsers", async () => {
+  it("does NOT flag either manifest advisory when manifest browsers match settings browsers", async () => {
     // settings.runner.browsers = ["chromium"] (default); manifest stamps ["chromium"]
     const { service, absoluteFs } = build();
     markHealthyRunnerWithoutManifest(absoluteFs);
@@ -235,10 +238,11 @@ describe("DefaultEnvironmentValidationService", () => {
     const result = await service.validateEnvironment();
 
     expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(false);
+    expect(result.issues.some((i) => i.code === "RUNNER_BROWSERS_OUTDATED")).toBe(false);
     expect(result.valid).toBe(true);
   });
 
-  it("does NOT flag RUNNER_MANIFEST_OUTDATED when browsers match but are in a different order", async () => {
+  it("does NOT flag the browser advisory when browsers match but are in a different order", async () => {
     // Order-insensitive set comparison: ["firefox","chromium"] vs ["chromium","firefox"] = no drift
     const { absoluteFs, childProcess } = build();
     const store = new FakeDataStore({ runner: { browsers: ["chromium", "firefox"] } });
@@ -261,12 +265,14 @@ describe("DefaultEnvironmentValidationService", () => {
 
     const result = await svc.validateEnvironment();
 
+    expect(result.issues.some((i) => i.code === "RUNNER_BROWSERS_OUTDATED")).toBe(false);
     expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(false);
     expect(result.valid).toBe(true);
   });
 
-  it("flags RUNNER_MANIFEST_OUTDATED when manifest has no browsers stamp (current manifest must stamp it)", async () => {
-    // A current-version manifest MUST include browsers; missing stamp = drift
+  it("flags RUNNER_BROWSERS_OUTDATED when a current manifest has no browsers stamp", async () => {
+    // A current-version manifest MUST include browsers; a missing stamp (older
+    // build of this version) is browser drift, not a version mismatch.
     const { service, absoluteFs } = build();
     markHealthyRunnerWithoutManifest(absoluteFs);
     absoluteFs.seed(
@@ -276,7 +282,8 @@ describe("DefaultEnvironmentValidationService", () => {
 
     const result = await service.validateEnvironment();
 
-    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(true);
+    expect(result.issues.some((i) => i.code === "RUNNER_BROWSERS_OUTDATED")).toBe(true);
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(false);
   });
 
   it("is invalid when node_modules exists but playwright-bdd/Playwright are missing", async () => {
