@@ -110,7 +110,7 @@ describe("DefaultMaintenanceService", () => {
     expect(templates.requests).toHaveLength(1); // re-synced once
     const commands = childProcess.calls.map((c) => c.args.join(" "));
     expect(commands).toContain("npm install");
-    expect(commands).toContain("npx playwright install chromium");
+    expect(commands).toContain("npx playwright install");
     expect(types()).toContain("testrunner.repaired");
   });
 
@@ -126,7 +126,7 @@ describe("DefaultMaintenanceService", () => {
     expect(result.value.reinstalledBrowsers).toBe(true); // authoritative, idempotent
     const commands = childProcess.calls.map((c) => c.args.join(" "));
     expect(commands).not.toContain("npm install");
-    expect(commands).toContain("npx playwright install chromium");
+    expect(commands).toContain("npx playwright install");
   });
 
   it("reinstalls dependencies on a manifest-version mismatch even when deps are healthy", async () => {

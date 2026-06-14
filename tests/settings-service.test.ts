@@ -20,6 +20,11 @@ describe("DefaultSettingsService", () => {
     expect(String(DEFAULT_SETTINGS.paths.domainsPath)).toBe("Domains");
   });
 
+  it("defaults runner.browsers to chromium-only and a browser-agnostic install command", () => {
+    expect(DEFAULT_SETTINGS.runner.browsers).toEqual(["chromium"]);
+    expect(DEFAULT_SETTINGS.runner.browserInstallCommand).toBe("npx playwright install");
+  });
+
   it("returns defaults when nothing is stored", async () => {
     const { service } = makeService(undefined);
     expect(await service.load()).toEqual(DEFAULT_SETTINGS);

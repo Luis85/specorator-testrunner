@@ -20,12 +20,16 @@ export interface TestHubPathSettings {
   testRunnerPath: VaultPath;
 }
 
+export type BrowserName = "chromium" | "firefox" | "webkit";
+export const BROWSER_NAMES: readonly BrowserName[] = ["chromium", "firefox", "webkit"];
+
 export interface RunnerSettings {
   packageManager: PackageManager;
   nodeExecutable: string;
   installCommand: string; // `npm install` for local
   ciInstallCommand: string; // `npm ci` for CI
   browserInstallCommand: string;
+  browsers: BrowserName[]; // non-empty; which Playwright projects to run (US-055)
   defaultRunCommand: string;
   smokeRunCommand: string;
   ciRunCommand: string;
@@ -222,7 +226,8 @@ export const DEFAULT_SETTINGS: TestHubSettings = {
     nodeExecutable: "node",
     installCommand: "npm install",
     ciInstallCommand: "npm ci",
-    browserInstallCommand: "npx playwright install chromium",
+    browserInstallCommand: "npx playwright install",
+    browsers: ["chromium"],
     defaultRunCommand: "npm run test",
     smokeRunCommand: "npm run test:smoke",
     ciRunCommand: "npm run test:ci",
