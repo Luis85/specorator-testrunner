@@ -201,4 +201,23 @@ describe("CucumberJsonReportParser", () => {
     if (!result.ok) return;
     expect(result.value.scenarioResults[0]?.status).toBe("passed");
   });
+
+  it("collapses multi-project results so totals count distinct scenario rows", () => {
+    const el = (status: string) => ({
+      name: "S",
+      type: "scenario",
+      id: "f;s;;1",
+      line: 5,
+      steps: [{ keyword: "Given ", result: { status, duration: 1000000 } }],
+    });
+    const report = JSON.stringify([
+      { name: "F", uri: "features/UC-1.feature", elements: [el("passed")] }, // chromium project
+      { name: "F", uri: "features/UC-1.feature", elements: [el("failed")] }, // firefox project
+    ]);
+    const parsed = parser.parse(report, ctx());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.scenarioResults).toHaveLength(1);
+    expect(parsed.value.result).toMatchObject({ failed: 1, passed: 0, total: 1 });
+  });
 });
