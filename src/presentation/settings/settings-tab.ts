@@ -676,8 +676,12 @@ export class TestHubSettingTab extends PluginSettingTab {
       desc: "Select which Playwright browsers are used for test runs. At least one must be enabled.",
       render: (setting) => {
         for (const browser of BROWSER_NAMES) {
+          const label =
+            browser === "webkit" ? "WebKit" : browser.charAt(0).toUpperCase() + browser.slice(1);
+          // A VISIBLE name precedes each toggle: three adjacent switches with only
+          // an aria-label left sighted users guessing which controls which browser.
+          setting.controlEl.createSpan({ cls: "e2e-test-hub-browser-toggle-label", text: label });
           setting.addToggle((toggle) => {
-            const label = browser.charAt(0).toUpperCase() + browser.slice(1);
             // Reflect the current selection from persisted settings.
             const currentBrowsers = this.host.getSettings().runner.browsers;
             const isEnabled = currentBrowsers.includes(browser);
