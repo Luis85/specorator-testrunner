@@ -1,4 +1,5 @@
 import { parseFeature } from "../content/gherkin";
+import { readFeatureFile } from "./feature-loading";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SpecificationService } from "./specification-service";
 import type {
@@ -12,7 +13,6 @@ import {
   type TagExpression,
 } from "../../domain/policies/tag-expression";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
-import { appError } from "../../shared/errors/errors";
 import { err, ok, type Result } from "../../shared/result/result";
 
 /**
@@ -172,6 +172,26 @@ export class DefaultFeatureInsightService implements FeatureInsightService {
   }
 
   async scenarioCounter(): Promise<Result<ScenarioCounter>> {
+    const features = await this.loadValidFeatures();
+    if (!features.ok) return err(features.error);
+
+    return ok((tagExpression: string): Result<number> => {
+      const parsed = parseTagExpression(tagExpression);
+      if (!parsed.ok) return err(parsed.error);
+      let total = 0;
+      for (const feature of features.value) {
+        total += countMatchingScenariosInFeature(parsed.value, feature);
+      }
+      return ok(total);
+    });
+  }
+
+  /**
+   * Loads + parses every readable, valid Feature file once (best-effort: an
+   * unreadable or unparseable file is skipped, never an error). Shared by the
+   * corpus-wide queries below.
+   */
+  private async loadValidFeatures(): Promise<Result<FeatureSpecification[]>> {
     const listed = await this.specifications.listFeatures();
     if (!listed.ok) return err(listed.error);
 
@@ -183,38 +203,21 @@ export class DefaultFeatureInsightService implements FeatureInsightService {
       if (feature === null) continue; // not valid Gherkin — skip
       features.push(feature);
     }
-
-    return ok((tagExpression: string): Result<number> => {
-      const parsed = parseTagExpression(tagExpression);
-      if (!parsed.ok) return err(parsed.error);
-      let total = 0;
-      for (const feature of features) {
-        total += countMatchingScenariosInFeature(parsed.value, feature);
-      }
-      return ok(total);
-    });
+    return ok(features);
   }
 
   async healthFor(featurePath: VaultPath): Promise<Result<FeatureHealth>> {
-    const read = await this.fs.readFile(featurePath);
-    if (!read.ok) return err(read.error);
-    const feature = parseFeature(read.value, featurePath);
-    if (feature === null) {
-      return err(appError("VALIDATION_FAILED", `"${featurePath}" is not a valid Feature.`));
-    }
-    return ok(projectFeatureHealth(feature));
+    const feature = await readFeatureFile(this.fs, featurePath);
+    if (!feature.ok) return err(feature.error);
+    return ok(projectFeatureHealth(feature.value));
   }
 
   async listKnownTags(): Promise<Result<string[]>> {
-    const listed = await this.specifications.listFeatures();
-    if (!listed.ok) return err(listed.error);
+    const features = await this.loadValidFeatures();
+    if (!features.ok) return err(features.error);
 
     const tags = new Set<string>(["@smoke", "@wip"]);
-    for (const entry of listed.value) {
-      const read = await this.fs.readFile(entry.path);
-      if (!read.ok) continue; // best-effort: skip unreadable files
-      const feature = parseFeature(read.value, entry.path);
-      if (feature === null) continue; // not valid Gherkin — skip
+    for (const feature of features.value) {
       collectFeatureTags(feature, tags);
     }
     return ok([...tags].sort());
