@@ -148,6 +148,31 @@ const captureFeaturePath = (payload: unknown): string | undefined => {
   return typeof value === "string" ? value : undefined;
 };
 
+/** Captures a payload's runId (the correlation key of the run sequences). */
+const captureRunId = (payload: unknown): string | undefined => {
+  const value = record(payload)?.runId;
+  return typeof value === "string" ? value : undefined;
+};
+
+/** Captures a payload's suiteId (the run-own-test sequence's first key). */
+const captureSuiteId = (payload: unknown): string | undefined => {
+  const value = record(payload)?.suiteId;
+  return typeof value === "string" ? value : undefined;
+};
+
+/**
+ * Final rule of the run-correlated sequences: a PASSED terminal whose runId is
+ * the one the sequence captured — never an arbitrary green run.
+ */
+const isCapturedRunPassed = (
+  payload: unknown,
+  _ctx: TourEventContext,
+  captured?: string,
+): boolean => {
+  const p = record(payload);
+  return p?.status === "passed" && captured !== undefined && p.runId === captured;
+};
+
 /**
  * Anchor rule of the feature-scoped sequences (steps 5 and 6): the @tour
  * Feature's validation, capturing its path so later detection/generation
@@ -254,17 +279,11 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
         {
           type: "testrun.started",
           matches: (payload) => typeof record(payload)?.runId === "string",
-          capture: (payload) => {
-            const value = record(payload)?.runId;
-            return typeof value === "string" ? value : undefined;
-          },
+          capture: captureRunId,
         },
         {
           type: "testrun.completed",
-          matches: (payload, _ctx, captured) => {
-            const p = record(payload);
-            return p?.status === "passed" && captured !== undefined && p.runId === captured;
-          },
+          matches: isCapturedRunPassed,
         },
       ],
       // A red/errored/cancelled demo attempt re-arms the whole sequence so the
@@ -458,10 +477,7 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
         {
           type: "suite.created",
           matches: isTourSuiteCreation,
-          capture: (payload) => {
-            const value = record(payload)?.suiteId;
-            return typeof value === "string" ? value : undefined;
-          },
+          capture: captureSuiteId,
         },
         {
           type: "suite.executed",
@@ -477,19 +493,13 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
               p.suiteId === captured
             );
           },
-          capture: (payload) => {
-            const value = record(payload)?.runId;
-            return typeof value === "string" ? value : undefined;
-          },
+          capture: captureRunId,
         },
         {
           type: "testrun.completed",
           // No captured-undefined wildcard: the previous rule guarantees the
           // capture, so a missing id must stall the sequence, never widen it.
-          matches: (payload, _ctx, captured) => {
-            const p = record(payload);
-            return p?.status === "passed" && captured !== undefined && p.runId === captured;
-          },
+          matches: isCapturedRunPassed,
         },
       ],
       // A failed attempt rolls back to AFTER suite.created (which cannot
