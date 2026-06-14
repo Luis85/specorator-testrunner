@@ -1,7 +1,7 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner, RunnerCommandResult } from "../ports/child-process-runner";
 import type { TemplateWriter } from "../ports/template-writer";
-import { resolveRunnerCwd } from "./runner-paths";
+import { assertSafeAndResolveCwd } from "./runner-paths";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
 import type { TestHubSettings } from "../../domain/settings/settings";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
@@ -96,10 +96,12 @@ export class DefaultRunnerInstallationService implements RunnerInstallationServi
     // separated string; split it into a literal argv spawned without a shell
     // (the PR #7 decision to rework the runner to argv arrays).
     const args = command.trim().split(/\s+/);
-    const safe = this.commandSafety.assertSafe(args);
-    if (!safe.ok) return err(safe.error);
-
-    const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
+    const cwd = await assertSafeAndResolveCwd(
+      this.commandSafety,
+      this.absoluteFs,
+      args,
+      settings.paths.testRunnerPath,
+    );
     if (!cwd.ok) return err(cwd.error);
 
     const result = await this.process.run({ args, cwd: cwd.value });

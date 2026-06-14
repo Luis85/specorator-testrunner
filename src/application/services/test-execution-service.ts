@@ -1,4 +1,4 @@
-import { resolveRunnerCwd } from "./runner-paths";
+import { assertSafeAndResolveCwd } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { SuiteService } from "./suite-service";
 import type { UseCaseService } from "./use-case-service";
@@ -377,10 +377,12 @@ export class DefaultTestExecutionService implements TestExecutionService {
       // validate the argv (allowed program, no control chars) before spawning.
       // The args are literal under shell: false, so tags/paths with $, & or
       // spaces no longer need quoting and are no longer false-rejected (PR #7).
-      const safe = this.commandSafety.assertSafe(argv);
-      if (!safe.ok) return err(safe.error);
-
-      const cwd = await resolveRunnerCwd(this.absoluteFs, settings.paths.testRunnerPath);
+      const cwd = await assertSafeAndResolveCwd(
+        this.commandSafety,
+        this.absoluteFs,
+        argv,
+        settings.paths.testRunnerPath,
+      );
       if (!cwd.ok) return err(cwd.error);
       // Delete any prior report so a run that fails BEFORE producing one (bad
       // config, missing deps, glob miss) can't have a previous run's stale
