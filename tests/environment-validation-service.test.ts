@@ -175,6 +175,16 @@ describe("DefaultEnvironmentValidationService", () => {
     expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(true);
   });
 
+  it("flags a RUNNER_MANIFEST_OUTDATED advisory when the runner is stamped at version 2 (previous version)", async () => {
+    const { service, absoluteFs } = build();
+    markHealthyRunnerWithoutManifest(absoluteFs);
+    absoluteFs.seed("/vault/.testrunner/testrunner-manifest.json", '{"manifestVersion": 2}');
+
+    const result = await service.validateEnvironment();
+
+    expect(result.issues.some((i) => i.code === "RUNNER_MANIFEST_OUTDATED")).toBe(true);
+  });
+
   it("flags a RUNNER_MANIFEST_OUTDATED advisory when the manifest is newer", async () => {
     const { service, absoluteFs } = build();
     markHealthyRunnerWithoutManifest(absoluteFs);

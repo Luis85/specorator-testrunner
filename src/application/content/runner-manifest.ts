@@ -51,7 +51,7 @@ export const REQUIRED_RUNNER_DEPENDENCIES = [
  * older plugin (the Phase 3 playwright-bdd migration keys on this). Bumped
  * whenever the generated runtime shape changes incompatibly.
  */
-export const TESTRUNNER_MANIFEST_VERSION = 2;
+export const TESTRUNNER_MANIFEST_VERSION = 3;
 
 /** The generated manifest file (vault-relative to the runner root). */
 export const TESTRUNNER_MANIFEST_FILE = "testrunner-manifest.json";

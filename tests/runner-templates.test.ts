@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   REQUIRED_RUNNER_FILES,
+  TESTRUNNER_MANIFEST_VERSION,
   VALIDATED_RUNNER_FILES,
 } from "../src/application/content/runner-manifest";
 import { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
@@ -207,11 +208,15 @@ describe("buildRunnerTemplates", () => {
     );
   });
 
+  it("stamps manifest version 3", () => {
+    expect(TESTRUNNER_MANIFEST_VERSION).toBe(3);
+  });
+
   it("generates testrunner-manifest.json carrying the current manifest version", () => {
     const files = buildRunnerTemplates(DEFAULT_SETTINGS);
     const manifest = files.find((f) => f.path === "testrunner-manifest.json");
     expect(manifest).toBeDefined();
-    expect(JSON.parse(manifest?.content ?? "{}")).toEqual({ manifestVersion: 2 });
+    expect(JSON.parse(manifest?.content ?? "{}")).toEqual({ manifestVersion: 3 });
   });
 
   it("ExamplePage uses Playwright Page import, not Cucumber World", () => {
