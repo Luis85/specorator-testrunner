@@ -140,6 +140,19 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // File-length budget: keep modules small enough to hold in one's head.
+    // `warn`, not `error`, on purpose — several files currently exceed 350 and
+    // `npm run lint` doesn't pass `--max-warnings`, so this surfaces them as a
+    // ratchet to split down over time without breaking CI (CONTRIBUTING.md gate).
+    // Blank lines and comments are skipped so the budget counts actual code
+    // (LOC): this codebase keeps a deliberately high explanatory-comment density
+    // (AGENTS.md) that shouldn't eat into the limit.
+    files: ["**/*.ts"],
+    rules: {
+      "max-lines": ["warn", { max: 350, skipBlankLines: true, skipComments: true }],
+    },
+  },
   // ── Layer-boundary enforcement (docs/architecture/Building Block View.md §10) ──
   // The hexagonal layering is enforced with per-layer `no-restricted-imports`
   // blocks (specifier-string globs match relative imports like
