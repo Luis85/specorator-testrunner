@@ -155,7 +155,7 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 ### 5.11 `TestExecutionService`
 
 - **Purpose:** Orchestrate test execution.
-- **Responsibilities:** Resolve scope, build runner command, spawn child process, stream output, detect completion. Serial execution in V1 (AD-6). Exposes `lastRun()` (the just-finished run) so the `PostRunCoordinator` can import it without reconstructing it from an event payload.
+- **Responsibilities:** Resolve scope, build runner command, spawn child process, stream output, detect completion. Playwright runs scenarios in parallel (ADR-0021 lifted AD-6); ADR-0018 still bounds the vault to one active run. Exposes `lastRun()` (the just-finished run) so the `PostRunCoordinator` can import it without reconstructing it from an event payload.
 - **Publishes:** `testrun.requested`, `testrun.started`, `testrun.output.received`, `testrun.completed`, `testrun.failed`, `testrun.cancelled`. (Per EN-2: exactly one terminal event per run.)
 - **Depends on:** `RunnerCommandBuilder`, `ProcessAdapter`. It does **not** import reports itself — the `PostRunCoordinator` reacts to the terminal event.
 
@@ -517,7 +517,7 @@ Decisions already locked in the [Solution Design](./Solution%20Design.md#25-arch
 | AD-3 | CI workflow files at repo root `.github/workflows/`. |
 | AD-4 | Suites are tag-driven (`TagExpression`). |
 | AD-5 | Chromium-only browser matrix in V1. |
-| AD-6 | Serial test execution in V1. |
+| ~~AD-6~~ | ~~Serial test execution in V1.~~ **Lifted by ADR-0021 (playwright-bdd):** Playwright parallel execution; ADR-0018 still bounds one active run. |
 | ~~AD-7~~ | ~~TypeScript via `tsx` loader from `cucumber.mjs`.~~ **Superseded by ADR-0021 (playwright-bdd):** TypeScript runs natively under the Playwright Test runner — no `tsx` loader or `cucumber.mjs`. |
 | AD-8 | Demo SUT = local static HTML served via `file://`; no fixture HTTP server. |
 

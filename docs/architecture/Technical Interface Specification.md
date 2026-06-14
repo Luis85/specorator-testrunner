@@ -1299,7 +1299,7 @@ export default defineConfig({
 });
 ```
 
-`bddgen` reads this config to generate Playwright tests from the `.feature` files; `playwright test` then runs them. The run report stays **cucumber-JSON** (`cucumberReporter("json")` → `reports/cucumber-report.json`), so the report format — and the `CucumberJsonReportParser` that reads it (§9.8) — is unchanged from V1; `skipAttachments: false` preserves failure-screenshot embeddings (ADR-0016). There is no Cucumber `World` or `hooks.ts`: per-scenario browser lifecycle is the Playwright `{ page }` fixture playwright-bdd injects into each step (§11.7).
+`bddgen` reads this config to generate Playwright tests from the `.feature` files; `playwright test` then runs them. The run report stays **cucumber-JSON** (`cucumberReporter("json")` → `reports/cucumber-report.json`), so the report format — and the `CucumberJsonReportParser` that reads it (§9.8) — is unchanged from V1; `skipAttachments: false` preserves failure-screenshot embeddings (ADR-0016). There is no Cucumber `World` or `hooks.ts`: per-scenario browser lifecycle is the Playwright `{ page }` fixture playwright-bdd injects into each step (§11.7). Execution is parallel (Playwright's default workers) — ADR-0021 lifted AD-6's V1 `parallel: 0`; ADR-0018 still bounds the vault to one active run.
 
 ### 11.4 `src/support/paths.ts`
 

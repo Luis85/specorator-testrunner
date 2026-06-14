@@ -289,7 +289,7 @@ Services orchestrate use cases. Each service is independently testable and depen
 | `MaintenanceService` | Repairs damaged installations (recreates missing files/packages) and resets the Test Hub (removes generated assets, restores defaults). | Owns repair and reset flows. Covers UC-003 and UC-024. |
 | `StepDefinitionService` | Generates TypeScript step-definition stubs for undefined Gherkin steps. **Implemented (P2-5).** | Writes only to `.testrunner/src/steps`. Covers UC-010. |
 | `PostRunCoordinator` | In-process post-run flow (import → evidence → dashboard refresh) reacting to the EN-2 terminal run event — replaces the never-built `ReportFileWatcher`/`report.detected` choreography (P2-1). | Application-layer only; serializes evidence writes. |
-| `TestExecutionService` | Spawns playwright-bdd runs (Use Case, Feature, Suite, All) serially in V1, streams stdout/stderr, emits run events. | Read-only against vault; writes only under `.testrunner` — `reports/` (cucumber-JSON) and Playwright `test-results/` (traces/screenshots). |
+| `TestExecutionService` | Spawns playwright-bdd runs (Use Case, Feature, Suite, All); streams stdout/stderr, emits run events. | Read-only against vault; writes only under `.testrunner` — `reports/` (cucumber-JSON) and Playwright `test-results/` (traces/screenshots). |
 | `ReportImportService` | Parses the cucumber-JSON report from `.testrunner/reports` into domain `TestRun` + `Evidence` records. | One-way: report → domain. |
 | `EvidenceGenerationService` | Renders Markdown evidence notes under `Test Evidence`. | Writes vault notes only. |
 | `PipelineGenerationService` | Generates CI workflow files (GitHub Actions in V1 at `.github/workflows/`, Azure DevOps future). | Writes to repo root, not the vault. |
@@ -416,7 +416,7 @@ The runner must execute independently of Obsidian — both on the user's machine
 | --- | --- | --- |
 | Package manager | `npm` | Single lockfile shape, fewer install/validation paths. User-selectable PM deferred to V2 (PRD FR-014). |
 | Browser matrix | Chromium-only | ~150 MB install; meets the "demo test in < 5 min" goal. Firefox + WebKit deferred to V3. |
-| Concurrency | Serial scenario execution | Predictable evidence ordering; simple `TestRunAggregate` state machine; cleaner live-monitor UI. Parallel workers deferred to post-MVP. |
+| Concurrency | Parallel (Playwright workers) | ADR-0021 lifted AD-6's V1 `parallel: 0`; V2 runs Playwright's default worker parallelism. ADR-0018 still bounds the vault to one active run. |
 | TypeScript execution | Native under the Playwright Test runner (playwright-bdd) | No build step; matches the Zero Configuration principle. ADR-0021 superseded the V1 `tsx`/`cucumber.mjs` loader. |
 
 ---
@@ -569,7 +569,7 @@ All open questions from the initial draft have been resolved. The decisions belo
 | AD-3 | CI workflow files written to **repo root `.github/workflows/`**. | Standard convention; the vault is expected to live inside a git repo. |
 | AD-4 | Suites are **tag-driven** via a tag expression on `TestSuite.tagExpression` (playwright-bdd). | Standard Gherkin tag expressions, one-edit suite membership, no list maintenance. |
 | AD-5 | Browser matrix: **Chromium-only** in V1. | ~150 MB install; meets the "demo test in < 5 min" goal. Full matrix in V3. |
-| AD-6 | Test execution is **serial** in V1. | Predictable evidence ordering, simpler `TestRunAggregate`, cleaner live monitor. Parallel deferred to post-MVP. |
+| ~~AD-6~~ | ~~Test execution is **serial** in V1.~~ **Lifted by ADR-0021 (playwright-bdd):** V2 uses Playwright's parallel execution (workers/sharding); ADR-0018 still bounds the vault to one active run. | (V1 rationale: predictable evidence ordering, simpler `TestRunAggregate`, cleaner live monitor.) |
 | ~~AD-7~~ | ~~TypeScript executed via the **`tsx` loader** from `cucumber.mjs`.~~ **Superseded by ADR-0021 (playwright-bdd):** TypeScript runs natively under the Playwright Test runner — no `tsx` loader or `cucumber.mjs`. | No build step; matches the Zero Configuration principle. |
 | AD-8 | Demo SUT = **local static HTML** served via `file://` (`.testrunner/src/fixtures/example.html`). | Zero internet dependency, deterministic in CI, smallest runner footprint. Local HTTP fixture server deferred. |
 | AD-9 | V1 stores SUT credentials in **plaintext** in Obsidian plugin data (`<vault>/.obsidian/plugins/e2e-test-hub/data.json`). | OS keychain adds a native dependency and complicates the headless CI story; env-var-only forces re-entry across sessions. Plugin data is the lowest-friction default. `SettingsTab` surfaces a prominent warning. CI never reads plugin data — it reads `secrets.E2E_*` per ADR-0014. Revisit in V2 (keychain / encrypted at rest). |
