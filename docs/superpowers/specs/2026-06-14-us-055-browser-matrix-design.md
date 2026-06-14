@@ -176,7 +176,7 @@ collapseByScenario(results: ScenarioResult[]): ScenarioResult[]
 - Group key: `featureUri` + `scenarioId` (fallback `line`, then `name` only when
   neither is present — e.g. single-scenario features). Outline rows stay distinct.
 - Reduce status to the worst across the group: `failed` ≻ `skipped` ≻ `passed`.
-- Keep the longest duration and the first error message in the group.
+- Keep the longest duration and the worst result's error message in the group.
 
 Apply it after parse, before evidence generation and count derivation, so
 `TestRunResult` totals are computed from collapsed results → `total` = distinct

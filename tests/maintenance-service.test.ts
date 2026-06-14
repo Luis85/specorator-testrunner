@@ -235,11 +235,11 @@ describe("DefaultMaintenanceService", () => {
     expect(await absoluteFs.existsAbsolute("/vault/.testrunner/cucumber.mjs")).toBe(true);
   });
 
-  it("does not clean-cut a healthy V2 runner: deletes nothing and reports no migration", async () => {
+  it("does not clean-cut a healthy current-version runner: deletes nothing and reports no migration", async () => {
     const { service, absoluteFs, templates } = build();
     seedHealthyRunner(absoluteFs);
-    // The CURRENT (v2) manifest is already seeded by seedHealthyRunner.
-    // Seed files that share the V1 names to prove they are NOT deleted when V2.
+    // The CURRENT manifest is already seeded by seedHealthyRunner.
+    // Seed files that share the V1 names to prove they are NOT deleted when at the current version.
     absoluteFs.seed("/vault/.testrunner/cucumber.mjs", "should survive a healthy V2 repair");
 
     const result = await service.repair();

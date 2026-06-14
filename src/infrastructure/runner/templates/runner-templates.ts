@@ -102,6 +102,7 @@ const testDir = defineBddConfig({
   tags: process.env.BDD_TAGS || undefined,
 });
 
+// keep in sync with BROWSER_NAMES in settings.ts (generated standalone file can't import it)
 const VALID_BROWSERS = new Set(["chromium", "firefox", "webkit"]);
 const requestedBrowsers = (process.env.TESTRUNNER_BROWSERS?.split(",").map((b) => b.trim()) ?? [])
   .filter((b) => VALID_BROWSERS.has(b));

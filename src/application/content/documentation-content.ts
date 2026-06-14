@@ -242,7 +242,7 @@ The runner needs **Node.js ${settings.ci.nodeVersion}+**. Install it from
 The runner installs dependencies with \`${runner.installCommand}\` and the
 configured browsers with \`${runner.browserInstallCommand}\` (Chromium by default;
 add Firefox/WebKit in Settings → Runner). The first install downloads the
-browser binaries (~150 MB each) and can take a few minutes. Run **Repair
+browser binaries (~150 MB+ per browser) and can take a few minutes. Run **Repair
 Installation** to re-sync.
 
 ## The demo test cannot find the fixture

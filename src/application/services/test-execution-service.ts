@@ -305,8 +305,8 @@ export class DefaultTestExecutionService implements TestExecutionService {
     return this.active?.completion ?? Promise.resolve();
   }
 
-  // Pre-existing complexity surfaced by this file entering the audit scope
-  // (TD-006 gate caveat); refactor candidate alongside Phase 1 debt work.
+  // Pre-existing runner-orchestration complexity to be decomposed during the
+  // EPIC-013 runner rewrite (tracked as TD-010).
   // fallow-ignore-next-line complexity
   async execute(request: ExecuteTestRequest): Promise<Result<TestRun>> {
     // Maintenance (reset/repair) and runs are mutually exclusive (security L1).

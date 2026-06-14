@@ -44,13 +44,13 @@ export interface RepairResult {
   /**
    * True when repair clean-cut a V1 (cucumber-js era) `.testrunner` to the V2
    * playwright-bdd environment — detected via the on-disk manifest being older
-   * than the current v2 (RUNNER_MANIFEST_OUTDATED). False for a healthy V2 repair.
+   * than the current version (RUNNER_MANIFEST_OUTDATED). False for a healthy V2 repair.
    */
   migratedFromV1: boolean;
   /**
    * The V1-incompatible managed/demo files deleted during the clean-cut (empty
-   * on a healthy V2 repair). The plugin-owned demo entries are recreated at V2
-   * by the subsequent createRunner pass.
+   * on a healthy V2 repair). The plugin-owned demo entries are recreated at the
+   * current version by the subsequent createRunner pass.
    */
   removedFiles: VaultPath[];
 }
@@ -165,7 +165,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
       const before = await this.validation.validateEnvironment();
 
       // A manifest-version mismatch means the on-disk runtime predates the
-      // current v2 shape. We use it for BOTH the V1→V2 clean-cut migration
+      // current version. We use it for BOTH the V1→V2 clean-cut migration
       // (below, before createRunner) AND the dependency reinstall (further down).
       // validateEnvironment() already read the manifest before createRunner
       // overwrites it, so detect the mismatch from `before.issues` rather than
@@ -178,7 +178,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
       //    cucumber-era files that import the now-removed `@cucumber/cucumber`
       //    BEFORE re-syncing. The V1-only managed files (cucumber.mjs, world,
       //    hooks) are gone for good; the plugin-owned demo (example.steps/
-      //    ExamplePage) is recreated at V2 by the createRunner pass below (its
+      //    ExamplePage) is recreated at the current version by the createRunner pass below (its
       //    templates are overwrite:false → CREATE when absent). Guarded so a
       //    healthy V2 repair (no mismatch) deletes nothing.
       const migration = manifestMismatch
@@ -412,7 +412,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
    * `removed` lists the paths that EXISTED and were deleted, so the change report
    * shows only real deletions — not idempotent no-ops for files a given V1 runner
    * never had. MUST run BEFORE createRunner so the deleted demo is recreated at
-   * V2. A delete that actually FAILS (locked/read-only stale file) returns `err`
+   * the current version. A delete that actually FAILS (locked/read-only stale file) returns `err`
    * and fails the repair: the demo files are recreated `overwrite:false`, so a
    * surviving V1 `@cucumber`/World file would leave the runner un-loadable while
    * Repair falsely reported success.
