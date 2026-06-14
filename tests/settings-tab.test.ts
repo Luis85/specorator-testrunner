@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestHubSettingTab } from "../src/presentation/settings/settings-tab";
-import type { SettingsHost } from "../src/presentation/settings/settings-tab";
+import type { SettingsHost, SettingsTabServices } from "../src/presentation/settings/settings-tab";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
-import { ok } from "../src/shared/result/result";
+import { ok, err } from "../src/shared/result/result";
 import { PluginSettingTab } from "./__stubs__/obsidian";
 
 /**
@@ -226,5 +226,124 @@ describe("TestHubSettingTab browser toggles (US-055)", () => {
     const { tab, updateSettingsMock } = makeTabWithHost(["chromium"]);
     await persistBrowser(tab, "chromium", true);
     expect(updateSettingsMock).not.toHaveBeenCalled();
+  });
+});
+
+// ── Install browsers button (US-055) ──────────────────────────────────────
+
+/**
+ * Minimal fake ButtonComponent covering the subset settings-tab uses:
+ * setDisabled (called before and after the async action).
+ */
+interface FakeButton {
+  setDisabled: ReturnType<typeof vi.fn>;
+}
+const makeFakeButton = (): FakeButton => ({ setDisabled: vi.fn() });
+
+/**
+ * Minimal fake HTMLElement covering the subset renderChecklist uses:
+ * empty() and createDiv(). createDiv returns a fresh stub so nested
+ * elements work; dataset is present so status assignment doesn't throw.
+ */
+interface FakeResultEl {
+  empty: ReturnType<typeof vi.fn>;
+  createDiv: ReturnType<typeof vi.fn>;
+  rows: { text: string; status: string }[];
+}
+const makeFakeResultEl = (): FakeResultEl => {
+  const rows: { text: string; status: string }[] = [];
+  const el: FakeResultEl = {
+    empty: vi.fn(() => {
+      rows.length = 0;
+    }),
+    createDiv: vi.fn(({ text, cls: _cls }: { text: string; cls: string }) => {
+      const row = { text, status: "" };
+      rows.push(row);
+      return {
+        dataset: new Proxy(row, {
+          set(t, k, v) {
+            if (k === "status") t.status = v as string;
+            return true;
+          },
+        }),
+      };
+    }),
+    rows,
+  };
+  return el;
+};
+
+/**
+ * Builds a tab wired to a controllable host AND controllable services so
+ * runInstallBrowsers() can be exercised through the private seam.
+ */
+const makeTabWithInstallation = (
+  installBrowsersMock: ReturnType<typeof vi.fn>,
+): TestHubSettingTab => {
+  const fakePlugin = { app: {} } as unknown as ConstructorParameters<typeof TestHubSettingTab>[0];
+  const host: SettingsHost = {
+    getSettings: vi.fn(() => ({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, browsers: ["chromium", "firefox"] as never },
+    })),
+    updateSettings: vi.fn(async () => ok(undefined as never)),
+    resetSettings: vi.fn(async () => {}),
+  };
+  const services = {
+    installation: { installBrowsers: installBrowsersMock },
+  } as unknown as SettingsTabServices;
+  return new TestHubSettingTab(fakePlugin, host, services);
+};
+
+/** Reach the private runInstallBrowsers method via a type-cast escape hatch. */
+const runInstallBrowsers = (
+  tab: TestHubSettingTab,
+  button: unknown,
+  resultEl: unknown,
+): Promise<void> =>
+  (
+    tab as unknown as {
+      runInstallBrowsers(button: unknown, resultEl: unknown): Promise<void>;
+    }
+  ).runInstallBrowsers(button, resultEl);
+
+describe("TestHubSettingTab install-browsers button (US-055)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders a success checklist row when installBrowsers resolves ok", async () => {
+    const installBrowsersMock = vi.fn(async () => ok({} as never));
+    const tab = makeTabWithInstallation(installBrowsersMock);
+    const button = makeFakeButton();
+    const resultEl = makeFakeResultEl();
+
+    await runInstallBrowsers(tab, button, resultEl);
+
+    expect(installBrowsersMock).toHaveBeenCalledOnce();
+    // The ok row must mention the browser names from settings.
+    const okRow = resultEl.rows.find((r) => r.status === "ok");
+    expect(okRow).toBeDefined();
+    expect(okRow?.text).toContain("chromium");
+    expect(okRow?.text).toContain("firefox");
+    // Button must be re-enabled in the finally block.
+    expect(button.setDisabled).toHaveBeenLastCalledWith(false);
+  });
+
+  it("renders an error checklist row when installBrowsers resolves err", async () => {
+    const installBrowsersMock = vi.fn(async () =>
+      err({ code: "SPAWN_FAILED" as never, message: "playwright install failed" }),
+    );
+    const tab = makeTabWithInstallation(installBrowsersMock);
+    const button = makeFakeButton();
+    const resultEl = makeFakeResultEl();
+
+    await runInstallBrowsers(tab, button, resultEl);
+
+    expect(installBrowsersMock).toHaveBeenCalledOnce();
+    const errRow = resultEl.rows.find((r) => r.status === "error");
+    expect(errRow).toBeDefined();
+    expect(errRow?.text).toContain("playwright install failed");
+    expect(button.setDisabled).toHaveBeenLastCalledWith(false);
   });
 });

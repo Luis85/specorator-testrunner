@@ -782,6 +782,55 @@ describe("DefaultTestExecutionService", () => {
     expect(childProcess.calls[0].env?.TESTRUNNER_BROWSERS).toBe("chromium,firefox");
   });
 
+  it("includes TESTRUNNER_BROWSERS even when sut.active is a dangling (non-existent) env key", async () => {
+    // Seed the data store with a dangling sut.active so load() returns settings
+    // where the active name doesn't exist in environments. validate() would flag
+    // this, but a user-authored dangle survives load() unrepaired intentionally.
+    // runEnv() must still emit TESTRUNNER_BROWSERS (a global runner setting
+    // independent of the SUT environment) so the generated playwright config
+    // uses the correct browser list rather than falling back to chromium.
+    const { bus, events, types } = recordingEventBus();
+    const store = new FakeDataStore({
+      sut: {
+        active: "nonexistent-env",
+        environments: { demo: { baseUrl: "file://./demo.html" } },
+      },
+      runner: { browsers: ["firefox", "webkit"] },
+    });
+    const settings = new DefaultSettingsService(store, new DefaultPathSafetyPolicy(), bus);
+    const fs = new FakeVaultFileSystem();
+    const suiteService = new DefaultSuiteService(settings, fs, bus);
+    const useCaseService = new DefaultUseCaseService(
+      settings,
+      fs,
+      bus,
+      silentLogger,
+      new FakePrdLookup(),
+    );
+    const childProcess = new FakeChildProcessRunner();
+    const absoluteFs = new FakeAbsoluteFileSystem();
+    const service = new DefaultTestExecutionService(
+      settings,
+      suiteService,
+      useCaseService,
+      childProcess,
+      absoluteFs,
+      new DefaultCommandSafetyPolicy(),
+      bus,
+      silentLogger,
+      () => FIXED_NOW,
+    );
+
+    await service.execute({ scope: "demo", target: "demo" });
+
+    // Despite the dangling sut.active, TESTRUNNER_BROWSERS must be present.
+    expect(childProcess.calls[0].env?.TESTRUNNER_BROWSERS).toBe("firefox,webkit");
+    // BASE_URL must NOT be present (no active env resolved).
+    expect(childProcess.calls[0].env).not.toHaveProperty("BASE_URL");
+    void events;
+    void types;
+  });
+
   it("publishes the terminal event only after every streamed output event has been delivered", async () => {
     const { service, childProcess, bus } = build();
     // Emit multiple output lines so there are several output events to drain.

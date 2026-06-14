@@ -619,15 +619,23 @@ export class DefaultTestExecutionService implements TestExecutionService {
    * Scope env (e.g. suite `BDD_TAGS`) is layered on top by `execute()`.
    */
   private runEnv(settings: TestHubSettings): Record<string, string> {
+    // TESTRUNNER_BROWSERS is a global runner setting, independent of the active
+    // SUT environment. It must always be present so the generated playwright
+    // config uses the correct browser list — even when the active env name
+    // doesn't resolve (dangling reference; validate() will flag it separately).
+    const browsers = settings.runner.browsers.join(",");
+
     // Object.hasOwn, not a truthy index: an active named "toString"/
     // "constructor" with no such environment defined would otherwise resolve a
     // prototype member (truthy) and build the env from `undefined` fields.
-    if (!Object.hasOwn(settings.sut.environments, settings.sut.active)) return {};
+    if (!Object.hasOwn(settings.sut.environments, settings.sut.active)) {
+      return { TESTRUNNER_BROWSERS: browsers };
+    }
     const active = settings.sut.environments[settings.sut.active];
     return {
       BASE_URL: active.baseUrl,
       ...(active.auth?.env ?? {}),
-      TESTRUNNER_BROWSERS: settings.runner.browsers.join(","),
+      TESTRUNNER_BROWSERS: browsers,
     };
   }
 

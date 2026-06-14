@@ -736,24 +736,22 @@ export class TestHubSettingTab extends PluginSettingTab {
   }
 
   private async runInstallBrowsers(button: ButtonComponent, resultEl: HTMLElement): Promise<void> {
-    button.setDisabled(true);
-    this.renderChecklist(resultEl, [checklistRow("pending", "Installing browsers…")]);
-    try {
-      const settings = this.host.getSettings();
-      const result = await this.services.installation.installBrowsers(settings);
-      if (result.ok) {
-        const names = settings.runner.browsers.join(", ");
-        this.renderChecklist(resultEl, [checklistRow("ok", `Installed: ${names}.`)]);
-      } else {
-        this.renderChecklist(resultEl, [checklistRow("error", result.error.message)]);
-      }
-    } catch (error) {
-      this.renderChecklist(resultEl, [
-        checklistRow("error", `Browser install failed: ${errorText(error)}`),
-      ]);
-    } finally {
-      button.setDisabled(false);
-    }
+    await this.runButtonAction(
+      button,
+      resultEl,
+      "Installing browsers…",
+      "Browser install failed: ",
+      async () => {
+        const settings = this.host.getSettings();
+        const result = await this.services.installation.installBrowsers(settings);
+        if (result.ok) {
+          const names = settings.runner.browsers.join(", ");
+          this.renderChecklist(resultEl, [checklistRow("ok", `Installed: ${names}.`)]);
+        } else {
+          this.renderChecklist(resultEl, [checklistRow("error", result.error.message)]);
+        }
+      },
+    );
   }
 
   // ── Maintenance ───────────────────────────────────────────────────────────
@@ -861,36 +859,26 @@ export class TestHubSettingTab extends PluginSettingTab {
     button: ButtonComponent,
     resultEl: HTMLElement,
   ): Promise<void> {
-    button.setDisabled(true);
-    this.renderChecklist(resultEl, [checklistRow("pending", "Validating…")]);
-    try {
+    await this.runButtonAction(button, resultEl, "Validating…", "Validation failed: ", async () => {
       const result = await this.services.validation.validateEnvironment();
       this.renderChecklist(resultEl, runnerValidationRows(result));
-    } catch (error) {
-      this.renderChecklist(resultEl, [
-        checklistRow("error", `Validation failed: ${errorText(error)}`),
-      ]);
-    } finally {
-      button.setDisabled(false);
-    }
+    });
   }
 
   private async runRepair(button: ButtonComponent, resultEl: HTMLElement): Promise<void> {
-    button.setDisabled(true);
-    this.renderChecklist(resultEl, [
-      checklistRow("pending", "Repairing… this can take a while when dependencies reinstall."),
-    ]);
-    try {
-      const result = await this.services.maintenance.repair();
-      this.renderChecklist(
-        resultEl,
-        result.ok ? repairRows(result.value) : [repairFailureRow(result.error)],
-      );
-    } catch (error) {
-      this.renderChecklist(resultEl, [checklistRow("error", `Repair failed: ${errorText(error)}`)]);
-    } finally {
-      button.setDisabled(false);
-    }
+    await this.runButtonAction(
+      button,
+      resultEl,
+      "Repairing… this can take a while when dependencies reinstall.",
+      "Repair failed: ",
+      async () => {
+        const result = await this.services.maintenance.repair();
+        this.renderChecklist(
+          resultEl,
+          result.ok ? repairRows(result.value) : [repairFailureRow(result.error)],
+        );
+      },
+    );
   }
 
   // ── Continuous integration (UC-019/UC-020) ───────────────────────────────
@@ -918,9 +906,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     resultEl: HTMLElement,
     overwriteExisting: boolean,
   ): Promise<void> {
-    button.setDisabled(true);
-    this.renderChecklist(resultEl, [checklistRow("pending", "Generating…")]);
-    try {
+    await this.runButtonAction(button, resultEl, "Generating…", "Generation failed: ", async () => {
       const settings = this.host.getSettings();
       const result = await this.services.pipeline.generate({
         provider: settings.ci.provider,
@@ -946,23 +932,36 @@ export class TestHubSettingTab extends PluginSettingTab {
       } else {
         this.renderChecklist(resultEl, [checklistRow("error", result.error.message)]);
       }
-    } catch (error) {
-      this.renderChecklist(resultEl, [
-        checklistRow("error", `Generation failed: ${errorText(error)}`),
-      ]);
-    } finally {
-      button.setDisabled(false);
-    }
+    });
   }
 
   private async runCiReadiness(button: ButtonComponent, resultEl: HTMLElement): Promise<void> {
-    button.setDisabled(true);
-    this.renderChecklist(resultEl, [checklistRow("pending", "Checking…")]);
-    try {
+    await this.runButtonAction(button, resultEl, "Checking…", "Check failed: ", async () => {
       const result = await this.services.validation.validateCiReadiness(this.host.getSettings());
       this.renderChecklist(resultEl, ciReadinessRows(result));
+    });
+  }
+
+  /**
+   * Shared wrapper for the button-action pattern used by install, validate,
+   * repair, generate, and CI-readiness rows: disable the button, show a pending
+   * checklist, run `fn` (which renders its own result rows into `resultEl`), and
+   * re-enable the button in a `finally` block. Uncaught exceptions in `fn` are
+   * caught here and rendered as an error row prefixed with `catchPrefix`.
+   */
+  private async runButtonAction(
+    button: ButtonComponent,
+    resultEl: HTMLElement,
+    pendingMessage: string,
+    catchPrefix: string,
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    button.setDisabled(true);
+    this.renderChecklist(resultEl, [checklistRow("pending", pendingMessage)]);
+    try {
+      await fn();
     } catch (error) {
-      this.renderChecklist(resultEl, [checklistRow("error", `Check failed: ${errorText(error)}`)]);
+      this.renderChecklist(resultEl, [checklistRow("error", `${catchPrefix}${errorText(error)}`)]);
     } finally {
       button.setDisabled(false);
     }
