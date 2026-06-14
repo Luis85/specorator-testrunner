@@ -1142,6 +1142,13 @@ export interface ReportParser {
   parse(rawContent: string, ctx: ReportParseContext): Result<ParsedReport>;
 }
 
+// Context a parser needs to build vault-relative artifact references.
+export interface ReportParseContext {
+  runId: RunId;
+  runnerPath: VaultPath; // the .testrunner root this run spawned in
+  reportVaultPath: VaultPath; // vault-relative path of the report file
+}
+
 export interface ParsedReport {
   result: TestRunResult;
   scenarioResults: ScenarioResult[];

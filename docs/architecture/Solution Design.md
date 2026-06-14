@@ -289,7 +289,7 @@ Services orchestrate use cases. Each service is independently testable and depen
 | `MaintenanceService` | Repairs damaged installations (recreates missing files/packages) and resets the Test Hub (removes generated assets, restores defaults). | Owns repair and reset flows. Covers UC-003 and UC-024. |
 | `StepDefinitionService` | Generates TypeScript step-definition stubs for undefined Gherkin steps. **Implemented (P2-5).** | Writes only to `.testrunner/src/steps`. Covers UC-010. |
 | `PostRunCoordinator` | In-process post-run flow (import → evidence → dashboard refresh) reacting to the EN-2 terminal run event — replaces the never-built `ReportFileWatcher`/`report.detected` choreography (P2-1). | Application-layer only; serializes evidence writes. |
-| `TestExecutionService` | Spawns playwright-bdd runs (Use Case, Feature, Suite, All) serially in V1, streams stdout/stderr, emits run events. | Read-only against vault; writes only to `.testrunner/reports`. |
+| `TestExecutionService` | Spawns playwright-bdd runs (Use Case, Feature, Suite, All) serially in V1, streams stdout/stderr, emits run events. | Read-only against vault; writes only under `.testrunner` — `reports/` (cucumber-JSON) and Playwright `test-results/` (traces/screenshots). |
 | `ReportImportService` | Parses the cucumber-JSON report from `.testrunner/reports` into domain `TestRun` + `Evidence` records. | One-way: report → domain. |
 | `EvidenceGenerationService` | Renders Markdown evidence notes under `Test Evidence`. | Writes vault notes only. |
 | `PipelineGenerationService` | Generates CI workflow files (GitHub Actions in V1 at `.github/workflows/`, Azure DevOps future). | Writes to repo root, not the vault. |
