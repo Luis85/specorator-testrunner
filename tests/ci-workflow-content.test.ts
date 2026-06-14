@@ -119,4 +119,13 @@ describe("buildGitHubActionsWorkflow", () => {
     });
     expect(yaml).toContain('node-version: "22"');
   });
+
+  it("CI workflow installs the selected browsers and sets TESTRUNNER_BROWSERS", () => {
+    const yaml = buildGitHubActionsWorkflow({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, browsers: ["chromium", "firefox"] },
+    });
+    expect(yaml).toContain("npx playwright install --with-deps chromium firefox");
+    expect(yaml).toContain("TESTRUNNER_BROWSERS: chromium,firefox");
+  });
 });
