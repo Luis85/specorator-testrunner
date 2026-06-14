@@ -18,6 +18,9 @@ commit/PR in the item before closing).
 | Id | Title | Area | Effort |
 | --- | --- | --- | --- |
 | [[TD-007]] | gherkin.ts parser/serializer complexity is suppressed, not solved | gherkin | large |
+| [[TD-009]] | pipeline-generation-service.generate() exceeds complexity thresholds | ci | small |
+| [[TD-010]] | test-execution-service runner complexity — defer to the EPIC-013 rewrite | runner | medium |
+| [[TD-011]] | Post-run evidence orchestration + scattered Use Case frontmatter writes | application/evidence | large |
 
 ## Resolved items
 
