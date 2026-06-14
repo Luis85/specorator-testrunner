@@ -1,4 +1,4 @@
-import { Notice } from "obsidian";
+import { Notice, Setting } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 
@@ -21,6 +21,20 @@ export const submitOnEnter = (input: HTMLInputElement, submit: () => void): void
       submit();
     }
   });
+};
+
+/**
+ * The optional-Description textarea field shared by the create modals. Its
+ * Enter key keeps inserting newlines (unlike the single-line inputs), so it is
+ * deliberately never wired to submit. `onChange` receives the raw value.
+ */
+export const descriptionField = (
+  contentEl: HTMLElement,
+  onChange: (value: string) => void,
+): void => {
+  new Setting(contentEl)
+    .setName("Description")
+    .addTextArea((area) => area.setPlaceholder("Optional summary").onChange(onChange));
 };
 
 /**

@@ -1,7 +1,7 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { UseCaseService } from "../../application/services/use-case-service";
-import { openOrNotice, submitOnEnter } from "./modal-helpers";
+import { descriptionField, openOrNotice, submitOnEnter } from "./modal-helpers";
 
 export interface CreateUseCaseDeps {
   useCaseService: UseCaseService;
@@ -38,11 +38,7 @@ export class CreateUseCaseModal extends Modal {
       // instead of tabbing/clicking into the field first.
       text.inputEl.focus();
     });
-    new Setting(contentEl)
-      .setName("Description")
-      .addTextArea((area) =>
-        area.setPlaceholder("Optional summary").onChange((value) => (this.description = value)),
-      );
+    descriptionField(contentEl, (value) => (this.description = value));
 
     new Setting(contentEl).addButton((button) =>
       button
