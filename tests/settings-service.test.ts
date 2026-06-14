@@ -476,6 +476,18 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
       },
     );
 
+    it("repairs an empty/invalid runner.browsers to ['chromium']", async () => {
+      const { service } = makeService({ runner: { ...DEFAULT_SETTINGS.runner, browsers: [] } });
+      const s = await service.load();
+      expect(s.runner.browsers).toEqual(["chromium"]);
+    });
+
+    it("filters unknown browsers and dedupes runner.browsers, preserving order", async () => {
+      const { service } = makeService({ runner: { ...DEFAULT_SETTINGS.runner, browsers: ["firefox", "ie", "firefox", "webkit"] } });
+      const s = await service.load();
+      expect(s.runner.browsers).toEqual(["firefox", "webkit"]);
+    });
+
     it("loaded (sanitized) settings validate with zero errors — load/validate stay aligned", async () => {
       const { service } = makeService({
         runner: { nodeExecutable: "../escape/node" },

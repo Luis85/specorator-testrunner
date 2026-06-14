@@ -3,8 +3,10 @@ import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { PathSafetyPolicy } from "../../domain/policies/path-safety-policy";
 import {
   authEnvKeyProblem,
+  BROWSER_NAMES,
   DEFAULT_SETTINGS,
   type AutomationSettings,
+  type BrowserName,
   type CiProvider,
   type CiSettings,
   type OnboardingSequenceProgress,
@@ -375,6 +377,16 @@ export class DefaultSettingsService implements SettingsService {
       );
       runner = { ...runner, nodeExecutable: DEFAULT_SETTINGS.runner.nodeExecutable };
     }
+
+    const browsers = repairBrowsers(runner.browsers);
+    if (browsers.repaired) {
+      this.logger.error(
+        `Configured "runner.browsers" was invalid; falling back to a valid set.`,
+        undefined,
+        { value: runner.browsers, fallback: browsers.browsers },
+      );
+    }
+    runner = { ...runner, browsers: browsers.browsers };
 
     // Structural repair FIRST: the value checks below (and Object.entries)
     // assume plain records, but the shallow merge preserves whatever shape
@@ -998,6 +1010,28 @@ const nodeExecutableProblem = (value: string): string | undefined => {
     return "is a relative path; use a bare command name or an absolute path";
   }
   return undefined;
+};
+
+/**
+ * Filters and deduplicates `raw` to only known {@link BrowserName} values.
+ * Returns `{ browsers: ["chromium"], repaired: true }` when the result would be
+ * empty (including when `raw` is not an array). The `repaired` flag is `true`
+ * whenever any value was dropped or the array was empty/invalid.
+ */
+const repairBrowsers = (raw: unknown): { browsers: BrowserName[]; repaired: boolean } => {
+  const valid = new Set<string>(BROWSER_NAMES);
+  const seen = new Set<string>();
+  const cleaned: BrowserName[] = [];
+  if (Array.isArray(raw)) {
+    for (const b of raw) {
+      if (typeof b === "string" && valid.has(b) && !seen.has(b)) {
+        seen.add(b);
+        cleaned.push(b as BrowserName);
+      }
+    }
+  }
+  if (cleaned.length === 0) return { browsers: ["chromium"], repaired: true };
+  return { browsers: cleaned, repaired: cleaned.length !== (Array.isArray(raw) ? raw.length : -1) };
 };
 
 /** Last `/`-separated, non-empty segment of a vault path. */

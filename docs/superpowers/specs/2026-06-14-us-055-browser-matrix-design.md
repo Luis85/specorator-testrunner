@@ -110,6 +110,12 @@ new Vaults.
 - `documentation-content.ts` interpolates `browserInstallCommand`; update those
   two references so the generated docs show the base command plus a note that the
   configured browsers are appended.
+- **Validation pairs with install:** `EnvironmentValidationService.detectBrowsers`
+  currently passes when a `chromium-*` cache entry exists (AD-5 legacy). With the
+  matrix it must verify **every selected browser** is cached (a firefox-only
+  install validates as installed; a chromium-only cache fails when firefox is
+  selected), and the `BROWSER_NOT_INSTALLED` / "Chromium is not installed"
+  wording must name the missing/selected browser(s). See Task 5b.
 
 ### 4. Run wiring — `src/application/services/test-execution-service.ts`
 
