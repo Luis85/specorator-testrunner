@@ -84,13 +84,25 @@ repair to `["chromium"]`. Otherwise filter to valid `BrowserName`s and dedupe
 ### 3. Install flow — `src/application/services/runner-installation-service.ts`
 
 `installBrowsers(settings)` today runs the tokenized
-`settings.runner.browserInstallCommand`. Change it to append the selected
-browsers:
+`settings.runner.browserInstallCommand`, whose **old default baked in
+`chromium`**. Build the argv so it is **browser-agnostic by construction** —
+strip any baked-in browser-name tokens, then append the selected browsers:
 
 ```ts
-const argv = [...tokenizeCommand(settings.runner.browserInstallCommand), ...settings.runner.browsers];
-// → ["npx","playwright","install","chromium","firefox"]
+const BROWSER_NAMES = new Set<string>(["chromium", "firefox", "webkit"]);
+const base = tokenizeCommand(settings.runner.browserInstallCommand)
+  .filter((tok) => !BROWSER_NAMES.has(tok)); // drop a persisted "chromium"
+const argv = [...base, ...settings.runner.browsers];
+// "npx playwright install chromium" + ["firefox"] → ["npx","playwright","install","firefox"]
 ```
+
+**Migration-free, idempotent** — this directly answers the `mergeWithDefaults`
+concern: existing Vaults whose persisted `browserInstallCommand` still reads
+`npx playwright install chromium` are normalized at use-time, so a firefox-only
+selection installs *only* firefox (honoring "no forced chromium") without a
+settings migration. User-added flags (e.g. `--with-deps`) survive the filter.
+The default also changes to the browser-agnostic `"npx playwright install"` for
+new Vaults.
 
 - `CommandSafetyPolicy.validateNpx` already permits `npx playwright install <args…>`
   — **no policy change**. Add a regression test asserting
@@ -122,21 +134,28 @@ projects: projectBrowsers.map((name) => ({ name, use: { browserName: name } })),
 ### 6. Result collapse — report import path
 
 When N browsers run, the report carries up to N results per scenario (one per
-project). Add a pure helper (e.g. `collapseByScenario` in the report-import area):
+project). Collapsing must NOT merge distinct **Scenario Outline rows** — which
+can share a scenario `name` — so the parser must carry a **stable per-row
+identity** from the raw report into `ScenarioResult`. The current contract
+exposes only `featureUri` + `name`; add the cucumber-JSON element `id` (which
+encodes `feature;scenario;;<row>`) as `scenarioId?: string` (with `line?: number`
+as a fallback discriminator), populated by `CucumberJsonReportParser`. This is
+also the row key the deferred per-browser breakdown and ADR-0022's Scenario
+Reference will reuse.
 
 ```ts
 collapseByScenario(results: ScenarioResult[]): ScenarioResult[]
 ```
 
-- Group by scenario reference: `featureUri` + scenario `name` (+ row index when
-  present).
+- Group key: `featureUri` + `scenarioId` (fallback `line`, then `name` only when
+  neither is present — e.g. single-scenario features). Outline rows stay distinct.
 - Reduce status to the worst across the group: `failed` ≻ `skipped` ≻ `passed`.
 - Keep the longest duration and the first error message in the group.
 
 Apply it after parse, before evidence generation and count derivation, so
 `TestRunResult` totals are computed from collapsed results → `total` = distinct
-scenarios (not ×N). The helper is a no-op when only one browser runs (or if the
-reporter already merges projects — see S1).
+scenario **rows** (not ×N). No-op for a single browser. The group key must be
+stable across projects (same row → same `id` in every browser's results — see S1).
 
 ### 7. Settings UI — `src/presentation/settings/settings-tab.ts`
 
@@ -161,20 +180,26 @@ repair). An "Install selected browsers" button invokes the install flow (§3).
   browsers and an invalid value (defaults to chromium).
 - **run wiring**: spawn env includes `TESTRUNNER_BROWSERS` from settings for each
   scope; the cleared baseline sets it explicitly.
-- **install**: argv derivation appends `browsers`; command-safety regression for
-  `npx playwright install firefox webkit`.
-- **collapse**: N→1 per scenario, worst-status precedence, duration/error
-  retention, count recomputation.
+- **install**: argv strips baked-in browser names then appends `browsers` —
+  including the **old-default Vault case** (`"npx playwright install chromium"` +
+  firefox-only → installs firefox only, not chromium); `--with-deps` flag
+  survives; command-safety regression for `npx playwright install firefox webkit`.
+- **collapse**: N→1 per scenario-row, worst-status precedence, duration/error
+  retention, count recomputation — including a **Scenario Outline** whose rows
+  share a name across multiple browsers (distinct `scenarioId`s are NOT merged).
 - **UI**: covered by the settings-tab integration tests where feasible.
 
 ## Open spikes
 
-- **S1**: confirm the shape of playwright-bdd's `cucumberReporter('json')` output
-  with two projects — does it emit N elements per scenario or pre-merge? The
-  collapse (§6) is correct either way; the spike just confirms whether collapse
-  is active or a no-op, and whether the project name is present (which would let
-  the deferred per-browser breakdown reuse it). Run a 2-project demo during
-  implementation.
+- **S1**: confirm playwright-bdd's `cucumberReporter('json')` shape with two
+  projects, using a feature that contains a **Scenario Outline**: (a) does each
+  scenario/outline-row element carry a stable `id`/`line`; (b) are outline rows
+  DISTINCT (so collapse won't merge them); (c) is that `id` stable **across
+  projects** (so the N browser copies of one row group together); and (d) is the
+  Playwright project (browser) name present (which would let the deferred
+  per-browser breakdown reuse it)? Drives the collapse key (§6). If `id` is NOT
+  cross-project-stable, collapse from the raw report before `ScenarioResult` is
+  built. Run a 2-project, outline-containing demo during implementation.
 
 ## References
 
