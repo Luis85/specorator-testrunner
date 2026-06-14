@@ -150,7 +150,7 @@ export class FeatureEditorView extends TextFileView {
       this.deps.specifications.listStepPatterns(),
       this.deps.featureInsight.listKnownTags(),
     ]);
-    if (patterns.ok) this.stepPatterns = patterns.value;
+    this.stepPatterns = patterns;
     if (tags.ok) this.knownTags = tags.value;
     // A full render would rebuild every input from the model, discarding any
     // focused-but-uncommitted edit (fields commit on change/blur). When the

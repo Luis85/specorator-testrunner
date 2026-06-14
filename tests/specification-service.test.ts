@@ -377,18 +377,15 @@ describe("DefaultSpecificationService.listStepPatterns", () => {
     );
     fs.files.set(".testrunner/src/steps/readme.md", 'Given("not scraped — not a .ts file")');
 
-    const result = await service.listStepPatterns();
+    const patterns = await service.listStepPatterns();
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value).toEqual([{ kind: "expression", source: "I open the local example page" }]);
+    expect(patterns).toEqual([{ kind: "expression", source: "I open the local example page" }]);
   });
 
   it("returns an empty list when the steps folder does not exist", async () => {
     const { service } = build();
-    const result = await service.listStepPatterns();
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toEqual([]);
+    const patterns = await service.listStepPatterns();
+    expect(patterns).toEqual([]);
   });
 });
 
