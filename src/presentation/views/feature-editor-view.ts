@@ -28,6 +28,7 @@ import {
   newStep,
   normalizeTag,
   projectValidation,
+  renameAdvisory,
   removeExamplesColumn,
   sanitizeCell,
   sanitizeDocStringLines,
@@ -58,6 +59,8 @@ export interface FeatureEditorDeps {
 export class FeatureEditorView extends TextFileView {
   private mode: "structured" | "raw" = "structured";
   private specification: FeatureSpecification | null = null;
+  /** Scenario names as last loaded from disk — the rename-advisory baseline (US-056). */
+  private baselineScenarioNames: string[] | null = null;
   private stepPatterns: StepDefinitionPattern[] = [];
   private knownTags: string[] = [];
   private validationEl: HTMLElement | null = null;
@@ -94,6 +97,9 @@ export class FeatureEditorView extends TextFileView {
     // Re-project on every load — an external change (sync, git) must rebuild
     // the structured UI rather than leave a stale in-memory spec.
     this.specification = this.project();
+    this.baselineScenarioNames = this.specification
+      ? this.specification.scenarios.map((scenario) => scenario.name)
+      : null;
     if (this.specification === null) this.mode = "raw";
     this.render();
   }
@@ -334,6 +340,7 @@ export class FeatureEditorView extends TextFileView {
     if (!this.validationEl || !this.specification) return;
     this.validationEl.empty();
     const items = projectValidation(this.specification);
+    items.push(...renameAdvisory(this.baselineScenarioNames, this.specification));
     const entries =
       items.length === 0 ? [{ level: "ok", message: "Feature is structurally valid." }] : items;
     for (const item of entries) {
