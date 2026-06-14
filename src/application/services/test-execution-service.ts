@@ -125,14 +125,31 @@ interface ActiveRun {
 const displayCommand = (args: string[]): string =>
   args.map((arg) => (arg.includes(" ") ? `"${arg}"` : arg)).join(" ");
 
+// Consumes one character while inside a quote: returns the next quote state and
+// accumulated token, plus whether a `\"`/`\\` escape also consumed the following
+// char. Only double quotes honour escapes; single quotes are literal. Split out
+// of `tokenizeCommand` to keep its loop's cognitive complexity low (TD-008).
+const consumeQuoted = (
+  ch: string,
+  next: string,
+  quote: '"' | "'",
+  current: string,
+): { quote: '"' | "'" | null; current: string; consumedNext: boolean } => {
+  if (ch === quote) return { quote: null, current, consumedNext: false };
+  if (quote === '"' && ch === "\\" && (next === '"' || next === "\\")) {
+    return { quote, current: current + next, consumedNext: true };
+  }
+  return { quote, current: current + ch, consumedNext: false };
+};
+
 /**
  * Tokenizes a configured runner command into argv with shell-style quoting, so
- * a value like `npm run test -- --format "json:reports/cucumber report.json"`
- * keeps the quoted path as ONE argument (the runner spawns with `shell: false`,
- * so a naive whitespace split would hand Cucumber broken `"json:reports/cucumber`
- * + `report.json"` tokens). Single quotes are literal; double quotes allow `\"`
+ * a value like `npm run test -- --grep "Open Example Page"`
+ * keeps the quoted title as ONE argument (the runner spawns with `shell: false`,
+ * so a naive whitespace split would hand Playwright broken `"Open` + `Example`
+ * + `Page"` tokens). Single quotes are literal; double quotes allow `\"`
  * and `\\`. An UNquoted backslash is kept literal so Windows path arguments
- * (e.g. `json:C:\tmp\cucumber.json`) survive — it never escapes outside quotes.
+ * (e.g. `C:\tmp\specs`) survive — it never escapes outside quotes.
  */
 export const tokenizeCommand = (command: string): string[] => {
   const tokens: string[] = [];
@@ -141,14 +158,10 @@ export const tokenizeCommand = (command: string): string[] => {
   for (let i = 0; i < command.length; i++) {
     const ch = command[i];
     if (quote) {
-      if (ch === quote) quote = null;
-      else if (
-        quote === '"' &&
-        ch === "\\" &&
-        (command[i + 1] === '"' || command[i + 1] === "\\")
-      ) {
-        current = (current ?? "") + command[++i];
-      } else current = (current ?? "") + ch;
+      const consumed = consumeQuoted(ch, command[i + 1], quote, current ?? "");
+      quote = consumed.quote;
+      current = consumed.current;
+      if (consumed.consumedNext) i++;
       continue;
     }
     if (ch === '"' || ch === "'") {
