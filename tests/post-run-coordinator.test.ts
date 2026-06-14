@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   PostRunCoordinator,
   type PostRunCoordinatorDeps,
@@ -122,6 +122,9 @@ const build = (overrides: Partial<PostRunCoordinatorDeps> = {}) => {
     reportImportService: reportImport,
     evidenceGenerationService: evidenceGen,
     traceabilityService: traceability,
+    scenarioIdentityResolver: {
+      enrich: vi.fn(async (r: unknown) => r),
+    },
     eventBus: bus,
     logger: silentLogger,
     lastRun: () => lastRun,
@@ -136,6 +139,7 @@ const build = (overrides: Partial<PostRunCoordinatorDeps> = {}) => {
     bus,
     events,
     types,
+    deps,
     reportImport,
     evidenceGen,
     traceability,
@@ -180,6 +184,18 @@ describe("PostRunCoordinator", () => {
 
       expect(env.reportImport.calls).toHaveLength(1);
       expect(env.reportImport.calls[0].id).toBe("RUN-2026-05-31-100000");
+      expect(env.evidenceGen.calls).toHaveLength(1);
+    });
+
+    it("enriches the imported report with scenario refs before evidence generation", async () => {
+      const env = build();
+      env.coordinator.start();
+      env.setLastRun(run({ status: "passed" }));
+
+      await publishTerminal(env.bus, "testrun.completed");
+      await env.coordinator.whenSettled();
+
+      expect(env.deps.scenarioIdentityResolver.enrich).toHaveBeenCalledTimes(1);
       expect(env.evidenceGen.calls).toHaveLength(1);
     });
 
