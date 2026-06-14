@@ -1,13 +1,20 @@
 ---
 title: US-055 Browser Matrix — Design
 date: 2026-06-14
-status: approved
+status: implemented
 epic: EPIC-013
 story: US-055
 adr: ADR-0025
+resolved: PR #52 (2026-06-14)
 ---
 
 # US-055 Browser Matrix — Design
+
+> **Implemented (2026-06-14) in PR #52** — all plan tasks landed; gate green
+> (1074 tests, typecheck/lint/format, `fallow audit` exit 0). Follow-up: the S1
+> spike (confirm playwright-bdd's cucumber-JSON yields a cross-project-stable
+> scenario `id` in a real 2-browser run) needs a local multi-browser run; the
+> collapse is robust to either outcome and is fixture-tested.
 
 ## Context
 
