@@ -186,7 +186,7 @@ sequenceDiagram
     V->>Vault: openFile(.testrunner/src/steps/<feature>.steps.ts)
 ```
 
-**Stub content.** Each missing step becomes a `Given(...)` from `@cucumber/cucumber` with a `TODO` comment and `throw new Error("Pending")` (quoted literals + Scenario Outline placeholders parameterise to `{string}`).
+**Stub content.** Each missing step becomes a `Given(...)` bound via playwright-bdd's `createBdd()` (taking the Playwright `{ page }` fixture) with a `TODO` comment and a `throw new Error("Pending")` body. `Given` is used uniformly — playwright-bdd matches a step by its TEXT regardless of which keyword decorator declared it, so a `Given` stub still satisfies a `When`/`Then` step. Quoted literals + Scenario Outline placeholders parameterise to `{string}`.
 
 **Non-destructive (ADR-0012 / RV-8 spirit).** Generation re-diffs the requested steps against every existing `*.ts` under `.testrunner/src/steps` and only stubs the still-undefined ones; a hand-edited steps file for the feature is appended to, never overwritten. When nothing is missing the service returns an empty result and publishes no event.
 

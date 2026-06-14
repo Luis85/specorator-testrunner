@@ -30,7 +30,7 @@ Enforced by the module dependency rules in [Building Block View §10](./Building
 
 ### 2.2 Domain Isolation
 
-The domain layer must not depend on Obsidian APIs, Node `fs`, Playwright, Cucumber, child processes, or DOM APIs.
+The domain layer must not depend on Obsidian APIs, Node `fs`, Playwright, playwright-bdd, child processes, or DOM APIs.
 
 ### 2.3 Port / Adapter Design
 
@@ -496,7 +496,7 @@ export interface TestSuite {
   id: SuiteId;
   name: string;
   description?: string;
-  tagExpression: string;                   // Cucumber tag expression per AD-4 (e.g. "@smoke and not @wip")
+  tagExpression: string;                   // tag expression per AD-4 (playwright-bdd), e.g. "@smoke and not @wip"
   path: VaultPath;
 }
 ```
@@ -1136,11 +1136,15 @@ The plugin-side `Logger` (Shared Kernel) builds a redacted, structured log line,
 
 ```ts
 export interface ReportParser {
-  parseCucumberJson(path: VaultPath): Promise<Result<ParsedCucumberReport>>;
+  // Pure (no I/O): parses a runner report's raw text into a ParsedReport. The
+  // first implementation parses cucumber-JSON (ADR-0021 — the report FORMAT is
+  // unchanged); a Cucumber Messages parser (ADR-0022) slots in beside it.
+  parse(rawContent: string, ctx: ReportParseContext): Result<ParsedReport>;
 }
 
-export interface ParsedCucumberReport {
-  scenarios: ScenarioResult[];
+export interface ParsedReport {
+  result: TestRunResult;
+  scenarioResults: ScenarioResult[];
   artifacts: EvidenceArtifact[];
 }
 ```
@@ -1207,7 +1211,7 @@ updated_at: 2026-06-01T10:00:00Z
 
 ## 11. Runner File Templates (`.testrunner/`)
 
-Templates honour AD-2 (npm), AD-5 (Chromium), AD-6 (serial), AD-7 (`cucumber.mjs` with `tsx` loader), AD-8 (local static HTML fixture).
+Templates honour AD-2 (npm), AD-5 (Chromium), and AD-8 (local static HTML fixture). The runner is a **Playwright + playwright-bdd** project: `bddgen` generates Playwright tests from the `.feature` files, then `playwright test` runs them — the entry point is `playwright.config.ts`. (ADR-0021 superseded AD-7's `tsx`/`cucumber.mjs` setup; TypeScript now runs natively under the Playwright Test runner.)
 
 ### 11.1 `package.json`
 
@@ -1217,16 +1221,17 @@ Templates honour AD-2 (npm), AD-5 (Chromium), AD-6 (serial), AD-7 (`cucumber.mjs
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "cucumber-js --config cucumber.mjs",
-    "test:smoke": "cucumber-js --config cucumber.mjs --tags @smoke",
-    "test:ci": "cucumber-js --config cucumber.mjs --format json:reports/cucumber-report.json",
+    "test": "bddgen && playwright test --pass-with-no-tests",
+    "test:smoke": "bddgen && playwright test --grep @smoke --pass-with-no-tests",
+    "test:ci": "bddgen && playwright test --pass-with-no-tests",
     "install:browsers": "playwright install chromium",
     "install:browsers:ci": "playwright install --with-deps chromium"
   },
   "devDependencies": {
-    "@cucumber/cucumber": "^11.0.0",
-    "playwright": "^1.49.0",
-    "tsx": "^4.19.0",
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^22.0.0",
+    "playwright": "^1.60.0",
+    "playwright-bdd": "^9.0.0",
     "typescript": "^5.6.0"
   }
 }
@@ -1238,8 +1243,8 @@ Templates honour AD-2 (npm), AD-5 (Chromium), AD-6 (serial), AD-7 (`cucumber.mjs
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -1250,82 +1255,61 @@ Templates honour AD-2 (npm), AD-5 (Chromium), AD-6 (serial), AD-7 (`cucumber.mjs
 }
 ```
 
-### 11.3 `cucumber.mjs`
+`Preserve`/`Bundler` (not `NodeNext`): playwright-bdd resolves extensionless relative imports like a bundler, so `NodeNext` flagged every generated relative import as needing an explicit `.js` extension even though the suite ran fine.
 
-```js
-export default {
-  default: {
-    loader: ["tsx"],
-    import: ["src/support/**/*.ts", "src/steps/**/*.ts"],
-    paths: ["../Specifications/features/**/*.feature"],
-    format: [
-      "progress",
-      "json:reports/cucumber-report.json",
-    ],
-    publishQuiet: true,
-    parallel: 0,
-  },
-};
-```
-
-`parallel: 0` enforces AD-6 (serial execution) in V1.
-
-### 11.4 `src/support/world.ts`
+### 11.3 `playwright.config.ts`
 
 ```ts
-import { World, setWorldConstructor } from "@cucumber/cucumber";
-import { Browser, BrowserContext, Page, chromium } from "playwright";
+import { defineConfig } from "@playwright/test";
+import { defineBddConfig, cucumberReporter } from "playwright-bdd";
 
-export class TestWorld extends World {
-  browser?: Browser;
-  context?: BrowserContext;
-  page?: Page;
-
-  async openBrowser(): Promise<void> {
-    this.browser = await chromium.launch({ headless: true });
-    this.context = await this.browser.newContext();
-    this.page = await this.context.newPage();
-  }
-
-  async closeBrowser(): Promise<void> {
-    await this.page?.close();
-    await this.context?.close();
-    await this.browser?.close();
-  }
-}
-
-setWorldConstructor(TestWorld);
-```
-
-### 11.5 `src/support/hooks.ts`
-
-```ts
-import { After, Before } from "@cucumber/cucumber";
-import { TestWorld } from "./world";
-
-Before(async function (this: TestWorld) {
-  await this.openBrowser();
+const testDir = defineBddConfig({
+  // BDD_FEATURES (newline-separated, runner-relative paths) scopes generation
+  // for feature/use-case/all runs; unset → the full glob (§13.2).
+  features: process.env.BDD_FEATURES
+    ? process.env.BDD_FEATURES.split("\n")
+    : "../Specifications/features/**/*.feature",
+  // playwright-bdd requires every feature under featuresRoot; features live in
+  // the vault, OUTSIDE the runner, so point it at the configured feature folder.
+  featuresRoot: "../Specifications/features",
+  steps: "src/steps/**/*.ts",
+  // BDD_TAGS conveys a suite's tag expression; bddgen applies the FULL tag
+  // expression at generation (§13.2). Undefined runs everything.
+  tags: process.env.BDD_TAGS || undefined,
 });
 
-After(async function (this: TestWorld) {
-  await this.closeBrowser();
+export default defineConfig({
+  testDir,
+  reporter: [
+    ["list"],
+    cucumberReporter("json", {
+      outputFile: "reports/cucumber-report.json",
+      skipAttachments: false, // default true drops all embeddings (ADR-0016)
+    }),
+  ],
+  use: { screenshot: "only-on-failure", trace: "retain-on-failure" },
+  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
 });
 ```
 
-### 11.6 `src/support/paths.ts`
+`bddgen` reads this config to generate Playwright tests from the `.feature` files; `playwright test` then runs them. The run report stays **cucumber-JSON** (`cucumberReporter("json")` → `reports/cucumber-report.json`), so the report format — and the `CucumberJsonReportParser` that reads it (§9.8) — is unchanged from V1; `skipAttachments: false` preserves failure-screenshot embeddings (ADR-0016). There is no Cucumber `World` or `hooks.ts`: per-scenario browser lifecycle is the Playwright `{ page }` fixture playwright-bdd injects into each step (§11.7).
+
+### 11.4 `src/support/paths.ts`
 
 ```ts
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const runnerRoot = resolve(here, "..", "..");
 
+// pathToFileURL produces a valid, URL-encoded file:// URL on every platform
+// (Windows drive letters, spaces) — string-prefixing does not.
 export const fixtureUrl = (file: string): string =>
-  `file://${resolve(runnerRoot, "src", "fixtures", file)}`;
+  pathToFileURL(resolve(runnerRoot, "src", "fixtures", file)).href;
 ```
 
-### 11.7 `src/fixtures/example.html` (per AD-8)
+### 11.5 `src/fixtures/example.html` (per AD-8)
 
 ```html
 <!doctype html>
@@ -1347,10 +1331,10 @@ export const fixtureUrl = (file: string): string =>
 </html>
 ```
 
-### 11.8 `src/pages/ExamplePage.ts`
+### 11.6 `src/pages/ExamplePage.ts`
 
 ```ts
-import { Page } from "playwright";
+import type { Page } from "@playwright/test";
 import { fixtureUrl } from "../support/paths";
 
 export class ExamplePage {
@@ -1370,39 +1354,30 @@ export class ExamplePage {
 }
 ```
 
-### 11.9 `src/steps/example.steps.ts`
+### 11.7 `src/steps/example.steps.ts`
 
 ```ts
-import { Given, Then, When } from "@cucumber/cucumber";
-import assert from "node:assert/strict";
+import { expect } from "@playwright/test";
+import { createBdd } from "playwright-bdd";
 import { ExamplePage } from "../pages/ExamplePage";
-import { TestWorld } from "../support/world";
 
-Given("I open the local example page", async function (this: TestWorld) {
-  if (!this.page) throw new Error("Page not initialized");
-  const example = new ExamplePage(this.page);
-  await example.open();
+const { Given, When, Then } = createBdd();
+
+Given("I open the local example page", async ({ page }) => {
+  await new ExamplePage(page).open();
 });
 
-When("I click the {string} button", async function (this: TestWorld, label: string) {
-  if (!this.page) throw new Error("Page not initialized");
-  if (label !== "Continue") throw new Error(`Unsupported button: ${label}`);
-  const example = new ExamplePage(this.page);
-  await example.continue();
+When("I click the {string} button", async ({ page }, label: string) => {
+  if (label !== "Continue") throw new Error(`Unknown button: ${label}`);
+  await new ExamplePage(page).continue();
 });
 
-Then("I should see {string}", async function (this: TestWorld, expected: string) {
-  if (!this.page) throw new Error("Page not initialized");
-  const example = new ExamplePage(this.page);
-  for (let attempt = 0; attempt < 20; attempt++) {
-    if ((await example.resultText()) === expected) return;
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  assert.equal(await example.resultText(), expected);
+Then("I should see {string}", async ({ page }, expected: string) => {
+  await expect(page.locator("#result")).toHaveText(expected);
 });
 ```
 
-### 11.10 Demo feature — `Specifications/features/UC-001-open-example-page.feature`
+### 11.8 Demo feature — `Specifications/features/UC-001-open-example-page.feature`
 
 ```gherkin
 @demo @smoke
@@ -1417,7 +1392,7 @@ Feature: Open Example Page
     Then I should see "Test completed"
 ```
 
-No `playwright.config.ts` is generated: Playwright is driven via the Cucumber `World` (§11.4), not the Playwright Test runner.
+Playwright is driven by the **Playwright Test runner via playwright-bdd**: `bddgen` generates the tests from this feature and `playwright.config.ts` (§11.3) is the entry point. There is no Cucumber `World` or `hooks.ts` — each step receives Playwright's `{ page }` fixture directly (§11.7).
 
 ---
 
@@ -1482,14 +1457,16 @@ export interface RunnerCommandBuilder {
 
 ### 13.2 Command Mapping
 
-| Scope | Resolved command |
-| --- | --- |
-| `demo` | `npm run test:smoke` |
-| `suite` | `npm run test -- --tags "<tagExpression>"` |
-| `feature` | `npm run test -- ../Specifications/features/<path>.feature` |
-| `use-case` | `npm run test -- ../Specifications/features/<UC-id>-*.feature` |
-| `all` | `npm run test` |
-| `ci` | `npm run test:ci` |
+| Scope | Resolved command | Scope env |
+| --- | --- | --- |
+| `demo` | `npm run test:smoke` | `BDD_TAGS=@smoke` |
+| `suite` | `npm run test` | `BDD_TAGS=<tagExpression>` |
+| `feature` | `npm run test` | `BDD_FEATURES=<feature path>` |
+| `use-case` | `npm run test` | `BDD_FEATURES=<UC feature paths>` |
+| `all` | `npm run test` | — (cleared; `BDD_FEATURES` = non-deprecated UCs when any UC is deprecated, per ADR-0012) |
+| `ci` | `npm run test:ci` | — |
+
+Scope is conveyed through the **environment**, not CLI args: the generated `playwright.config.ts` (`defineBddConfig`, §11.3) reads `BDD_TAGS` (suite/demo tag expression) and `BDD_FEATURES` (feature/use-case/all newline-separated paths) so `bddgen` generates only the targeted scenarios. The base command is otherwise unchanged, and a scoped run never fails because some other unrelated/malformed feature elsewhere in the vault doesn't parse.
 
 `cwd` is always the runner path resolved from `settings.paths.testRunnerPath` plus the vault base path (`AbsoluteFileSystem.getVaultBasePath()`).
 

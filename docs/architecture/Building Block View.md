@@ -17,7 +17,7 @@ The system consists of three building blocks:
 | --- | --- |
 | **Obsidian Plugin** | User-facing UI, orchestration, scaffolding, reporting. |
 | **Vault Artifacts** | Markdown-native source of truth (Use Cases, Specifications, Suites, Evidence, Documentation). |
-| **`.testrunner`** | Standalone Playwright + Cucumber-JS test runtime, independently executable in CI (per AG-002, AG-004, AD-3). |
+| **`.testrunner`** | Standalone Playwright + playwright-bdd test runtime, independently executable in CI (per AG-002, AG-004, AD-3). |
 
 The plugin orchestrates; the vault holds business data; the runner executes. Each can be reasoned about independently.
 
@@ -45,7 +45,7 @@ Specorator Testrunner
 ### 2.3 `.testrunner`
 
 - **Purpose:** Standalone test execution runtime.
-- **Responsibilities:** Execute Cucumber/Gherkin tests, drive browsers via Playwright (Chromium per AD-5), generate reports, run locally and in CI, remain independent of Obsidian.
+- **Responsibilities:** Execute Gherkin scenarios via playwright-bdd, drive browsers via Playwright (Chromium per AD-5), generate reports, run locally and in CI, remain independent of Obsidian.
 
 ---
 
@@ -109,7 +109,7 @@ Services orchestrate domain logic. They depend only on the Domain layer and on i
 ### 5.3 `RunnerInstallationService`
 
 - **Purpose:** Materialise `.testrunner`.
-- **Responsibilities:** Write template files (per AD-7: TypeScript + `cucumber.mjs`), run `npm install` (AD-2), install the Chromium browser (AD-5), seed the demo fixture (AD-8).
+- **Responsibilities:** Write template files (TypeScript + `playwright.config.ts`), run `npm install` (AD-2), install the Chromium browser (AD-5), seed the demo fixture (AD-8).
 - **Publishes:** `testrunner.installed`.
 - **Depends on:** `RunnerTemplateWriter`, `ProcessAdapter`.
 
@@ -261,13 +261,13 @@ Path (reconciled with code): `src/infrastructure/{obsidian,filesystem,runner}`. 
 | `NodeAbsoluteFileSystem` (`filesystem/node-absolute-file-system.ts`) | Node `fs/promises` for paths outside the vault index (`.testrunner` internals, `.github/workflows/`); implements the `AbsoluteFileSystem` port. |
 | `NodeChildProcessRunner` (`runner/node-child-process-runner.ts`) | Node `child_process.spawn` (`shell:false`) for `npm install`, browser install, runner execution; supports id-keyed cancellation. Implements the `ChildProcessRunner` port. |
 | `RunnerTemplateWriter` (`runner/runner-template-writer.ts`) | Writes the `.testrunner` template files **and produces their content** (implements the `TemplateWriter` port). The runtime-technology template *source* lives alongside it at `src/infrastructure/runner/templates/runner-templates.ts` — see §7.1. |
-| ~~`ReportParserAdapter` / `CiTemplateWriter`~~ | **Not separate infrastructure adapters.** Cucumber/Playwright report parsing is done in `ReportImportService` (application) and CI workflow generation in `PipelineGenerationService` (application), writing through the absolute-file-system port. |
+| ~~`ReportParserAdapter` / `CiTemplateWriter`~~ | **Not separate infrastructure adapters.** Report parsing (cucumber-JSON) is done in `ReportImportService` (application) and CI workflow generation in `PipelineGenerationService` (application), writing through the absolute-file-system port. |
 | ~~`ReportFileWatcher`~~ | **Not built / removed.** The post-run import is driven in-process by the `PostRunCoordinator` (application layer) from the EN-2 terminal run event, not by a filesystem watcher. See §5.11a and Event Catalog §8. |
 | `FeatureFileWatcher` | _(Deferred, per SDD AD-10.)_ Would subscribe to `vault.on('modify' \| 'create' \| 'rename' \| 'delete')` for `*.feature` to feed incremental traceability updates. Not in V1. |
 
 ### 7.1 Runner-template content location (relocated to infrastructure — P3-7 ✅)
 
-The runtime-technology-specific Playwright/Cucumber/Node template *source* — `package.json`, `cucumber.mjs`, the support layer, demo steps/pages/fixtures, etc. — now lives in **infrastructure** at `src/infrastructure/runner/templates/runner-templates.ts`, alongside the `RunnerTemplateWriter` that writes it. The application layer no longer embeds any runtime-tech source.
+The runtime-technology-specific Playwright/playwright-bdd/Node template *source* — `package.json`, `playwright.config.ts`, the support helpers, demo steps/pages/fixtures, etc. — now lives in **infrastructure** at `src/infrastructure/runner/templates/runner-templates.ts`, alongside the `RunnerTemplateWriter` that writes it. The application layer no longer embeds any runtime-tech source.
 
 > **Relocated (P3-7).** Generation is reached through the `TemplateWriter` port: the port declares `buildRunnerTemplates(settings): TemplateFile[]`, the `RunnerTemplateWriter` infra adapter implements it (importing the relocated content — infra→infra is allowed), and the application services (`RunnerInstallationService`, `EnvironmentValidationService`) call the port, never the content module. This keeps the layer dependency rule intact — no `src/application/**` file imports from `src/infrastructure/**`.
 >
@@ -301,23 +301,22 @@ type Result<T, E = Error> =
 ├─ package.json
 ├─ package-lock.json
 ├─ tsconfig.json
-├─ playwright.config.ts
-├─ cucumber.mjs            (per AD-7: tsx loader)
+├─ playwright.config.ts    (defineBddConfig + cucumberReporter("json"); entry point)
 ├─ src/
 │  ├─ steps/               (step definitions, generated by StepDefinitionService)
 │  ├─ pages/               (page objects)
-│  ├─ support/             (Cucumber World, hooks, browser setup)
+│  ├─ support/             (shared path helpers, e.g. fixtureUrl for file:// fixtures)
 │  └─ fixtures/            (demo SUT per AD-8)
 │     └─ example.html
 ├─ reports/                (Cucumber JSON, Playwright HTML, screenshots, traces)
 └─ README.md
 ```
 
-CI workflow files live at the **repo root** (`.github/workflows/`), not inside `.testrunner` — per AD-3. The runner is invoked from CI by `cd .testrunner && npm ci && npx cucumber-js`.
+CI workflow files live at the **repo root** (`.github/workflows/`), not inside `.testrunner` — per AD-3. The runner is invoked from CI by `cd .testrunner && npm ci && npm run test:ci`.
 
 ### 9.1 Runtime configuration
 
-`package.json`, `tsconfig.json` (strict), `playwright.config.ts`, `cucumber.mjs`. Together make the runner executable locally and in CI with `npm ci && npx cucumber-js`.
+`package.json`, `tsconfig.json` (strict), `playwright.config.ts`. Together make the runner executable locally and in CI with `npm ci && npm run test:ci`.
 
 ### 9.2 Step Definitions (`src/steps`)
 
@@ -329,7 +328,7 @@ Encapsulate UI automation logic and locator strategy.
 
 ### 9.4 Support Layer (`src/support`)
 
-Cucumber World, hooks (before/after), browser setup, shared utilities.
+Shared path helpers — e.g. `paths.ts`'s `fixtureUrl` for `file://` fixtures. Per-scenario browser lifecycle is the Playwright `{ page }` fixture playwright-bdd injects into each step; there is no Cucumber `World` or before/after hooks.
 
 ### 9.5 Fixtures (`src/fixtures`)
 
@@ -474,7 +473,7 @@ User clicks "Run" on a suite
 SuiteExplorerView dispatches command
    ↓
 TestExecutionService
-   ├─ RunnerCommandBuilder.forSuite(tagExpression)   → npx cucumber-js --tags "@smoke"
+   ├─ RunnerCommandBuilder.forSuite(tagExpression)   → npm run test (env BDD_TAGS="@smoke")
    ├─ EventBus.publish(testrun.requested)
    ├─ ProcessAdapter.spawn(cmd)                      → testrun.started
    │     └─ each stdout line → testrun.output.received
@@ -519,7 +518,7 @@ Decisions already locked in the [Solution Design](./Solution%20Design.md#25-arch
 | AD-4 | Suites are tag-driven (`TagExpression`). |
 | AD-5 | Chromium-only browser matrix in V1. |
 | AD-6 | Serial test execution in V1. |
-| AD-7 | TypeScript via `tsx` loader from `cucumber.mjs`. |
+| ~~AD-7~~ | ~~TypeScript via `tsx` loader from `cucumber.mjs`.~~ **Superseded by ADR-0021 (playwright-bdd):** TypeScript runs natively under the Playwright Test runner — no `tsx` loader or `cucumber.mjs`. |
 | AD-8 | Demo SUT = local static HTML served via `file://`; no fixture HTTP server. |
 
 Future ADRs (Arc42 §9 style, separate notes once we kick off implementation):
