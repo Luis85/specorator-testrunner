@@ -312,6 +312,17 @@
   justify-content: flex-start;
 }
 
+/* Browser matrix (US-055): a visible name precedes each toggle so the three
+ * adjacent switches are distinguishable, not just aria-labelled. */
+.e2e-test-hub-browser-toggle-label {
+  margin-left: var(--size-4-3, 12px);
+  margin-right: var(--size-4-1, 4px);
+}
+
+.e2e-test-hub-browser-toggle-label:first-child {
+  margin-left: 0;
+}
+
 .e2e-test-hub-env-var-row input {
   flex: 1 1 8rem;
   min-width: 0;

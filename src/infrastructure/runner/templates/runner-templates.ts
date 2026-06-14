@@ -28,7 +28,7 @@ import { relativeVaultPath } from "../../../shared/utils/vault-path";
  * during a repair (Runtime View RV-8); managed files are re-synced.
  */
 
-const PACKAGE_JSON = `{
+const buildPackageJson = (browserArgs: string): string => `{
   "name": "obsidian-e2e-test-runner",
   "private": true,
   "type": "module",
@@ -36,8 +36,8 @@ const PACKAGE_JSON = `{
     "test": "bddgen && playwright test --pass-with-no-tests",
     "test:smoke": "bddgen && playwright test --grep @smoke --pass-with-no-tests",
     "test:ci": "bddgen && playwright test --pass-with-no-tests",
-    "install:browsers": "playwright install chromium",
-    "install:browsers:ci": "playwright install --with-deps chromium"
+    "install:browsers": "playwright install ${browserArgs}",
+    "install:browsers:ci": "playwright install --with-deps ${browserArgs}"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
@@ -78,6 +78,7 @@ const TSCONFIG_JSON = `{
 const PLAYWRIGHT_CONFIG = (
   featuresGlob: string,
   featuresRoot: string,
+  browsersFallback: string,
 ): string => `import { defineConfig } from "@playwright/test";
 import { defineBddConfig, cucumberReporter } from "playwright-bdd";
 
@@ -102,6 +103,12 @@ const testDir = defineBddConfig({
   tags: process.env.BDD_TAGS || undefined,
 });
 
+// keep in sync with BROWSER_NAMES in settings.ts (generated standalone file can't import it)
+const VALID_BROWSERS = new Set(["chromium", "firefox", "webkit"]);
+const requestedBrowsers = (process.env.TESTRUNNER_BROWSERS?.split(",").map((b) => b.trim()) ?? [])
+  .filter((b) => VALID_BROWSERS.has(b));
+const projectBrowsers = requestedBrowsers.length > 0 ? requestedBrowsers : ${browsersFallback};
+
 export default defineConfig({
   testDir,
   reporter: [
@@ -112,7 +119,7 @@ export default defineConfig({
     }),
   ],
   use: { screenshot: "only-on-failure", trace: "retain-on-failure" },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+  projects: projectBrowsers.map((name) => ({ name, use: { browserName: name } })),
 });
 `;
 
@@ -213,7 +220,7 @@ Specorator Testrunner**. It runs identically inside Obsidian and in CI.
 
 \`\`\`bash
 npm install
-npm run install:browsers     # one-time Chromium download (AD-5)
+npm run install:browsers     # one-time download of the configured browsers (AD-5)
 npm run test                 # all scenarios
 npm run test:smoke           # @smoke only
 \`\`\`
@@ -243,19 +250,28 @@ export const buildRunnerTemplates = (settings: TestHubSettings): TemplateFile[] 
     settings.paths.featureFilesPath,
   );
   const featuresGlob = `${featuresRoot}/**/*.feature`;
+  const browserArgs = settings.runner.browsers.join(" ");
+  // Bake the validated browser selection as the fallback so `npm run test`
+  // (standalone direct run, TESTRUNNER_BROWSERS unset) honours the configured
+  // matrix instead of silently defaulting to chromium-only (US-055).
+  const browsersFallback = JSON.stringify(settings.runner.browsers);
 
   return [
     // Template paths are trusted compile-time literals relative to the runner root.
-    { path: unsafeVaultPath("package.json"), content: PACKAGE_JSON, overwrite: true },
+    {
+      path: unsafeVaultPath("package.json"),
+      content: buildPackageJson(browserArgs),
+      overwrite: true,
+    },
     {
       path: unsafeVaultPath(TESTRUNNER_MANIFEST_FILE),
-      content: testrunnerManifestContent(),
+      content: testrunnerManifestContent(settings.runner.browsers),
       overwrite: true,
     },
     { path: unsafeVaultPath("tsconfig.json"), content: TSCONFIG_JSON, overwrite: true },
     {
       path: unsafeVaultPath("playwright.config.ts"),
-      content: PLAYWRIGHT_CONFIG(featuresGlob, featuresRoot),
+      content: PLAYWRIGHT_CONFIG(featuresGlob, featuresRoot, browsersFallback),
       overwrite: true,
     },
     { path: unsafeVaultPath("README.md"), content: README_MD, overwrite: true },

@@ -20,6 +20,11 @@ describe("DefaultSettingsService", () => {
     expect(String(DEFAULT_SETTINGS.paths.domainsPath)).toBe("Domains");
   });
 
+  it("defaults runner.browsers to chromium-only", () => {
+    expect(DEFAULT_SETTINGS.runner.browsers).toEqual(["chromium"]);
+    expect(DEFAULT_SETTINGS.runner.browserInstallCommand).toBe("npx playwright install chromium");
+  });
+
   it("returns defaults when nothing is stored", async () => {
     const { service } = makeService(undefined);
     expect(await service.load()).toEqual(DEFAULT_SETTINGS);
@@ -276,6 +281,8 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
       "COMSPEC",
       "BASE_URL", // the runner injects BASE_URL from the active environment
       "base_url", // case-insensitive
+      "TESTRUNNER_BROWSERS", // runner-control key: injected by the browser-matrix line
+      "testrunner_browsers", // case-insensitive
     ])(
       "flags reserved process-control auth.env key %j as an error (PR #18 review)",
       async (key) => {
@@ -470,6 +477,20 @@ describe("DefaultSettingsService — runner-env hardening (SEC: child-process en
         expect(logger.error).toHaveBeenCalled();
       },
     );
+
+    it("repairs an empty/invalid runner.browsers to ['chromium']", async () => {
+      const { service } = makeService({ runner: { ...DEFAULT_SETTINGS.runner, browsers: [] } });
+      const s = await service.load();
+      expect(s.runner.browsers).toEqual(["chromium"]);
+    });
+
+    it("filters unknown browsers and dedupes runner.browsers, preserving order", async () => {
+      const { service } = makeService({
+        runner: { ...DEFAULT_SETTINGS.runner, browsers: ["firefox", "ie", "firefox", "webkit"] },
+      });
+      const s = await service.load();
+      expect(s.runner.browsers).toEqual(["firefox", "webkit"]);
+    });
 
     it("loaded (sanitized) settings validate with zero errors — load/validate stay aligned", async () => {
       const { service } = makeService({

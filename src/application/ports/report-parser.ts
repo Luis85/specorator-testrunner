@@ -11,6 +11,8 @@ export interface ScenarioResult {
   status: "passed" | "failed" | "skipped";
   durationMs?: number;
   errorMessage?: string;
+  scenarioId?: string; // cucumber-JSON element id (feature;scenario;;<row>) — stable per-row identity (US-055)
+  line?: number; // feature-file line of the scenario / outline row (fallback discriminator)
 }
 
 /** A parsed run report: counts, per-scenario rows, and artifact REFERENCES. */

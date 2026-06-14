@@ -3,7 +3,7 @@ import type { ChildProcessRunner, RunnerCommandResult } from "../ports/child-pro
 import type { TemplateWriter } from "../ports/template-writer";
 import { assertSafeAndResolveCwd } from "./runner-paths";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
-import type { TestHubSettings } from "../../domain/settings/settings";
+import { BROWSER_NAMES, type TestHubSettings } from "../../domain/settings/settings";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { appError, type ErrorCode } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
@@ -77,12 +77,17 @@ export class DefaultRunnerInstallationService implements RunnerInstallationServi
   }
 
   installBrowsers(settings: TestHubSettings): Promise<Result<RunnerCommandResult>> {
-    return this.spawnInRunner(
-      settings,
-      settings.runner.browserInstallCommand,
-      "BROWSER_NOT_INSTALLED",
-      "browser installation",
-    );
+    // Strip any browser-name tokens baked into the stored command (migration-free:
+    // an old Vault's "npx playwright install chromium" + a firefox selection →
+    // "npx playwright install firefox", no forced chromium). Then append the
+    // selected browsers so the argv is always browser-agnostic by construction.
+    const browserSet = new Set<string>(BROWSER_NAMES);
+    const base = settings.runner.browserInstallCommand
+      .trim()
+      .split(/\s+/)
+      .filter((t) => !browserSet.has(t));
+    const args = [...base, ...settings.runner.browsers];
+    return this.spawnArgvInRunner(settings, args, "BROWSER_NOT_INSTALLED", "browser installation");
   }
 
   /** Resolves the runner cwd, guards the argv, spawns, and maps exit codes. */
@@ -96,6 +101,16 @@ export class DefaultRunnerInstallationService implements RunnerInstallationServi
     // separated string; split it into a literal argv spawned without a shell
     // (the PR #7 decision to rework the runner to argv arrays).
     const args = command.trim().split(/\s+/);
+    return this.spawnArgvInRunner(settings, args, failureCode, label);
+  }
+
+  /** Resolves the runner cwd, guards the argv, spawns, and maps exit codes. */
+  private async spawnArgvInRunner(
+    settings: TestHubSettings,
+    args: string[],
+    failureCode: ErrorCode,
+    label: string,
+  ): Promise<Result<RunnerCommandResult>> {
     const cwd = await assertSafeAndResolveCwd(
       this.commandSafety,
       this.absoluteFs,

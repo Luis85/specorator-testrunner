@@ -47,15 +47,17 @@ export const REQUIRED_RUNNER_DEPENDENCIES = [
 
 /**
  * The `.testrunner` manifest version. Stamped into `testrunner-manifest.json`
- * at generation; read back by validation to detect a runner produced by an
- * older plugin (the Phase 3 playwright-bdd migration keys on this). Bumped
- * whenever the generated runtime shape changes incompatibly.
+ * at generation; read back by validation to detect a runner produced by a
+ * different plugin version, which flags Repair to regenerate the managed files
+ * (overwrite:false steps/pages are preserved). Bumped whenever the generated
+ * runtime shape changes. There is deliberately no cross-runtime migration: an
+ * incompatible pre-playwright-bdd runner is rebuilt from scratch via Reset.
  */
-export const TESTRUNNER_MANIFEST_VERSION = 2;
+export const TESTRUNNER_MANIFEST_VERSION = 3;
 
 /** The generated manifest file (vault-relative to the runner root). */
 export const TESTRUNNER_MANIFEST_FILE = "testrunner-manifest.json";
 
-/** Canonical manifest content for the current version. */
-export const testrunnerManifestContent = (): string =>
-  JSON.stringify({ manifestVersion: TESTRUNNER_MANIFEST_VERSION }, null, 2) + "\n";
+/** Canonical manifest content for the current version, stamping the selected browsers. */
+export const testrunnerManifestContent = (browsers: readonly string[]): string =>
+  JSON.stringify({ manifestVersion: TESTRUNNER_MANIFEST_VERSION, browsers }, null, 2) + "\n";

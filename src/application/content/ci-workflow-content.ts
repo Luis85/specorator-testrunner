@@ -14,7 +14,7 @@ export const isNpmCiCommand = (command: string): boolean => {
  * GitHub Actions workflow content (TIS §12.1, US-040, UC-019).
  *
  * The workflow is the proof that the runner is CI-compatible (ADR-0006):
- * `cd .testrunner && npm ci && playwright install --with-deps chromium &&
+ * `cd .testrunner && npm ci && playwright install --with-deps <browsers> &&
  * npm run test:ci` must pass on a vanilla Ubuntu image with no Obsidian.
  *
  * The base URL is read at job time from a GitHub Actions repository *variable*
@@ -40,6 +40,9 @@ export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string =>
   // that intentionally uses `npm install` or a wrapper would otherwise get an
   // Actions job whose install step doesn't match its lockfile/setup.
   const ciInstallCommand = settings.runner.ciInstallCommand.trim() || "npm ci";
+  // Honor the configured browsers (US-055); default is ["chromium"].
+  const browserList = settings.runner.browsers.join(" ");
+  const browserCsv = settings.runner.browsers.join(",");
   // setup-node's npm cache requires a lockfile. Any `npm ci` invocation needs
   // one, but a runner that customizes the install away from `npm ci` may not
   // commit a package-lock.json — enabling the cache then fails the job before
@@ -62,7 +65,9 @@ export const buildGitHubActionsWorkflow = (settings: TestHubSettings): string =>
     // BASE_URL is already mapped from the repository variable (ADR-0011); a
     // configured auth.env key named BASE_URL would emit a second, conflicting
     // line that overrides it, so skip reserved keys.
-    .filter((key) => key !== "BASE_URL")
+    // TESTRUNNER_BROWSERS is injected by the browser-matrix step; filtering it
+    // here is defence-in-depth so even a raw settings object can't double-emit it.
+    .filter((key) => key !== "BASE_URL" && key !== "TESTRUNNER_BROWSERS")
     .sort();
   const authEnvLines =
     authKeys.length > 0
@@ -99,10 +104,11 @@ jobs:
       - name: Install dependencies
         run: ${ciInstallCommand}
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps ${browserList}
       - name: Run tests
         env:
-          BASE_URL: \${{ vars.E2E_BASE_URL }}${authEnvLines}
+          BASE_URL: \${{ vars.E2E_BASE_URL }}
+          TESTRUNNER_BROWSERS: ${browserCsv}${authEnvLines}
         run: ${ciRunCommand}
       - name: Upload reports
         if: always()

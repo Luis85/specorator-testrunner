@@ -6,13 +6,13 @@ import {
   TESTRUNNER_MANIFEST_VERSION,
   VALIDATED_RUNNER_FILES,
 } from "../content/runner-manifest";
-import { parseManifestVersion } from "../content/runner-manifest-version";
+import { parseManifestVersion, parseManifestBrowsers } from "../content/runner-manifest-version";
 import { buildGitHubActionsWorkflow, isNpmCiCommand } from "../content/ci-workflow-content";
 import { isSafeCiCommand } from "./pipeline-generation-service";
 import { playwrightBrowsersCandidates } from "./runner-paths";
 import type { SettingsService } from "./settings-service";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
-import type { TestHubSettings } from "../../domain/settings/settings";
+import type { BrowserName, TestHubSettings } from "../../domain/settings/settings";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 
@@ -40,7 +40,7 @@ export interface RunnerValidationResult {
   packageJsonExists: boolean;
   dependenciesInstalled: boolean;
   playwrightAvailable: boolean; // package + binary resolve (`npx playwright --version`)
-  browsersInstalled: boolean; // Chromium per AD-5
+  browsersInstalled: boolean; // every selected runner.browsers entry is cached (US-055)
   issues: RunnerValidationIssue[];
 }
 
@@ -60,6 +60,7 @@ interface RunnerProbe {
   missingDependencies: string[];
   playwrightAvailable: boolean;
   browsersInstalled: boolean;
+  selectedBrowsers: readonly BrowserName[];
 }
 
 export interface CiReadinessResult {
@@ -126,19 +127,24 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     const playwrightAvailable =
       dependenciesInstalled &&
       (await this.commandSucceeds(["npx", "playwright", "--version"], runnerAbs));
-    const browsersInstalled = await this.detectBrowsers(runnerAbs);
+    const browsersInstalled = await this.detectBrowsers(runnerAbs, settings.runner.browsers);
 
     issues.push(
-      ...(await this.collectRunnerIssues(runnerAbs, {
-        nodeAvailable,
-        packageManagerAvailable,
-        runnerFolderExists,
-        missingFiles,
-        nodeModulesExists,
-        missingDependencies,
-        playwrightAvailable,
-        browsersInstalled,
-      })),
+      ...(await this.collectRunnerIssues(
+        runnerAbs,
+        {
+          nodeAvailable,
+          packageManagerAvailable,
+          runnerFolderExists,
+          missingFiles,
+          nodeModulesExists,
+          missingDependencies,
+          playwrightAvailable,
+          browsersInstalled,
+          selectedBrowsers: settings.runner.browsers,
+        },
+        settings.runner.browsers,
+      )),
     );
 
     const valid =
@@ -173,6 +179,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
   private async collectRunnerIssues(
     runnerAbs: string,
     probe: RunnerProbe,
+    settingsBrowsers: readonly string[],
   ): Promise<RunnerValidationIssue[]> {
     const issues: RunnerValidationIssue[] = [];
     if (!probe.nodeAvailable)
@@ -198,7 +205,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
         });
       // Only probe the manifest when the folder exists, so a wholly-missing
       // runner (already an error above) doesn't also emit a manifest advisory.
-      const advisory = await this.manifestAdvisory(runnerAbs);
+      const advisory = await this.manifestAdvisory(runnerAbs, settingsBrowsers);
       if (advisory) issues.push(advisory);
     }
     if (!probe.nodeModulesExists)
@@ -223,7 +230,7 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     if (!probe.browsersInstalled)
       issues.push({
         code: "BROWSER_NOT_INSTALLED",
-        message: "Chromium is not installed.",
+        message: `Selected browser(s) not installed: ${probe.selectedBrowsers.join(", ")}.`,
         severity: "error",
       });
     return issues;
@@ -231,23 +238,52 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
 
   /**
    * Reads the on-disk `testrunner-manifest.json` and returns a repair advisory
-   * when its version is not exactly {@link TESTRUNNER_MANIFEST_VERSION}. Any
-   * non-equal version is a repair signal: null/older = a runner from an older
-   * Test Hub; NEWER = a vault repaired by a newer plugin then opened here
-   * (downgrade / Obsidian Sync). Warn on all three, never blocking.
+   * for one of two DISTINCT conditions (both warnings, never blocking):
+   *
+   *  - `RUNNER_MANIFEST_OUTDATED` — the manifest version is not exactly
+   *    {@link TESTRUNNER_MANIFEST_VERSION}: null/older = a runner from an older
+   *    Test Hub; NEWER = a vault repaired by a newer plugin then opened here
+   *    (downgrade / Obsidian Sync). The generated runtime SHAPE changed, so
+   *    {@link MaintenanceService.repair} must reinstall dependencies (and, for a
+   *    genuine V1 runner, clean-cut).
+   *  - `RUNNER_BROWSERS_OUTDATED` — the version is current but the stamped
+   *    browser set differs from settings (order-insensitive), or the stamp is
+   *    missing on a current manifest (older build of this version). Repair heals
+   *    this via its unconditional `createRunner` (re-stamp + regenerate the baked
+   *    config/scripts) + `installBrowsers`, with NO dependency reinstall.
+   *
+   * Keeping the codes separate is deliberate: repair keys its (offline-fragile)
+   * `npm install` on the version code, so a browser-only change must NOT reuse it
+   * or a browser-only repair would fail offline despite healthy node_modules.
    */
-  private async manifestAdvisory(runnerAbs: string): Promise<RunnerValidationIssue | null> {
+  private async manifestAdvisory(
+    runnerAbs: string,
+    settingsBrowsers: readonly string[],
+  ): Promise<RunnerValidationIssue | null> {
     const manifestRead = await this.absoluteFs.readAbsolute(
       `${runnerAbs}/${TESTRUNNER_MANIFEST_FILE}`,
     );
-    const manifestVersion = parseManifestVersion(manifestRead.ok ? manifestRead.value : undefined);
-    if (manifestVersion === TESTRUNNER_MANIFEST_VERSION) return null;
-    return {
-      code: "RUNNER_MANIFEST_OUTDATED",
-      severity: "warning",
-      message:
-        "The .testrunner was produced by a different Test Hub version; run Repair installation to regenerate it.",
-    };
+    const content = manifestRead.ok ? manifestRead.value : undefined;
+    const manifestVersion = parseManifestVersion(content);
+    if (manifestVersion !== TESTRUNNER_MANIFEST_VERSION) {
+      return {
+        code: "RUNNER_MANIFEST_OUTDATED",
+        severity: "warning",
+        message: "The .testrunner is outdated (Test Hub version changed) — run Repair to update.",
+      };
+    }
+    // Version is current — flag browser-selection drift (order-insensitive), or a
+    // missing stamp from an older build of this version, as its OWN code.
+    const stampedBrowsers = parseManifestBrowsers(content);
+    const sorted = (arr: readonly string[]) => [...arr].sort().join(",");
+    if (stampedBrowsers === undefined || sorted(stampedBrowsers) !== sorted(settingsBrowsers)) {
+      return {
+        code: "RUNNER_BROWSERS_OUTDATED",
+        severity: "warning",
+        message: "The .testrunner browser selection is out of date — run Repair to update.",
+      };
+    }
+    return null;
   }
 
   async validateCiReadiness(settings: TestHubSettings): Promise<CiReadinessResult> {
@@ -513,14 +549,20 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
     return result.ok && result.value.exitCode === 0;
   }
 
-  private async detectBrowsers(runnerAbs: string): Promise<boolean> {
-    // Look for an actual `chromium-*` browser entry, not just the cache root:
-    // a partial cache, or one holding only Firefox/WebKit, must NOT count
-    // (the runner only ever launches Chromium, AD-5).
+  private async detectBrowsers(
+    runnerAbs: string,
+    browsers: readonly BrowserName[],
+  ): Promise<boolean> {
+    // Require every selected browser to have a cache entry (AD-5, US-055).
+    // Previously only Chromium was checked; now the selected browser set drives
+    // validation so a firefox-only or webkit-only install is correctly accepted.
+    const found = new Set<string>();
     for (const candidate of playwrightBrowsersCandidates(this.platform, this.env, runnerAbs)) {
       const entries = await this.absoluteFs.listAbsolute(candidate);
-      if (entries.some((entry) => entry.toLowerCase().startsWith("chromium"))) return true;
+      for (const browser of browsers) {
+        if (entries.some((entry) => entry.toLowerCase().startsWith(browser))) found.add(browser);
+      }
     }
-    return false;
+    return browsers.every((browser) => found.has(browser));
   }
 }

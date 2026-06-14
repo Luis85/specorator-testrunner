@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   REQUIRED_RUNNER_FILES,
+  TESTRUNNER_MANIFEST_VERSION,
   VALIDATED_RUNNER_FILES,
 } from "../src/application/content/runner-manifest";
 import { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
@@ -187,11 +188,58 @@ describe("buildRunnerTemplates", () => {
     expect(config).toContain('"]};import(');
   });
 
-  it("generates testrunner-manifest.json carrying the current manifest version", () => {
-    const files = buildRunnerTemplates(DEFAULT_SETTINGS);
+  it("config builds projects[] from process.env.TESTRUNNER_BROWSERS", () => {
+    const config = configFor(DEFAULT_SETTINGS);
+    expect(config).toContain("process.env.TESTRUNNER_BROWSERS");
+    expect(config).toContain('["chromium"]'); // fallback present
+    expect(config).not.toContain('projects: [{ name: "chromium"'); // no hardcoded single project
+    expect(config).toContain('new Set(["chromium", "firefox", "webkit"])'); // valid-set filter
+  });
+
+  it("bakes the configured browsers as the fallback (standalone direct run honours the matrix)", () => {
+    const config = configFor({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, browsers: ["firefox", "webkit"] },
+    });
+    // The env-override path must still be present.
+    expect(config).toContain("process.env.TESTRUNNER_BROWSERS");
+    // The baked fallback must reflect the configured selection.
+    expect(config).toContain('["firefox","webkit"]');
+    // Must NOT fall back to chromium-only when firefox+webkit are configured.
+    expect(config).not.toContain(': ["chromium"]');
+  });
+
+  it("baked browser fallback is chromium when default settings are used", () => {
+    const config = configFor(DEFAULT_SETTINGS);
+    // Default browsers are ["chromium"], so the baked fallback is still ["chromium"].
+    expect(config).toContain('["chromium"]');
+  });
+
+  it("generated package.json install scripts install the selected browsers", () => {
+    const pkg =
+      buildRunnerTemplates({
+        ...DEFAULT_SETTINGS,
+        runner: { ...DEFAULT_SETTINGS.runner, browsers: ["chromium", "firefox"] },
+      }).find((t) => t.path === "package.json")?.content ?? "";
+    expect(pkg).toContain('"install:browsers": "playwright install chromium firefox"');
+    expect(pkg).toContain(
+      '"install:browsers:ci": "playwright install --with-deps chromium firefox"',
+    );
+  });
+
+  it("stamps manifest version 3", () => {
+    expect(TESTRUNNER_MANIFEST_VERSION).toBe(3);
+  });
+
+  it("generates testrunner-manifest.json carrying the current manifest version and selected browsers", () => {
+    const files = buildRunnerTemplates({
+      ...DEFAULT_SETTINGS,
+      runner: { ...DEFAULT_SETTINGS.runner, browsers: ["chromium", "firefox"] },
+    });
     const manifest = files.find((f) => f.path === "testrunner-manifest.json");
     expect(manifest).toBeDefined();
-    expect(JSON.parse(manifest?.content ?? "{}")).toEqual({ manifestVersion: 2 });
+    const parsed = JSON.parse(manifest?.content ?? "{}") as unknown;
+    expect(parsed).toEqual({ manifestVersion: 3, browsers: ["chromium", "firefox"] });
   });
 
   it("ExamplePage uses Playwright Page import, not Cucumber World", () => {

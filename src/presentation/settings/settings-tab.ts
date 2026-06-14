@@ -13,12 +13,15 @@ import {
 import type { EnvironmentValidationService } from "../../application/services/environment-validation-service";
 import type { MaintenanceService } from "../../application/services/maintenance-service";
 import type { PipelineGenerationService } from "../../application/services/pipeline-generation-service";
+import type { RunnerInstallationService } from "../../application/services/runner-installation-service";
 import type { Result } from "../../shared/result/result";
 import type {
+  BrowserName,
   SutEnvironment,
   TestHubPathSettings,
   TestHubSettings,
 } from "../../domain/settings/settings";
+import { BROWSER_NAMES } from "../../domain/settings/settings";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import { AddEnvironmentModal } from "./add-environment-modal";
 import {
@@ -50,6 +53,7 @@ export interface SettingsTabServices {
   validation: Pick<EnvironmentValidationService, "validateEnvironment" | "validateCiReadiness">;
   maintenance: Pick<MaintenanceService, "repair">;
   pipeline: PipelineGenerationService;
+  installation: Pick<RunnerInstallationService, "installBrowsers">;
 }
 
 interface PathFieldSpec {
@@ -266,6 +270,12 @@ export class TestHubSettingTab extends PluginSettingTab {
     return [
       // No top-level title element: the Obsidian guidelines own the tab heading.
       { type: "group", heading: "Folders", items: PATH_FIELDS.map((field) => this.pathRow(field)) },
+      // ── Runner (US-055 browser matrix) ────────────────────────────────────
+      {
+        type: "group",
+        heading: "Runner",
+        items: [this.browsersRow(), this.installBrowsersRow()],
+      },
       // ── System under test (ADR-0013 environments, ADR-0014 auth) ──────────
       { type: "group", heading: "System under test", items: [this.activeEnvironmentRow()] },
       ...environmentNames.map((name) => this.environmentGroup(name, settings.sut.active === name)),
@@ -652,6 +662,102 @@ export class TestHubSettingTab extends PluginSettingTab {
     }
   }
 
+  // ── Runner (US-055 browser matrix) ───────────────────────────────────────
+
+  /**
+   * Three browser toggles (Chromium, Firefox, WebKit) reflecting and editing
+   * `settings.runner.browsers`. Enforces non-empty: the last remaining enabled
+   * browser cannot be turned off — its toggle is disabled when it is the sole
+   * selection. Persists via the same `updateSettings` path as every other field.
+   */
+  private browsersRow(): SettingGroupItem {
+    return {
+      name: "Browsers",
+      desc: "Select which Playwright browsers are used for test runs. At least one must be enabled.",
+      render: (setting) => {
+        for (const browser of BROWSER_NAMES) {
+          const label =
+            browser === "webkit" ? "WebKit" : browser.charAt(0).toUpperCase() + browser.slice(1);
+          // A VISIBLE name precedes each toggle: three adjacent switches with only
+          // an aria-label left sighted users guessing which controls which browser.
+          setting.controlEl.createSpan({ cls: "e2e-test-hub-browser-toggle-label", text: label });
+          setting.addToggle((toggle) => {
+            // Reflect the current selection from persisted settings.
+            const currentBrowsers = this.host.getSettings().runner.browsers;
+            const isEnabled = currentBrowsers.includes(browser);
+            // Disable the toggle when this browser is the sole enabled one —
+            // turning it off would leave `browsers` empty, which is invalid.
+            const isLast = isEnabled && currentBrowsers.length === 1;
+            toggle.setValue(isEnabled);
+            toggle.setDisabled(isLast);
+            toggle.toggleEl.setAttribute("aria-label", label);
+            toggle.onChange((value) => void this.persistBrowser(browser, value));
+          });
+        }
+      },
+    };
+  }
+
+  private async persistBrowser(browser: BrowserName, enabled: boolean): Promise<void> {
+    const current = this.host.getSettings();
+    const prev = current.runner.browsers;
+    let next: BrowserName[];
+    if (enabled) {
+      // Add if not already present.
+      next = prev.includes(browser) ? prev : [...prev, browser];
+    } else {
+      next = prev.filter((b) => b !== browser);
+    }
+    // Non-empty guard: if toggling off would empty the list, silently restore
+    // the last browser. (The toggle UI also prevents this via setDisabled, but
+    // this double-guard protects against race conditions / programmatic calls.)
+    if (next.length === 0) next = prev;
+    if (JSON.stringify(next) === JSON.stringify(prev)) return;
+    const result = await this.host.updateSettings({
+      ...current,
+      runner: { ...current.runner, browsers: next },
+    });
+    if (!result.ok) {
+      new Notice(`Could not save browser selection: ${result.error.message}`);
+    }
+    // Re-render so disabled states are recomputed from persisted state.
+    this.refreshTab();
+  }
+
+  /**
+   * "Install selected browsers" button — invokes
+   * `RunnerInstallationService.installBrowsers` with the current settings (the
+   * service reads `settings.runner.browsers` to build the argv). Reuses the
+   * same actionWithResultRow shape as validate/repair/CI rows.
+   */
+  private installBrowsersRow(): SettingGroupItem {
+    return this.actionWithResultRow(
+      "Install selected browsers",
+      "Download and install the selected Playwright browsers into the .testrunner project.",
+      "Install browsers",
+      (button, resultEl) => this.runInstallBrowsers(button, resultEl),
+    );
+  }
+
+  private async runInstallBrowsers(button: ButtonComponent, resultEl: HTMLElement): Promise<void> {
+    await this.runButtonAction(
+      button,
+      resultEl,
+      "Installing browsers…",
+      "Browser install failed: ",
+      async () => {
+        const settings = this.host.getSettings();
+        const result = await this.services.installation.installBrowsers(settings);
+        if (result.ok) {
+          const names = settings.runner.browsers.join(", ");
+          this.renderChecklist(resultEl, [checklistRow("ok", `Installed: ${names}.`)]);
+        } else {
+          this.renderChecklist(resultEl, [checklistRow("error", result.error.message)]);
+        }
+      },
+    );
+  }
+
   // ── Maintenance ───────────────────────────────────────────────────────────
 
   /**
@@ -685,7 +791,7 @@ export class TestHubSettingTab extends PluginSettingTab {
   private validateRow(): SettingGroupItem {
     return this.actionWithResultRow(
       "Validate environment",
-      "Check Node.js, npm, the .testrunner files, dependencies, and the Chromium browser.",
+      "Check Node.js, npm, the .testrunner files, dependencies, and the selected browsers.",
       "Validate",
       (button, resultEl) => this.runValidateEnvironment(button, resultEl),
     );
@@ -757,36 +863,26 @@ export class TestHubSettingTab extends PluginSettingTab {
     button: ButtonComponent,
     resultEl: HTMLElement,
   ): Promise<void> {
-    button.setDisabled(true);
-    this.renderChecklist(resultEl, [checklistRow("pending", "Validating…")]);
-    try {
+    await this.runButtonAction(button, resultEl, "Validating…", "Validation failed: ", async () => {
       const result = await this.services.validation.validateEnvironment();
       this.renderChecklist(resultEl, runnerValidationRows(result));
-    } catch (error) {
-      this.renderChecklist(resultEl, [
-        checklistRow("error", `Validation failed: ${errorText(error)}`),
-      ]);
-    } finally {
-      button.setDisabled(false);
-    }
+    });
   }
 
   private async runRepair(button: ButtonComponent, resultEl: HTMLElement): Promise<void> {
-    button.setDisabled(true);
-    this.renderChecklist(resultEl, [
-      checklistRow("pending", "Repairing… this can take a while when dependencies reinstall."),
-    ]);
-    try {
-      const result = await this.services.maintenance.repair();
-      this.renderChecklist(
-        resultEl,
-        result.ok ? repairRows(result.value) : [repairFailureRow(result.error)],
-      );
-    } catch (error) {
-      this.renderChecklist(resultEl, [checklistRow("error", `Repair failed: ${errorText(error)}`)]);
-    } finally {
-      button.setDisabled(false);
-    }
+    await this.runButtonAction(
+      button,
+      resultEl,
+      "Repairing… this can take a while when dependencies reinstall.",
+      "Repair failed: ",
+      async () => {
+        const result = await this.services.maintenance.repair();
+        this.renderChecklist(
+          resultEl,
+          result.ok ? repairRows(result.value) : [repairFailureRow(result.error)],
+        );
+      },
+    );
   }
 
   // ── Continuous integration (UC-019/UC-020) ───────────────────────────────
@@ -814,9 +910,7 @@ export class TestHubSettingTab extends PluginSettingTab {
     resultEl: HTMLElement,
     overwriteExisting: boolean,
   ): Promise<void> {
-    button.setDisabled(true);
-    this.renderChecklist(resultEl, [checklistRow("pending", "Generating…")]);
-    try {
+    await this.runButtonAction(button, resultEl, "Generating…", "Generation failed: ", async () => {
       const settings = this.host.getSettings();
       const result = await this.services.pipeline.generate({
         provider: settings.ci.provider,
@@ -842,23 +936,36 @@ export class TestHubSettingTab extends PluginSettingTab {
       } else {
         this.renderChecklist(resultEl, [checklistRow("error", result.error.message)]);
       }
-    } catch (error) {
-      this.renderChecklist(resultEl, [
-        checklistRow("error", `Generation failed: ${errorText(error)}`),
-      ]);
-    } finally {
-      button.setDisabled(false);
-    }
+    });
   }
 
   private async runCiReadiness(button: ButtonComponent, resultEl: HTMLElement): Promise<void> {
-    button.setDisabled(true);
-    this.renderChecklist(resultEl, [checklistRow("pending", "Checking…")]);
-    try {
+    await this.runButtonAction(button, resultEl, "Checking…", "Check failed: ", async () => {
       const result = await this.services.validation.validateCiReadiness(this.host.getSettings());
       this.renderChecklist(resultEl, ciReadinessRows(result));
+    });
+  }
+
+  /**
+   * Shared wrapper for the button-action pattern used by install, validate,
+   * repair, generate, and CI-readiness rows: disable the button, show a pending
+   * checklist, run `fn` (which renders its own result rows into `resultEl`), and
+   * re-enable the button in a `finally` block. Uncaught exceptions in `fn` are
+   * caught here and rendered as an error row prefixed with `catchPrefix`.
+   */
+  private async runButtonAction(
+    button: ButtonComponent,
+    resultEl: HTMLElement,
+    pendingMessage: string,
+    catchPrefix: string,
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    button.setDisabled(true);
+    this.renderChecklist(resultEl, [checklistRow("pending", pendingMessage)]);
+    try {
+      await fn();
     } catch (error) {
-      this.renderChecklist(resultEl, [checklistRow("error", `Check failed: ${errorText(error)}`)]);
+      this.renderChecklist(resultEl, [checklistRow("error", `${catchPrefix}${errorText(error)}`)]);
     } finally {
       button.setDisabled(false);
     }

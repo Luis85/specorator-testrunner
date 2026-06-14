@@ -98,8 +98,6 @@ describe("repairRows", () => {
     repairedFiles: [vp(".testrunner/package.json")],
     reinstalledPackages: false,
     reinstalledBrowsers: true,
-    migratedFromV1: false,
-    removedFiles: [],
     ...over,
   });
 
@@ -118,7 +116,7 @@ describe("repairRows", () => {
     expect(rows).toEqual([
       checklistRow("ok", "Repaired 2 .testrunner files."),
       checklistRow("ok", "Reinstalled npm dependencies."),
-      checklistRow("ok", "Verified the Chromium browser installation."),
+      checklistRow("ok", "Verified the browser installation."),
     ]);
   });
 
@@ -128,24 +126,6 @@ describe("repairRows", () => {
       checklistRow("info", "Dependencies were intact; no reinstall was needed."),
     );
     expect(rows[2]).toEqual(checklistRow("info", "Browser installation was not re-run."));
-  });
-
-  it("surfaces a V1→V2 migration as a warning row with the removed count and re-author note", () => {
-    const rows = repairRows(
-      repair({
-        migratedFromV1: true,
-        removedFiles: [vp("cucumber.mjs"), vp("src/support/world.ts")],
-      }),
-    );
-    const migration = rows.find((r) => r.status === "warning");
-    expect(migration?.text).toContain("playwright-bdd");
-    expect(migration?.text).toContain("removed 2 legacy files");
-    expect(migration?.text).toContain("re-authored as createBdd steps");
-  });
-
-  it("shows no migration row for a normal (non-migrating) repair", () => {
-    const rows = repairRows(repair({ migratedFromV1: false }));
-    expect(rows.some((r) => r.status === "warning")).toBe(false);
   });
 });
 

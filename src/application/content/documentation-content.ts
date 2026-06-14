@@ -105,8 +105,9 @@ passing test.
 
 The runner is a standalone Node project. Run **Validate Environment** to confirm
 Node.js is available, then let initialization (or **Repair Installation**)
-install dependencies with \`${runner.installCommand}\` and the Chromium browser
-with \`${runner.browserInstallCommand}\`.
+install dependencies with \`${runner.installCommand}\` and the configured browsers
+with \`${runner.browserInstallCommand}\` (Chromium by default; add Firefox/WebKit in
+Settings → Runner).
 
 ## Your first test
 
@@ -239,8 +240,9 @@ The runner needs **Node.js ${settings.ci.nodeVersion}+**. Install it from
 ## Dependencies or browsers are missing
 
 The runner installs dependencies with \`${runner.installCommand}\` and the
-Chromium browser with \`${runner.browserInstallCommand}\`. The first install
-downloads a browser (~150 MB) and can take a few minutes. Run **Repair
+configured browsers with \`${runner.browserInstallCommand}\` (Chromium by default;
+add Firefox/WebKit in Settings → Runner). The first install downloads the
+browser binaries (~150 MB+ per browser) and can take a few minutes. Run **Repair
 Installation** to re-sync.
 
 ## The demo test cannot find the fixture

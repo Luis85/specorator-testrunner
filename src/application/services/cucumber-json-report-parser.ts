@@ -9,6 +9,7 @@ import type { TestRunResult } from "../../domain/entities/test-run";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { err, ok, type Result } from "../../shared/result/result";
+import { collapseByScenario } from "./collapse-scenario-results";
 
 /**
  * Cucumber-JS JSON report shape (the `json:` formatter), parsed defensively:
@@ -31,6 +32,8 @@ interface CucumberAttachment {
 interface CucumberScenario {
   name?: string;
   type?: string; // "scenario" | "background"
+  id?: string; // cucumber-JSON element id (e.g. "feature;scenario;;2") — stable per-row identity
+  line?: number; // feature-file line of the scenario / outline row
   steps?: CucumberStep[];
   before?: CucumberStep[]; // Before hooks (carry result/embeddings like steps)
   after?: CucumberStep[]; // After hooks
@@ -108,13 +111,21 @@ export class CucumberJsonReportParser implements ReportParser {
     const artifacts: EvidenceArtifact[] = [
       { type: "report", path: ctx.reportVaultPath, label: "Cucumber JSON report" },
     ];
-    const result: TestRunResult = { passed: 0, failed: 0, skipped: 0, total: 0 };
 
     for (const rawFeature of features) {
-      this.mapFeature(rawFeature, ctx.reportVaultPath, scenarioResults, artifacts, result);
+      this.mapFeature(rawFeature, ctx.reportVaultPath, scenarioResults, artifacts);
     }
 
-    return { result, scenarioResults, artifacts };
+    // Collapse per-browser duplicates (US-055): N results for the same scenario
+    // row (one per Playwright project) become a single worst-status verdict.
+    const collapsed = collapseByScenario(scenarioResults);
+    const result: TestRunResult = { passed: 0, failed: 0, skipped: 0, total: 0 };
+    for (const sr of collapsed) {
+      result[sr.status] += 1;
+      result.total += 1;
+    }
+
+    return { result, scenarioResults: collapsed, artifacts };
   }
 
   /** Maps one feature element from the report into scenario results and artifacts. */
@@ -123,7 +134,6 @@ export class CucumberJsonReportParser implements ReportParser {
     reportVaultPath: VaultPath,
     scenarioResults: ScenarioResult[],
     artifacts: EvidenceArtifact[],
-    result: TestRunResult,
   ): void {
     if (!isRecord(rawFeature)) return;
     const feature = rawFeature as CucumberFeature;
@@ -163,7 +173,6 @@ export class CucumberJsonReportParser implements ReportParser {
         reportVaultPath,
         scenarioResults,
         artifacts,
-        result,
       );
     }
 
@@ -178,8 +187,6 @@ export class CucumberJsonReportParser implements ReportParser {
         durationMs: totalDurationMs(bgSteps),
         errorMessage: firstErrorMessage(bgSteps),
       });
-      result.failed += 1;
-      result.total += 1;
       collectArtifacts(bgSteps, reportVaultPath, artifacts);
     }
   }
@@ -194,7 +201,6 @@ export class CucumberJsonReportParser implements ReportParser {
     reportVaultPath: VaultPath,
     scenarioResults: ScenarioResult[],
     artifacts: EvidenceArtifact[],
-    result: TestRunResult,
   ): void {
     // Narrow to record steps so a malformed report (e.g. `steps: [null]`)
     // can't throw when result/embeddings are dereferenced (defensive parse).
@@ -223,9 +229,9 @@ export class CucumberJsonReportParser implements ReportParser {
       status,
       durationMs,
       errorMessage,
+      ...(typeof scenario.id === "string" ? { scenarioId: scenario.id } : {}),
+      ...(typeof scenario.line === "number" ? { line: scenario.line } : {}),
     });
-    result[status] += 1;
-    result.total += 1;
 
     collectArtifacts(stepsAndHooks, reportVaultPath, artifacts);
   }

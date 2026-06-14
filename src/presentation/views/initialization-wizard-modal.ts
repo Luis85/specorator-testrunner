@@ -87,7 +87,7 @@ export class InitializationWizardModal extends Modal {
       .setDesc(
         // Be honest about the total download: the browser itself plus the npm
         // packages npm install pulls alongside it.
-        "Download Chromium for Playwright (~150 MB browser + npm packages). Requires dependencies.",
+        "Download the configured Playwright browsers (~150 MB+ per browser + npm packages). Requires dependencies.",
       )
       .addToggle((toggle) => {
         browserToggle = toggle;
