@@ -170,9 +170,7 @@ export const renameAdvisory = (
   );
   const removed = [
     ...new Set(
-      previous
-        .map((name) => name.trim())
-        .filter((name) => name !== "" && !current.has(name)),
+      previous.map((name) => name.trim()).filter((name) => name !== "" && !current.has(name)),
     ),
   ];
   return removed.map((name) => ({

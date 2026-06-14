@@ -33,7 +33,14 @@ describe("ScenarioIdentityResolver", () => {
       logger(),
     );
     const out = await resolver.enrich(
-      report([{ feature: "F", featureUri: "features/UC-001-login.feature", scenario: "Login", status: "passed" }]),
+      report([
+        {
+          feature: "F",
+          featureUri: "features/UC-001-login.feature",
+          scenario: "Login",
+          status: "passed",
+        },
+      ]),
     );
     expect(out.scenarioResults[0]?.scenarioRef).toBe(`${FEATURE}::Login`);
   });
@@ -49,11 +56,27 @@ describe("ScenarioIdentityResolver", () => {
       "      | user  |",
       "",
     ].join("\n");
-    const resolver = new ScenarioIdentityResolver(settings(), fsWith({ [FEATURE]: text }), logger());
+    const resolver = new ScenarioIdentityResolver(
+      settings(),
+      fsWith({ [FEATURE]: text }),
+      logger(),
+    );
     const out = await resolver.enrich(
       report([
-        { feature: "F", featureUri: "features/UC-001-login.feature", scenario: "Login as <role>", status: "passed", line: 7 },
-        { feature: "F", featureUri: "features/UC-001-login.feature", scenario: "Login as <role>", status: "passed", line: 6 },
+        {
+          feature: "F",
+          featureUri: "features/UC-001-login.feature",
+          scenario: "Login as <role>",
+          status: "passed",
+          line: 7,
+        },
+        {
+          feature: "F",
+          featureUri: "features/UC-001-login.feature",
+          scenario: "Login as <role>",
+          status: "passed",
+          line: 6,
+        },
       ]),
     );
     const refByLine = Object.fromEntries(out.scenarioResults.map((r) => [r.line, r.scenarioRef]));
@@ -65,7 +88,14 @@ describe("ScenarioIdentityResolver", () => {
     const log = logger();
     const resolver = new ScenarioIdentityResolver(settings(), fsWith({}), log);
     const out = await resolver.enrich(
-      report([{ feature: "F", featureUri: "features/UC-001-login.feature", scenario: "Login", status: "passed" }]),
+      report([
+        {
+          feature: "F",
+          featureUri: "features/UC-001-login.feature",
+          scenario: "Login",
+          status: "passed",
+        },
+      ]),
     );
     expect(out.scenarioResults[0]?.scenarioRef).toBeUndefined();
     expect((log as unknown as { warn: ReturnType<typeof vi.fn> }).warn).toHaveBeenCalled();
@@ -81,11 +111,27 @@ describe("ScenarioIdentityResolver", () => {
       "      | 1 |",
       "",
     ].join("\n");
-    const resolver = new ScenarioIdentityResolver(settings(), fsWith({ [FEATURE]: text }), logger());
+    const resolver = new ScenarioIdentityResolver(
+      settings(),
+      fsWith({ [FEATURE]: text }),
+      logger(),
+    );
     const out = await resolver.enrich(
       report([
-        { feature: "F", featureUri: "features/UC-001-login.feature", scenario: "O", status: "passed", line: 6 },
-        { feature: "F", featureUri: "features/UC-001-login.feature", scenario: "O", status: "passed", line: 99 },
+        {
+          feature: "F",
+          featureUri: "features/UC-001-login.feature",
+          scenario: "O",
+          status: "passed",
+          line: 6,
+        },
+        {
+          feature: "F",
+          featureUri: "features/UC-001-login.feature",
+          scenario: "O",
+          status: "passed",
+          line: 99,
+        },
       ]),
     );
     const refs = out.scenarioResults.map((r) => r.scenarioRef);
@@ -94,7 +140,12 @@ describe("ScenarioIdentityResolver", () => {
 
   it("does not mutate the input report's results", async () => {
     const input = report([
-      { feature: "F", featureUri: "features/UC-001-login.feature", scenario: "Login", status: "passed" },
+      {
+        feature: "F",
+        featureUri: "features/UC-001-login.feature",
+        scenario: "Login",
+        status: "passed",
+      },
     ]);
     const resolver = new ScenarioIdentityResolver(
       settings(),
@@ -107,14 +158,23 @@ describe("ScenarioIdentityResolver", () => {
 
   it("returns the report unenriched (no throw) when settings cannot load", async () => {
     const log = logger();
-    const failingSettings = { load: async () => { throw new Error("settings boom"); } } as never;
+    const failingSettings = {
+      load: async () => {
+        throw new Error("settings boom");
+      },
+    } as never;
     const resolver = new ScenarioIdentityResolver(
       failingSettings,
       fsWith({ [FEATURE]: "Feature: F\n  Scenario: Login\n    Given x\n" }),
       log,
     );
     const input = report([
-      { feature: "F", featureUri: "features/UC-001-login.feature", scenario: "Login", status: "passed" },
+      {
+        feature: "F",
+        featureUri: "features/UC-001-login.feature",
+        scenario: "Login",
+        status: "passed",
+      },
     ]);
     const out = await resolver.enrich(input);
     expect(out.scenarioResults[0]?.scenarioRef).toBeUndefined();

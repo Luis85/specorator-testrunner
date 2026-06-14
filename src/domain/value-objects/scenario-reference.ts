@@ -59,6 +59,15 @@ export const parseScenarioReference = (ref: string): ParsedScenarioReference => 
   return base;
 };
 
+/**
+ * Zips an `Examples` header with one row into `[header, value]` cells, padding
+ * a short row with `""`. The single source of the cell shape that feeds
+ * {@link rowDigest}, so the identity reference and the duplicate-row validation
+ * compute the same digest (US-056).
+ */
+export const rowCells = (header: readonly string[], row: readonly string[]): [string, string][] =>
+  header.map((value, i) => [value, row[i] ?? ""]);
+
 export interface ScenarioRefEntry {
   scenarioName: string;
   ref: string;
@@ -77,12 +86,9 @@ export const featureScenarioRefs = (feature: FeatureSpecification): ScenarioRefE
     if (isScenarioOutline(scenario)) {
       for (const block of scenario.examples ?? []) {
         for (const row of block.rows) {
-          const cells = block.header.map(
-            (header, i) => [header, row[i] ?? ""] as [string, string],
-          );
           entries.push({
             scenarioName: scenario.name,
-            ref: outlineRowRef(path, scenario.name, cells),
+            ref: outlineRowRef(path, scenario.name, rowCells(block.header, row)),
           });
         }
       }

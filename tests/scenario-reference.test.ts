@@ -11,13 +11,24 @@ import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 describe("rowDigest (content-stable Outline row key, US-056)", () => {
   it("is deterministic for the same cells", () => {
-    const cells: [string, string][] = [["role", "admin"], ["name", "Alice"]];
+    const cells: [string, string][] = [
+      ["role", "admin"],
+      ["name", "Alice"],
+    ];
     expect(rowDigest(cells)).toBe(rowDigest(cells));
   });
 
   it("is independent of column order (sorted by header)", () => {
-    expect(rowDigest([["role", "admin"], ["name", "Alice"]])).toBe(
-      rowDigest([["name", "Alice"], ["role", "admin"]]),
+    expect(
+      rowDigest([
+        ["role", "admin"],
+        ["name", "Alice"],
+      ]),
+    ).toBe(
+      rowDigest([
+        ["name", "Alice"],
+        ["role", "admin"],
+      ]),
     );
   });
 
@@ -26,7 +37,12 @@ describe("rowDigest (content-stable Outline row key, US-056)", () => {
   });
 
   it("does not alias rows when values contain separators", () => {
-    expect(rowDigest([["x", "a=b"]])).not.toBe(rowDigest([["x", "a"], ["", "b"]]));
+    expect(rowDigest([["x", "a=b"]])).not.toBe(
+      rowDigest([
+        ["x", "a"],
+        ["", "b"],
+      ]),
+    );
   });
 
   it("returns a compact base36 string", () => {
