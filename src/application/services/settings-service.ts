@@ -3,10 +3,8 @@ import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { PathSafetyPolicy } from "../../domain/policies/path-safety-policy";
 import {
   authEnvKeyProblem,
-  BROWSER_NAMES,
   DEFAULT_SETTINGS,
   type AutomationSettings,
-  type BrowserName,
   type CiProvider,
   type CiSettings,
   type OnboardingSequenceProgress,
@@ -23,6 +21,12 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
 import { SerialQueue } from "../../shared/async/serial-queue";
+import {
+  baseUrlProblem,
+  isPlainRecord,
+  nodeExecutableProblem,
+  repairBrowsers,
+} from "./settings-field-rules";
 
 /** No-op logger so tests can construct the service without wiring one. */
 const NOOP_LOGGER: Logger = {
@@ -68,16 +72,6 @@ interface ValidationMessages {
   errors: SettingsValidationMessage[];
   warnings: SettingsValidationMessage[];
 }
-
-/**
- * True for a plain JSON record (not null, not an array). {@link mergeWithDefaults}
- * merges one level deep, so a tampered/synced `data.json` can place ANY JSON
- * shape at nested positions (`sut.environments: null`, an array, a string) —
- * consumers must re-establish "this is a record" before iterating, or
- * `Object.entries(null)` crashes settings load at plugin startup.
- */
-const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
  * The data.json schema version. Bumped when the persisted shape changes
@@ -937,102 +931,6 @@ export class DefaultSettingsService implements SettingsService {
     };
   }
 }
-
-/**
- * C0 control characters + DEL. Any one of these in a value destined for the
- * runner subprocess env (or a downstream text sink) is a smuggling primitive —
- * a newline especially can split a value into extra lines/steps wherever it is
- * later rendered. Same class pipeline-generation-service rejects before
- * writing the workflow.
- */
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
-
-/** Protocols a SUT baseUrl may use; file: stays allowed for the demo fixture. */
-const ALLOWED_BASE_URL_PROTOCOLS = new Set(["http:", "https:", "file:"]);
-
-/**
- * Why these rules: `baseUrl` is injected verbatim into the runner subprocess
- * as `BASE_URL` (test-execution-service), so control characters are rejected
- * outright, and anything non-empty must parse as an http:/https:/file: URL so
- * a tampered value can't masquerade as something the runner would misuse
- * (DEFAULT_SETTINGS' demo environment is a `file://` fixture, hence file:).
- * Empty/whitespace-only is NOT a problem here — it is incomplete configuration,
- * not an injection vector; `validate()` surfaces it as a warning instead.
- * Returns the problem text, or `undefined` when the value is acceptable.
- * Pure: shared by validate() and load()-time sanitization so the two can't
- * drift apart.
- */
-const baseUrlProblem = (value: string): string | undefined => {
-  // Runtime shape defense: the parameter is typed, but adversarial settings
-  // shapes can reach the validate() path before load()-time repair has run.
-  if (typeof value !== "string") return "is not a string";
-  if (CONTROL_CHARS.test(value)) return "contains a control character";
-  if (value.trim() === "") return undefined; // warning-level, handled by callers
-  let protocol: string;
-  try {
-    protocol = new URL(value).protocol;
-  } catch {
-    return `is not a parseable URL: ${JSON.stringify(value)}`;
-  }
-  if (!ALLOWED_BASE_URL_PROTOCOLS.has(protocol)) {
-    return `uses unsupported protocol "${protocol}" (allowed: http:, https:, file:)`;
-  }
-  return undefined;
-};
-
-/**
- * Absolute executable path on either platform: POSIX `/usr/bin/node`, a
- * Windows drive path `C:\nodejs\node.exe` (or `C:/…`), or a UNC share
- * `\\server\tools\node.exe`.
- */
-const isAbsoluteExecutablePath = (value: string): boolean =>
-  value.startsWith("/") || /^[A-Za-z]:[/\\]/.test(value) || value.startsWith("\\\\");
-
-/**
- * Why these rules: CommandSafetyPolicy allowlists the node executable's
- * BASENAME only, so settings must reject what that check cannot see — control
- * characters/newlines, `..` traversal segments, and RELATIVE paths with
- * separators. The runner spawns from the vault, so a vault-relative value
- * like `evil/node` (no `..` needed) would execute a binary an attacker
- * synced/committed INTO the vault while still ending in the trusted basename
- * (PR #18 review). Separators are checked on BOTH `/` and `\` so a
- * Windows-style `..\\evil\\node` can't slip through on a POSIX host. Bare
- * names ("node", resolved via PATH) and absolute paths remain allowed.
- * Returns the problem text, or `undefined`.
- */
-const nodeExecutableProblem = (value: string): string | undefined => {
-  // Runtime shape defense, mirroring baseUrlProblem.
-  if (typeof value !== "string") return "is not a string";
-  if (CONTROL_CHARS.test(value)) return "contains a control character";
-  if (value.split(/[/\\]/).includes("..")) return 'contains a ".." path traversal segment';
-  if (/[/\\]/.test(value) && !isAbsoluteExecutablePath(value)) {
-    return "is a relative path; use a bare command name or an absolute path";
-  }
-  return undefined;
-};
-
-/**
- * Filters and deduplicates `raw` to only known {@link BrowserName} values.
- * Returns `{ browsers: ["chromium"], repaired: true }` when the result would be
- * empty (including when `raw` is not an array). The `repaired` flag is `true`
- * whenever any value was dropped or the array was empty/invalid.
- */
-const repairBrowsers = (raw: unknown): { browsers: BrowserName[]; repaired: boolean } => {
-  const valid = new Set<string>(BROWSER_NAMES);
-  const seen = new Set<string>();
-  const cleaned: BrowserName[] = [];
-  if (Array.isArray(raw)) {
-    for (const b of raw) {
-      if (typeof b === "string" && valid.has(b) && !seen.has(b)) {
-        seen.add(b);
-        cleaned.push(b as BrowserName);
-      }
-    }
-  }
-  if (cleaned.length === 0) return { browsers: ["chromium"], repaired: true };
-  return { browsers: cleaned, repaired: cleaned.length !== (Array.isArray(raw) ? raw.length : -1) };
-};
 
 /** Last `/`-separated, non-empty segment of a vault path. */
 const baseName = (path: string): string => {
