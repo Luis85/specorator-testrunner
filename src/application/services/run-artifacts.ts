@@ -62,7 +62,12 @@ export const snapshotFeatures = async (
       .split(/[/\\]+/)
       .filter((segment) => segment !== "" && segment !== ".")
       .join("/");
-    const root = `${base.value.replace(/[/\\]$/, "")}/${featuresRel}`;
+    const cleanBase = base.value.replace(/[/\\]$/, "");
+    // featuresRel is empty when the features folder IS the vault root
+    // (`featureFilesPath = "."`); key those features by bare name so they match
+    // the resolver, which resolves `../UC-001.feature` to `UC-001.feature` with
+    // no leading slash (codex P2).
+    const root = featuresRel ? `${cleanBase}/${featuresRel}` : cleanBase;
     const snapshot: Record<string, string> = {};
     await collectFeatures(root, featuresRel, snapshot, absoluteFs);
     if (Object.keys(snapshot).length === 0) return;
@@ -97,7 +102,9 @@ const collectFeatures = async (
 ): Promise<void> => {
   for (const name of await absoluteFs.listAbsolute(absDir)) {
     const childAbs = `${absDir}/${name}`;
-    const childRel = `${vaultRel}/${name}`;
+    // No separator when the base is empty (root-level features folder), so a
+    // root feature keys as `UC-001.feature`, not `/UC-001.feature` (codex P2).
+    const childRel = vaultRel ? `${vaultRel}/${name}` : name;
     if (name.endsWith(".feature")) {
       const read = await absoluteFs.readAbsolute(childAbs);
       if (read.ok) out[childRel] = read.value;

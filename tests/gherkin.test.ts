@@ -216,6 +216,8 @@ describe("parseFeature (extended Gherkin)", () => {
           ["1", "2", "3"],
           ["2", "3", "5"],
         ],
+        // 1-based feature-file lines of the two data rows (US-056 follow-up).
+        rowLines: [29, 30],
       },
     ]);
   });

@@ -94,6 +94,13 @@ export interface ScenarioRefEntry {
   /** The name a run report carries for this row — expanded for Outline rows. */
   matchName: string;
   ref: string;
+  /**
+   * 1-based feature-file line of an Outline example row (from the parser), when
+   * known. Lets a resolver disambiguate filtered same-name rows by line — the
+   * report row carries the same line — instead of by position. Absent for plain
+   * scenarios and parser output without line info.
+   */
+  line?: number;
 }
 
 /**
@@ -109,14 +116,16 @@ export const featureScenarioRefs = (feature: FeatureSpecification): ScenarioRefE
   for (const scenario of feature.scenarios) {
     if (isScenarioOutline(scenario)) {
       for (const block of scenario.examples ?? []) {
-        for (const row of block.rows) {
+        block.rows.forEach((row, index) => {
           const cells = rowCells(block.header, row);
+          const line = block.rowLines?.[index];
           entries.push({
             scenarioName: scenario.name,
             matchName: expandScenarioName(scenario.name, cells),
             ref: outlineRowRef(path, scenario.name, cells),
+            ...(line !== undefined ? { line } : {}),
           });
-        }
+        });
       }
     } else {
       entries.push({
