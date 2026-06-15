@@ -3,12 +3,34 @@ import type { FeatureHealth } from "../../application/services/feature-insight-s
 import type {
   FeatureFileEntry,
   MissingStepResult,
+  SpecificationService,
   SpecificationValidationResult,
 } from "../../application/services/specification-service";
-import type { GenerateStepDefinitionsResult } from "../../application/services/step-definition-service";
+import type {
+  GenerateStepDefinitionsResult,
+  StepDefinitionService,
+} from "../../application/services/step-definition-service";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import { type ChecklistRow, checklistRow } from "../settings/settings-rows";
+
+/**
+ * The Use Case → (Domain ›) PRD breadcrumb label. Empty when the Use Case has
+ * neither a domain nor a PRD link. Falls back to the bare PRD id when its title
+ * is not in `prdTitleById`.
+ */
+export const prdBreadcrumbLabel = (
+  uc: { domain?: string; prdId?: string },
+  prdTitleById: Map<string, string>,
+): string => {
+  const parts: string[] = [];
+  if (uc.domain) parts.push(`Domain: ${uc.domain}`);
+  if (uc.prdId) {
+    const title = prdTitleById.get(uc.prdId);
+    parts.push(title ? `${uc.prdId}: ${title}` : uc.prdId);
+  }
+  return parts.join("  ›  ");
+};
 
 /** The Use Case header fields the detail view renders, projected for a row. */
 export interface UseCaseHeaderRow {
@@ -140,4 +162,56 @@ export const stepGenerationRows = (result: GenerateStepDefinitionsResult): Check
       `Generated ${count} step ${count === 1 ? "stub" : "stubs"} in ${result.stepFile}.`,
     ),
   ];
+};
+
+// ── Per-Feature action outcomes ──────────────────────────────────────────────
+// The async orchestration behind each Feature row's inline action: call the
+// service, then map success/failure to the SAME ChecklistRow vocabulary above.
+// Extracted from the view so the error/empty paths (which the view itself can't
+// unit-test) are covered, and the view's methods stay thin (render pending,
+// await the outcome, render it).
+
+/** Validate the chosen Feature (UC-007) and project the outcome to rows. */
+export const validateFeatureOutcome = async (
+  specificationService: Pick<SpecificationService, "validate">,
+  featurePath: VaultPath,
+): Promise<ChecklistRow[]> => {
+  const result = await specificationService.validate(featurePath);
+  if (!result.ok) return [checklistRow("error", `Validation failed: ${result.error.message}`)];
+  return featureValidationRows(result.value);
+};
+
+/** Detect the chosen Feature's undefined steps (UC-010) and project to rows. */
+export const detectMissingStepsOutcome = async (
+  specificationService: Pick<SpecificationService, "detectMissingSteps">,
+  featurePath: VaultPath,
+): Promise<ChecklistRow[]> => {
+  const result = await specificationService.detectMissingSteps(featurePath);
+  if (!result.ok) return [checklistRow("error", `Detection failed: ${result.error.message}`)];
+  return missingStepsRows(result.value);
+};
+
+/**
+ * Detect-then-generate (UC-010 / RV-4): detect the Feature's undefined steps,
+ * then generate non-destructive step-definition stubs — the same two-call
+ * orchestration the command palette uses — projected to rows.
+ */
+export const generateStepDefinitionsOutcome = async (
+  specificationService: Pick<SpecificationService, "detectMissingSteps">,
+  stepDefinitionService: Pick<StepDefinitionService, "generate">,
+  featurePath: VaultPath,
+): Promise<ChecklistRow[]> => {
+  const detected = await specificationService.detectMissingSteps(featurePath);
+  if (!detected.ok) return [checklistRow("error", `Detection failed: ${detected.error.message}`)];
+  const generated = await stepDefinitionService.generate(
+    featurePath,
+    detected.value.missingSteps,
+    detected.value.detectionEventId,
+  );
+  if (!generated.ok) {
+    return [
+      checklistRow("error", `Could not generate step definitions: ${generated.error.message}`),
+    ];
+  }
+  return stepGenerationRows(generated.value);
 };
