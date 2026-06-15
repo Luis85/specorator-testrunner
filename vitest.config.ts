@@ -30,6 +30,13 @@ export default defineConfig({
         // covered by manual/E2E testing, not unit tests. Port-driven adapters
         // such as RunnerTemplateWriter stay covered.
         "src/main.ts",
+        // The two halves of main.ts's onload, extracted to keep the composition
+        // root under the size budget: composeServices is straight-line service
+        // wiring and registerViews is `plugin.registerView` factory plumbing —
+        // both runtime-bound composition-root code, unit-test-exempt exactly as
+        // main.ts is (no pure logic to assert).
+        "src/compose-services.ts",
+        "src/register-views.ts",
         "src/infrastructure/obsidian/**",
         // node-child-process-runner.ts and node-absolute-file-system.ts are
         // covered by integration-style adapter tests
