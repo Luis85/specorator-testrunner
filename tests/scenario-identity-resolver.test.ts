@@ -22,8 +22,9 @@ const report = (scenarioResults: ScenarioResult[]): ParsedReport => ({
   artifacts: [],
 });
 
-// playwright-bdd writes the feature uri relative to the runner config dir, so a
-// vault feature surfaces in the report with a leading `../` (one per runner level).
+// The runner sits at `.testrunner`; playwright-bdd writes the feature uri
+// relative to it, so a vault feature surfaces with a leading `../`.
+const RUNNER = ".testrunner";
 const FEATURE = "Specifications/features/UC-001-login.feature";
 const URI = "../Specifications/features/UC-001-login.feature";
 
@@ -52,7 +53,7 @@ describe("ScenarioIdentityResolver", () => {
       fsWith({ [FEATURE]: "Feature: F\n  Scenario: Login\n    Given x\n" }),
       logger(),
     );
-    const out = await resolver.enrich(report([row()]));
+    const out = await resolver.enrich(report([row()]), RUNNER);
     expect(out.scenarioResults[0]?.scenarioRef).toBe(`${FEATURE}::Login`);
   });
 
@@ -63,6 +64,7 @@ describe("ScenarioIdentityResolver", () => {
         row({ scenario: "Login as user", line: 7 }), // report carries the EXPANDED pickle name
         row({ scenario: "Login as admin", line: 6 }),
       ]),
+      RUNNER,
     );
     const refByLine = Object.fromEntries(out.scenarioResults.map((r) => [r.line, r.scenarioRef]));
     expect(refByLine[6]).toBe(`${FEATURE}::Login as <role>::row-${rowDigest([["role", "admin"]])}`);
@@ -72,7 +74,7 @@ describe("ScenarioIdentityResolver", () => {
   it("leaves the ref undefined and warns when the feature is unreadable", async () => {
     const log = logger();
     const resolver = new ScenarioIdentityResolver(fsWith({}), log);
-    const out = await resolver.enrich(report([row()]));
+    const out = await resolver.enrich(report([row()]), RUNNER);
     expect(out.scenarioResults[0]?.scenarioRef).toBeUndefined();
     expect(warnOf(log)).toHaveBeenCalled();
   });
@@ -90,6 +92,7 @@ describe("ScenarioIdentityResolver", () => {
     const resolver = new ScenarioIdentityResolver(fsWith({ [FEATURE]: text }), logger());
     const out = await resolver.enrich(
       report([row({ scenario: "O", line: 6 }), row({ scenario: "O", line: 99 })]),
+      RUNNER,
     );
     const refs = out.scenarioResults.map((r) => r.scenarioRef);
     expect(refs.some((r) => r === `${FEATURE}::O::row-1`)).toBe(true);
@@ -101,7 +104,7 @@ describe("ScenarioIdentityResolver", () => {
       fsWith({ [FEATURE]: "Feature: F\n  Scenario: Login\n    Given x\n" }),
       logger(),
     );
-    await resolver.enrich(input);
+    await resolver.enrich(input, RUNNER);
     expect(input.scenarioResults[0]?.scenarioRef).toBeUndefined();
   });
 
@@ -114,7 +117,7 @@ describe("ScenarioIdentityResolver", () => {
     } as never;
     const resolver = new ScenarioIdentityResolver(throwingFs, log);
     const input = report([row()]);
-    const out = await resolver.enrich(input);
+    const out = await resolver.enrich(input, RUNNER);
     expect(out.scenarioResults[0]?.scenarioRef).toBeUndefined();
     expect(warnOf(log)).toHaveBeenCalled();
   });
@@ -125,7 +128,7 @@ describe("ScenarioIdentityResolver", () => {
     const liveFs = fsWith({ [FEATURE]: "Feature: F\n  Scenario: Signin\n    Given x\n" });
     const snapshot = { [FEATURE]: "Feature: F\n  Scenario: Login\n    Given x\n" };
     const resolver = new ScenarioIdentityResolver(liveFs, logger());
-    const out = await resolver.enrich(report([row({ scenario: "Login" })]), snapshot);
+    const out = await resolver.enrich(report([row({ scenario: "Login" })]), RUNNER, snapshot);
     expect(out.scenarioResults[0]?.scenarioRef).toBe(`${FEATURE}::Login`);
   });
 
@@ -135,13 +138,28 @@ describe("ScenarioIdentityResolver", () => {
       logger(),
     );
     // Snapshot exists but for a different feature -> live read for FEATURE.
-    const out = await resolver.enrich(report([row()]), {
+    const out = await resolver.enrich(report([row()]), RUNNER, {
       "Specifications/features/other.feature": "",
     });
     expect(out.scenarioResults[0]?.scenarioRef).toBe(`${FEATURE}::Login`);
   });
 
-  it("preserves nested feature subfolders, independent of featureFilesPath (codex P2)", async () => {
+  it("resolves a runner + features folder that share a parent (codex P2)", async () => {
+    // testRunnerPath = TestHub/.testrunner, featureFilesPath = TestHub/features:
+    // playwright-bdd reports `../features/foo.feature`; the vault path keeps TestHub/.
+    const VAULT = "TestHub/features/foo.feature";
+    const resolver = new ScenarioIdentityResolver(
+      fsWith({ [VAULT]: "Feature: F\n  Scenario: Login\n    Given x\n" }),
+      logger(),
+    );
+    const out = await resolver.enrich(
+      report([row({ featureUri: "../features/foo.feature" })]),
+      "TestHub/.testrunner",
+    );
+    expect(out.scenarioResults[0]?.scenarioRef).toBe(`${VAULT}::Login`);
+  });
+
+  it("preserves nested feature subfolders (codex P2)", async () => {
     const NESTED = "Specifications/features/auth/login.feature";
     const resolver = new ScenarioIdentityResolver(
       fsWith({ [NESTED]: "Feature: F\n  Scenario: Login\n    Given x\n" }),
@@ -149,6 +167,7 @@ describe("ScenarioIdentityResolver", () => {
     );
     const out = await resolver.enrich(
       report([row({ featureUri: "../Specifications/features/auth/login.feature" })]),
+      RUNNER,
     );
     expect(out.scenarioResults[0]?.scenarioRef).toBe(`${NESTED}::Login`);
   });
@@ -156,7 +175,10 @@ describe("ScenarioIdentityResolver", () => {
   it("still resolves a distinguishing-named Outline row when a tag filter drops siblings", async () => {
     const resolver = new ScenarioIdentityResolver(fsWith({ [FEATURE]: OUTLINE }), logger());
     // Suite run generated only the `user` row; its expanded name still matches.
-    const out = await resolver.enrich(report([row({ scenario: "Login as user", line: 7 })]));
+    const out = await resolver.enrich(
+      report([row({ scenario: "Login as user", line: 7 })]),
+      RUNNER,
+    );
     expect(out.scenarioResults[0]?.scenarioRef).toBe(
       `${FEATURE}::Login as <role>::row-${rowDigest([["role", "user"]])}`,
     );
@@ -170,6 +192,7 @@ describe("ScenarioIdentityResolver", () => {
     const resolver = new ScenarioIdentityResolver(fsWith({ [FEATURE]: text }), log);
     const out = await resolver.enrich(
       report([row({ scenario: "Login", line: 2 }), row({ scenario: "Login", line: 4 })]),
+      RUNNER,
     );
     expect(out.scenarioResults.every((r) => r.scenarioRef === undefined)).toBe(true);
     expect(warnOf(log)).toHaveBeenCalled();
@@ -189,7 +212,7 @@ describe("ScenarioIdentityResolver", () => {
     const log = logger();
     const resolver = new ScenarioIdentityResolver(fsWith({ [FEATURE]: text }), log);
     // Only the second row ran; report has ONE "Login" row.
-    const out = await resolver.enrich(report([row({ scenario: "Login", line: 7 })]));
+    const out = await resolver.enrich(report([row({ scenario: "Login", line: 7 })]), RUNNER);
     // Must NOT receive the first (admin) row's content digest.
     expect(out.scenarioResults[0]?.scenarioRef).not.toBe(
       `${FEATURE}::Login::row-${rowDigest([["role", "admin"]])}`,

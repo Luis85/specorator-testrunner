@@ -243,6 +243,7 @@ export class PostRunCoordinator {
       // the refs are simply absent and evidence still generates.
       const enriched = await this.deps.scenarioIdentityResolver.enrich(
         imported.value,
+        run.workingDirectory,
         imported.value.featureSnapshot,
       );
       const evidence = await this.deps.evidenceGenerationService.generate({

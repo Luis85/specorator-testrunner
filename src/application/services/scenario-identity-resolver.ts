@@ -12,18 +12,22 @@ import type { Logger } from "../../shared/logging/logger";
 /**
  * Vault-relative feature path for a report's runner-relative `featureUri`.
  * playwright-bdd writes the uri relative to the runner's config dir (e.g.
- * `../Specifications/features/auth/login.feature`, with one `../` per level the
- * runner sits below the vault root), so stripping the leading `./` / `../`
- * segments yields the vault-relative path. This preserves nested subfolders and
- * is independent of the current `featureFilesPath` setting, so re-importing a
- * run after that setting changed still resolves the feature that actually ran
- * (codex P2 — no settings drift).
+ * `../features/auth/login.feature`), so resolving it against the run's recorded
+ * runner path and normalizing `.`/`..` yields the vault-relative path. This
+ * works for any layout — including a runner and features folder that share an
+ * intermediate parent (`TestHub/.testrunner` + `TestHub/features`) — preserves
+ * nested subfolders, and uses the run's own runner path rather than the current
+ * `featureFilesPath` setting, so a re-import after a settings change still
+ * resolves the feature that actually ran (codex P2 — no settings drift).
  */
-const vaultPathForUri = (uri: string): VaultPath => {
-  const segments = uri.split("/");
-  let i = 0;
-  while (i < segments.length && (segments[i] === ".." || segments[i] === ".")) i += 1;
-  return unsafeVaultPath(segments.slice(i).join("/"));
+const resolveVaultPath = (runnerPath: string, uri: string): VaultPath => {
+  const out: string[] = [];
+  for (const segment of `${runnerPath}/${uri}`.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") out.pop();
+    else out.push(segment);
+  }
+  return unsafeVaultPath(out.join("/"));
 };
 
 const byLine = (a: ScenarioResult, b: ScenarioResult): number =>
@@ -60,6 +64,7 @@ export class ScenarioIdentityResolver {
 
   async enrich<T extends ParsedReport>(
     report: T,
+    runnerPath: string,
     featureSnapshot?: Record<string, string>,
   ): Promise<T> {
     try {
@@ -67,7 +72,7 @@ export class ScenarioIdentityResolver {
       const enriched = report.scenarioResults.map((result) => ({ ...result }));
 
       for (const [uri, results] of groupByFeatureUri(enriched)) {
-        const vaultPath = vaultPathForUri(uri);
+        const vaultPath = resolveVaultPath(runnerPath, uri);
         const feature = await this.featureFor(vaultPath, cache, featureSnapshot);
         if (feature) this.assign(results, feature, String(vaultPath));
       }
