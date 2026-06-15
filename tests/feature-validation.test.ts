@@ -81,6 +81,17 @@ describe("structuralIssues (TD-003 single source)", () => {
     );
   });
 
+  it("flags a feature path containing the reserved :: delimiter (#55)", () => {
+    const spec = parseFeature(
+      "Feature: F\n  Scenario: Login\n    Given x\n",
+      vp("Specs::weird/UC-001-login.feature"),
+    );
+    if (!spec) return;
+    expect(structuralIssues(spec).map((i) => i.message)).toContain(
+      'Feature path contains the reserved "::" delimiter — rename the folder/file so its Scenario References stay unambiguous (ADR-0022).',
+    );
+  });
+
   it("flags duplicate example rows within one Scenario Outline", () => {
     const spec = parseFeature(
       [

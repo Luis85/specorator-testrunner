@@ -89,6 +89,17 @@ export const structuralIssues = (specification: FeatureSpecification): Validatio
   if (specification.featureName.trim() === "") {
     items.push({ level: "error", message: "Feature has no name." });
   }
+  // `::` is the reserved Scenario Reference delimiter; a feature path that
+  // contains it cannot form an unambiguous reference, so identity resolution
+  // silently skips the Feature. Surface it as an error so the user can rename
+  // the folder/file rather than quietly losing per-scenario history (ADR-0022).
+  if (String(specification.path).includes("::")) {
+    items.push({
+      level: "error",
+      message:
+        'Feature path contains the reserved "::" delimiter — rename the folder/file so its Scenario References stay unambiguous (ADR-0022).',
+    });
+  }
   if (specification.scenarios.length === 0) {
     items.push({ level: "error", message: "Feature has no scenarios." });
   }

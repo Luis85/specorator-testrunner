@@ -124,6 +124,24 @@ describe("featureScenarioRefs", () => {
     expect(entries[0]?.ref).toContain("::row-");
     expect(entries[0]?.ref).not.toBe(entries[1]?.ref);
   });
+
+  it("carries each Outline row's feature-file line (#55)", () => {
+    const feature = parseFeature(
+      [
+        "Feature: F", // 1
+        "  Scenario Outline: Login as <role>", // 2
+        "    Given I am <role>", // 3
+        "    Examples:", // 4
+        "      | role  |", // 5
+        "      | admin |", // 6
+        "      | user  |", // 7
+        "",
+      ].join("\n"),
+      vp("Specifications/features/UC-001-f.feature"),
+    );
+    if (!feature) throw new Error("parse failed");
+    expect(featureScenarioRefs(feature).map((e) => e.line)).toEqual([6, 7]);
+  });
 });
 
 describe("expandScenarioName (mirrors Cucumber pickle naming, US-056)", () => {
