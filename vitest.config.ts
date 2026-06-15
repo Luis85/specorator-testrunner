@@ -49,6 +49,12 @@ export default defineConfig({
         // count toward coverage.
         "src/presentation/views/*-view.ts",
         "src/presentation/views/*-modal.ts",
+        // The Feature Editor's structured sub-renderers (scenario/step/examples
+        // cards), extracted from feature-editor-view.ts to keep it under the
+        // size budget. DOM-building only — the pure editing logic they call
+        // lives in (and is covered through) feature-editor-format.ts.
+        "src/presentation/views/feature-editor-structured.ts",
+        "src/presentation/views/feature-editor-scenario.ts",
         "src/presentation/settings/settings-tab.ts",
         "src/presentation/settings/add-environment-modal.ts",
         "src/presentation/commands/register-commands.ts",
