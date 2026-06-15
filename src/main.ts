@@ -1,75 +1,24 @@
 import { Notice, Plugin } from "obsidian";
 
-import { DefaultDemoContentService } from "./application/services/demo-content-service";
-import {
-  DefaultDocumentationGenerationService,
-  type DocumentationGenerationService,
-} from "./application/services/documentation-generation-service";
-import {
-  DefaultEnvironmentValidationService,
-  type EnvironmentValidationService,
-} from "./application/services/environment-validation-service";
-import {
-  DefaultInitializationService,
-  type InitializationService,
-} from "./application/services/initialization-service";
-import {
-  DefaultMaintenanceService,
-  type MaintenanceService,
-} from "./application/services/maintenance-service";
-import {
-  DefaultPipelineGenerationService,
-  type PipelineGenerationService,
-} from "./application/services/pipeline-generation-service";
-import {
-  DefaultEvidenceGenerationService,
-  type EvidenceGenerationService,
-} from "./application/services/evidence-generation-service";
-import {
-  DefaultFeatureInsightService,
-  type FeatureInsightService,
-} from "./application/services/feature-insight-service";
-import { CucumberJsonReportParser } from "./application/services/cucumber-json-report-parser";
-import {
-  DefaultReportImportService,
-  type ReportImportService,
-} from "./application/services/report-import-service";
-import { PostRunCoordinator } from "./application/services/post-run-coordinator";
-import { ScenarioIdentityResolver } from "./application/services/scenario-identity-resolver";
-import {
-  DefaultGuidedTourService,
-  type GuidedTourService,
-} from "./application/services/guided-tour-service";
-import { DEMO_FEATURE_FILE_NAME, DEMO_USE_CASE_ID } from "./application/content/demo-content";
-import { DEFAULT_SUITES } from "./application/content/default-suites";
-import { DefaultRunnerInstallationService } from "./application/services/runner-installation-service";
+import type { DocumentationGenerationService } from "./application/services/documentation-generation-service";
+import type { EnvironmentValidationService } from "./application/services/environment-validation-service";
+import type { InitializationService } from "./application/services/initialization-service";
+import type { MaintenanceService } from "./application/services/maintenance-service";
+import type { PipelineGenerationService } from "./application/services/pipeline-generation-service";
+import type { FeatureInsightService } from "./application/services/feature-insight-service";
+import type { PostRunCoordinator } from "./application/services/post-run-coordinator";
+import type { GuidedTourService } from "./application/services/guided-tour-service";
 import {
   DefaultSettingsService,
   type SettingsService,
 } from "./application/services/settings-service";
-import {
-  DefaultSpecificationService,
-  type SpecificationService,
-} from "./application/services/specification-service";
-import {
-  DefaultStepDefinitionService,
-  type StepDefinitionService,
-} from "./application/services/step-definition-service";
-import { DefaultSuiteService, type SuiteService } from "./application/services/suite-service";
-import {
-  DefaultTraceabilityService,
-  type TraceabilityService,
-} from "./application/services/traceability-service";
-import {
-  DefaultTestExecutionService,
-  type TestExecutionService,
-} from "./application/services/test-execution-service";
-import {
-  DefaultUseCaseService,
-  type UseCaseService,
-} from "./application/services/use-case-service";
-import { DefaultPrdService, type PrdService } from "./application/services/prd-service";
-import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
+import type { SpecificationService } from "./application/services/specification-service";
+import type { StepDefinitionService } from "./application/services/step-definition-service";
+import type { SuiteService } from "./application/services/suite-service";
+import type { TestExecutionService } from "./application/services/test-execution-service";
+import type { UseCaseService } from "./application/services/use-case-service";
+import type { PrdService } from "./application/services/prd-service";
+import type { DefaultRunnerInstallationService } from "./application/services/runner-installation-service";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
 import type { VaultPath } from "./domain/value-objects/identifiers";
 import {
@@ -77,49 +26,28 @@ import {
   DEFAULT_SETTINGS,
   type TestHubSettings,
 } from "./domain/settings/settings";
-import { NodeAbsoluteFileSystem } from "./infrastructure/filesystem/node-absolute-file-system";
 import { ObsidianDataStore } from "./infrastructure/obsidian/obsidian-data-store";
 import { ObsidianVaultAdapter } from "./infrastructure/obsidian/obsidian-vault-adapter";
 import { ObsidianWorkspaceAdapter } from "./infrastructure/obsidian/obsidian-workspace-adapter";
-import { NodeChildProcessRunner } from "./infrastructure/runner/node-child-process-runner";
-import { RunnerTemplateWriter } from "./infrastructure/runner/runner-template-writer";
+import type { NodeChildProcessRunner } from "./infrastructure/runner/node-child-process-runner";
+import { composeServices } from "./compose-services";
+import { registerViews } from "./register-views";
 import {
   registerCommands,
   type RegisteredCommandHelpers,
 } from "./presentation/commands/register-commands";
-import { RunLauncher } from "./presentation/run/run-launcher";
+import type { RunLauncher } from "./presentation/run/run-launcher";
 import { TestHubSettingTab, type SettingsHost } from "./presentation/settings/settings-tab";
 import { CreateSuiteModal } from "./presentation/views/create-suite-modal";
 import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
 import { PrdBuilderModal } from "./presentation/views/prd-builder-modal";
-import { PRD_VIEW_TYPE, PrdExplorerView } from "./presentation/views/prd-explorer-view";
-import { SUITE_VIEW_TYPE, SuiteDashboardView } from "./presentation/views/suite-dashboard-view";
-import { TEST_CONSOLE_VIEW_TYPE, TestConsoleView } from "./presentation/views/test-console-view";
-import {
-  USE_CASE_VIEW_TYPE,
-  UseCaseDashboardView,
-} from "./presentation/views/use-case-dashboard-view";
-import {
-  USE_CASE_DETAIL_VIEW_TYPE,
-  UseCaseDetailView,
-} from "./presentation/views/use-case-detail-view";
-import { generateFeatureForUseCase } from "./presentation/views/generate-feature-modal";
+import { PRD_VIEW_TYPE } from "./presentation/views/prd-explorer-view";
+import { TEST_CONSOLE_VIEW_TYPE } from "./presentation/views/test-console-view";
+import { USE_CASE_DETAIL_VIEW_TYPE } from "./presentation/views/use-case-detail-view";
 import { openOrNotice } from "./presentation/views/modal-helpers";
-import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
-import { GUIDED_TOUR_VIEW_TYPE, GuidedTourView } from "./presentation/views/guided-tour-view";
-import {
-  DefaultRunHistoryService,
-  type RunHistoryService,
-} from "./application/services/run-history-service";
-import {
-  EVIDENCE_EXPLORER_VIEW_TYPE,
-  EvidenceExplorerView,
-} from "./presentation/views/evidence-explorer-view";
-import {
-  FEATURE_EDITOR_VIEW_TYPE,
-  FeatureEditorView,
-} from "./presentation/views/feature-editor-view";
+import { DASHBOARD_VIEW_TYPE } from "./presentation/views/dashboard-view";
+import { GUIDED_TOUR_VIEW_TYPE } from "./presentation/views/guided-tour-view";
 import { InMemoryEventBus, type EventBus } from "./shared/event-bus/event-bus";
 import { ConsoleLogger } from "./shared/logging/logger";
 import type { Result } from "./shared/result/result";
@@ -154,10 +82,6 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // altitude requirement: the launch logic lives here, not duplicated per call
   // site.
   private runLauncher!: RunLauncher;
-  private reportImportService!: ReportImportService;
-  private evidenceGenerationService!: EvidenceGenerationService;
-  private traceabilityService!: TraceabilityService;
-  private runHistoryService!: RunHistoryService;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
   // In-process post-run flow (P2-1/P2-6/P2-7). Subscribes to the EN-2 terminal
   // run events and runs import→evidence→dashboard-refresh, owning the `lastRun`
@@ -209,417 +133,71 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
 
     this.workspaceAdapter = new ObsidianWorkspaceAdapter(this.app);
 
-    // EPIC-011 Documentation (FEAT-024/025). The workspace adapter is passed so
-    // the "Open Documentation" command (US-046) can open a generated note.
-    this.documentationService = new DefaultDocumentationGenerationService(
-      this.hubSettingsService,
-      vault,
-      eventBus,
-      this.workspaceAdapter,
-    );
-    const documentation = this.documentationService;
-    this.suiteService = new DefaultSuiteService(this.hubSettingsService, vault, eventBus);
-    const suites = this.suiteService;
-    const demo = new DefaultDemoContentService(this.hubSettingsService, vault, eventBus);
-
-    const absoluteFs = new NodeAbsoluteFileSystem(this.app);
-    const childProcess = new NodeChildProcessRunner();
-    this.processRunners.push(childProcess);
-    const templateWriter = new RunnerTemplateWriter(absoluteFs);
-    const commandSafety = new DefaultCommandSafetyPolicy();
-
-    const runnerInstall = new DefaultRunnerInstallationService(
-      templateWriter,
-      childProcess,
-      absoluteFs,
-      commandSafety,
-      eventBus,
-      this.logger,
-    );
-    this.runnerInstallService = runnerInstall;
-    this.validationService = new DefaultEnvironmentValidationService(
-      this.hubSettingsService,
-      childProcess,
-      absoluteFs,
-      commandSafety,
-      eventBus,
-      process.env,
-      process.platform,
-    );
-    // EPIC-010 CI/CD (UC-019): generate the GitHub Actions workflow into the
-    // user's repo root via the absolute filesystem (the workflow is not a
-    // VaultPath; it must live where GitHub Actions discovers it, TIS §8.13).
-    this.pipelineService = new DefaultPipelineGenerationService(
-      absoluteFs,
-      eventBus,
-      commandSafety,
-    );
-    this.initializationService = new DefaultInitializationService(
-      this.hubSettingsService,
-      vault,
-      documentation,
-      suites,
-      demo,
-      runnerInstall,
-      this.validationService,
-      pathSafety,
-      eventBus,
-      this.logger,
-      // Init rewrites the `.testrunner` files an in-flight run reads, so it
-      // refuses while a run is active (entry-point review). The execution
-      // service is built further down — probe lazily through `this`. During a
-      // reset's nested re-init the maintenance lock already blocks new runs,
-      // so this probe reads null there (no deadlock).
-      () => this.testExecutionService?.activeRunId() ?? null,
-    );
-    // Maintenance (repair/reset). The execution service — which owns the
-    // synchronous maintenance lock that closes the reset/run TOCTOU (security
-    // L1) — is built further down, so delegate to it lazily through `this`. The
-    // lock's begin() performs the ADR-0018 active-run refusal synchronously, so
-    // the active-run guard here is the legacy fallback only.
-    this.maintenanceService = new DefaultMaintenanceService(
-      this.hubSettingsService,
-      this.validationService,
-      runnerInstall,
-      eventBus,
-      this.logger,
-      {
-        activeRunId: () => this.testExecutionService.activeRunId(),
-        whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
-      },
-      this.initializationService,
-      vault,
-      {
-        inProgress: () => this.testExecutionService.maintenanceLock.inProgress(),
-        begin: () => this.testExecutionService.maintenanceLock.begin(),
-        end: () => this.testExecutionService.maintenanceLock.end(),
-      },
-      // Drained INSIDE repair()/reset() after the lock is acquired, so the tail
-      // of the previous run's import/evidence chain (which outlives the
-      // active-run slot) settles before maintenance touches any files.
-      () => this.postRunCoordinator.whenSettled(),
-    );
-    // Built before useCaseService (which links to it): PrdService depends only
-    // on settings/vault/bus/logger, so constructing it first lets assignToPrd's
-    // PRD-lookup + shared-mutation-lock probes reference an already-assigned
-    // `this.prdService` rather than a forward reference.
-    this.prdService = new DefaultPrdService(this.hubSettingsService, vault, eventBus, this.logger);
-    this.useCaseService = new DefaultUseCaseService(
-      this.hubSettingsService,
-      vault,
-      eventBus,
-      this.logger,
-      // assignToPrd validates links against the live PRD index and serializes
-      // them with PRD create/delete through the shared mutation lock.
-      {
-        findById: (id) => this.prdService.findById(id),
-        withMutationLock: (op) => this.prdService.withMutationLock(op),
-      },
-    );
-    this.specificationService = new DefaultSpecificationService(
-      this.hubSettingsService,
-      this.useCaseService,
-      vault,
-      eventBus,
-      this.logger,
-      childProcess,
-      absoluteFs,
-      // Screens the configured Node executable before detection spawns bddgen
-      // (the same ADR-0010 allowlist validation/execution use).
-      commandSafety,
-      // bddgen diagnostics regenerate `.features-gen` under the shared runner
-      // cwd, so detection refuses while a run is active. The execution service
-      // is built further down — probe lazily through `this` (null until then,
-      // which is fine: no run can be active before it exists).
-      () => this.testExecutionService?.activeRunId() ?? null,
-    );
-    // Wave F insight: composes listFeatures (discovery stays defined once) with
-    // the shared Gherkin parser to answer "how many scenarios does this Tag
-    // Expression match?" and "how healthy is this Feature?" for the views.
-    this.featureInsightService = new DefaultFeatureInsightService(this.specificationService, vault);
-    // UC-010 / RV-4: generate step-definition stubs for a feature's undefined
-    // steps. Writes via the same VaultFileSystem + `.testrunner/src/steps` path
-    // that detectMissingSteps reads from, so a stub is picked up next detection.
-    this.stepDefinitionService = new DefaultStepDefinitionService(
-      this.hubSettingsService,
-      vault,
-      eventBus,
-      this.logger,
-    );
-    // A dedicated runner instance for test execution: cancel() kills only the
-    // (single, ADR-0018) active test process, never a concurrent validation,
-    // repair, or install spawned on the shared `childProcess`.
-    const runProcessRunner = new NodeChildProcessRunner();
-    this.processRunners.push(runProcessRunner);
-    this.testExecutionService = new DefaultTestExecutionService(
-      this.hubSettingsService,
-      this.suiteService,
-      this.useCaseService,
-      runProcessRunner,
-      absoluteFs,
-      commandSafety,
-      eventBus,
-      this.logger,
-    );
-
-    // Single run-launch surface shared by the command palette and the explorer
-    // / Test Console buttons (Wave B). It reveals the live Test Console BEFORE
-    // execute() publishes (the bus does not replay) and surfaces
-    // RUN_IN_PROGRESS / errors as Notices. The open-console port is backed by
-    // the workspace adapter so the launcher itself stays free of Obsidian view
-    // plumbing.
-    this.runLauncher = new RunLauncher(this.testExecutionService, {
-      openConsole: () => this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
-    });
-
-    // EPIC-008 Reporting & Evidence (UC-016): import the runner's JSON report
-    // and generate linked Markdown evidence once a run finishes.
-    const reportParser = new CucumberJsonReportParser();
-    this.reportImportService = new DefaultReportImportService(
-      this.hubSettingsService,
-      absoluteFs,
-      reportParser,
-      eventBus,
-      this.logger,
-    );
-    const scenarioIdentityResolver = new ScenarioIdentityResolver(vault, this.logger);
-    this.evidenceGenerationService = new DefaultEvidenceGenerationService(
-      this.hubSettingsService,
-      vault,
-      this.useCaseService,
-      eventBus,
-      this.logger,
-    );
-
-    // EPIC-009 Dashboard (UC-018): aggregate the Use Case index into KPI counts
-    // + recent runs for the live Test Hub Dashboard.
-    this.traceabilityService = new DefaultTraceabilityService(
-      this.useCaseService,
-      vault,
-      eventBus,
-      this.logger,
-    );
-    this.runHistoryService = new DefaultRunHistoryService(
-      this.hubSettingsService,
-      vault,
-      this.logger,
-    );
-
-    // After a run reaches a terminal state (EN-2), the coordinator reacts to the
-    // bus event and runs import → evidence → dashboard refresh for the just-
-    // finished run, serialized so back-to-back runs can't clobber each other's
-    // Use Case frontmatter. It replaces the never-built ReportFileWatcher / the
-    // imperative await chain that previously lived in `main.ts` (P2-1/P2-6/P2-7).
-    this.postRunCoordinator = new PostRunCoordinator({
-      reportImportService: this.reportImportService,
-      evidenceGenerationService: this.evidenceGenerationService,
-      scenarioIdentityResolver,
-      traceabilityService: this.traceabilityService,
+    // Build the layered service graph (Domain → Application → Infrastructure →
+    // Presentation) out-of-line to keep this composition root under the size
+    // budget. The forward references that used to resolve lazily through `this`
+    // (init/maintenance/spec probing the execution service, the coordinator
+    // drain) resolve through the returned holder instead; construction order is
+    // unchanged, so eager references still see a built dependency.
+    const services = composeServices({
+      app: this.app,
+      plugin: this,
       eventBus,
       logger: this.logger,
-      lastRun: () => this.testExecutionService.lastRun(),
-      activeRunId: () => this.testExecutionService.activeRunId(),
-      whenActiveSettles: () => this.testExecutionService.whenActiveSettles(),
-      isEvidenceMarkdownEnabled: () => this.hubSettings.automation.generateEvidenceMarkdown,
+      pathSafety,
+      hubSettingsService: this.hubSettingsService,
+      vault,
+      workspaceAdapter: this.workspaceAdapter,
+      getSettings: () => this.hubSettings,
+      updateSettings: (next) => this.updateSettings(next),
+      processRunners: this.processRunners,
     });
-    this.postRunCoordinator.start();
+    // Keep the slices the settings tab, ribbons, command palette, onunload, and
+    // the open-a-modal helpers reach for as class fields (the rest live only
+    // inside the composed graph / the views wired below).
+    this.documentationService = services.documentationService;
+    this.suiteService = services.suiteService;
+    this.runnerInstallService = services.runnerInstallService;
+    this.validationService = services.validationService;
+    this.pipelineService = services.pipelineService;
+    this.initializationService = services.initializationService;
+    this.maintenanceService = services.maintenanceService;
+    this.prdService = services.prdService;
+    this.useCaseService = services.useCaseService;
+    this.specificationService = services.specificationService;
+    this.featureInsightService = services.featureInsightService;
+    this.stepDefinitionService = services.stepDefinitionService;
+    this.testExecutionService = services.testExecutionService;
+    this.runLauncher = services.runLauncher;
+    this.postRunCoordinator = services.postRunCoordinator;
+    this.guidedTourService = services.guidedTourService;
 
-    // Guided Tour (spec 2026-06-11): observes the user's real actions on the
-    // bus and advances the onboarding checklist whether or not the view is
-    // open. Persistence goes through the SettingsHost so the in-memory
-    // settings copy stays current (optimistic swap in updateSettings).
-    this.guidedTourService = new DefaultGuidedTourService(
-      {
-        getSettings: () => this.hubSettings,
-        updateSettings: (next) => this.updateSettings(next),
-      },
+    // Register the Obsidian views + the `.feature` editor extension out-of-line
+    // (size budget). Each view's factory closes over the composed services and
+    // the open-a-modal / switch-environment callbacks this composition root owns
+    // — a view never re-implements those flows.
+    registerViews(this, {
+      app: this.app,
       eventBus,
-      this.logger,
-      {
-        demoUseCaseId: DEMO_USE_CASE_ID,
-        demoFeatureFileName: DEMO_FEATURE_FILE_NAME,
-        defaultSuiteIds: DEFAULT_SUITES.map((suite) => suite.id),
-      },
-    );
-    this.guidedTourService.start();
-
-    this.registerView(
-      USE_CASE_VIEW_TYPE,
-      (leaf) =>
-        new UseCaseDashboardView(leaf, {
-          useCaseService: this.useCaseService,
-          specificationService: this.specificationService,
-          workspace: this.workspaceAdapter,
-          eventBus,
-          runLauncher: this.runLauncher,
-          onCreate: () => this.openCreateUseCase(),
-          // Wave D: the id column opens the Use Case detail view (authoring &
-          // testing surface); the per-row "Note" link keeps raw note access.
-          onOpenDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
-        }),
-    );
-    // Wave D: the Use Case detail view — the UI-driven authoring & testing
-    // surface for one Use Case. Deps are the narrow lookup + spec/step services
-    // it orchestrates, the workspace port, the shared run launcher, and the
-    // generate-Feature opener (which reuses the command palette's slug-prompt
-    // flow rather than forking the generation logic).
-    this.registerView(
-      USE_CASE_DETAIL_VIEW_TYPE,
-      (leaf) =>
-        new UseCaseDetailView(leaf, {
-          useCaseService: this.useCaseService,
-          prdService: this.prdService,
-          specificationService: this.specificationService,
-          stepDefinitionService: this.stepDefinitionService,
-          featureInsight: this.featureInsightService,
-          workspace: this.workspaceAdapter,
-          eventBus,
-          runLauncher: this.runLauncher,
-          openGenerateFeature: (useCase, onGenerated) =>
-            generateFeatureForUseCase(
-              this.app,
-              {
-                useCaseService: this.useCaseService,
-                specificationService: this.specificationService,
-                workspace: this.workspaceAdapter,
-              },
-              useCase,
-              () => onGenerated(),
-            ),
-        }),
-    );
-    this.registerView(
-      SUITE_VIEW_TYPE,
-      (leaf) =>
-        new SuiteDashboardView(leaf, {
-          suiteService: this.suiteService,
-          workspace: this.workspaceAdapter,
-          eventBus,
-          runLauncher: this.runLauncher,
-          featureInsight: this.featureInsightService,
-          onCreate: () => this.openCreateSuite(),
-        }),
-    );
-    this.registerView(
-      PRD_VIEW_TYPE,
-      (leaf) =>
-        new PrdExplorerView(leaf, {
-          prdService: this.prdService,
-          useCaseService: this.useCaseService,
-          workspace: this.workspaceAdapter,
-          eventBus,
-          openPrdBuilder: (parentPrdId) => this.openPrdBuilder(parentPrdId),
-        }),
-    );
-    this.registerView(
-      TEST_CONSOLE_VIEW_TYPE,
-      (leaf) =>
-        new TestConsoleView(leaf, {
-          eventBus,
-          runLauncher: this.runLauncher,
-          // Narrow read-only slice: the toolbar checks for an active run on open
-          // and reads the last run's scope to power Re-run.
-          activeRunId: () => this.testExecutionService.activeRunId(),
-          activeRunStartedAt: () => this.testExecutionService.activeRunStartedAt(),
-          lastRun: () => this.testExecutionService.lastRun(),
-          // Wave G §1: the "Open evidence" button. The coordinator already owns
-          // the post-run evidence flow, so it is the cleanest synchronous source
-          // for "the last generated evidence note" when the console opens after
-          // `evidence.generated` already fired (the bus does not replay).
-          lastEvidence: () => this.postRunCoordinator.lastEvidence(),
-          openEvidence: (path) => this.openEvidenceNote(path),
-        }),
-    );
-    this.registerView(
-      DASHBOARD_VIEW_TYPE,
-      (leaf) =>
-        // Wave C: the dashboard hub drives create/run/open/generate-docs/switch-
-        // environment/open-evidence through callbacks wired to the EXISTING
-        // helpers + the Wave B RunLauncher (no run/create logic is duplicated).
-        new DashboardView(leaf, {
-          traceabilityService: this.traceabilityService,
-          prdService: this.prdService,
-          useCaseService: this.useCaseService,
-          openPrdBuilder: () => this.openPrdBuilder(),
-          navigateToPrds: () => void this.workspaceAdapter.openView(PRD_VIEW_TYPE, "sidebar"),
-          eventBus,
-          // Real initialization signal: the Use Cases folder the snapshot reads
-          // exists once the wizard has scaffolded the vault. A fresh vault lists
-          // it as ok([]), so snapshot success can't distinguish "not set up" —
-          // this folder-existence check can.
-          isInitialized: () => vault.exists(this.hubSettings.paths.useCasesPath),
-          openDocumentation: (documentType) => this.openDocumentation(documentType),
-          openWizard: () => this.openWizard(),
-          openCreateUseCase: () => this.openCreateUseCase(),
-          openCreateSuite: () => this.openCreateSuite(),
-          runAll: () => this.runLauncher.launch({ scope: "all", target: "all" }),
-          runDemo: () => this.runLauncher.launch({ scope: "demo", target: "demo" }),
-          generateDocumentation: () => this.generateDocumentation(),
-          navigate: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
-          openSuites: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
-          openConsole: () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
-          openEvidence: (path) => this.openEvidenceNote(path),
-          getEnvironments: () => ({
-            active: this.hubSettings.sut.active,
-            names: Object.keys(this.hubSettings.sut.environments),
-          }),
-          switchEnvironment: (name) => this.switchEnvironment(name),
-          openEvidenceExplorer: () =>
-            void this.workspaceAdapter.openView(EVIDENCE_EXPLORER_VIEW_TYPE),
-          tourVisible: () => {
-            const state = this.guidedTourService.getState();
-            return !state.completed && !state.dismissed;
-          },
-          openGuidedTour: () =>
-            void this.workspaceAdapter.openView(GUIDED_TOUR_VIEW_TYPE, "sidebar"),
-        }),
-    );
-    this.registerView(
-      EVIDENCE_EXPLORER_VIEW_TYPE,
-      (leaf) =>
-        new EvidenceExplorerView(leaf, {
-          runHistory: this.runHistoryService,
-          eventBus,
-          openEvidence: (path) => this.openEvidenceNote(path),
-        }),
-    );
-    this.registerView(
-      GUIDED_TOUR_VIEW_TYPE,
-      (leaf) =>
-        new GuidedTourView(leaf, {
-          tour: this.guidedTourService,
-          eventBus,
-          runDemo: () => this.runLauncher.launch({ scope: "demo", target: "demo" }),
-          openCreateUseCase: () => this.openCreateUseCase(),
-          openUseCases: () => void this.workspaceAdapter.openView(USE_CASE_VIEW_TYPE),
-          openCreateSuite: () => this.openCreateSuite(),
-          openSuites: () => void this.workspaceAdapter.openView(SUITE_VIEW_TYPE),
-          openLatestEvidence: () => this.openLatestEvidence(),
-          // Lazy: commandHelpers is assigned by registerCommands() below,
-          // before any view can open.
-          generateCiWorkflow: () => this.commandHelpers.generateCiWorkflow(),
-        }),
-    );
-
-    // The `.feature` file handler: clicking a Feature file in the explorer /
-    // quick switcher (or a detail-view "Open" button) now renders the Feature
-    // Editor. registerExtensions throws if another plugin already claimed the
-    // extension — degrade with a warning instead of failing the whole onload.
-    this.registerView(
-      FEATURE_EDITOR_VIEW_TYPE,
-      (leaf) =>
-        new FeatureEditorView(leaf, {
-          specifications: this.specificationService,
-          featureInsight: this.featureInsightService,
-        }),
-    );
-    try {
-      this.registerExtensions(["feature"], FEATURE_EDITOR_VIEW_TYPE);
-    } catch (error) {
-      this.logger.warn("Could not register the .feature extension", {
-        reason: error instanceof Error ? error.message : String(error),
-      });
-    }
+      workspace: this.workspaceAdapter,
+      vault,
+      logger: this.logger,
+      services,
+      getSettings: () => this.hubSettings,
+      openCreateUseCase: () => this.openCreateUseCase(),
+      openUseCaseDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
+      openCreateSuite: () => this.openCreateSuite(),
+      openPrdBuilder: (parentPrdId) => this.openPrdBuilder(parentPrdId),
+      openWizard: () => this.openWizard(),
+      openDocumentation: (documentType) => this.openDocumentation(documentType),
+      generateDocumentation: () => this.generateDocumentation(),
+      openEvidence: (path) => this.openEvidenceNote(path),
+      switchEnvironment: (name) => this.switchEnvironment(name),
+      openLatestEvidence: () => this.openLatestEvidence(),
+      // Lazy: commandHelpers is assigned by registerCommands() below, before any
+      // view can open.
+      generateCiWorkflow: () => this.commandHelpers.generateCiWorkflow(),
+    });
 
     // The settings tab drives validate/repair/CI inline (Wave A); it receives
     // only the narrow service slices its SettingsTabServices contract names.

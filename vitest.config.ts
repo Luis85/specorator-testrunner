@@ -30,6 +30,13 @@ export default defineConfig({
         // covered by manual/E2E testing, not unit tests. Port-driven adapters
         // such as RunnerTemplateWriter stay covered.
         "src/main.ts",
+        // The two halves of main.ts's onload, extracted to keep the composition
+        // root under the size budget: composeServices is straight-line service
+        // wiring and registerViews is `plugin.registerView` factory plumbing —
+        // both runtime-bound composition-root code, unit-test-exempt exactly as
+        // main.ts is (no pure logic to assert).
+        "src/compose-services.ts",
+        "src/register-views.ts",
         "src/infrastructure/obsidian/**",
         // node-child-process-runner.ts and node-absolute-file-system.ts are
         // covered by integration-style adapter tests
@@ -42,7 +49,21 @@ export default defineConfig({
         // count toward coverage.
         "src/presentation/views/*-view.ts",
         "src/presentation/views/*-modal.ts",
+        // The Feature Editor's structured sub-renderers (scenario/step/examples
+        // cards), extracted from feature-editor-view.ts to keep it under the
+        // size budget. DOM-building only — the pure editing logic they call
+        // lives in (and is covered through) feature-editor-format.ts.
+        "src/presentation/views/feature-editor-structured.ts",
+        "src/presentation/views/feature-editor-scenario.ts",
         "src/presentation/settings/settings-tab.ts",
+        // The settings tab's extracted sections + their shared helpers — the
+        // SUT-environment and maintenance/CI rows split out to keep settings-tab
+        // under the size budget. Runtime-bound Obsidian Setting wiring, same as
+        // settings-tab itself; the pure row projections stay in (and are covered
+        // through) settings-rows.ts.
+        "src/presentation/settings/settings-shared.ts",
+        "src/presentation/settings/settings-environments.ts",
+        "src/presentation/settings/settings-maintenance.ts",
         "src/presentation/settings/add-environment-modal.ts",
         "src/presentation/commands/register-commands.ts",
       ],

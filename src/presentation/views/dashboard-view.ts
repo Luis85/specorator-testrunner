@@ -1,4 +1,4 @@
-import { type App, FuzzySuggestModal, ItemView, type WorkspaceLeaf } from "obsidian";
+import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { PrdService } from "../../application/services/prd-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
@@ -8,7 +8,6 @@ import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import {
-  NO_EVIDENCE_TOOLTIP,
   ONBOARDING_STEPS,
   projectDashboard,
   projectEnvironmentBadge,
@@ -19,7 +18,8 @@ import {
   type OnboardingActionId,
   type QuickActionId,
 } from "./dashboard-rows";
-import { activateOnEnterOrSpace } from "./keyboard-activation";
+import { renderRecentRuns } from "./dashboard-recent-runs";
+import { EnvironmentPickerModal } from "./environment-picker-modal";
 import { LiveRefresh } from "./live-refresh";
 import { renderLoadError } from "./modal-helpers";
 
@@ -254,72 +254,12 @@ export class DashboardView extends ItemView {
     // PRD & roadmap (Task 15): the product-vision card + sub-PRD list.
     await this.renderPrdSection(container);
 
-    // Recent runs (US-038).
-    container.createEl("h3", { text: "Recent runs" });
-    if (view.recentRuns.length === 0) {
-      container.createEl("p", { text: "No Test Runs yet. Run a Test Suite to see results here." });
-      return;
-    }
-    // EPIC-008: only rendered once at least one run exists — an empty history
-    // has nothing to "view all" of.
-    container
-      .createEl("button", {
-        text: "View all runs",
-        cls: "e2e-test-hub-doc-button",
-        attr: { "aria-label": "Open the Evidence Explorer with the full run history" },
-      })
-      .addEventListener("click", () => {
-        void this.deps.openEvidenceExplorer();
-      });
-
-    const table = container.createEl("table", { cls: "e2e-test-hub-runs-table" });
-    const headRow = table.createEl("thead").createEl("tr");
-    for (const label of ["Run", "Status", "Date"]) {
-      // scope="col" ties each header to its column for screen-reader tables.
-      headRow.createEl("th", { text: label, attr: { scope: "col" } });
-    }
-    const body = table.createEl("tbody");
-    for (const run of view.recentRuns) {
-      // Clicking a row opens its linked Evidence note (Wave C §3). Rows without
-      // evidence (e.g. errored runs) are inert with an explanatory tooltip.
-      // The row itself carries no link role/tabindex — that would destroy its
-      // table semantics for screen readers; the Run ID cell holds the real
-      // link-button and the whole-row click is a sighted-user convenience.
-      const tr = body.createEl("tr", {
-        cls: run.navigable ? "e2e-test-hub-run-row is-navigable" : "e2e-test-hub-run-row",
-      });
-      if (run.navigable && run.evidencePath !== undefined) {
-        const path = run.evidencePath;
-        const open = (): void => {
-          void this.deps.openEvidence(path);
-        };
-        // Same pattern as the Use Cases table's id link-button.
-        const link = tr.createEl("td").createEl("button", {
-          text: run.runId,
-          cls: "e2e-test-hub-link-button",
-          attr: { "aria-label": run.ariaLabel },
-        });
-        link.addEventListener("click", (event) => {
-          // The row's convenience click listener below would fire open() again.
-          event.stopPropagation();
-          open();
-        });
-        activateOnEnterOrSpace(link, open);
-        tr.addEventListener("click", open);
-      } else {
-        tr.createEl("td", { text: run.runId });
-        tr.setAttr("title", NO_EVIDENCE_TOOLTIP);
-      }
-      // data-status mirrors the raw TestRunStatus so styles.css can tint the
-      // cell via Obsidian theme vars. The status TEXT stays, so the outcome is
-      // legible without colour (colour-blind / high-contrast safe).
-      tr.createEl("td", {
-        text: run.status,
-        cls: "e2e-test-hub-run-status",
-        attr: { "data-status": run.status },
-      });
-      tr.createEl("td", { text: run.date });
-    }
+    // Recent runs (US-038): the actionable run table, extracted to keep the
+    // table-building DOM out of this render() orchestration.
+    renderRecentRuns(container, view.recentRuns, {
+      openEvidence: this.deps.openEvidence,
+      openEvidenceExplorer: this.deps.openEvidenceExplorer,
+    });
   }
 
   /**
@@ -559,35 +499,5 @@ export class DashboardView extends ItemView {
         void this.deps.openDocumentation(documentType);
       });
     }
-  }
-}
-
-/**
- * Fuzzy picker for switching the active environment (Wave C §2). Mirrors
- * {@link RunPickerModal} — a thin {@link FuzzySuggestModal} over the environment
- * names; the chosen name is handed back to the view, which persists it through
- * the main.ts-owned settings save path.
- */
-class EnvironmentPickerModal extends FuzzySuggestModal<string> {
-  constructor(
-    app: App,
-    private readonly names: string[],
-    private readonly active: string,
-    private readonly onChoose: (name: string) => void,
-  ) {
-    super(app);
-    this.setPlaceholder("Switch active environment");
-  }
-
-  getItems(): string[] {
-    return this.names;
-  }
-
-  getItemText(name: string): string {
-    return name === this.active ? `${name} (active)` : name;
-  }
-
-  onChooseItem(name: string): void {
-    this.onChoose(name);
   }
 }

@@ -7,14 +7,19 @@ import type {
 import type { GenerateStepDefinitionsResult } from "../src/application/services/step-definition-service";
 import type { UseCase } from "../src/domain/entities/use-case";
 import {
+  detectMissingStepsOutcome,
   featureHealthLine,
   featureValidationRows,
+  generateStepDefinitionsOutcome,
   missingStepsRows,
   projectFeatureRows,
   projectUseCaseHeader,
   stepGenerationRows,
+  validateFeatureOutcome,
 } from "../src/presentation/views/use-case-detail-rows";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
+import { err, ok } from "../src/shared/result/result";
+import { appError } from "../src/shared/errors/errors";
 
 const useCase = (over: Partial<UseCase> = {}): UseCase => ({
   id: "UC-001",
@@ -200,5 +205,80 @@ describe("stepGenerationRows", () => {
       appended: false,
     };
     expect(stepGenerationRows(result)[0].text).toContain("1 step stub in");
+  });
+});
+
+const featurePath = vp("Features/UC-001-happy-path.feature");
+
+describe("validateFeatureOutcome", () => {
+  it("projects a valid Feature to the ok row", async () => {
+    const spec = { validate: async () => ok({ valid: true, errors: [] }) };
+    expect(await validateFeatureOutcome(spec, featurePath)).toEqual([
+      { status: "ok", icon: "✓", text: "Feature Specification is valid." },
+    ]);
+  });
+
+  it("surfaces a service failure as an error row", async () => {
+    const spec = { validate: async () => err(appError("VALIDATION_FAILED", "boom")) };
+    expect(await validateFeatureOutcome(spec, featurePath)).toEqual([
+      { status: "error", icon: "✗", text: "Validation failed: boom" },
+    ]);
+  });
+});
+
+describe("detectMissingStepsOutcome", () => {
+  it("projects the detected steps to rows", async () => {
+    const spec = {
+      detectMissingSteps: async () =>
+        ok({ featurePath, missingSteps: ["the page reloads"], detectionEventId: "evt-1" }),
+    };
+    const rows = await detectMissingStepsOutcome(spec, featurePath);
+    expect(rows[0]).toEqual({ status: "warning", icon: "!", text: "1 step needs a definition:" });
+  });
+
+  it("surfaces a service failure as an error row", async () => {
+    const spec = { detectMissingSteps: async () => err(appError("VALIDATION_FAILED", "nope")) };
+    expect(await detectMissingStepsOutcome(spec, featurePath)).toEqual([
+      { status: "error", icon: "✗", text: "Detection failed: nope" },
+    ]);
+  });
+});
+
+describe("generateStepDefinitionsOutcome", () => {
+  const detected = {
+    detectMissingSteps: async () =>
+      ok({ featurePath, missingSteps: ["a step"], detectionEventId: "evt-1" }),
+  };
+
+  it("detects then generates, reporting the stubs", async () => {
+    const stepDef = {
+      generate: async () =>
+        ok({
+          generatedSteps: ["a step"],
+          stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
+          appended: true,
+        }),
+    };
+    const rows = await generateStepDefinitionsOutcome(detected, stepDef, featurePath);
+    expect(rows[0].text).toContain("Generated 1 step stub in");
+  });
+
+  it("stops at a detection failure without generating", async () => {
+    const spec = { detectMissingSteps: async () => err(appError("VALIDATION_FAILED", "nope")) };
+    const stepDef = {
+      generate: async () => {
+        throw new Error("generate must not be called after a detection failure");
+      },
+    };
+    expect(await generateStepDefinitionsOutcome(spec, stepDef, featurePath)).toEqual([
+      { status: "error", icon: "✗", text: "Detection failed: nope" },
+    ]);
+  });
+
+  it("surfaces a generation failure as an error row", async () => {
+    const stepDef = { generate: async () => err(appError("VALIDATION_FAILED", "kaput")) };
+    expect(await generateStepDefinitionsOutcome(detected, stepDef, featurePath)).toEqual([
+      { status: "error", icon: "✗", text: "Could not generate step definitions: kaput" },
+    ]);
   });
 });
