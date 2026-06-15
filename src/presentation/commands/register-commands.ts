@@ -18,10 +18,9 @@ import { DASHBOARD_VIEW_TYPE } from "../views/dashboard-view";
 import { EVIDENCE_EXPLORER_VIEW_TYPE } from "../views/evidence-explorer-view";
 import { GenerateFeatureModal } from "../views/generate-feature-modal";
 import { GUIDED_TOUR_VIEW_TYPE } from "../views/guided-tour-view";
-import { RunPickerModal } from "../views/run-picker-modal";
 import { SUITE_VIEW_TYPE } from "../views/suite-dashboard-view";
-import { TEST_CONSOLE_VIEW_TYPE } from "../views/test-console-view";
 import { USE_CASE_VIEW_TYPE } from "../views/use-case-dashboard-view";
+import { registerRunCommands } from "./register-run-commands";
 
 /**
  * The narrow slice of the composition root the command palette needs: the
@@ -78,95 +77,6 @@ export function registerCommands(
   plugin: Plugin,
   deps: TestHubCommandDeps,
 ): RegisteredCommandHelpers {
-  /**
-   * Re-runs report import + evidence for the last finished run on demand
-   * (UC-016, US-032). The eligibility rule and serialization live in the
-   * coordinator; this surfaces its typed outcome as a Notice.
-   */
-  const importLastRun = async (): Promise<void> => {
-    const result = await deps.postRunCoordinator.importLastRun();
-    if (!result.ok) {
-      new Notice(`Report import failed: ${result.error.message}`, 10000);
-      return;
-    }
-    switch (result.value.kind) {
-      case "imported":
-        new Notice(`Evidence written to ${result.value.evidencePath}`);
-        break;
-      case "recorded":
-        new Notice("Last run recorded (evidence Markdown generation is disabled).");
-        break;
-      case "no-run":
-        new Notice("No Test Run to import a report for yet.");
-        break;
-      case "no-report":
-        new Notice("The last run produced no report to import (it did not finish a Test Run).");
-        break;
-      case "run-in-progress":
-        new Notice("A Test Run is in progress; import its report once it finishes.");
-        break;
-      case "ineligible":
-        new Notice(`The last run (${result.value.status}) produced no report to import.`);
-        break;
-    }
-  };
-
-  const runSuite = async (): Promise<void> => {
-    const suites = await deps.suiteService.findAll();
-    if (!suites.ok) {
-      new Notice(`Could not load Test Suites: ${suites.error.message}`, 10000);
-      return;
-    }
-    if (suites.value.length === 0) {
-      new Notice("No Test Suites yet. Create one first.");
-      return;
-    }
-    new RunPickerModal(
-      plugin.app,
-      "Select a Test Suite to run",
-      suites.value.map((s) => ({ id: s.id, label: `${s.id} — ${s.name}` })),
-      (id) => void deps.runLauncher.launch({ scope: "suite", target: id }),
-    ).open();
-  };
-
-  const runUseCase = async (): Promise<void> => {
-    const useCases = await deps.useCaseService.findAll();
-    if (!useCases.ok) {
-      new Notice(`Could not load Use Cases: ${useCases.error.message}`, 10000);
-      return;
-    }
-    if (useCases.value.length === 0) {
-      new Notice("No Use Cases yet. Create one first.");
-      return;
-    }
-    new RunPickerModal(
-      plugin.app,
-      "Select a Use Case to run",
-      useCases.value.map((u) => ({ id: u.id, label: `${u.id} — ${u.title}` })),
-      (id) => void deps.runLauncher.launch({ scope: "use-case", target: id }),
-    ).open();
-  };
-
-  const runFeature = async (): Promise<void> => {
-    // `.feature` discovery (recursive listing, `.feature` filter, folder-relative
-    // labels) lives in SpecificationService.listFeatures (P2-7).
-    const listed = await deps.specificationService.listFeatures();
-    if (!listed.ok) {
-      new Notice(`Could not list Feature files: ${listed.error.message}`, 10000);
-      return;
-    }
-    if (listed.value.length === 0) {
-      new Notice("No feature files yet. Generate one first.");
-      return;
-    }
-    new RunPickerModal(
-      plugin.app,
-      "Select a Feature file to run",
-      listed.value.map((feature) => ({ id: feature.path, label: feature.label })),
-      (path) => void deps.runLauncher.launch({ scope: "feature", target: path }),
-    ).open();
-  };
-
   const openGenerateFeature = async (): Promise<void> => {
     const useCases = await deps.useCaseService.findAll();
     if (!useCases.ok) {
@@ -439,49 +349,7 @@ export function registerCommands(
     callback: () => void generateStepDefinitions(),
   });
 
-  // EPIC-007 Test Execution (US-026/027/028/029/030).
-  plugin.addCommand({
-    id: "run-demo-test",
-    name: "Run Demo Test",
-    callback: () => void deps.runLauncher.launch({ scope: "demo", target: "demo" }),
-  });
-  plugin.addCommand({
-    id: "run-all-tests",
-    name: "Run all tests",
-    callback: () => void deps.runLauncher.launch({ scope: "all", target: "all" }),
-  });
-  plugin.addCommand({
-    id: "run-suite",
-    name: "Run Test Suite…",
-    callback: () => void runSuite(),
-  });
-  plugin.addCommand({
-    id: "run-use-case",
-    name: "Run Use Case…",
-    callback: () => void runUseCase(),
-  });
-  plugin.addCommand({
-    id: "run-feature",
-    name: "Run feature…",
-    callback: () => void runFeature(),
-  });
-  plugin.addCommand({
-    id: "cancel-test-run",
-    name: "Cancel Test Run",
-    callback: () => void deps.runLauncher.cancel(),
-  });
-  plugin.addCommand({
-    id: "open-test-console",
-    name: "Open Test Console",
-    callback: () => void deps.workspace.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
-  });
-
-  // EPIC-008 (US-032 / UC-016): re-run report import + evidence for the last run.
-  plugin.addCommand({
-    id: "import-report-last-run",
-    name: "Import report for last run",
-    callback: () => void importLastRun(),
-  });
+  registerRunCommands(plugin, deps);
 
   // EPIC-009 Dashboard (UC-018).
   plugin.addCommand({
