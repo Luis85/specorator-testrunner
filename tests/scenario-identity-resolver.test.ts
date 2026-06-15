@@ -79,7 +79,7 @@ describe("ScenarioIdentityResolver", () => {
     expect(warnOf(log)).toHaveBeenCalled();
   });
 
-  it("falls back to a provisional row key when report rows exceed feature rows", async () => {
+  it("leaves the extra row unresolved when report rows exceed feature rows", async () => {
     const text = [
       "Feature: F",
       "  Scenario Outline: O",
@@ -94,8 +94,9 @@ describe("ScenarioIdentityResolver", () => {
       report([row({ scenario: "O", line: 6 }), row({ scenario: "O", line: 99 })]),
       RUNNER,
     );
-    const refs = out.scenarioResults.map((r) => r.scenarioRef);
-    expect(refs.some((r) => r === `${FEATURE}::O::row-1`)).toBe(true);
+    const refByLine = Object.fromEntries(out.scenarioResults.map((r) => [r.line, r.scenarioRef]));
+    expect(refByLine[6]).toBe(`${FEATURE}::O::row-${rowDigest([["a", "1"]])}`);
+    expect(refByLine[99]).toBeUndefined(); // no feature row to map this extra report row to
   });
 
   it("does not mutate the input report's results", async () => {
@@ -198,7 +199,7 @@ describe("ScenarioIdentityResolver", () => {
     expect(warnOf(log)).toHaveBeenCalled();
   });
 
-  it("uses a provisional key (no mis-attribution) when a filter drops same-named outline rows (codex P1)", async () => {
+  it("leaves the ref unset (no collision) when a filter drops same-named outline rows (codex P1)", async () => {
     const text = [
       "Feature: F",
       "  Scenario Outline: Login", // name omits the varying param -> rows share matchName
@@ -211,13 +212,10 @@ describe("ScenarioIdentityResolver", () => {
     ].join("\n");
     const log = logger();
     const resolver = new ScenarioIdentityResolver(fsWith({ [FEATURE]: text }), log);
-    // Only the second row ran; report has ONE "Login" row.
+    // Only one row ran; the report can't tell us WHICH, so a positional key would
+    // collide with another run that selected a different single row.
     const out = await resolver.enrich(report([row({ scenario: "Login", line: 7 })]), RUNNER);
-    // Must NOT receive the first (admin) row's content digest.
-    expect(out.scenarioResults[0]?.scenarioRef).not.toBe(
-      `${FEATURE}::Login::row-${rowDigest([["role", "admin"]])}`,
-    );
-    expect(out.scenarioResults[0]?.scenarioRef).toBe(`${FEATURE}::Login::row-0`);
+    expect(out.scenarioResults[0]?.scenarioRef).toBeUndefined();
     expect(warnOf(log)).toHaveBeenCalled();
   });
 });

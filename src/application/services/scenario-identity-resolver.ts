@@ -167,16 +167,18 @@ export class ScenarioIdentityResolver {
       // Multiple feature rows share this name (an Outline whose name omits the
       // varying param) AND the report carries a different count — a tag filter
       // dropped some rows, so position no longer identifies the row. Index-zipping
-      // would hand a row another row's content digest, so degrade to a provisional
-      // key instead of mis-attributing a stable identity (codex P1).
+      // would hand a row another row's content digest (codex P1).
       const ambiguous = refs.length > 1 && group.length !== refs.length;
       [...group].sort(byLine).forEach((result, index) => {
         const ref = ambiguous ? undefined : refs[index];
         if (ref !== undefined) {
           result.scenarioRef = ref;
         } else {
-          result.scenarioRef = `${vaultPath}::${name}::row-${index}`;
-          this.logger.warn("Scenario identity: unresolved outline row; provisional ref", {
+          // Unresolvable: a filtered same-name Outline row, or more report rows
+          // than the feature declares. Leave scenarioRef UNSET — a positional
+          // fallback would collide across runs that select different single rows
+          // and merge distinct history (codex). Unknown identity, not a guess.
+          this.logger.warn("Scenario identity: unresolved outline row; ref left unset", {
             vaultPath,
             name,
             index,
