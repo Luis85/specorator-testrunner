@@ -56,6 +56,14 @@ export default defineConfig({
         "src/presentation/views/feature-editor-structured.ts",
         "src/presentation/views/feature-editor-scenario.ts",
         "src/presentation/settings/settings-tab.ts",
+        // The settings tab's extracted sections + their shared helpers — the
+        // SUT-environment and maintenance/CI rows split out to keep settings-tab
+        // under the size budget. Runtime-bound Obsidian Setting wiring, same as
+        // settings-tab itself; the pure row projections stay in (and are covered
+        // through) settings-rows.ts.
+        "src/presentation/settings/settings-shared.ts",
+        "src/presentation/settings/settings-environments.ts",
+        "src/presentation/settings/settings-maintenance.ts",
         "src/presentation/settings/add-environment-modal.ts",
         "src/presentation/commands/register-commands.ts",
       ],
