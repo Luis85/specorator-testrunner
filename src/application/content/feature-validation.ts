@@ -1,11 +1,75 @@
-import type { FeatureSpecification } from "../../domain/entities/specification";
+import type {
+  FeatureSpecification,
+  ScenarioSpecification,
+} from "../../domain/entities/specification";
 import { useCaseIdFromPath } from "./gherkin";
+import { isScenarioOutline } from "../../domain/entities/specification";
+import { rowCells, rowDigest } from "../../domain/value-objects/scenario-reference";
 
 /** One line of a structural validation verdict (service + editor strip). */
 export interface ValidationItem {
   level: "error" | "warning";
   message: string;
 }
+
+const scenarioLabel = (scenario: ScenarioSpecification): string =>
+  scenario.name.trim() === "" ? "(unnamed)" : scenario.name.trim();
+
+/**
+ * Scenario Reference collision rules (ADR-0022, US-056): the name-based key must
+ * be unique, must not forge the reserved `::` / `::row-` delimiters, and an
+ * Outline's content-stable row digests must not collide. Kept out of
+ * {@link structuralIssues} so each rule stays small and independently testable.
+ */
+export const identityIssues = (scenarios: readonly ScenarioSpecification[]): ValidationItem[] => {
+  const items: ValidationItem[] = [];
+  const seenNames = new Set<string>();
+  const reportedDup = new Set<string>();
+  for (const scenario of scenarios) {
+    const name = scenario.name.trim();
+    if (name.includes("::")) {
+      items.push({
+        level: "error",
+        message: `Scenario "${scenarioLabel(scenario)}" uses the reserved "::" delimiter in its name.`,
+      });
+    }
+    // Empty names are compared too: two unnamed scenarios both resolve to the
+    // `<featurePath>::` reference, so they collide just like a repeated name.
+    if (seenNames.has(name) && !reportedDup.has(name)) {
+      items.push({
+        level: "error",
+        message:
+          name === ""
+            ? "Duplicate unnamed scenario — every scenario needs a unique name so its Scenario Reference is collision-free (ADR-0022)."
+            : `Duplicate scenario name "${name}" — names must be unique within a Feature (ADR-0022).`,
+      });
+      reportedDup.add(name);
+    }
+    seenNames.add(name);
+    const dup = duplicateRowIssue(scenario);
+    if (dup) items.push(dup);
+  }
+  return items;
+};
+
+/** The single duplicate-example-row error for one Outline, or null. */
+const duplicateRowIssue = (scenario: ScenarioSpecification): ValidationItem | null => {
+  if (!isScenarioOutline(scenario)) return null;
+  const seen = new Set<string>();
+  for (const block of scenario.examples ?? []) {
+    for (const row of block.rows) {
+      const digest = rowDigest(rowCells(block.header, row));
+      if (seen.has(digest)) {
+        return {
+          level: "error",
+          message: `Scenario Outline "${scenarioLabel(scenario)}" has duplicate example rows.`,
+        };
+      }
+      seen.add(digest);
+    }
+  }
+  return null;
+};
 
 /**
  * THE structural Feature rules (TD-003) — consumed by
@@ -29,10 +93,13 @@ export const structuralIssues = (specification: FeatureSpecification): Validatio
     items.push({ level: "error", message: "Feature has no scenarios." });
   }
   for (const scenario of specification.scenarios) {
-    const label = scenario.name.trim() === "" ? "(unnamed)" : scenario.name;
     if (scenario.steps.length === 0) {
-      items.push({ level: "error", message: `Scenario "${label}" has no steps.` });
+      items.push({
+        level: "error",
+        message: `Scenario "${scenarioLabel(scenario)}" has no steps.`,
+      });
     }
   }
+  items.push(...identityIssues(specification.scenarios));
   return items;
 };

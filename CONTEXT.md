@@ -68,8 +68,20 @@ _Avoid_: Draft tag, todo tag, skip tag.
 A single invocation of the runner against some scope. Identified as `RUN-<timestamp>`. Always has exactly one terminal event: `testrun.completed` (passed/failed), `testrun.failed` (errored), or `testrun.cancelled`. At most one Run is active per Vault at a time (per ADR-0018); a second concurrent Run is rejected with `RUN_IN_PROGRESS` until the active one terminates.
 _Avoid_: Test execution, run instance, job.
 
-**Scenario Reference** _(accepted for V2 — see ADR-0022; not yet in code)_:
-The natural key for a Gherkin scenario: `<featurePath>::<scenarioName>` (and `::row-<index>` for a Scenario Outline example). For the key to be collision-free, scenario names must be unique within a Feature **and must not contain the reserved `::` delimiter** (both enforced by structural validation, per ADR-0022); the `::row-<index>` suffix is positional and provisional (a reorder-stable row key is deferred to EPIC-014). Stable across runs but **not** across renames — renaming a scenario mints a new Scenario Reference and drops prior history once. It is the unit of scenario-level identity and history (EPIC-014); until that lands, the executable unit of identity remains the **Feature** (see _Feature Specification_), not the scenario.
+**Scenario Reference** _(implemented — see ADR-0022, US-056)_:
+The natural key for a Gherkin scenario: `<featurePath>::<scenarioName>` (and
+`::row-<digest>` for a Scenario Outline example). For the key to be
+collision-free, scenario names must be unique within a Feature, must not contain
+the reserved `::` delimiter, and an Outline's example rows must be distinct (all
+three enforced by structural validation, per ADR-0022). The row key is
+**content-stable**: `<digest>` derives from the example row's values, not its
+position, so reordering example rows never re-attributes a row's history (US-056
+resolved ADR-0022's provisional positional `::row-N`). Stable across runs but
+**not** across renames — renaming a scenario mints a new Scenario Reference and
+drops prior history once; the Feature Editor advises when this will happen.
+Computed name-derived at parse time and attached to report results by the
+`ScenarioIdentityResolver` (no ID write-back into `.feature` files). It is the
+unit of scenario-level identity that per-scenario history (US-057) builds on.
 _Avoid_: Scenario id, scenario key, test id.
 
 **Evidence**:

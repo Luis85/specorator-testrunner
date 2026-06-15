@@ -153,3 +153,28 @@ export const stepIsImplemented = (
   text: string,
   patterns: readonly StepDefinitionPattern[],
 ): boolean => text.trim() === "" || isStepDefined(text, [...patterns]);
+
+/**
+ * Advisory (US-056, ADR-0022): a renamed/removed scenario mints a new Scenario
+ * Reference, so its prior run history and quarantine state detach. Compares the
+ * load-time baseline scenario names against the edited spec; advisory-only — it
+ * never blocks. `previous === null` means no baseline (fresh/raw load).
+ */
+export const renameAdvisory = (
+  previous: readonly string[] | null,
+  next: FeatureSpecification,
+): ValidationItem[] => {
+  if (previous === null) return [];
+  const current = new Set(
+    next.scenarios.map((scenario) => scenario.name.trim()).filter((name) => name !== ""),
+  );
+  const removed = [
+    ...new Set(
+      previous.map((name) => name.trim()).filter((name) => name !== "" && !current.has(name)),
+    ),
+  ];
+  return removed.map((name) => ({
+    level: "warning",
+    message: `Scenario "${name}" was renamed or removed — its run history and quarantine state won't carry over.`,
+  }));
+};

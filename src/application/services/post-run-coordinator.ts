@@ -1,5 +1,6 @@
 import type { EvidenceGenerationService } from "./evidence-generation-service";
 import type { ReportImportService } from "./report-import-service";
+import type { ScenarioIdentityResolver } from "./scenario-identity-resolver";
 import type { TraceabilityService } from "./traceability-service";
 import type { TestRun, TestRunStatus } from "../../domain/entities/test-run";
 import type { DomainEvent, DomainEventType } from "../../domain/events/domain-event";
@@ -38,6 +39,7 @@ export interface LastEvidence {
 export interface PostRunCoordinatorDeps {
   reportImportService: ReportImportService;
   evidenceGenerationService: EvidenceGenerationService;
+  scenarioIdentityResolver: ScenarioIdentityResolver;
   traceabilityService: TraceabilityService;
   eventBus: EventBus;
   logger: Logger;
@@ -236,9 +238,17 @@ export class PostRunCoordinator {
       // Use Case lastTestRun (Recent Runs) when updateUseCaseFrontmatterAfterRun
       // is on. Gating the whole call on the note opt-out dropped runs from the
       // dashboard (US-038).
+      // Attach Scenario References before evidence so downstream per-scenario
+      // records key on a stable identity (US-056). Never throws; on any fault
+      // the refs are simply absent and evidence still generates.
+      const enriched = await this.deps.scenarioIdentityResolver.enrich(
+        imported.value,
+        run.workingDirectory,
+        imported.value.featureSnapshot,
+      );
       const evidence = await this.deps.evidenceGenerationService.generate({
         run,
-        report: imported.value,
+        report: enriched,
       });
       if (!evidence.ok) {
         this.logger.warn("Evidence generation failed", {

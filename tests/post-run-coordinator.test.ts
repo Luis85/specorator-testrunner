@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   PostRunCoordinator,
   type PostRunCoordinatorDeps,
 } from "../src/application/services/post-run-coordinator";
 import type { EvidenceGenerationService } from "../src/application/services/evidence-generation-service";
+import type { ScenarioIdentityResolver } from "../src/application/services/scenario-identity-resolver";
 import type {
   ImportedReport,
   ReportImportService,
@@ -117,11 +118,13 @@ const build = (overrides: Partial<PostRunCoordinatorDeps> = {}) => {
   let lastRun: TestRun | null = null;
   let active: string | null = null;
   let markdownEnabled = true;
+  const enrichSpy = vi.fn((r: unknown) => Promise.resolve(r));
 
   const deps: PostRunCoordinatorDeps = {
     reportImportService: reportImport,
     evidenceGenerationService: evidenceGen,
     traceabilityService: traceability,
+    scenarioIdentityResolver: { enrich: enrichSpy } as unknown as ScenarioIdentityResolver,
     eventBus: bus,
     logger: silentLogger,
     lastRun: () => lastRun,
@@ -136,6 +139,8 @@ const build = (overrides: Partial<PostRunCoordinatorDeps> = {}) => {
     bus,
     events,
     types,
+    deps,
+    enrichSpy,
     reportImport,
     evidenceGen,
     traceability,
@@ -180,6 +185,18 @@ describe("PostRunCoordinator", () => {
 
       expect(env.reportImport.calls).toHaveLength(1);
       expect(env.reportImport.calls[0].id).toBe("RUN-2026-05-31-100000");
+      expect(env.evidenceGen.calls).toHaveLength(1);
+    });
+
+    it("enriches the imported report with scenario refs before evidence generation", async () => {
+      const env = build();
+      env.coordinator.start();
+      env.setLastRun(run({ status: "passed" }));
+
+      await publishTerminal(env.bus, "testrun.completed");
+      await env.coordinator.whenSettled();
+
+      expect(env.enrichSpy).toHaveBeenCalledTimes(1);
       expect(env.evidenceGen.calls).toHaveLength(1);
     });
 

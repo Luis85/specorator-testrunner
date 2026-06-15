@@ -13,6 +13,7 @@ export interface ScenarioResult {
   errorMessage?: string;
   scenarioId?: string; // cucumber-JSON element id (feature;scenario;;<row>) — stable per-row identity (US-055)
   line?: number; // feature-file line of the scenario / outline row (fallback discriminator)
+  scenarioRef?: string; // Scenario Reference (<featurePath>::<name>[::row-<digest>]), set by ScenarioIdentityResolver (US-056)
 }
 
 /** A parsed run report: counts, per-scenario rows, and artifact REFERENCES. */

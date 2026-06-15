@@ -35,6 +35,7 @@ import {
   type ReportImportService,
 } from "./application/services/report-import-service";
 import { PostRunCoordinator } from "./application/services/post-run-coordinator";
+import { ScenarioIdentityResolver } from "./application/services/scenario-identity-resolver";
 import {
   DefaultGuidedTourService,
   type GuidedTourService,
@@ -381,6 +382,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
+    const scenarioIdentityResolver = new ScenarioIdentityResolver(vault, this.logger);
     this.evidenceGenerationService = new DefaultEvidenceGenerationService(
       this.hubSettingsService,
       vault,
@@ -411,6 +413,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.postRunCoordinator = new PostRunCoordinator({
       reportImportService: this.reportImportService,
       evidenceGenerationService: this.evidenceGenerationService,
+      scenarioIdentityResolver,
       traceabilityService: this.traceabilityService,
       eventBus,
       logger: this.logger,

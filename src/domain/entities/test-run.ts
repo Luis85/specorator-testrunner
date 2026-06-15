@@ -38,6 +38,7 @@ export interface ReportPaths {
   json?: VaultPath; // .testrunner/reports/cucumber-report.json
   html?: VaultPath; // .testrunner/reports/html/index.html
   markdown?: VaultPath; // Test Evidence/.../summary.md
+  features?: VaultPath; // .testrunner/reports/<runId>.features.json — run-start feature snapshot (US-056)
   screenshots?: VaultPath[];
   traces?: VaultPath[];
 }

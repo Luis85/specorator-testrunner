@@ -11,6 +11,7 @@ import { buildSuiteNote } from "../src/application/content/default-suites";
 import { buildNote } from "../src/shared/utils/frontmatter";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
+import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import type { DomainEventType } from "../src/domain/events/domain-event";
 import {
   FakeAbsoluteFileSystem,
@@ -213,6 +214,30 @@ describe("DefaultTestExecutionService", () => {
     absoluteFs.seed(reportPath, "{ old report }");
     await service.execute({ scope: "demo", target: "demo" });
     expect(await absoluteFs.existsAbsolute(reportPath)).toBe(false);
+  });
+
+  it("normalizes snapshot keys (trailing slash + '.' segment) like the resolver (codex P2)", async () => {
+    const { service, absoluteFs, settings } = build();
+    const current = await settings.load();
+    await settings.save({
+      ...current,
+      // Trailing slash AND a `.` segment — both pass path validation and both must
+      // normalize away to match what the resolver derives from the report URI.
+      paths: { ...current.paths, featureFilesPath: vp("Specifications/./features/") },
+    });
+    // A feature exists under the (trailing-slash) features folder at run start.
+    absoluteFs.seed(
+      "/vault/Specifications/features/UC-001-login.feature",
+      "Feature: F\n  Scenario: Login\n    Given x\n",
+    );
+    await service.execute({ scope: "demo", target: "demo" });
+    const snapPath = "/vault/.testrunner/reports/RUN-2026-06-01-100000.features.json";
+    const raw = absoluteFs.written.get(snapPath);
+    expect(raw).toBeDefined();
+    const keys = Object.keys(JSON.parse(raw ?? "{}"));
+    // Key matches what the resolver derives from the report URI — no `//`.
+    expect(keys).toContain("Specifications/features/UC-001-login.feature");
+    expect(keys.some((k) => k.includes("//"))).toBe(false);
   });
 
   it("mints unique run ids for sequential runs in the same second", async () => {
