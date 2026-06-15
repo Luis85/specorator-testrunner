@@ -629,13 +629,15 @@ export class DefaultTestExecutionService implements TestExecutionService {
     try {
       const base = await this.absoluteFs.getVaultBasePath();
       if (!base.ok) return;
-      // Normalize the vault-relative key base the same way the resolver normalizes
-      // report URIs (collapse `//` and any `\`, drop a trailing slash), so a
-      // `featureFilesPath` saved with a trailing/duplicate separator still yields
-      // keys the resolver can find (codex P2). Both reduce to slash-joined segments.
+      // Normalize the vault-relative key base EXACTLY as the resolver normalizes
+      // report URIs (`resolveVaultPath`): drop empty and `.` segments and collapse
+      // any `/`/`\` runs. So a `featureFilesPath` saved with a trailing/duplicate
+      // separator or a `.` segment (e.g. `Specifications/./features`) still yields
+      // keys the resolver can find (codex P2). `..` can't occur — PathSafetyPolicy
+      // rejects it as a whole segment.
       const featuresRel = featuresDir
         .split(/[/\\]+/)
-        .filter(Boolean)
+        .filter((segment) => segment !== "" && segment !== ".")
         .join("/");
       const root = `${base.value.replace(/[/\\]$/, "")}/${featuresRel}`;
       const snapshot: Record<string, string> = {};

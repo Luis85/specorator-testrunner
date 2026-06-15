@@ -216,12 +216,14 @@ describe("DefaultTestExecutionService", () => {
     expect(await absoluteFs.existsAbsolute(reportPath)).toBe(false);
   });
 
-  it("normalizes snapshot keys when featureFilesPath has a trailing slash (codex P2)", async () => {
+  it("normalizes snapshot keys (trailing slash + '.' segment) like the resolver (codex P2)", async () => {
     const { service, absoluteFs, settings } = build();
     const current = await settings.load();
     await settings.save({
       ...current,
-      paths: { ...current.paths, featureFilesPath: vp("Specifications/features/") },
+      // Trailing slash AND a `.` segment — both pass path validation and both must
+      // normalize away to match what the resolver derives from the report URI.
+      paths: { ...current.paths, featureFilesPath: vp("Specifications/./features/") },
     });
     // A feature exists under the (trailing-slash) features folder at run start.
     absoluteFs.seed(
