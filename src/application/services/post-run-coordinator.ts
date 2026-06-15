@@ -241,7 +241,10 @@ export class PostRunCoordinator {
       // Attach Scenario References before evidence so downstream per-scenario
       // records key on a stable identity (US-056). Never throws; on any fault
       // the refs are simply absent and evidence still generates.
-      const enriched = await this.deps.scenarioIdentityResolver.enrich(imported.value);
+      const enriched = await this.deps.scenarioIdentityResolver.enrich(
+        imported.value,
+        imported.value.featureSnapshot,
+      );
       const evidence = await this.deps.evidenceGenerationService.generate({
         run,
         report: enriched,

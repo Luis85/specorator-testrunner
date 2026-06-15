@@ -20,6 +20,13 @@ export interface ReportImportService {
 
 export interface ImportedReport extends ParsedReport {
   runId: RunId;
+  /**
+   * Feature file contents captured at run start (vault-relative path → content),
+   * present when the run wrote a snapshot. Lets scenario-identity resolution use
+   * the content that actually ran instead of the live (possibly edited) file
+   * (US-056).
+   */
+  featureSnapshot?: Record<string, string>;
 }
 
 const REPORT_FILE = "reports/cucumber-report.json";
@@ -84,7 +91,12 @@ export class DefaultReportImportService implements ReportImportService {
       );
     }
 
-    const report: ImportedReport = { runId: run.id, ...parsed.value };
+    const featureSnapshot = await this.loadFeatureSnapshot(run, cwd.value);
+    const report: ImportedReport = {
+      runId: run.id,
+      ...parsed.value,
+      ...(featureSnapshot ? { featureSnapshot } : {}),
+    };
 
     await this.eventBus.publish(
       createEvent(
@@ -103,6 +115,27 @@ export class DefaultReportImportService implements ReportImportService {
       ...report.result,
     });
     return ok(report);
+  }
+
+  /**
+   * Reads the run-start feature snapshot (US-056), if the run wrote one. Keyed by
+   * vault-relative feature path. Best-effort: a missing or malformed snapshot
+   * returns undefined and the resolver falls back to the live vault files.
+   */
+  private async loadFeatureSnapshot(
+    run: TestRun,
+    cwd: string,
+  ): Promise<Record<string, string> | undefined> {
+    if (!run.reportPaths.features) return undefined;
+    const rel = relativeVaultPath(run.workingDirectory, run.reportPaths.features);
+    const read = await this.absoluteFs.readAbsolute(`${cwd.replace(/[/\\]$/, "")}/${rel}`);
+    if (!read.ok) return undefined;
+    try {
+      return JSON.parse(read.value) as Record<string, string>;
+    } catch {
+      this.logger.warn("Feature snapshot is not valid JSON; ignoring", { runId: run.id });
+      return undefined;
+    }
   }
 
   /** Publishes `report.import.failed` and returns the matching error result. */

@@ -119,6 +119,28 @@ describe("ScenarioIdentityResolver", () => {
     expect(warnOf(log)).toHaveBeenCalled();
   });
 
+  it("resolves from the run-start snapshot, not the edited live feature (codex)", async () => {
+    // The live vault file was edited mid-run (Login renamed to Signin), but the
+    // run executed the snapshot's content. The ref must reflect what ran.
+    const liveFs = fsWith({ [FEATURE]: "Feature: F\n  Scenario: Signin\n    Given x\n" });
+    const snapshot = { [FEATURE]: "Feature: F\n  Scenario: Login\n    Given x\n" };
+    const resolver = new ScenarioIdentityResolver(liveFs, logger());
+    const out = await resolver.enrich(report([row({ scenario: "Login" })]), snapshot);
+    expect(out.scenarioResults[0]?.scenarioRef).toBe(`${FEATURE}::Login`);
+  });
+
+  it("falls back to the live feature when the snapshot lacks the path", async () => {
+    const resolver = new ScenarioIdentityResolver(
+      fsWith({ [FEATURE]: "Feature: F\n  Scenario: Login\n    Given x\n" }),
+      logger(),
+    );
+    // Snapshot exists but for a different feature -> live read for FEATURE.
+    const out = await resolver.enrich(report([row()]), {
+      "Specifications/features/other.feature": "",
+    });
+    expect(out.scenarioResults[0]?.scenarioRef).toBe(`${FEATURE}::Login`);
+  });
+
   it("preserves nested feature subfolders, independent of featureFilesPath (codex P2)", async () => {
     const NESTED = "Specifications/features/auth/login.feature";
     const resolver = new ScenarioIdentityResolver(

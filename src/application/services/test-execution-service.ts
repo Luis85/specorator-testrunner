@@ -394,6 +394,11 @@ export class DefaultTestExecutionService implements TestExecutionService {
         `${cwd.value}/reports/cucumber-report.json`,
       );
       if (!cleared.ok) return err(cleared.error);
+      // Snapshot the feature files as they are NOW (run start), so post-run
+      // scenario-identity resolution reflects the content bddgen actually ran
+      // even if the user edits a `.feature` mid-run (US-056). Best-effort: a
+      // failure just leaves the resolver to read the live files.
+      await this.snapshotFeatures(run, cwd.value, String(settings.paths.featureFilesPath));
       // Human-readable display string; the runner is given the raw argv below.
       run.command = displayCommand(argv);
 
@@ -609,6 +614,60 @@ export class DefaultTestExecutionService implements TestExecutionService {
     );
     if (snapshot.ok) {
       run.reportPaths.json = joinVaultPath(run.workingDirectory, "reports", `${run.id}.json`);
+    }
+  }
+
+  /**
+   * Captures every `.feature` file under the configured features folder as it is
+   * at run start, into `reports/<runId>.features.json` keyed by vault-relative
+   * path. Post-run identity resolution (US-056) prefers this snapshot over the
+   * live vault file, so editing a feature mid-run cannot mis-key that run's
+   * Scenario References. Best-effort and fully isolated: any fault is logged and
+   * leaves `reportPaths.features` unset (the resolver then reads live files).
+   */
+  private async snapshotFeatures(run: TestRun, cwd: string, featuresDir: string): Promise<void> {
+    try {
+      const base = await this.absoluteFs.getVaultBasePath();
+      if (!base.ok) return;
+      const root = `${base.value.replace(/[/\\]$/, "")}/${featuresDir}`;
+      const snapshot: Record<string, string> = {};
+      await this.collectFeatures(root, featuresDir, snapshot);
+      if (Object.keys(snapshot).length === 0) return;
+      const written = await this.absoluteFs.writeAbsolute(
+        `${cwd}/reports/${run.id}.features.json`,
+        JSON.stringify(snapshot),
+      );
+      if (written.ok) {
+        run.reportPaths.features = joinVaultPath(
+          run.workingDirectory,
+          "reports",
+          `${run.id}.features.json`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn("Feature snapshot failed; identity resolution will read live files", {
+        runId: run.id,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /** Recursively reads `.feature` files under `absDir` into `out`, keyed by their
+   * vault-relative path. Non-`.feature` entries are treated as subfolders. */
+  private async collectFeatures(
+    absDir: string,
+    vaultRel: string,
+    out: Record<string, string>,
+  ): Promise<void> {
+    for (const name of await this.absoluteFs.listAbsolute(absDir)) {
+      const childAbs = `${absDir}/${name}`;
+      const childRel = `${vaultRel}/${name}`;
+      if (name.endsWith(".feature")) {
+        const read = await this.absoluteFs.readAbsolute(childAbs);
+        if (read.ok) out[childRel] = read.value;
+      } else {
+        await this.collectFeatures(childAbs, childRel, out);
+      }
     }
   }
 

@@ -1,5 +1,6 @@
 import { readFeatureFile } from "./feature-loading";
 import { identityIssues } from "../content/feature-validation";
+import { parseFeature } from "../content/gherkin";
 import type { ParsedReport, ScenarioResult } from "../ports/report-parser";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { FeatureSpecification } from "../../domain/entities/specification";
@@ -57,14 +58,17 @@ export class ScenarioIdentityResolver {
     private readonly logger: Logger,
   ) {}
 
-  async enrich<T extends ParsedReport>(report: T): Promise<T> {
+  async enrich<T extends ParsedReport>(
+    report: T,
+    featureSnapshot?: Record<string, string>,
+  ): Promise<T> {
     try {
       const cache = new Map<string, FeatureSpecification | null>();
       const enriched = report.scenarioResults.map((result) => ({ ...result }));
 
       for (const [uri, results] of groupByFeatureUri(enriched)) {
         const vaultPath = vaultPathForUri(uri);
-        const feature = await this.featureFor(vaultPath, cache);
+        const feature = await this.featureFor(vaultPath, cache, featureSnapshot);
         if (feature) this.assign(results, feature, String(vaultPath));
       }
 
@@ -77,23 +81,40 @@ export class ScenarioIdentityResolver {
     }
   }
 
-  /** Reads + parses a feature once per path; caches the result (null when unreadable). */
+  /**
+   * Parses a feature once per path (cached). Prefers the run-start snapshot —
+   * the content that actually ran (US-056) — and falls back to the live vault
+   * file when the snapshot has no entry for this path (older runs, manual
+   * re-imports, or a snapshot that failed to write).
+   */
   private async featureFor(
     vaultPath: VaultPath,
     cache: Map<string, FeatureSpecification | null>,
+    featureSnapshot?: Record<string, string>,
   ): Promise<FeatureSpecification | null> {
     const key = String(vaultPath);
     const cached = cache.get(key);
     if (cached !== undefined) return cached;
 
-    const read = await readFeatureFile(this.vaultFs, vaultPath);
-    if (!read.ok) {
-      this.logger.warn("Scenario identity: feature unreadable; refs skipped", {
-        vaultPath: key,
-        reason: read.error.message,
-      });
+    let feature: FeatureSpecification | null;
+    const snapshot = featureSnapshot?.[key];
+    if (snapshot !== undefined) {
+      feature = parseFeature(snapshot, vaultPath);
+      if (feature === null) {
+        this.logger.warn("Scenario identity: snapshot feature unparseable; refs skipped", {
+          vaultPath: key,
+        });
+      }
+    } else {
+      const read = await readFeatureFile(this.vaultFs, vaultPath);
+      if (!read.ok) {
+        this.logger.warn("Scenario identity: feature unreadable; refs skipped", {
+          vaultPath: key,
+          reason: read.error.message,
+        });
+      }
+      feature = read.ok ? read.value : null;
     }
-    const feature = read.ok ? read.value : null;
     cache.set(key, feature);
     return feature;
   }

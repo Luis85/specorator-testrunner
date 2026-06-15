@@ -245,4 +245,33 @@ describe("DefaultReportImportService", () => {
     const s2 = result.value.scenarioResults.find((s) => s.scenario === "S2");
     expect(s2?.status).toBe("passed");
   });
+
+  it("loads the run-start feature snapshot when the run wrote one (US-056)", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.seed(REPORT_ABS, REPRESENTATIVE_REPORT);
+    const snap = {
+      "Specifications/features/UC-001-x.feature": "Feature: F\n  Scenario: S\n    Given x\n",
+    };
+    absoluteFs.seed(
+      "/vault/.testrunner/reports/RUN-2026-05-31-100000.features.json",
+      JSON.stringify(snap),
+    );
+    const result = await service.import(
+      run({
+        reportPaths: { features: vp(".testrunner/reports/RUN-2026-05-31-100000.features.json") },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.featureSnapshot).toEqual(snap);
+  });
+
+  it("omits featureSnapshot when the run wrote no snapshot", async () => {
+    const { service, absoluteFs } = build();
+    absoluteFs.seed(REPORT_ABS, REPRESENTATIVE_REPORT);
+    const result = await service.import(run());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.featureSnapshot).toBeUndefined();
+  });
 });
