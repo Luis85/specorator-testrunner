@@ -160,6 +160,22 @@ describe("ScenarioIdentityResolver", () => {
     expect(out.scenarioResults[0]?.scenarioRef).toBe(`${VAULT}::Login`);
   });
 
+  it("skips refs for a feature whose vault path contains '::' (codex P2)", async () => {
+    // A folder literally named with `::` would make `path::name` ambiguous.
+    const ODD = "Specs::weird/login.feature";
+    const log = logger();
+    const resolver = new ScenarioIdentityResolver(
+      fsWith({ [ODD]: "Feature: F\n  Scenario: Login\n    Given x\n" }),
+      log,
+    );
+    const out = await resolver.enrich(
+      report([row({ featureUri: "../Specs::weird/login.feature" })]),
+      RUNNER,
+    );
+    expect(out.scenarioResults[0]?.scenarioRef).toBeUndefined();
+    expect(warnOf(log)).toHaveBeenCalled();
+  });
+
   it("preserves nested feature subfolders (codex P2)", async () => {
     const NESTED = "Specifications/features/auth/login.feature";
     const resolver = new ScenarioIdentityResolver(

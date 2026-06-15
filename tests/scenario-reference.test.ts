@@ -78,19 +78,9 @@ describe("scenarioRef / outlineRowRef / parseScenarioReference", () => {
     expect(parsed.rowDigest).toBe(rowDigest([["role", "admin"]]));
   });
 
-  it("round-trips a feature path that itself contains '::' (codex P2)", () => {
-    const oddPath = "Specs::weird/UC-001.feature";
-    expect(parseScenarioReference(scenarioRef(oddPath, "Login"))).toEqual({
-      featurePath: oddPath,
-      scenarioName: "Login",
-    });
-    const row = parseScenarioReference(outlineRowRef(oddPath, "Login", [["role", "admin"]]));
-    expect(row.featurePath).toBe(oddPath);
-    expect(row.scenarioName).toBe("Login");
-    expect(row.rowDigest).toBe(rowDigest([["role", "admin"]]));
-  });
-
-  it("treats a plain scenario named 'row-…' as a name, not a row suffix", () => {
+  it("treats a plain scenario named 'row-…' as a name, not a row suffix (codex P2)", () => {
+    // `::` is reserved in paths too (resolver refuses such features), so a plain
+    // scenario whose name starts with `row-` is unambiguous: no `parts[2]`.
     expect(parseScenarioReference(scenarioRef(path, "row-handler"))).toEqual({
       featurePath: path,
       scenarioName: "row-handler",

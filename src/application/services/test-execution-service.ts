@@ -629,9 +629,17 @@ export class DefaultTestExecutionService implements TestExecutionService {
     try {
       const base = await this.absoluteFs.getVaultBasePath();
       if (!base.ok) return;
-      const root = `${base.value.replace(/[/\\]$/, "")}/${featuresDir}`;
+      // Normalize the vault-relative key base the same way the resolver normalizes
+      // report URIs (collapse `//` and any `\`, drop a trailing slash), so a
+      // `featureFilesPath` saved with a trailing/duplicate separator still yields
+      // keys the resolver can find (codex P2). Both reduce to slash-joined segments.
+      const featuresRel = featuresDir
+        .split(/[/\\]+/)
+        .filter(Boolean)
+        .join("/");
+      const root = `${base.value.replace(/[/\\]$/, "")}/${featuresRel}`;
       const snapshot: Record<string, string> = {};
-      await this.collectFeatures(root, featuresDir, snapshot);
+      await this.collectFeatures(root, featuresRel, snapshot);
       if (Object.keys(snapshot).length === 0) return;
       const written = await this.absoluteFs.writeAbsolute(
         `${cwd}/reports/${run.id}.features.json`,

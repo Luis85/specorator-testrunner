@@ -33,6 +33,17 @@ const resolveVaultPath = (runnerPath: string, uri: string): VaultPath => {
 const byLine = (a: ScenarioResult, b: ScenarioResult): number =>
   (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER);
 
+/** Buckets items by a key, preserving insertion order within each bucket. */
+const groupBy = <T>(items: readonly T[], key: (item: T) => string): Map<string, T[]> => {
+  const out = new Map<string, T[]>();
+  for (const item of items) {
+    const list = out.get(key(item)) ?? [];
+    list.push(item);
+    out.set(key(item), list);
+  }
+  return out;
+};
+
 /** Buckets results by their `featureUri`, skipping rows that carry none. */
 const groupByFeatureUri = (results: ScenarioResult[]): Map<string, ScenarioResult[]> => {
   const byUri = new Map<string, ScenarioResult[]>();
@@ -142,50 +153,66 @@ export class ScenarioIdentityResolver {
     feature: FeatureSpecification,
     vaultPath: string,
   ): void {
+    if (this.refusesFeature(feature, vaultPath)) return;
+
+    const refEntries = groupBy(featureScenarioRefs(feature), (entry) => entry.matchName);
+    const groups = groupBy(results, (result) => result.scenario);
+
+    for (const [name, group] of groups) {
+      const refs = (refEntries.get(name) ?? []).map((entry) => entry.ref);
+      this.assignGroup(group, refs, name, vaultPath);
+    }
+  }
+
+  /**
+   * Whether a feature must not receive references: a path carrying the reserved
+   * `::` delimiter (which would parse back ambiguously, codex P2) or an identity
+   * collision (duplicate names/rows would mint refs that silently merge history).
+   */
+  private refusesFeature(feature: FeatureSpecification, vaultPath: string): boolean {
+    if (vaultPath.includes("::")) {
+      this.logger.warn("Scenario identity: feature path contains reserved '::'; refs skipped", {
+        vaultPath,
+      });
+      return true;
+    }
     if (identityIssues(feature.scenarios).length > 0) {
       this.logger.warn("Scenario identity: feature has identity collisions; refs skipped", {
         vaultPath,
       });
-      return;
+      return true;
     }
-    const refsByName = new Map<string, string[]>();
-    for (const entry of featureScenarioRefs(feature)) {
-      const list = refsByName.get(entry.matchName) ?? [];
-      list.push(entry.ref);
-      refsByName.set(entry.matchName, list);
-    }
+    return false;
+  }
 
-    const groups = new Map<string, ScenarioResult[]>();
-    for (const result of results) {
-      const list = groups.get(result.scenario) ?? [];
-      list.push(result);
-      groups.set(result.scenario, list);
-    }
-
-    for (const [name, group] of groups) {
-      const refs = refsByName.get(name) ?? [];
-      // Multiple feature rows share this name (an Outline whose name omits the
-      // varying param) AND the report carries a different count — a tag filter
-      // dropped some rows, so position no longer identifies the row. Index-zipping
-      // would hand a row another row's content digest (codex P1).
-      const ambiguous = refs.length > 1 && group.length !== refs.length;
-      [...group].sort(byLine).forEach((result, index) => {
-        const ref = ambiguous ? undefined : refs[index];
-        if (ref !== undefined) {
-          result.scenarioRef = ref;
-        } else {
-          // Unresolvable: a filtered same-name Outline row, or more report rows
-          // than the feature declares. Leave scenarioRef UNSET — a positional
-          // fallback would collide across runs that select different single rows
-          // and merge distinct history (codex). Unknown identity, not a guess.
-          this.logger.warn("Scenario identity: unresolved outline row; ref left unset", {
-            vaultPath,
-            name,
-            index,
-            reason: ambiguous ? "filtered-rows" : "row-count-mismatch",
-          });
-        }
+  /** Zips one name-group's report rows onto its ordered refs by line position. */
+  private assignGroup(
+    group: ScenarioResult[],
+    refs: string[],
+    name: string,
+    vaultPath: string,
+  ): void {
+    // Multiple feature rows share this name (an Outline whose name omits the
+    // varying param) AND the report carries a different count — a tag filter
+    // dropped some rows, so position no longer identifies the row. Index-zipping
+    // would hand a row another row's content digest (codex P1).
+    const ambiguous = refs.length > 1 && group.length !== refs.length;
+    [...group].sort(byLine).forEach((result, index) => {
+      const ref = ambiguous ? undefined : refs[index];
+      if (ref !== undefined) {
+        result.scenarioRef = ref;
+        return;
+      }
+      // Unresolvable: a filtered same-name Outline row, or more report rows than
+      // the feature declares. Leave scenarioRef UNSET — a positional fallback
+      // would collide across runs that select different single rows and merge
+      // distinct history (codex). Unknown identity, not a guess.
+      this.logger.warn("Scenario identity: unresolved outline row; ref left unset", {
+        vaultPath,
+        name,
+        index,
+        reason: ambiguous ? "filtered-rows" : "row-count-mismatch",
       });
-    }
+    });
   }
 }
