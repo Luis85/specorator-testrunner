@@ -20,6 +20,13 @@ export interface ExamplesBlock {
   /** Column names (the first `|` row). */
   header: string[];
   rows: string[][];
+  /**
+   * 1-based feature-file line of each `rows` entry, parallel to `rows`. Set by
+   * the Gherkin parser; absent on hand-constructed blocks (editor). Lets identity
+   * resolution match a filtered Outline row back to its source row by line when
+   * the Outline's name omits the varying param (US-056 follow-up).
+   */
+  rowLines?: number[];
 }
 
 /**
