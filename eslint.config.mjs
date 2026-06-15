@@ -141,14 +141,16 @@ export default tseslint.config(
     },
   },
   {
-    // File-length budget: keep modules small enough to hold in one's head.
-    // `warn`, not `error`, on purpose — several files currently exceed 350 and
+    // File-length budget: keep production modules small enough to hold in one's
+    // head. `warn`, not `error`, on purpose — some files still exceed 350 and
     // `npm run lint` doesn't pass `--max-warnings`, so this surfaces them as a
     // ratchet to split down over time without breaking CI (CONTRIBUTING.md gate).
     // Blank lines and comments are skipped so the budget counts actual code
     // (LOC): this codebase keeps a deliberately high explanatory-comment density
-    // (AGENTS.md) that shouldn't eat into the limit.
-    files: ["**/*.ts"],
+    // (AGENTS.md) that shouldn't eat into the limit. Scoped to src/** — a test
+    // file legitimately grows with the cases it covers, and splitting a suite is
+    // lower-value than splitting the module under test.
+    files: ["src/**/*.ts"],
     rules: {
       "max-lines": ["warn", { max: 350, skipBlankLines: true, skipComments: true }],
     },
