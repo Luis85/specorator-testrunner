@@ -1,4 +1,5 @@
 import { readFeatureFile } from "./feature-loading";
+import { identityIssues } from "../content/feature-validation";
 import type { ParsedReport, ScenarioResult } from "../ports/report-parser";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { FeatureSpecification } from "../../domain/entities/specification";
@@ -103,12 +104,24 @@ export class ScenarioIdentityResolver {
    * naming), so the lookup keys on `matchName`, not the template name; rows that
    * share a name (e.g. an Outline whose name omits the varying param) still zip
    * by line order within the group.
+   *
+   * Run-time validation isn't enforced before a run, so a Feature that
+   * `structuralIssues` would reject (duplicate scenario names, duplicate Outline
+   * rows) can reach here and would mint identical references that silently merge
+   * history. Refuse to assign for such a Feature — leave the refs undefined until
+   * the collision is fixed (codex review).
    */
   private assign(
     results: ScenarioResult[],
     feature: FeatureSpecification,
     vaultPath: string,
   ): void {
+    if (identityIssues(feature.scenarios).length > 0) {
+      this.logger.warn("Scenario identity: feature has identity collisions; refs skipped", {
+        vaultPath,
+      });
+      return;
+    }
     const refsByName = new Map<string, string[]>();
     for (const entry of featureScenarioRefs(feature)) {
       const list = refsByName.get(entry.matchName) ?? [];

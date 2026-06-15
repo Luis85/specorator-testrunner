@@ -21,7 +21,7 @@ const scenarioLabel = (scenario: ScenarioSpecification): string =>
  * Outline's content-stable row digests must not collide. Kept out of
  * {@link structuralIssues} so each rule stays small and independently testable.
  */
-const identityIssues = (scenarios: readonly ScenarioSpecification[]): ValidationItem[] => {
+export const identityIssues = (scenarios: readonly ScenarioSpecification[]): ValidationItem[] => {
   const items: ValidationItem[] = [];
   const seenNames = new Set<string>();
   const reportedDup = new Set<string>();

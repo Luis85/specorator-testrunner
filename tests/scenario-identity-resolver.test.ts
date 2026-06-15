@@ -140,6 +140,19 @@ describe("ScenarioIdentityResolver", () => {
     );
   });
 
+  it("skips refs (no merge) for a Feature with identity collisions run without validation (codex)", async () => {
+    // Two scenarios share a name -> they'd mint the SAME ::Login ref and merge
+    // history. Validation isn't enforced before a run, so the resolver refuses.
+    const text = "Feature: F\n  Scenario: Login\n    Given x\n  Scenario: Login\n    Given y\n";
+    const log = logger();
+    const resolver = new ScenarioIdentityResolver(fsWith({ [FEATURE]: text }), log);
+    const out = await resolver.enrich(
+      report([row({ scenario: "Login", line: 2 }), row({ scenario: "Login", line: 4 })]),
+    );
+    expect(out.scenarioResults.every((r) => r.scenarioRef === undefined)).toBe(true);
+    expect(warnOf(log)).toHaveBeenCalled();
+  });
+
   it("uses a provisional key (no mis-attribution) when a filter drops same-named outline rows (codex P1)", async () => {
     const text = [
       "Feature: F",
