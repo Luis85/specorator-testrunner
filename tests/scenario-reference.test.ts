@@ -77,6 +77,25 @@ describe("scenarioRef / outlineRowRef / parseScenarioReference", () => {
     expect(parsed.scenarioName).toBe("Login");
     expect(parsed.rowDigest).toBe(rowDigest([["role", "admin"]]));
   });
+
+  it("round-trips a feature path that itself contains '::' (codex P2)", () => {
+    const oddPath = "Specs::weird/UC-001.feature";
+    expect(parseScenarioReference(scenarioRef(oddPath, "Login"))).toEqual({
+      featurePath: oddPath,
+      scenarioName: "Login",
+    });
+    const row = parseScenarioReference(outlineRowRef(oddPath, "Login", [["role", "admin"]]));
+    expect(row.featurePath).toBe(oddPath);
+    expect(row.scenarioName).toBe("Login");
+    expect(row.rowDigest).toBe(rowDigest([["role", "admin"]]));
+  });
+
+  it("treats a plain scenario named 'row-…' as a name, not a row suffix", () => {
+    expect(parseScenarioReference(scenarioRef(path, "row-handler"))).toEqual({
+      featurePath: path,
+      scenarioName: "row-handler",
+    });
+  });
 });
 
 describe("featureScenarioRefs", () => {

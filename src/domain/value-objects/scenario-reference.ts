@@ -42,21 +42,31 @@ export interface ParsedScenarioReference {
 }
 
 /**
- * Inverse of {@link scenarioRef} / {@link outlineRowRef}. Safe because the `::`
- * delimiter is reserved in scenario names (validation, US-056) and vault paths
- * never contain `::`, so the split is unambiguous.
+ * Inverse of {@link scenarioRef} / {@link outlineRowRef}. The `::` delimiter is
+ * reserved in scenario names (validation, US-056), so the scenario name and the
+ * optional `row-<digest>` suffix are the trailing 1–2 segments and are peeled
+ * from the END; the feature path is whatever remains, rejoined with `::`. This
+ * keeps the parse correct even when a vault feature path itself contains `::`
+ * (codex P2) — e.g. `a::b/login.feature::Scenario` round-trips to path `a::b/…`.
  */
 export const parseScenarioReference = (ref: string): ParsedScenarioReference => {
   const parts = ref.split("::");
-  const base: ParsedScenarioReference = {
-    featurePath: parts[0] ?? "",
-    scenarioName: parts[1] ?? "",
-  };
-  const rowToken = parts[2];
-  if (rowToken?.startsWith("row-")) {
-    return { ...base, rowDigest: rowToken.slice("row-".length) };
+  if (parts.length < 2) {
+    return { featurePath: parts[0] ?? "", scenarioName: "" };
   }
-  return base;
+  // Peel a trailing `row-<digest>` only when a scenario name still remains, so a
+  // plain scenario literally named `row-…` isn't mistaken for an Outline suffix.
+  let rowDigest: string | undefined;
+  const last = parts[parts.length - 1];
+  if (parts.length >= 3 && last?.startsWith("row-")) {
+    rowDigest = last.slice("row-".length);
+    parts.pop();
+  }
+  const scenarioName = parts.pop() ?? "";
+  const featurePath = parts.join("::");
+  return rowDigest === undefined
+    ? { featurePath, scenarioName }
+    : { featurePath, scenarioName, rowDigest };
 };
 
 /**
