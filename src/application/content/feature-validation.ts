@@ -33,10 +33,15 @@ const identityIssues = (scenarios: readonly ScenarioSpecification[]): Validation
         message: `Scenario "${scenarioLabel(scenario)}" uses the reserved "::" delimiter in its name.`,
       });
     }
-    if (name !== "" && seenNames.has(name) && !reportedDup.has(name)) {
+    // Empty names are compared too: two unnamed scenarios both resolve to the
+    // `<featurePath>::` reference, so they collide just like a repeated name.
+    if (seenNames.has(name) && !reportedDup.has(name)) {
       items.push({
         level: "error",
-        message: `Duplicate scenario name "${name}" — names must be unique within a Feature (ADR-0022).`,
+        message:
+          name === ""
+            ? "Duplicate unnamed scenario — every scenario needs a unique name so its Scenario Reference is collision-free (ADR-0022)."
+            : `Duplicate scenario name "${name}" — names must be unique within a Feature (ADR-0022).`,
       });
       reportedDup.add(name);
     }

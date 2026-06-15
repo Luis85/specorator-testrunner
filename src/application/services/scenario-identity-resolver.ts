@@ -5,11 +5,25 @@ import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { FeatureSpecification } from "../../domain/entities/specification";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { featureScenarioRefs } from "../../domain/value-objects/scenario-reference";
+import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import type { Logger } from "../../shared/logging/logger";
 import { joinVaultPath } from "../../shared/utils/vault-path";
 
 /** Last `/`-segment of a runner-relative feature uri (e.g. `UC-001-x.feature`). */
 const basename = (uri: string): string => uri.split("/").pop() ?? uri;
+
+/**
+ * Vault-relative feature path for a report's runner-relative `featureUri`. The
+ * uri is runner-relative (e.g. `../Specifications/features/auth/login.feature`,
+ * with as many `../` as the runner is deep), so slicing from the configured
+ * features directory preserves nested subfolders. Falls back to
+ * `<featureDir>/<basename>` when the marker is absent (best effort).
+ */
+const vaultPathForUri = (uri: string, featureDir: VaultPath): VaultPath => {
+  const marker = `${String(featureDir)}/`;
+  const index = uri.indexOf(marker);
+  return index >= 0 ? unsafeVaultPath(uri.slice(index)) : joinVaultPath(featureDir, basename(uri));
+};
 
 const byLine = (a: ScenarioResult, b: ScenarioResult): number =>
   (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER);
@@ -51,7 +65,7 @@ export class ScenarioIdentityResolver {
       const enriched = report.scenarioResults.map((result) => ({ ...result }));
 
       for (const [uri, results] of groupByFeatureUri(enriched)) {
-        const vaultPath = joinVaultPath(featureDir, basename(uri));
+        const vaultPath = vaultPathForUri(uri, featureDir);
         const feature = await this.featureFor(vaultPath, cache);
         if (feature) this.assign(results, feature, String(vaultPath));
       }
@@ -114,16 +128,23 @@ export class ScenarioIdentityResolver {
 
     for (const [name, group] of groups) {
       const refs = refsByName.get(name) ?? [];
+      // Multiple feature rows share this name (an Outline whose name omits the
+      // varying param) AND the report carries a different count — a tag filter
+      // dropped some rows, so position no longer identifies the row. Index-zipping
+      // would hand a row another row's content digest, so degrade to a provisional
+      // key instead of mis-attributing a stable identity (codex P1).
+      const ambiguous = refs.length > 1 && group.length !== refs.length;
       [...group].sort(byLine).forEach((result, index) => {
-        const ref = refs[index];
+        const ref = ambiguous ? undefined : refs[index];
         if (ref !== undefined) {
           result.scenarioRef = ref;
         } else {
           result.scenarioRef = `${vaultPath}::${name}::row-${index}`;
-          this.logger.warn("Scenario identity: row count mismatch; provisional ref", {
+          this.logger.warn("Scenario identity: unresolved outline row; provisional ref", {
             vaultPath,
             name,
             index,
+            reason: ambiguous ? "filtered-rows" : "row-count-mismatch",
           });
         }
       });

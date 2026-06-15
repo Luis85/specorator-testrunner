@@ -180,4 +180,91 @@ describe("ScenarioIdentityResolver", () => {
     expect(out.scenarioResults[0]?.scenarioRef).toBeUndefined();
     expect((log as unknown as { warn: ReturnType<typeof vi.fn> }).warn).toHaveBeenCalled();
   });
+
+  it("preserves nested feature subfolders when resolving the report uri (codex P2)", async () => {
+    const NESTED = "Specifications/features/auth/login.feature";
+    const resolver = new ScenarioIdentityResolver(
+      settings(),
+      fsWith({ [NESTED]: "Feature: F\n  Scenario: Login\n    Given x\n" }),
+      logger(),
+    );
+    const out = await resolver.enrich(
+      report([
+        {
+          feature: "F",
+          // runner-relative uri as playwright-bdd emits it (BDD_FEATURES is `../...`)
+          featureUri: "../Specifications/features/auth/login.feature",
+          scenario: "Login",
+          status: "passed",
+        },
+      ]),
+    );
+    expect(out.scenarioResults[0]?.scenarioRef).toBe(`${NESTED}::Login`);
+  });
+
+  it("still resolves a distinguishing-named Outline row when a tag filter drops siblings", async () => {
+    const text = [
+      "Feature: F",
+      "  Scenario Outline: Login as <role>",
+      "    Given I am <role>",
+      "    Examples:",
+      "      | role  |",
+      "      | admin |",
+      "      | user  |",
+      "",
+    ].join("\n");
+    const resolver = new ScenarioIdentityResolver(
+      settings(),
+      fsWith({ [FEATURE]: text }),
+      logger(),
+    );
+    // Suite run generated only the `user` row; its expanded name still matches.
+    const out = await resolver.enrich(
+      report([
+        {
+          feature: "F",
+          featureUri: "features/UC-001-login.feature",
+          scenario: "Login as user",
+          status: "passed",
+          line: 7,
+        },
+      ]),
+    );
+    expect(out.scenarioResults[0]?.scenarioRef).toBe(
+      `${FEATURE}::Login as <role>::row-${rowDigest([["role", "user"]])}`,
+    );
+  });
+
+  it("uses a provisional key (no mis-attribution) when a filter drops same-named outline rows (codex P1)", async () => {
+    const text = [
+      "Feature: F",
+      "  Scenario Outline: Login", // name omits the varying param -> rows share matchName
+      "    Given I am <role>",
+      "    Examples:",
+      "      | role  |",
+      "      | admin |",
+      "      | user  |",
+      "",
+    ].join("\n");
+    const log = logger();
+    const resolver = new ScenarioIdentityResolver(settings(), fsWith({ [FEATURE]: text }), log);
+    // Only the second row ran; report has ONE "Login" row.
+    const out = await resolver.enrich(
+      report([
+        {
+          feature: "F",
+          featureUri: "features/UC-001-login.feature",
+          scenario: "Login",
+          status: "passed",
+          line: 7,
+        },
+      ]),
+    );
+    // Must NOT receive the first (admin) row's content digest.
+    expect(out.scenarioResults[0]?.scenarioRef).not.toBe(
+      `${FEATURE}::Login::row-${rowDigest([["role", "admin"]])}`,
+    );
+    expect(out.scenarioResults[0]?.scenarioRef).toBe(`${FEATURE}::Login::row-0`);
+    expect((log as unknown as { warn: ReturnType<typeof vi.fn> }).warn).toHaveBeenCalled();
+  });
 });

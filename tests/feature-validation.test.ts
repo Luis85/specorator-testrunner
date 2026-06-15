@@ -119,4 +119,24 @@ describe("structuralIssues (TD-003 single source)", () => {
     if (!spec) return;
     expect(structuralIssues(spec)).toEqual([]);
   });
+
+  it("flags duplicate UNNAMED scenarios (they collide on <featurePath>::, ADR-0022)", () => {
+    const spec = parseFeature(
+      "Feature: F\n  Scenario:\n    Given x\n  Scenario:\n    Given y\n",
+      vp("Specifications/features/UC-001-unnamed.feature"),
+    );
+    if (!spec) return;
+    expect(structuralIssues(spec).map((i) => i.message)).toContain(
+      "Duplicate unnamed scenario — every scenario needs a unique name so its Scenario Reference is collision-free (ADR-0022).",
+    );
+  });
+
+  it("allows a single unnamed scenario (its <featurePath>:: ref is unique)", () => {
+    const spec = parseFeature(
+      "Feature: F\n  Scenario:\n    Given x\n",
+      vp("Specifications/features/UC-001-one.feature"),
+    );
+    if (!spec) return;
+    expect(structuralIssues(spec)).toEqual([]);
+  });
 });
