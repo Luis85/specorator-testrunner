@@ -1,5 +1,4 @@
 import { readFeatureFile } from "./feature-loading";
-import type { SettingsService } from "./settings-service";
 import type { ParsedReport, ScenarioResult } from "../ports/report-parser";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { FeatureSpecification } from "../../domain/entities/specification";
@@ -7,22 +6,22 @@ import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { featureScenarioRefs } from "../../domain/value-objects/scenario-reference";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import type { Logger } from "../../shared/logging/logger";
-import { joinVaultPath } from "../../shared/utils/vault-path";
-
-/** Last `/`-segment of a runner-relative feature uri (e.g. `UC-001-x.feature`). */
-const basename = (uri: string): string => uri.split("/").pop() ?? uri;
 
 /**
- * Vault-relative feature path for a report's runner-relative `featureUri`. The
- * uri is runner-relative (e.g. `../Specifications/features/auth/login.feature`,
- * with as many `../` as the runner is deep), so slicing from the configured
- * features directory preserves nested subfolders. Falls back to
- * `<featureDir>/<basename>` when the marker is absent (best effort).
+ * Vault-relative feature path for a report's runner-relative `featureUri`.
+ * playwright-bdd writes the uri relative to the runner's config dir (e.g.
+ * `../Specifications/features/auth/login.feature`, with one `../` per level the
+ * runner sits below the vault root), so stripping the leading `./` / `../`
+ * segments yields the vault-relative path. This preserves nested subfolders and
+ * is independent of the current `featureFilesPath` setting, so re-importing a
+ * run after that setting changed still resolves the feature that actually ran
+ * (codex P2 — no settings drift).
  */
-const vaultPathForUri = (uri: string, featureDir: VaultPath): VaultPath => {
-  const marker = `${String(featureDir)}/`;
-  const index = uri.indexOf(marker);
-  return index >= 0 ? unsafeVaultPath(uri.slice(index)) : joinVaultPath(featureDir, basename(uri));
+const vaultPathForUri = (uri: string): VaultPath => {
+  const segments = uri.split("/");
+  let i = 0;
+  while (i < segments.length && (segments[i] === ".." || segments[i] === ".")) i += 1;
+  return unsafeVaultPath(segments.slice(i).join("/"));
 };
 
 const byLine = (a: ScenarioResult, b: ScenarioResult): number =>
@@ -47,25 +46,23 @@ const groupByFeatureUri = (results: ScenarioResult[]): Map<string, ScenarioResul
  * the same-run feature by position (report rows expand in declaration order) and
  * keyed by the row's content digest, so a between-run row reorder still attaches
  * history to the right parameter set. Pure with respect to the input report —
- * returns a new result list. Guaranteed never to throw: any unexpected fault
- * (including settings/IO failures) is caught, logged as a warning, and the
- * original report is returned unenriched.
+ * returns a new result list. Guaranteed never to throw: any unexpected I/O
+ * fault is caught, logged as a warning, and the original report is returned
+ * unenriched.
  */
 export class ScenarioIdentityResolver {
   constructor(
-    private readonly settingsService: SettingsService,
     private readonly vaultFs: VaultFileSystem,
     private readonly logger: Logger,
   ) {}
 
   async enrich<T extends ParsedReport>(report: T): Promise<T> {
     try {
-      const featureDir = (await this.settingsService.load()).paths.featureFilesPath;
       const cache = new Map<string, FeatureSpecification | null>();
       const enriched = report.scenarioResults.map((result) => ({ ...result }));
 
       for (const [uri, results] of groupByFeatureUri(enriched)) {
-        const vaultPath = vaultPathForUri(uri, featureDir);
+        const vaultPath = vaultPathForUri(uri);
         const feature = await this.featureFor(vaultPath, cache);
         if (feature) this.assign(results, feature, String(vaultPath));
       }

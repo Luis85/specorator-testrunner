@@ -382,11 +382,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       eventBus,
       this.logger,
     );
-    const scenarioIdentityResolver = new ScenarioIdentityResolver(
-      this.hubSettingsService,
-      vault,
-      this.logger,
-    );
+    const scenarioIdentityResolver = new ScenarioIdentityResolver(vault, this.logger);
     this.evidenceGenerationService = new DefaultEvidenceGenerationService(
       this.hubSettingsService,
       vault,
