@@ -445,15 +445,22 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
   }
 
   /**
-   * Evidence root with any trailing slash stripped. `joinVaultPath` already
-   * normalizes when BUILDING paths, but `rebuildInternal` slices listed paths by
-   * `root.length` and the index persists `root` for its staleness check — both
-   * need the canonical form so a user-saved `Test Evidence/` doesn't drop the
-   * first path character (leaving the rebuilt index empty) or churn the cache
-   * (codex P2).
+   * Canonical Evidence root: drops empty (`Test//Evidence`), `.` (`Test
+   * Evidence/.`), and trailing-slash segments. `joinVaultPath` and the Obsidian
+   * adapter canonicalize the paths they BUILD/LIST, but `rebuildInternal` slices
+   * listed paths by `root.length` and the index persists `root` for its
+   * staleness check — both need the SAME canonical form the listing returns, or
+   * a non-canonical configured root drops path characters (leaving the rebuilt
+   * index empty) or churns the cache (codex P2). `..` can't appear — PathSafety
+   * and joinVaultPath reject traversal upstream.
    */
   private normalizeRoot(root: VaultPath): VaultPath {
-    return unsafeVaultPath(root.replace(/\/+$/, ""));
+    return unsafeVaultPath(
+      root
+        .split("/")
+        .filter((segment) => segment !== "" && segment !== ".")
+        .join("/"),
+    );
   }
 
   /** `Test Evidence/YYYY/MM/<runId>` from the run start (ADR-0016 partition). */

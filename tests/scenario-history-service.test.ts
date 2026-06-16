@@ -307,6 +307,31 @@ describe("DefaultScenarioHistoryService.record", () => {
     expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
   });
 
+  it("canonicalizes a non-canonical Evidence root (a '.' segment) for paths and rebuild (codex P2)", async () => {
+    const settings = {
+      async load() {
+        return {
+          ...DEFAULT_SETTINGS,
+          paths: { ...DEFAULT_SETTINGS.paths, evidencePath: vp("Test Evidence/.") },
+        };
+      },
+    } as unknown as SettingsService;
+    const fs = new FakeVaultFileSystem();
+    const absoluteFs = new FakeAbsoluteFileSystem();
+    const { bus } = recordingEventBus();
+    const service = new DefaultScenarioHistoryService(settings, fs, absoluteFs, bus, silentLogger);
+
+    await service.record(run(), report());
+
+    // The log is written at the CANONICAL path (no '/./' segment), matching what
+    // the adapter would list, so the rebuild slice stays exact.
+    expect(
+      fs.files.has(vp("Test Evidence/2026/06/RUN-2026-06-01-100000/scenarios.ndjson")),
+    ).toBe(true);
+    const statuses = await service.latestStatuses();
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
+  });
+
   it("does not write a log or event when no result has a reference", async () => {
     const { service, fs, types } = build();
     await service.record(
