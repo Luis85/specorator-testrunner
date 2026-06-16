@@ -556,6 +556,44 @@ describe("DefaultScenarioHistoryService.rebuildIndex", () => {
     expect(statuses.ok && statuses.value.get(REF_B)).toBe("passed");
   });
 
+  it("rebuilds when the cached index has a corrupt status value (codex P2)", async () => {
+    const { service, fs, absoluteFs } = build();
+    fs.folders.add("Test Evidence");
+    // The authoritative log says REF_A failed.
+    fs.files.set(
+      vp("Test Evidence/2026/06/RUN-2026-06-09-100000/scenarios.ndjson"),
+      JSON.stringify({
+        v: 1,
+        scenarioRef: REF_A,
+        runId: "R9",
+        status: "failed",
+        at: "2026-06-09T10:01:00.000Z",
+        scope: "all",
+      }) + "\n",
+    );
+    // A corrupt cache with matching root/depth but a status outside the union.
+    absoluteFs.seed(
+      INDEX_PATH,
+      JSON.stringify({
+        v: 1,
+        depth: 50,
+        root: "Test Evidence",
+        scenarios: {
+          [REF_A]: {
+            latest: { status: "failed ", runId: "R9", at: "2026-06-09T10:01:00.000Z", scope: "all" },
+            recent: [
+              { status: "failed ", runId: "R9", at: "2026-06-09T10:01:00.000Z", scope: "all" },
+            ],
+          },
+        },
+      }),
+    );
+
+    const statuses = await service.latestStatuses();
+    // The corrupt cache is rejected and rebuilt from the log → valid "failed".
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("failed");
+  });
+
   it("prefers the NDJSON log over the note when both exist", async () => {
     const { service, fs } = build();
     fs.folders.add("Test Evidence");

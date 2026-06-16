@@ -503,12 +503,29 @@ const isHistoryLine = (value: unknown): value is HistoryLine => {
   );
 };
 
-/** A value usable as a {@link HistoryEntry}: has the fields the reads deref. */
-const isHistoryEntry = (value: unknown): value is HistoryEntry =>
-  typeof value === "object" &&
-  value !== null &&
-  typeof (value as HistoryEntry).status === "string" &&
-  typeof (value as HistoryEntry).runId === "string";
+/**
+ * Strict guard for a persisted {@link HistoryEntry}. Applies the SAME schema
+ * validation as {@link isHistoryLine} (status union, non-blank runId/at, scope
+ * union, numeric durationMs) so a parseable-but-corrupt cache — e.g. a hand-
+ * edited/sync-mangled `status: "failed "` — is rejected and the index rebuilt
+ * from the authoritative logs, rather than served and mis-read by the roll-up
+ * (codex P2).
+ */
+const isHistoryEntry = (value: unknown): value is HistoryEntry => {
+  if (typeof value !== "object" || value === null) return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.status === "string" &&
+    VALID_STATUSES.has(entry.status) &&
+    typeof entry.runId === "string" &&
+    entry.runId !== "" &&
+    typeof entry.at === "string" &&
+    entry.at !== "" &&
+    typeof entry.scope === "string" &&
+    VALID_SCOPES.has(entry.scope) &&
+    (entry.durationMs === undefined || typeof entry.durationMs === "number")
+  );
+};
 
 /**
  * Structural guard for a persisted {@link ScenarioIndex}. Rejects a
