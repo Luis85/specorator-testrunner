@@ -252,7 +252,9 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     // root was since deleted or repointed), CLEAR it — otherwise latestStatuses()
     // keeps serving phantom history that no longer exists under the configured
     // root (codex P2). With no history to project, an empty index is correct.
-    if (!(await this.vaultFs.exists(root))) {
+    // An empty root is the VAULT ROOT (configured `evidencePath: "."`); it always
+    // exists, so skip the absent-root check and list from the root (codex P2).
+    if (root !== "" && !(await this.vaultFs.exists(root))) {
       if (await this.readIndex()) await this.writeIndex(index);
       return ok(undefined);
     }
@@ -265,10 +267,14 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     }
 
     // Group per run folder; the YYYY/MM/<runId> layout encodes recency, so a
-    // descending sort visits runs newest-first (matches RunHistoryService).
+    // descending sort visits runs newest-first (matches RunHistoryService). The
+    // prefix is `root + "/"`, or "" at the vault root, so the relative path is
+    // computed exactly regardless of root (codex P2).
+    const prefix = root === "" ? "" : `${root}/`;
     const folders = new Map<string, { ndjson?: VaultPath; summary?: VaultPath }>();
     for (const path of listed.value) {
-      const relative = path.slice(root.length + 1);
+      if (!path.startsWith(prefix)) continue;
+      const relative = path.slice(prefix.length);
       const nd = NDJSON_PATTERN.exec(relative);
       if (nd) {
         const key = `${nd[1]}/${nd[2]}/${nd[3]}`;
@@ -439,7 +445,11 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
   }
 
   private depth(configured: number | undefined): number {
-    return configured !== undefined && Number.isFinite(configured) && configured > 0
+    // Require an effective window of at least 1: a fractional value in (0,1)
+    // would floor to 0, producing trimmed records with no `latest` (codex P2).
+    // Settings load already rejects non-integers, but guard here too so the
+    // projection is never corrupted regardless of how settings were supplied.
+    return configured !== undefined && Number.isFinite(configured) && configured >= 1
       ? Math.floor(configured)
       : HISTORY_DEPTH_DEFAULT;
   }

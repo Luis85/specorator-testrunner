@@ -332,6 +332,29 @@ describe("DefaultScenarioHistoryService.record", () => {
     expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
   });
 
+  it("rebuilds history when the Evidence root is the vault root ('.') (codex P2)", async () => {
+    const settings = {
+      async load() {
+        return {
+          ...DEFAULT_SETTINGS,
+          paths: { ...DEFAULT_SETTINGS.paths, evidencePath: vp(".") },
+        };
+      },
+    } as unknown as SettingsService;
+    const fs = new FakeVaultFileSystem();
+    const absoluteFs = new FakeAbsoluteFileSystem();
+    const { bus } = recordingEventBus();
+    const service = new DefaultScenarioHistoryService(settings, fs, absoluteFs, bus, silentLogger);
+
+    await service.record(run(), report());
+
+    // The vault-root tree writes logs without a leading folder; rebuild lists
+    // from the root ("") and slices with an empty prefix, so REF_A is folded.
+    expect(fs.files.has(vp("2026/06/RUN-2026-06-01-100000/scenarios.ndjson"))).toBe(true);
+    const statuses = await service.latestStatuses();
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
+  });
+
   it("does not write a log or event when no result has a reference", async () => {
     const { service, fs, types } = build();
     await service.record(
@@ -409,6 +432,16 @@ describe("DefaultScenarioHistoryService.record", () => {
     expect(index.depth).toBe(2);
     expect(index.scenarios[REF_A].recent).toHaveLength(2);
     expect(index.scenarios[REF_A].latest.runId).toBe("RUN-2026-06-03-100000");
+  });
+
+  it("treats a fractional configured depth as the default, never 0 (codex P2)", async () => {
+    const { service, absoluteFs } = build(0.5); // would floor to 0 without the guard
+    await service.record(run(), report());
+    const index = readIndex(absoluteFs);
+    // Falls back to the default window and keeps a valid latest, rather than
+    // writing a record with no latest (which would make the cache unservable).
+    expect(index.depth).toBe(50);
+    expect(index.scenarios[REF_A].latest.status).toBe("passed");
   });
 
   it("rebuilds (re-trims untouched refs) when the history depth changes (codex P2)", async () => {

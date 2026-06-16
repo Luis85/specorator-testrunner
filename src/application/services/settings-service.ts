@@ -279,11 +279,14 @@ export class DefaultSettingsService implements SettingsService {
         ),
         // undefined = default depth (HISTORY_DEPTH_DEFAULT, US-057). Preserve a
         // valid configured value across load so the projection window honors it.
+        // Must be a positive INTEGER: a fractional value (e.g. a synced/hand-
+        // edited 0.5) floors to 0 in the history projection, producing records
+        // with no `latest` and an unservable cache (codex P2).
         historyDepth: repair<number | undefined>(
           "automation.historyDepth",
           historyDepth,
           historyDepth === undefined ||
-            (typeof historyDepth === "number" && Number.isFinite(historyDepth) && historyDepth > 0),
+            (typeof historyDepth === "number" && Number.isInteger(historyDepth) && historyDepth > 0),
           undefined,
         ),
       } satisfies AutomationSettings,

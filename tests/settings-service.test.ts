@@ -932,6 +932,17 @@ describe("scalar shape repair (ci.* / automation.*)", () => {
     const settings = await service.load();
     expect(settings.automation.historyDepth).toBeUndefined();
   });
+
+  it("drops a fractional historyDepth to undefined (would floor to 0, US-057)", async () => {
+    const store = new FakeDataStore();
+    await store.save({
+      ...DEFAULT_SETTINGS,
+      automation: { ...DEFAULT_SETTINGS.automation, historyDepth: 0.5 },
+    });
+    const service = buildServiceWith(store);
+    const settings = await service.load();
+    expect(settings.automation.historyDepth).toBeUndefined();
+  });
 });
 
 describe("schemaVersion envelope (2.1)", () => {

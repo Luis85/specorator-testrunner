@@ -89,7 +89,10 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>> {
-    return ok([...this.files.keys()].filter((p) => p.startsWith(`${path}/`)).map(unsafeVaultPath));
+    // An empty path is the vault root: the real adapter lists every file
+    // (`adapter.list("")`), so match that rather than filtering on "/".
+    const prefix = path === "" ? "" : `${path}/`;
+    return ok([...this.files.keys()].filter((p) => p.startsWith(prefix)).map(unsafeVaultPath));
   }
 
   async listFolders(): Promise<Result<VaultPath[]>> {
