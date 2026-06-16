@@ -182,7 +182,19 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
 
     // 2) Fold the run into the index read model.
     const depth = this.depth(settings.automation.historyDepth);
-    const index = (await this.readIndex()) ?? { v: SCHEMA_VERSION, depth, scenarios: {} };
+    let index = await this.readIndex();
+    if (!index) {
+      // The regenerable index is gone or corrupt (e.g. Reset Test Hub recreated
+      // `.testrunner`, or the cache was deleted) while committed Evidence logs —
+      // including the one just written above — still exist. Rebuild from those
+      // logs FIRST so folding the new run doesn't leave an index containing only
+      // this run, which would regress every untouched scenario's roll-up until a
+      // reload/manual rebuild (codex P2). rebuildInternal (not the queued
+      // rebuildIndex) runs in this already-queued task without re-entrancy.
+      await this.rebuildInternal();
+      index = await this.readIndex();
+    }
+    index ??= { v: SCHEMA_VERSION, depth, scenarios: {} };
     index.depth = depth;
     // Re-import idempotency: a re-import of the SAME run may resolve a DIFFERENT
     // set of Scenario References than before (e.g. a scenario was renamed/removed
@@ -212,13 +224,18 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     const depth = this.depth(settings.automation.historyDepth);
     const index: ScenarioIndex = { v: SCHEMA_VERSION, depth, scenarios: {} };
 
-    // A fresh/uninitialized vault has no Evidence root yet. Do NOT write the
-    // index here: the absolute FS would create `.testrunner/history/...` before
-    // the user has initialized the Test Hub, dirtying the vault and leaving a
-    // partial runner folder for validation to trip over (codex P2). With no
-    // history to project, an absent index is correct — latestStatuses() returns
-    // an empty map.
-    if (!(await this.vaultFs.exists(root))) return ok(undefined);
+    // A fresh/uninitialized vault has no Evidence root yet. Do NOT materialize
+    // the index here: the absolute FS would create `.testrunner/history/...`
+    // before the user has initialized the Test Hub, dirtying the vault and
+    // leaving a partial runner folder for validation to trip over (codex P2).
+    // But if an index ALREADY exists (a previously-populated vault whose Evidence
+    // root was since deleted or repointed), CLEAR it — otherwise latestStatuses()
+    // keeps serving phantom history that no longer exists under the configured
+    // root (codex P2). With no history to project, an empty index is correct.
+    if (!(await this.vaultFs.exists(root))) {
+      if (await this.readIndex()) await this.writeIndex(index);
+      return ok(undefined);
+    }
     const listed = await this.vaultFs.listFilesRecursive(root);
     if (!listed.ok) {
       this.logger.warn("Could not list evidence for history rebuild", {

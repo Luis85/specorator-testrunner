@@ -120,6 +120,54 @@ describe("DefaultScenarioHistoryService.record", () => {
     expect(statuses.ok && statuses.value.has(REF_B)).toBe(false);
   });
 
+  it("rebuilds from existing logs before folding when the index is missing (codex P2)", async () => {
+    const { service, fs } = build();
+    fs.folders.add("Test Evidence");
+    // Two committed logs from prior runs, but the regenerable index was deleted
+    // (e.g. Reset Test Hub recreated .testrunner).
+    fs.files.set(
+      vp("Test Evidence/2026/06/RUN-OLD-A/scenarios.ndjson"),
+      JSON.stringify({
+        v: 1,
+        scenarioRef: REF_A,
+        runId: "RUN-OLD-A",
+        status: "passed",
+        at: "2026-06-01T10:00:00.000Z",
+        scope: "all",
+      }) + "\n",
+    );
+    fs.files.set(
+      vp("Test Evidence/2026/06/RUN-OLD-B/scenarios.ndjson"),
+      JSON.stringify({
+        v: 1,
+        scenarioRef: REF_B,
+        runId: "RUN-OLD-B",
+        status: "passed",
+        at: "2026-06-02T10:00:00.000Z",
+        scope: "all",
+      }) + "\n",
+    );
+
+    // A new targeted run touches only REF_A while no index exists.
+    await service.record(
+      run({
+        id: "RUN-NEW",
+        startedAt: "2026-06-03T10:00:00.000Z",
+        finishedAt: "2026-06-03T10:01:00.000Z",
+      }),
+      report({
+        runId: "RUN-NEW",
+        scenarioResults: [{ feature: "F", scenario: "A", status: "failed", scenarioRef: REF_A }],
+      }),
+    );
+
+    const statuses = await service.latestStatuses();
+    // The new run's REF_A applies, AND REF_B (untouched) is preserved from the
+    // rebuild rather than dropped to never-run.
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("failed");
+    expect(statuses.ok && statuses.value.get(REF_B)).toBe("passed");
+  });
+
   it("skips results with no Scenario Reference (degrade gracefully, ADR-0022)", async () => {
     const { service, fs, absoluteFs } = build();
     await service.record(
@@ -419,5 +467,31 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     // No index file written — the absolute FS would otherwise create
     // .testrunner/history before the user initializes the Test Hub.
     expect(absoluteFs.written.has(INDEX_PATH)).toBe(false);
+  });
+
+  it("clears a stale index when the Evidence root is absent (codex P2)", async () => {
+    const { service, absoluteFs } = build(); // Evidence root NOT seeded → absent
+    // A populated index lingers from an Evidence root that has since been
+    // deleted or repointed.
+    absoluteFs.seed(
+      INDEX_PATH,
+      JSON.stringify({
+        v: 1,
+        depth: 50,
+        scenarios: {
+          [REF_A]: {
+            latest: { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            recent: [
+              { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            ],
+          },
+        },
+      }),
+    );
+
+    await service.rebuildIndex();
+    const statuses = await service.latestStatuses();
+    // The stale cache is cleared rather than served as phantom history.
+    expect(statuses.ok && statuses.value.size).toBe(0);
   });
 });
