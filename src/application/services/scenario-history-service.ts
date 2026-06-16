@@ -220,17 +220,24 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     // 2) Update the index read model. A FIRST import folds the run in
     // incrementally — the fast steady-state path. A RE-import (the run already
     // contributed to the index), a missing/corrupt index, an index built from a
-    // different Evidence root, OR one built at a different history depth instead
-    // rebuilds from the authoritative committed logs; the new log was rewritten
-    // above, so it is included. Rebuilding is what keeps re-imports correct: it
-    // handles a changed/emptied ref set, restores any depth-trimmed older results
-    // for a ref this run drops, and re-applies a changed depth across ALL refs
-    // (raising backfills, lowering re-trims) — none of which an in-place patch of
-    // the projection can see (codex P2). rebuildInternal (not the queued
-    // rebuildIndex) runs in this already-queued task without re-entrancy.
+    // different Evidence root, one built at a different history depth, OR a prior
+    // index write that failed (so the on-disk cache is missing an earlier run's
+    // scenarios) instead rebuilds from the authoritative committed logs; the new
+    // log was rewritten above, so it is included. Rebuilding is what keeps
+    // re-imports correct: it handles a changed/emptied ref set, restores any
+    // depth-trimmed older results for a ref this run drops, re-applies a changed
+    // depth across ALL refs (raising backfills, lowering re-trims), and recovers
+    // runs whose index write failed — none of which an in-place patch of the
+    // projection can see (codex P2). rebuildInternal (not the queued rebuildIndex)
+    // runs in this already-queued task without re-entrancy.
     const depth = this.depth(settings.automation.historyDepth);
     const existing = await this.readIndex();
-    if (existing?.root !== root || existing?.depth !== depth || this.indexHasRun(existing, run.id)) {
+    if (
+      existing?.root !== root ||
+      existing?.depth !== depth ||
+      this.indexWriteFailed ||
+      this.indexHasRun(existing, run.id)
+    ) {
       await this.rebuildInternal();
     } else {
       existing.depth = depth;

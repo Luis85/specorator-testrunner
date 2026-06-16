@@ -980,4 +980,47 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     const statuses = await service.latestStatuses();
     expect(statuses.ok && statuses.value.get(REF_A)).toBe("failed");
   });
+
+  it("recovers a run on the next record when its prior index write failed (codex P2)", async () => {
+    const REF_C = "Specifications/features/UC-001.feature::C";
+    const { service, absoluteFs } = build();
+    const realWrite = absoluteFs.writeAbsolute.bind(absoluteFs);
+
+    // run0 records successfully → on-disk index has REF_B.
+    await service.record(
+      run({ id: "RUN-0", startedAt: "2026-06-01T10:00:00.000Z", finishedAt: "2026-06-01T10:01:00.000Z" }),
+      report({
+        runId: "RUN-0",
+        scenarioResults: [{ feature: "F", scenario: "B", status: "passed", scenarioRef: REF_B }],
+      }),
+    );
+
+    // run1's log is written but its index write fails — REF_A is missing from the
+    // on-disk cache, and indexWriteFailed is now set.
+    absoluteFs.writeAbsolute = async () => err({ code: "INIT_FAILED", message: "disk full" });
+    await service.record(
+      run({ id: "RUN-1", startedAt: "2026-06-02T10:00:00.000Z", finishedAt: "2026-06-02T10:01:00.000Z" }),
+      report({
+        runId: "RUN-1",
+        scenarioResults: [{ feature: "F", scenario: "A", status: "passed", scenarioRef: REF_A }],
+      }),
+    );
+
+    // Writes recover; run2 records. The incremental path must NOT fold only REF_C
+    // onto the stale cache (which would lose REF_A) — the failure flag forces a
+    // rebuild from all committed logs.
+    absoluteFs.writeAbsolute = realWrite;
+    await service.record(
+      run({ id: "RUN-2", startedAt: "2026-06-03T10:00:00.000Z", finishedAt: "2026-06-03T10:01:00.000Z" }),
+      report({
+        runId: "RUN-2",
+        scenarioResults: [{ feature: "F", scenario: "C", status: "passed", scenarioRef: REF_C }],
+      }),
+    );
+
+    const statuses = await service.latestStatuses();
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed"); // recovered
+    expect(statuses.ok && statuses.value.get(REF_B)).toBe("passed");
+    expect(statuses.ok && statuses.value.get(REF_C)).toBe("passed");
+  });
 });
