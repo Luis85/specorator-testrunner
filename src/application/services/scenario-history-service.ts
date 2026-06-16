@@ -3,8 +3,11 @@ import type { SettingsService } from "./settings-service";
 import { parseScenarioEvidenceBlock } from "../content/scenario-evidence-block";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { VaultFileSystem } from "../ports/vault-file-system";
-import type { ExecutionScope, TestRun } from "../../domain/entities/test-run";
-import type { ScenarioLatestStatus } from "../../domain/policies/use-case-automation-policy";
+import { EXECUTION_SCOPES, type ExecutionScope, type TestRun } from "../../domain/entities/test-run";
+import {
+  SCENARIO_LATEST_STATUSES,
+  type ScenarioLatestStatus,
+} from "../../domain/policies/use-case-automation-policy";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import { HISTORY_DEPTH_DEFAULT } from "../../domain/settings/settings";
@@ -119,14 +122,17 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
   }
 
   private async latestStatusesInternal(): Promise<Result<Map<string, ScenarioLatestStatus>>> {
-    const root = (await this.settingsService.load()).paths.evidencePath;
+    const settings = await this.settingsService.load();
+    const root = settings.paths.evidencePath;
+    const depth = this.depth(settings.automation.historyDepth);
     let index = await this.readIndex();
-    // Reconstruct from the committed logs when the index is absent OR was built
-    // from a different Evidence root (the user repointed paths.evidencePath while
-    // the plugin stayed open, so the cache describes the old tree — codex P2).
+    // Reconstruct from the committed logs when the index is absent, was built from
+    // a different Evidence root (the user repointed paths.evidencePath), OR was
+    // built at a different history depth (the user changed it) while the plugin
+    // stayed open — the cache then describes a stale tree/window (codex P2).
     // rebuildInternal is called directly, NOT the queued rebuildIndex: we already
     // hold the queue slot, so re-entering queue.run here would deadlock.
-    if (index?.root !== root) {
+    if (index?.root !== root || index?.depth !== depth) {
       await this.rebuildInternal();
       index = await this.readIndex();
     }
@@ -193,18 +199,19 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
 
     // 2) Update the index read model. A FIRST import folds the run in
     // incrementally — the fast steady-state path. A RE-import (the run already
-    // contributed to the index), a missing/corrupt index, OR an index built from
-    // a different Evidence root instead rebuilds from the authoritative committed
-    // logs; the new log was rewritten above, so it is included. Rebuilding is
-    // what keeps re-imports correct: it handles a changed/emptied ref set AND
-    // restores any depth-trimmed older results for a ref this run drops — neither
-    // of which an in-place patch of the projection can see (codex P2).
-    // rebuildInternal (not the queued rebuildIndex) runs in this already-queued
-    // task without re-entrancy.
+    // contributed to the index), a missing/corrupt index, an index built from a
+    // different Evidence root, OR one built at a different history depth instead
+    // rebuilds from the authoritative committed logs; the new log was rewritten
+    // above, so it is included. Rebuilding is what keeps re-imports correct: it
+    // handles a changed/emptied ref set, restores any depth-trimmed older results
+    // for a ref this run drops, and re-applies a changed depth across ALL refs
+    // (raising backfills, lowering re-trims) — none of which an in-place patch of
+    // the projection can see (codex P2). rebuildInternal (not the queued
+    // rebuildIndex) runs in this already-queued task without re-entrancy.
     const depth = this.depth(settings.automation.historyDepth);
     const root = settings.paths.evidencePath;
     const existing = await this.readIndex();
-    if (existing?.root !== root || this.indexHasRun(existing, run.id)) {
+    if (existing?.root !== root || existing?.depth !== depth || this.indexHasRun(existing, run.id)) {
       await this.rebuildInternal();
     } else {
       existing.depth = depth;
@@ -316,11 +323,15 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       const trimmed = raw.trim();
       if (trimmed === "") continue;
       try {
-        const line = JSON.parse(trimmed) as HistoryLine;
-        if (typeof line.scenarioRef === "string" && typeof line.status === "string") {
-          entries.push({ ref: line.scenarioRef, entry: lineToEntry(line) });
+        const parsed: unknown = JSON.parse(trimmed);
+        if (isHistoryLine(parsed)) {
+          entries.push({ ref: parsed.scenarioRef, entry: lineToEntry(parsed) });
         } else {
-          hadError = true; // parsed but not a usable history line
+          // Parsed but violates the v1 schema (bad status union, missing
+          // runId/at, unknown scope, …) — a hand-edited or sync-corrupted line.
+          // Mark errored so the rebuild prefers the authoritative note instead of
+          // storing a non-union status the roll-up would mis-read (codex P2).
+          hadError = true;
         }
       } catch {
         // A hand-edited/corrupt/truncated line — the Markdown stays authoritative.
@@ -462,6 +473,35 @@ const lineToEntry = (line: HistoryLine): HistoryEntry => ({
 
 const asString = (value: string | string[] | undefined): string | undefined =>
   typeof value === "string" && value !== "" ? value : undefined;
+
+const VALID_STATUSES = new Set<string>(SCENARIO_LATEST_STATUSES);
+const VALID_SCOPES = new Set<string>(EXECUTION_SCOPES);
+
+/**
+ * Strict v1 schema guard for one NDJSON history line. A line that parses as JSON
+ * but violates the schema — status outside the {@link ScenarioLatestStatus}
+ * union, blank/missing `scenarioRef`/`runId`/`at`, unknown `scope`, or a
+ * non-numeric `durationMs` — is rejected so the rebuild marks the log errored and
+ * prefers the authoritative note, rather than storing a corrupt status the
+ * roll-up would silently mis-read (codex P2).
+ */
+const isHistoryLine = (value: unknown): value is HistoryLine => {
+  if (typeof value !== "object" || value === null) return false;
+  const line = value as Record<string, unknown>;
+  return (
+    typeof line.scenarioRef === "string" &&
+    line.scenarioRef !== "" &&
+    typeof line.runId === "string" &&
+    line.runId !== "" &&
+    typeof line.at === "string" &&
+    line.at !== "" &&
+    typeof line.status === "string" &&
+    VALID_STATUSES.has(line.status) &&
+    typeof line.scope === "string" &&
+    VALID_SCOPES.has(line.scope) &&
+    (line.durationMs === undefined || typeof line.durationMs === "number")
+  );
+};
 
 /** A value usable as a {@link HistoryEntry}: has the fields the reads deref. */
 const isHistoryEntry = (value: unknown): value is HistoryEntry =>

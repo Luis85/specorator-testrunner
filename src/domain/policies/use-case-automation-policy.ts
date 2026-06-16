@@ -20,8 +20,15 @@ import { featureScenarioRefs } from "../value-objects/scenario-reference";
 
 const WIP_TAG = "@wip";
 
+/**
+ * Latest recorded scenario results, as a runtime list so the history log
+ * read-back validation (ScenarioHistoryService) enumerates the same single
+ * source the {@link ScenarioLatestStatus} union is derived from.
+ */
+export const SCENARIO_LATEST_STATUSES = ["passed", "failed", "skipped"] as const;
+
 /** Latest recorded result of a scenario; `undefined` means it has never run. */
-export type ScenarioLatestStatus = "passed" | "failed" | "skipped";
+export type ScenarioLatestStatus = (typeof SCENARIO_LATEST_STATUSES)[number];
 
 /**
  * Looks up a scenario's latest recorded status by its Scenario Reference

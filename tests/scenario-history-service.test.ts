@@ -324,6 +324,58 @@ describe("DefaultScenarioHistoryService.record", () => {
     expect(index.scenarios[REF_A].recent).toHaveLength(2);
     expect(index.scenarios[REF_A].latest.runId).toBe("RUN-2026-06-03-100000");
   });
+
+  it("rebuilds (re-trims untouched refs) when the history depth changes (codex P2)", async () => {
+    // A mutable depth so we can change it between records, as the user would.
+    let depth: number | undefined = 3;
+    const settings = {
+      async load() {
+        return {
+          ...DEFAULT_SETTINGS,
+          automation: { ...DEFAULT_SETTINGS.automation, historyDepth: depth },
+        };
+      },
+    } as unknown as SettingsService;
+    const fs = new FakeVaultFileSystem();
+    const absoluteFs = new FakeAbsoluteFileSystem();
+    const { bus } = recordingEventBus();
+    const service = new DefaultScenarioHistoryService(settings, fs, absoluteFs, bus, silentLogger);
+
+    // Three runs for REF_A at depth 3 → recent keeps all three.
+    for (const day of ["01", "02", "03"]) {
+      await service.record(
+        run({
+          id: `RUN-2026-06-${day}-100000`,
+          startedAt: `2026-06-${day}T10:00:00.000Z`,
+          finishedAt: `2026-06-${day}T10:01:00.000Z`,
+        }),
+        report({
+          runId: `RUN-2026-06-${day}-100000`,
+          scenarioResults: [{ feature: "F", scenario: "A", status: "passed", scenarioRef: REF_A }],
+        }),
+      );
+    }
+    expect(readIndex(absoluteFs).scenarios[REF_A].recent).toHaveLength(3);
+
+    // Lower the depth, then record a run for a DIFFERENT ref so the incremental
+    // fold never touches REF_A. The depth change must still re-trim REF_A.
+    depth = 1;
+    await service.record(
+      run({
+        id: "RUN-2026-06-04-100000",
+        startedAt: "2026-06-04T10:00:00.000Z",
+        finishedAt: "2026-06-04T10:01:00.000Z",
+      }),
+      report({
+        runId: "RUN-2026-06-04-100000",
+        scenarioResults: [{ feature: "F", scenario: "B", status: "passed", scenarioRef: REF_B }],
+      }),
+    );
+
+    const index = readIndex(absoluteFs);
+    expect(index.depth).toBe(1);
+    expect(index.scenarios[REF_A].recent).toHaveLength(1);
+  });
 });
 
 describe("DefaultScenarioHistoryService.rebuildIndex", () => {
@@ -472,6 +524,36 @@ describe("DefaultScenarioHistoryService.rebuildIndex", () => {
     // Both scenarios are recovered from the note, not just the one intact log line.
     expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
     expect(statuses.ok && statuses.value.get(REF_B)).toBe("failed");
+  });
+
+  it("falls back to the note when a log line has an invalid status (codex P2)", async () => {
+    const { service, fs } = build();
+    fs.folders.add("Test Evidence");
+    const folder = "Test Evidence/2026/06/RUN-2026-06-08-100000";
+    // Valid JSON but a status outside the union (sync corruption / hand edit).
+    fs.files.set(
+      vp(`${folder}/scenarios.ndjson`),
+      JSON.stringify({
+        v: 1,
+        scenarioRef: REF_B,
+        runId: "R8",
+        status: "failed ",
+        at: "2026-06-08T10:01:00.000Z",
+        scope: "all",
+      }) + "\n",
+    );
+    fs.files.set(
+      vp(`${folder}/summary.md`),
+      buildNote(
+        { type: "test-evidence", run_id: "R8", created_at: "2026-06-08T10:01:00.000Z", scope: "all" },
+        renderScenarioEvidenceBlock([{ ref: REF_B, status: "passed" }]),
+      ),
+    );
+
+    await service.rebuildIndex();
+    const statuses = await service.latestStatuses();
+    // The non-union status is rejected and the authoritative note salvages the run.
+    expect(statuses.ok && statuses.value.get(REF_B)).toBe("passed");
   });
 
   it("prefers the NDJSON log over the note when both exist", async () => {
