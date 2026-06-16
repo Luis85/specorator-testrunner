@@ -19,9 +19,18 @@ const REFRESH_ON: DomainEventType[] = [
   "usecase.status.changed",
   // Wave F: a newly generated Feature changes the "Features" column count.
   "specification.created",
+  // US-057: the Automation column is derived via traceability.deriveAll() from
+  // both the parsed Features and per-scenario history, so a Feature EDIT (adding
+  // @wip, adding steps, renaming a scenario) changes the derived roll-up without
+  // any Use Case event — re-render on it as the dashboard does.
+  "specification.updated",
   // US-057: the Automation column is now derived from per-scenario history, so a
   // recorded run must re-render the explorer for it to reflect the new status.
   "scenario.history.recorded",
+  // deriveAll() reads scenario history under the configured Evidence root, so an
+  // evidencePath change (persisted via settings.updated) repoints the history
+  // tree — re-render so the column isn't served from the old root.
+  "settings.updated",
 ];
 
 export interface UseCaseDashboardDeps {

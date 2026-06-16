@@ -55,6 +55,11 @@ const REFRESH_ON: DomainEventType[] = [
   // which is recorded AFTER testrun.completed — re-render when it lands so the
   // status isn't a render behind.
   "scenario.history.recorded",
+  // deriveById() reads scenario history under the configured Evidence root, so an
+  // evidencePath change (persisted via settings.updated) repoints the history
+  // tree — re-render so the header isn't served from the old root, matching the
+  // main dashboard.
+  "settings.updated",
 ];
 
 /**
