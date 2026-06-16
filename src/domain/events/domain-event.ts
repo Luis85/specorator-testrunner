@@ -60,6 +60,7 @@ export type DomainEventType =
   // report
   | "report.imported"
   | "report.import.failed"
+  | "scenario.history.recorded"
   // evidence
   | "evidence.generated"
   | "evidence.linkedToUseCase"
@@ -168,6 +169,9 @@ export interface EventPayloads {
   // report (§8)
   "report.imported": { runId: string; reportPath: string; scenarioResults: number };
   "report.import.failed": { runId: string; reportPath: string; reason: string };
+  /** Per-scenario history recorded for a finished run (US-057); `scenarioCount`
+   * is the number of resolved-ref results written to the history projection. */
+  "scenario.history.recorded": { runId: string; scenarioCount: number };
 
   // evidence (§9)
   "evidence.generated": { runId: string; evidencePath: string; linkedUseCases: string[] };

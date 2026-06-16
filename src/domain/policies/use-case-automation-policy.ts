@@ -1,16 +1,35 @@
 import type { FeatureSpecification } from "../entities/specification";
-import type { AutomationStatus, UseCase } from "../entities/use-case";
+import type { AutomationStatus } from "../entities/use-case";
+import { featureScenarioRefs } from "../value-objects/scenario-reference";
 
 /**
- * UseCaseAutomationPolicy (ADR-0017, TIS §14.3).
+ * UseCaseAutomationPolicy (ADR-0017 table, ADR-0022 history-derived — US-057).
  *
- * Derives `UseCase.automationStatus` from the states of its Features. Features
- * tagged `@wip` are excluded from the roll-up so half-built work does not drag
- * the dashboard red (ADR-0017 — exclusion granularity is the Feature, not the
+ * Derives `UseCase.automationStatus` from the states of its Features. A Feature's
+ * state is rolled up from its scenarios' *latest* recorded results
+ * (per-scenario history, US-057), not from a single UC-level `lastTestRun`. This
+ * replaces V1's ADR-0017 "floor" + scope-awareness workaround: because each
+ * scenario keeps its own last-known status, a targeted single-Feature/scenario
+ * rerun updates only the scenarios it touched, so siblings can neither regress
+ * nor inflate the roll-up — no floor is needed.
+ *
+ * Features tagged `@wip` are excluded so half-built work does not drag the
+ * dashboard red (ADR-0017 — exclusion granularity is the Feature, not the
  * scenario). Pure domain logic: no I/O, unit-testable in isolation (BBV §10).
  */
 
 const WIP_TAG = "@wip";
+
+/** Latest recorded result of a scenario; `undefined` means it has never run. */
+export type ScenarioLatestStatus = "passed" | "failed" | "skipped";
+
+/**
+ * Looks up a scenario's latest recorded status by its Scenario Reference
+ * (`<featurePath>::<name>[::row-<digest>]`, US-056). Returns `undefined` for a
+ * scenario with no history. Supplied by the application layer from the
+ * `ScenarioHistoryService` projection; the policy stays pure.
+ */
+export type ScenarioStatusLookup = (scenarioRef: string) => ScenarioLatestStatus | undefined;
 
 /** A Feature tagged `@wip` is parked work — excluded from the roll-up. */
 const isWip = (feature: FeatureSpecification): boolean =>
@@ -27,9 +46,47 @@ const hasUndefinedSteps = (feature: FeatureSpecification): boolean =>
   feature.scenarios.length === 0 ||
   feature.scenarios.some((scenario) => scenario.steps.length === 0);
 
+/** Run state of a single Feature, rolled up from its scenarios' latest results. */
+type FeatureRunState = "not-run" | "passing" | "failing" | "partial";
+
+/**
+ * Rolls a Feature up from its scenarios' latest statuses:
+ * - `not-run` — none of its scenarios has any recorded result;
+ * - `failing` — at least one scenario's latest result is `failed`;
+ * - `passing` — every scenario has run and its latest result is `passed`;
+ * - `partial` — some scenarios ran (none failing) but not all passed (a
+ *   `skipped` latest, or a scenario with no history yet).
+ *
+ * A Feature with no resolvable scenario references reads as `not-run` (rare;
+ * US-056 keeps references collision-free, and this only happens when every
+ * scenario degraded to an unset ref — accepted edge, ADR-0022).
+ */
+const featureRunState = (
+  feature: FeatureSpecification,
+  latestStatusFor: ScenarioStatusLookup,
+): FeatureRunState => {
+  const refs = featureScenarioRefs(feature);
+  let anyRun = false;
+  let anyFailed = false;
+  let allPassed = refs.length > 0;
+  for (const { ref } of refs) {
+    const status = latestStatusFor(ref);
+    if (status === undefined) {
+      allPassed = false;
+      continue;
+    }
+    anyRun = true;
+    if (status === "failed") anyFailed = true;
+    if (status !== "passed") allPassed = false;
+  }
+  if (!anyRun) return "not-run";
+  if (anyFailed) return "failing";
+  return allPassed ? "passing" : "partial";
+};
+
 /**
  * Computes the roll-up `AutomationStatus` for a Use Case from its (non-`@wip`)
- * Features and its last run, per the ADR-0017 table:
+ * Features and the per-scenario history, per the ADR-0017 table:
  *
  * | Non-`@wip` Feature states            | result          |
  * | ------------------------------------ | --------------- |
@@ -37,16 +94,12 @@ const hasUndefinedSteps = (feature: FeatureSpecification): boolean =>
  * | 1+ Features, none ever run           | `planned`       |
  * | 1+ Features have undefined steps     | `missing-steps` |
  * | All run, all passed                  | `passing`       |
- * | All run, at least one failed         | `failing`       |
- * | Some run, none failed, some not run  | `implemented`   |
- *
- * Run state is sourced from `useCase.lastTestRun` (the UC-level roll-up the
- * vault persists per TIS §10.1); the policy treats "the UC has a recorded run"
- * as "its Features have run". Finer per-Feature run history is deferred to V2.
+ * | Any Feature failing                  | `failing`       |
+ * | Some run, none failing, not all pass | `implemented`   |
  */
 export const computeAutomationStatus = (
-  useCase: UseCase,
   features: FeatureSpecification[],
+  latestStatusFor: ScenarioStatusLookup,
 ): AutomationStatus => {
   const active = features.filter((feature) => !isWip(feature));
 
@@ -57,35 +110,17 @@ export const computeAutomationStatus = (
   // must finish writing it before any pass/fail signal is meaningful.
   if (active.some(hasUndefinedSteps)) return "missing-steps";
 
-  const lastRun = useCase.lastTestRun;
-  // No run recorded yet: Features are specified but never exercised.
-  if (!lastRun) return "planned";
+  const states = active.map((feature) => featureRunState(feature, latestStatusFor));
 
-  // A recorded failure (or errored run) keeps the UC red until it passes again.
-  if (lastRun.status === "failed" || lastRun.status === "errored") return "failing";
+  // No scenario across any active Feature has run yet: specified but unexercised.
+  if (states.every((state) => state === "not-run")) return "planned";
 
-  // The UC has run and the last result was a pass. ADR-0017 rejects a latest-
-  // wins roll-up: a single passing run only makes the WHOLE UC "passing" when it
-  // actually exercised every (non-@wip) Feature — i.e. a UC-wide run
-  // (`use-case`/`all`), or a UC with a single Feature (any scope covers it). A
-  // single-Feature-scope run on a multi-Feature UC leaves siblings unrun, so the
-  // UC stays partially "implemented". A legacy summary without a scope keeps the
-  // prior behaviour (treated as covering) for backward compatibility.
-  if (lastRun.status === "passed") {
-    const coversWholeUseCase =
-      lastRun.scope === undefined ||
-      lastRun.scope === "all" ||
-      lastRun.scope === "use-case" ||
-      active.length === 1;
-    if (coversWholeUseCase) return "passing";
-    // A partial (single-Feature-scope) pass on a multi-Feature UC doesn't by
-    // itself prove the whole UC passes — but it also must not REGRESS a UC that
-    // already reached "passing" via an earlier UC-wide run (a common targeted
-    // rerun). Without per-feature pass history we use the persisted status as a
-    // floor: keep "passing" if already there, otherwise it's still partial.
-    return useCase.automationStatus === "passing" ? "passing" : "implemented";
-  }
+  // Any failing Feature keeps the UC red until every scenario passes again.
+  if (states.some((state) => state === "failing")) return "failing";
 
-  // Queued / running / cancelled: exercised at least once but no clean pass yet.
+  // Every active Feature passed all its scenarios — the whole UC passes.
+  if (states.every((state) => state === "passing")) return "passing";
+
+  // Exercised at least once, nothing failing, but not all passing yet.
   return "implemented";
 };

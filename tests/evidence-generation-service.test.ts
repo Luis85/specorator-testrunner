@@ -8,6 +8,7 @@ import type { ImportedReport } from "../src/application/services/report-import-s
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
 import { buildUseCaseNote } from "../src/application/content/use-case-content";
+import { parseScenarioEvidenceBlock } from "../src/application/content/scenario-evidence-block";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { TestRun } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
@@ -155,6 +156,44 @@ describe("DefaultEvidenceGenerationService", () => {
     expect(note).toContain("Declines");
     // Artifacts are linked, never copied.
     expect(note).toContain("[[.testrunner/reports/cucumber-report.json|JSON]]");
+  });
+
+  it("embeds the machine-readable testrunner-scenarios block keyed by scenarioRef (US-057)", async () => {
+    const { service, fs } = build();
+    seedUseCase(fs);
+
+    const result = await service.generate({
+      run: run(),
+      report: report({
+        scenarioResults: [
+          {
+            feature: "Checkout",
+            scenario: "Pays",
+            status: "passed",
+            durationMs: 5,
+            scenarioRef: "Specifications/features/UC-001.feature::Pays",
+          },
+          // No scenarioRef → present in the human list, absent from the block.
+          { feature: "Checkout", scenario: "Declines", status: "failed" },
+        ],
+      }),
+    });
+    expect(result.ok).toBe(true);
+
+    const note = fs.files.get(EVIDENCE_PATH) ?? "";
+    const parsed = parseScenarioEvidenceBlock(note);
+    expect(parsed).toEqual([
+      { ref: "Specifications/features/UC-001.feature::Pays", status: "passed", durationMs: 5 },
+    ]);
+    // The unref'd scenario still appears in the human-readable list.
+    expect(note).toContain("Declines");
+  });
+
+  it("omits the testrunner-scenarios block when no scenario has a reference", async () => {
+    const { service, fs } = build();
+    seedUseCase(fs);
+    await service.generate({ run: run(), report: report() });
+    expect(parseScenarioEvidenceBlock(fs.files.get(EVIDENCE_PATH) ?? "")).toEqual([]);
   });
 
   it("records a cancelled run as cancelled even with a passing partial report", async () => {

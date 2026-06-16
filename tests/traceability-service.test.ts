@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { UseCaseService } from "../src/application/services/use-case-service";
+import type { ScenarioHistoryService } from "../src/application/services/scenario-history-service";
 import {
   DefaultTraceabilityService,
   projectDashboardSnapshot,
 } from "../src/application/services/traceability-service";
 import type { TestRunSummary } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
+import type { ScenarioLatestStatus } from "../src/domain/policies/use-case-automation-policy";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { ok, err, type Result } from "../src/shared/result/result";
 import { appError } from "../src/shared/errors/errors";
@@ -13,6 +15,28 @@ import { FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
 /** A valid one-scenario Gherkin feature (non-@wip, has steps). */
 const FEATURE_CONTENT = "Feature: F\n  Scenario: S\n    Given a step\n    Then a result\n";
+
+/**
+ * Status now derives from per-scenario history (US-057), not `lastTestRun`. A
+ * stub history that maps each scenario's reference (`<featurePath>::<name>`) to a
+ * latest status; an unmapped reference reads as never-run.
+ */
+const stubScenarioHistory = (
+  entries: Record<string, ScenarioLatestStatus> = {},
+): ScenarioHistoryService => ({
+  async record() {
+    return ok(undefined);
+  },
+  async rebuildIndex() {
+    return ok(undefined);
+  },
+  async latestStatuses() {
+    return ok(new Map(Object.entries(entries)));
+  },
+});
+
+/** Scenario Reference of the single `S` scenario in {@link FEATURE_CONTENT}. */
+const refS = (featurePath: string): string => `${featurePath}::S`;
 
 /** A FakeVaultFileSystem seeding valid feature content for every UC feature file. */
 const fsWithFeatures = (useCases: UseCase[]): FakeVaultFileSystem => {
@@ -164,6 +188,10 @@ describe("DefaultTraceabilityService.refreshDashboard", () => {
       fsWithFeatures(ucs),
       bus,
       silentLogger,
+      stubScenarioHistory({
+        [refS("Specifications/features/UC-001-a.feature")]: "passed",
+        [refS("Specifications/features/UC-002-a.feature")]: "failed",
+      }),
     );
 
     const result = await service.refreshDashboard();
@@ -204,6 +232,7 @@ describe("DefaultTraceabilityService.refreshDashboard", () => {
       new FakeVaultFileSystem(),
       bus,
       silentLogger,
+      stubScenarioHistory(),
     );
 
     const result = await service.refreshDashboard();
@@ -234,6 +263,10 @@ describe("DefaultTraceabilityService.snapshot", () => {
       fsWithFeatures(ucs),
       bus,
       silentLogger,
+      stubScenarioHistory({
+        [refS("Specifications/features/UC-001-a.feature")]: "passed",
+        [refS("Specifications/features/UC-002-a.feature")]: "failed",
+      }),
     );
 
     const result = await service.snapshot();
@@ -267,6 +300,7 @@ describe("DefaultTraceabilityService.linksFor", () => {
       new FakeVaultFileSystem(),
       bus,
       silentLogger,
+      stubScenarioHistory(),
     );
 
     const result = await service.linksFor("UC-001");
@@ -288,6 +322,7 @@ describe("DefaultTraceabilityService.linksFor", () => {
       new FakeVaultFileSystem(),
       bus,
       silentLogger,
+      stubScenarioHistory(),
     );
     const result = await service.linksFor("UC-999");
     expect(result.ok).toBe(false);

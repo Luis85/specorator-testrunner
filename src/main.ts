@@ -35,6 +35,7 @@ import {
   type ReportImportService,
 } from "./application/services/report-import-service";
 import { PostRunCoordinator } from "./application/services/post-run-coordinator";
+import { DefaultScenarioHistoryService } from "./application/services/scenario-history-service";
 import { ScenarioIdentityResolver } from "./application/services/scenario-identity-resolver";
 import {
   DefaultGuidedTourService,
@@ -391,6 +392,23 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       this.logger,
     );
 
+    // EPIC-014 (US-057): per-scenario run history. Records a committed per-run
+    // NDJSON log + a regenerable .testrunner index that the Use Case roll-up
+    // reads (ADR-0022). Rebuilt from the committed logs on load so a git-pulled
+    // history surfaces without a fresh run.
+    const scenarioHistoryService = new DefaultScenarioHistoryService(
+      this.hubSettingsService,
+      vault,
+      absoluteFs,
+      eventBus,
+      this.logger,
+    );
+    void scenarioHistoryService.rebuildIndex().catch((error: unknown) =>
+      this.logger.warn("Scenario history index rebuild on load failed", {
+        reason: (error as Error).message,
+      }),
+    );
+
     // EPIC-009 Dashboard (UC-018): aggregate the Use Case index into KPI counts
     // + recent runs for the live Test Hub Dashboard.
     this.traceabilityService = new DefaultTraceabilityService(
@@ -398,6 +416,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       vault,
       eventBus,
       this.logger,
+      scenarioHistoryService,
     );
     this.runHistoryService = new DefaultRunHistoryService(
       this.hubSettingsService,
@@ -414,6 +433,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       reportImportService: this.reportImportService,
       evidenceGenerationService: this.evidenceGenerationService,
       scenarioIdentityResolver,
+      scenarioHistoryService,
       traceabilityService: this.traceabilityService,
       eventBus,
       logger: this.logger,

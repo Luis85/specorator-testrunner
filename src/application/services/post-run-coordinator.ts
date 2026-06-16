@@ -1,5 +1,6 @@
 import type { EvidenceGenerationService } from "./evidence-generation-service";
 import type { ReportImportService } from "./report-import-service";
+import type { ScenarioHistoryService } from "./scenario-history-service";
 import type { ScenarioIdentityResolver } from "./scenario-identity-resolver";
 import type { TraceabilityService } from "./traceability-service";
 import type { TestRun, TestRunStatus } from "../../domain/entities/test-run";
@@ -40,6 +41,7 @@ export interface PostRunCoordinatorDeps {
   reportImportService: ReportImportService;
   evidenceGenerationService: EvidenceGenerationService;
   scenarioIdentityResolver: ScenarioIdentityResolver;
+  scenarioHistoryService: ScenarioHistoryService;
   traceabilityService: TraceabilityService;
   eventBus: EventBus;
   logger: Logger;
@@ -256,6 +258,17 @@ export class PostRunCoordinator {
           reason: evidence.error.message,
         });
         return err(evidence.error);
+      }
+      // Record per-scenario history BEFORE the refresh so the roll-up reads fresh
+      // data (US-057). Best-effort and always-on (independent of the evidence
+      // Markdown opt-out): the history-derived dashboard depends on it, and a
+      // history fault must not fail the user-visible import/evidence outcome.
+      const recorded = await this.deps.scenarioHistoryService.record(run, enriched);
+      if (!recorded.ok) {
+        this.logger.warn("Scenario history recording failed", {
+          runId: run.id,
+          reason: recorded.error.message,
+        });
       }
       // PUSH the dashboard KPI events from the run flow (P2-6). Best-effort: a
       // refresh fault must not fail the import/evidence outcome the user sees.

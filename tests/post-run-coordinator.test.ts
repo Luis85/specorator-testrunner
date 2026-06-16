@@ -5,6 +5,7 @@ import {
 } from "../src/application/services/post-run-coordinator";
 import type { EvidenceGenerationService } from "../src/application/services/evidence-generation-service";
 import type { ScenarioIdentityResolver } from "../src/application/services/scenario-identity-resolver";
+import type { ScenarioHistoryService } from "../src/application/services/scenario-history-service";
 import type {
   ImportedReport,
   ReportImportService,
@@ -119,12 +120,25 @@ const build = (overrides: Partial<PostRunCoordinatorDeps> = {}) => {
   let active: string | null = null;
   let markdownEnabled = true;
   const enrichSpy = vi.fn((r: unknown) => Promise.resolve(r));
+  // Snapshot the refresh counter when record() runs, so a test can assert
+  // history is recorded BEFORE the dashboard refresh reads it (US-057).
+  let refreshesAtRecord = -1;
+  const recordSpy = vi.fn((): Promise<Result<void>> => {
+    refreshesAtRecord = traceability.refreshes;
+    return Promise.resolve(ok(undefined));
+  });
+  const scenarioHistory = {
+    record: recordSpy,
+    latestStatuses: () => Promise.resolve(ok(new Map())),
+    rebuildIndex: () => Promise.resolve(ok(undefined)),
+  } as unknown as ScenarioHistoryService;
 
   const deps: PostRunCoordinatorDeps = {
     reportImportService: reportImport,
     evidenceGenerationService: evidenceGen,
     traceabilityService: traceability,
     scenarioIdentityResolver: { enrich: enrichSpy } as unknown as ScenarioIdentityResolver,
+    scenarioHistoryService: scenarioHistory,
     eventBus: bus,
     logger: silentLogger,
     lastRun: () => lastRun,
@@ -141,6 +155,8 @@ const build = (overrides: Partial<PostRunCoordinatorDeps> = {}) => {
     types,
     deps,
     enrichSpy,
+    recordSpy,
+    getRefreshesAtRecord: () => refreshesAtRecord,
     reportImport,
     evidenceGen,
     traceability,
@@ -361,6 +377,31 @@ describe("PostRunCoordinator", () => {
 
       expect(env.traceability.refreshes).toBe(1);
       // refreshDashboard() is what emits the KPI events (pushed from the run flow).
+    });
+
+    it("records per-scenario history before the dashboard refresh (US-057)", async () => {
+      const env = build();
+      env.coordinator.start();
+      env.setLastRun(run({ status: "passed" }));
+
+      await publishTerminal(env.bus, "testrun.completed");
+      await env.coordinator.whenSettled();
+
+      expect(env.recordSpy).toHaveBeenCalledTimes(1);
+      // record() ran while refreshes was still 0 — i.e. before refreshDashboard().
+      expect(env.getRefreshesAtRecord()).toBe(0);
+      expect(env.traceability.refreshes).toBe(1);
+    });
+
+    it("still refreshes when history recording fails (best-effort, US-057)", async () => {
+      const env = build();
+      env.recordSpy.mockResolvedValueOnce(err(appError("INIT_FAILED", "history boom")));
+      env.setLastRun(run({ status: "passed" }));
+
+      const outcome = await env.coordinator.importLastRun();
+
+      expect(outcome.ok).toBe(true);
+      expect(env.traceability.refreshes).toBe(1);
     });
 
     it("does not refresh the dashboard when import fails", async () => {

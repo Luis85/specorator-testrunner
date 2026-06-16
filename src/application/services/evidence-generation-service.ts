@@ -2,6 +2,7 @@ import type { ImportedReport, ScenarioResult } from "./report-import-service";
 import type { SettingsService } from "./settings-service";
 import type { UseCaseService } from "./use-case-service";
 import { useCaseIdFromPath } from "../content/gherkin";
+import { renderScenarioEvidenceBlock } from "../content/scenario-evidence-block";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { Evidence, EvidenceArtifact } from "../../domain/entities/evidence";
 import type {
@@ -363,6 +364,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
       "## Scenarios",
       "",
       ...this.renderScenarios(report.scenarioResults),
+      ...this.renderScenarioDataBlock(report.scenarioResults),
       "",
       "## Artifacts",
       "",
@@ -387,6 +389,29 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
       const where = scenario.feature ? ` — ${inlineMarkdownText(scenario.feature)}` : "";
       return `- \`${scenario.status}\` ${name}${where}${duration}`;
     });
+  }
+
+  /**
+   * The machine-readable `testrunner-scenarios` block (US-057, a minimal slice
+   * of US-060): each scenario's Scenario Reference + status, so the NDJSON
+   * history projection stays rebuildable from this authoritative note (ADR-0022).
+   * Only scenarios with a resolved reference are emitted; an empty set omits the
+   * block entirely.
+   */
+  private renderScenarioDataBlock(scenarios: ScenarioResult[]): string[] {
+    const entries = scenarios.flatMap((scenario) => {
+      const ref = scenario.scenarioRef;
+      if (ref === undefined) return [];
+      return [
+        {
+          ref,
+          status: scenario.status,
+          ...(scenario.durationMs !== undefined ? { durationMs: scenario.durationMs } : {}),
+        },
+      ];
+    });
+    const block = renderScenarioEvidenceBlock(entries);
+    return block === "" ? [] : ["", block];
   }
 
   private renderArtifacts(artifacts: EvidenceArtifact[]): string[] {
