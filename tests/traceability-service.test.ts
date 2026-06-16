@@ -332,6 +332,38 @@ describe("DefaultTraceabilityService legacy fallback (US-057 migration)", () => 
     expect(result.value.automatedUseCases).toBe(0);
   });
 
+  it("does NOT keep the stale status when a rename detached the history (codex P2)", async () => {
+    const { bus } = recordingEventBus();
+    // The UC ran post-upgrade (history recorded), then every scenario was
+    // renamed: history lingers under the OLD ref for this feature path, but the
+    // current scenario "S" has none. A rename detaches history (ADR-0022/US-056),
+    // so the UC must derive to never-run rather than keep its persisted "passing".
+    const featurePath = "Specifications/features/UC-001-a.feature";
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp(featurePath)],
+        automationStatus: "passing",
+        lastTestRun: { runId: "RUN-OLD", status: "passed", date: "2026-06-01T09:00:00Z" },
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      // History exists for the feature path, but only under the now-renamed
+      // scenario — nothing under the current `::S` ref.
+      stubScenarioHistory({ [`${featurePath}::OldName`]: "passed" }),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.passingUseCases).toBe(0);
+    expect(result.value.automatedUseCases).toBe(0);
+  });
+
   it("switches to history once a scenario has a result, ignoring the persisted status", async () => {
     const { bus } = recordingEventBus();
     const ucs = [

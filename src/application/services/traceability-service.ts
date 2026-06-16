@@ -7,7 +7,6 @@ import {
   type ScenarioStatusLookup,
 } from "../../domain/policies/use-case-automation-policy";
 import type { FeatureSpecification } from "../../domain/entities/specification";
-import { featureScenarioRefs } from "../../domain/value-objects/scenario-reference";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { TestRunSummary } from "../../domain/entities/test-run";
 import type { RunId, SuiteId, UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
@@ -147,6 +146,7 @@ export class DefaultTraceabilityService implements TraceabilityService {
   private async withDerivedStatus(
     useCase: UseCase,
     latestStatusFor: ScenarioStatusLookup,
+    hasHistoryUnderFeaturePath: (featurePath: string) => boolean,
   ): Promise<UseCase> {
     const features: FeatureSpecification[] = [];
     for (const path of useCase.featureFiles) {
@@ -162,10 +162,19 @@ export class DefaultTraceabilityService implements TraceabilityService {
     // backfilled). Deriving from an empty history would drop its KPIs to
     // `planned` until a rerun. Trust the persisted status until the first run
     // records history; this self-heals the moment any scenario has a result.
-    const hasAnyHistory = features.some((feature) =>
-      featureScenarioRefs(feature).some(({ ref }) => latestStatusFor(ref) !== undefined),
+    //
+    // Scope the grace by FEATURE PATH, not by the current Scenario References:
+    // a rename mints new refs and DETACHES prior history (ADR-0022/US-056), so a
+    // fully-renamed UC has no history under its current refs even though history
+    // exists for its feature files under the old refs. Keying on current refs
+    // would wrongly extend the migration grace to that case and keep a stale
+    // "passing" status; keying on the feature path means once ANY history exists
+    // for the UC's features we derive — so the renamed scenarios correctly read
+    // as never-run (codex P2).
+    const hasHistoryForUseCase = features.some((feature) =>
+      hasHistoryUnderFeaturePath(String(feature.path)),
     );
-    if (!hasAnyHistory && useCase.lastTestRun !== undefined) return useCase;
+    if (!hasHistoryForUseCase && useCase.lastTestRun !== undefined) return useCase;
 
     return { ...useCase, automationStatus: computeAutomationStatus(features, latestStatusFor) };
   }
@@ -187,13 +196,22 @@ export class DefaultTraceabilityService implements TraceabilityService {
     const latestStatusFor: ScenarioStatusLookup = statuses.ok
       ? (ref) => statuses.value.get(ref)
       : () => undefined;
+    // All Scenario References that currently carry history, so the migration
+    // grace can tell a true pre-upgrade UC (no history under its feature paths)
+    // from one whose history was DETACHED by a rename (history under the path,
+    // but only under stale refs). Refs are `<featurePath>::…` (US-056).
+    const historyRefs = statuses.ok ? [...statuses.value.keys()] : [];
+    const hasHistoryUnderFeaturePath = (featurePath: string): boolean =>
+      historyRefs.some((ref) => ref.startsWith(`${featurePath}::`));
 
     // Derive each UC's automation status from its Features + scenario history via
     // the policy (ADR-0017) so KPI counts reflect reality, not a stale
     // frontmatter value.
     const derived: UseCase[] = [];
     for (const useCase of all.value) {
-      derived.push(await this.withDerivedStatus(useCase, latestStatusFor));
+      derived.push(
+        await this.withDerivedStatus(useCase, latestStatusFor, hasHistoryUnderFeaturePath),
+      );
     }
 
     return ok(projectDashboardSnapshot(derived));
