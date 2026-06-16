@@ -467,7 +467,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       USE_CASE_VIEW_TYPE,
       (leaf) =>
         new UseCaseDashboardView(leaf, {
-          useCaseService: this.useCaseService,
+          traceability: this.traceabilityService,
           specificationService: this.specificationService,
           workspace: this.workspaceAdapter,
           eventBus,
@@ -487,6 +487,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       USE_CASE_DETAIL_VIEW_TYPE,
       (leaf) =>
         new UseCaseDetailView(leaf, {
+          traceability: this.traceabilityService,
           useCaseService: this.useCaseService,
           prdService: this.prdService,
           specificationService: this.specificationService,

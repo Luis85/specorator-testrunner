@@ -1,7 +1,7 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { SpecificationService } from "../../application/services/specification-service";
-import type { UseCaseService } from "../../application/services/use-case-service";
+import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
@@ -19,10 +19,15 @@ const REFRESH_ON: DomainEventType[] = [
   "usecase.status.changed",
   // Wave F: a newly generated Feature changes the "Features" column count.
   "specification.created",
+  // US-057: the Automation column is now derived from per-scenario history, so a
+  // recorded run must re-render the explorer for it to reflect the new status.
+  "scenario.history.recorded",
 ];
 
 export interface UseCaseDashboardDeps {
-  useCaseService: UseCaseService;
+  // Use Cases with history-derived automationStatus (US-057), so the Automation
+  // column matches the dashboard KPIs rather than the stale frontmatter value.
+  traceability: Pick<TraceabilityService, "deriveAll">;
   // Wave F insight: the Feature listing powers the per-Use-Case "Features"
   // column (count by the ADR-0012 filename back-reference).
   specificationService: Pick<SpecificationService, "listFeatures">;
@@ -87,7 +92,7 @@ export class UseCaseDashboardView extends ItemView {
       .addEventListener("click", () => this.deps.onCreate());
 
     const [result, listed] = await Promise.all([
-      this.deps.useCaseService.findAll(),
+      this.deps.traceability.deriveAll(),
       this.deps.specificationService.listFeatures(),
     ]);
     if (!result.ok) {

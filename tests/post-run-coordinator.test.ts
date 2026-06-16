@@ -106,6 +106,14 @@ class FakeTraceabilityService implements TraceabilityService {
     return this.result;
   }
 
+  async deriveAll(): Promise<never> {
+    throw new Error("not used");
+  }
+
+  async deriveById(): Promise<never> {
+    throw new Error("not used");
+  }
+
   async linksFor(): Promise<never> {
     throw new Error("not used");
   }

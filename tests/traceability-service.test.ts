@@ -473,3 +473,47 @@ describe("DefaultTraceabilityService.linksFor", () => {
     expect(result.error.code).toBe("VALIDATION_FAILED");
   });
 });
+
+describe("DefaultTraceabilityService.deriveAll / deriveById (US-057)", () => {
+  it("derives automationStatus from history, not the persisted frontmatter value", async () => {
+    const { bus } = recordingEventBus();
+    const path = "Specifications/features/UC-001-a.feature";
+    const ucs = [
+      useCase({ id: "UC-001", featureFiles: [vp(path)], automationStatus: "passing" }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      // History says the scenario now fails — the derived status must reflect it.
+      stubScenarioHistory({ [refS(path)]: "failed" }),
+    );
+
+    const result = await service.deriveAll();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value[0].automationStatus).toBe("failing");
+  });
+
+  it("deriveById derives one UC's status and returns null for an unknown id", async () => {
+    const { bus } = recordingEventBus();
+    const path = "Specifications/features/UC-001-a.feature";
+    const ucs = [
+      useCase({ id: "UC-001", featureFiles: [vp(path)], automationStatus: "not-planned" }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      stubScenarioHistory({ [refS(path)]: "passed" }),
+    );
+
+    const derived = await service.deriveById("UC-001");
+    expect(derived.ok && derived.value?.automationStatus).toBe("passing");
+
+    const missing = await service.deriveById("UC-404");
+    expect(missing.ok && missing.value).toBeNull();
+  });
+});
