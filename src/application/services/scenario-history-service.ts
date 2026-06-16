@@ -149,6 +149,12 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
 
     if (lines.length === 0) {
       this.logger.info("No scenario references to record for run history", { runId: run.id });
+      // A RE-import that now resolves zero refs must retract this run's prior
+      // contribution; otherwise its old NDJSON log and index entries linger and
+      // a later rebuild resurrects the stale results from the log (codex P2). A
+      // genuine first-time zero-ref run touches nothing (idempotent delete; no
+      // index to rewrite).
+      await this.retractRun(run, settings.paths.evidencePath);
       return ok(undefined);
     }
 
@@ -314,23 +320,47 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
 
   /**
    * Removes every entry contributed by `runId` from all scenario records,
-   * deleting a record entirely when the run was its only result. A pre-pass
+   * dropping a record entirely when the run was its only result. A pre-pass
    * before refolding a re-imported run so a ref the re-import no longer resolves
    * doesn't keep that run's stale result (codex P2). `recent` stays sorted
    * newest-first (fold maintains it), so the filtered head is still `latest`.
+   * Returns whether anything was removed, so a retract can skip a no-op write.
    */
-  private purgeRun(index: ScenarioIndex, runId: string): void {
+  private purgeRun(index: ScenarioIndex, runId: string): boolean {
     const next: Record<string, ScenarioRecord> = {};
+    let changed = false;
     for (const [ref, record] of Object.entries(index.scenarios)) {
       const recent = record.recent.filter((e) => e.runId !== runId);
       if (recent.length === record.recent.length) {
         next[ref] = record; // run absent here — keep as-is
-      } else if (recent.length > 0) {
-        next[ref] = { latest: recent[0], recent };
+      } else {
+        changed = true;
+        // recent.length === 0 → the run was this ref's only result; drop the ref.
+        if (recent.length > 0) next[ref] = { latest: recent[0], recent };
       }
-      // recent.length === 0 → the run was this ref's only result; drop the ref.
     }
-    index.scenarios = next;
+    if (changed) index.scenarios = next;
+    return changed;
+  }
+
+  /**
+   * Retracts a run's prior history contribution: deletes its per-run NDJSON log
+   * and drops its entries from the index. Used when a re-import of the same run
+   * now resolves ZERO Scenario References, so the stale log can't resurrect the
+   * old results on a later rebuild (codex P2). `deleteFile` is idempotent and the
+   * index is only rewritten when one already exists and actually changed, so a
+   * first-time zero-ref run never materializes the evidence/runner trees.
+   */
+  private async retractRun(run: TestRun, evidenceRoot: VaultPath): Promise<void> {
+    const deleted = await this.vaultFs.deleteFile(this.ndjsonPath(run, evidenceRoot));
+    if (!deleted.ok) {
+      this.logger.warn("Could not delete scenario history log on retract", {
+        runId: run.id,
+        reason: deleted.error.message,
+      });
+    }
+    const index = await this.readIndex();
+    if (index && this.purgeRun(index, run.id)) await this.writeIndex(index);
   }
 
   private depth(configured: number | undefined): number {

@@ -136,6 +136,31 @@ describe("DefaultScenarioHistoryService.record", () => {
     expect(Object.keys(readIndex(absoluteFs).scenarios)).toEqual([REF_A]);
   });
 
+  it("retracts a run's history when a re-import resolves zero refs (codex P2)", async () => {
+    const { service, fs } = build();
+    // First import records A.
+    await service.record(
+      run(),
+      report({
+        scenarioResults: [{ feature: "F", scenario: "A", status: "passed", scenarioRef: REF_A }],
+      }),
+    );
+    const logPath = vp("Test Evidence/2026/06/RUN-2026-06-01-100000/scenarios.ndjson");
+    expect(fs.files.has(logPath)).toBe(true);
+
+    // Re-import the SAME run, now resolving zero refs (all became unresolvable).
+    await service.record(
+      run(),
+      report({ scenarioResults: [{ feature: "F", scenario: "A", status: "passed" }] }),
+    );
+
+    // The stale per-run log is deleted so a rebuild can't resurrect it, and the
+    // index no longer reports A.
+    expect(fs.files.has(logPath)).toBe(false);
+    const statuses = await service.latestStatuses();
+    expect(statuses.ok && statuses.value.has(REF_A)).toBe(false);
+  });
+
   it("does not write a log or event when no result has a reference", async () => {
     const { service, fs, types } = build();
     await service.record(
