@@ -28,10 +28,14 @@ import { parseFrontmatter } from "../../shared/utils/frontmatter";
  *    each scenario's latest status + last-N results, consumed by the Use Case
  *    roll-up. Rebuilt from the per-run logs (note block as fallback) on demand.
  *
- * Writes are serialized through a private {@link SerialQueue} (the EPIC-014 §9
- * "third user") so a `record` and a `rebuildIndex` can never interleave on the
- * index file. Best-effort: faults are logged and returned, never thrown into the
- * post-run pipeline.
+ * Every operation — `record`, `rebuildIndex` AND the `latestStatuses` read —
+ * is serialized through a private {@link SerialQueue} (the EPIC-014 §9 "third
+ * user") so they can never interleave on the index file. Serializing the read
+ * too matters because `main.ts` fires a `rebuildIndex` in the background on
+ * load (so a git-pulled history surfaces): a roll-up read must queue BEHIND
+ * that in-flight rebuild rather than racing it and returning the stale
+ * pre-pull index. Best-effort: faults are logged and returned, never thrown
+ * into the post-run pipeline.
  */
 export interface ScenarioHistoryService {
   /** Records a finished run's per-scenario results (NDJSON log + index update). */
@@ -100,10 +104,19 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
   }
 
   async latestStatuses(): Promise<Result<Map<string, ScenarioLatestStatus>>> {
+    // Queued so the read is ordered behind any in-flight record/rebuild (e.g.
+    // the load-time rebuild main.ts fires after a git pull) and never observes
+    // a stale index mid-rebuild (codex P2).
+    return this.queue.run(() => this.latestStatusesInternal());
+  }
+
+  private async latestStatusesInternal(): Promise<Result<Map<string, ScenarioLatestStatus>>> {
     let index = await this.readIndex();
     if (!index) {
       // No (or unreadable) index — reconstruct it from the committed logs once.
-      await this.rebuildIndex();
+      // Calls rebuildInternal directly, NOT the queued rebuildIndex: we already
+      // hold the queue slot, so re-entering queue.run here would deadlock.
+      await this.rebuildInternal();
       index = await this.readIndex();
     }
     const map = new Map<string, ScenarioLatestStatus>();

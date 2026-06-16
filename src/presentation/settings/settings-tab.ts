@@ -21,7 +21,7 @@ import type {
   TestHubPathSettings,
   TestHubSettings,
 } from "../../domain/settings/settings";
-import { BROWSER_NAMES } from "../../domain/settings/settings";
+import { BROWSER_NAMES, HISTORY_DEPTH_DEFAULT } from "../../domain/settings/settings";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import { AddEnvironmentModal } from "./add-environment-modal";
 import {
@@ -276,6 +276,8 @@ export class TestHubSettingTab extends PluginSettingTab {
         heading: "Runner",
         items: [this.browsersRow(), this.installBrowsersRow()],
       },
+      // ── History (US-057 per-scenario run history) ─────────────────────────
+      { type: "group", heading: "History", items: [this.historyDepthRow()] },
       // ── System under test (ADR-0013 environments, ADR-0014 auth) ──────────
       { type: "group", heading: "System under test", items: [this.activeEnvironmentRow()] },
       ...environmentNames.map((name) => this.environmentGroup(name, settings.sut.active === name)),
@@ -722,6 +724,84 @@ export class TestHubSettingTab extends PluginSettingTab {
     }
     // Re-render so disabled states are recomputed from persisted state.
     this.refreshTab();
+  }
+
+  // ── History (US-057 per-scenario run history) ─────────────────────────────
+
+  /**
+   * Numeric field for `automation.historyDepth`: how many recent results the
+   * `.testrunner` roll-up projection keeps per scenario (US-057). Blank means
+   * "use the default" ({@link HISTORY_DEPTH_DEFAULT}); the committed per-run
+   * NDJSON logs are never trimmed by this (that is US-066 retention). Debounced
+   * + blur-flushed like the path fields (PRES-M1).
+   */
+  private historyDepthRow(): SettingGroupItem {
+    return {
+      name: "Scenario history depth",
+      desc: `How many recent results to keep per scenario for the Use Case roll-up. Leave blank for the default (${HISTORY_DEPTH_DEFAULT}). The committed per-run logs are never trimmed by this.`,
+      render: (setting) => {
+        setting.addText((text) => {
+          const configured = this.host.getSettings().automation.historyDepth;
+          text
+            .setPlaceholder(String(HISTORY_DEPTH_DEFAULT))
+            .setValue(configured === undefined ? "" : String(configured));
+          text.inputEl.type = "number";
+          text.inputEl.setAttribute("min", "1");
+          text.inputEl.setAttribute("step", "1");
+          const flush = debounce(
+            (value: string) => void this.persistHistoryDepth(value, text),
+            PERSIST_DEBOUNCE_MS,
+            true,
+          );
+          this.pendingFlushes.push(flush);
+          text.onChange((value) => flush(value));
+          // Persist immediately on blur so a quick edit + tab-away isn't lost.
+          text.inputEl.addEventListener("blur", () => {
+            flush.cancel();
+            void this.persistHistoryDepth(text.getValue(), text);
+          });
+        });
+      },
+    };
+  }
+
+  /**
+   * Persists the per-scenario history window. Blank clears the override (the
+   * projection falls back to {@link HISTORY_DEPTH_DEFAULT}); a positive whole
+   * number sets it. Anything else is refused with a Notice and the field is
+   * re-synced to the persisted value — settings load coerces an out-of-range
+   * depth back to the default anyway, so the UI never shows a value the index
+   * won't honor (PRES-M1 re-sync contract).
+   */
+  private async persistHistoryDepth(raw: string, field: TextComponent): Promise<void> {
+    const current = this.host.getSettings();
+    const persistedText =
+      current.automation.historyDepth === undefined
+        ? ""
+        : String(current.automation.historyDepth);
+    const trimmed = raw.trim();
+    let next: number | undefined;
+    if (trimmed === "") {
+      next = undefined;
+    } else {
+      const parsed = Number(trimmed);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        new Notice("Scenario history depth must be a whole number greater than 0.");
+        field.setValue(persistedText);
+        return;
+      }
+      next = parsed;
+    }
+    if (next === current.automation.historyDepth) return;
+    const result = await this.host.updateSettings({
+      ...current,
+      automation: { ...current.automation, historyDepth: next },
+    });
+    if (!result.ok) {
+      new Notice(`Could not save scenario history depth: ${result.error.message}`);
+      const reverted = this.host.getSettings().automation.historyDepth;
+      field.setValue(reverted === undefined ? "" : String(reverted));
+    }
   }
 
   /**

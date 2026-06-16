@@ -296,6 +296,48 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     expect(statuses.ok && statuses.value.size).toBe(0);
   });
 
+  it("queues behind an in-flight rebuild instead of returning the stale index (codex P2)", async () => {
+    const { service, fs, absoluteFs } = build();
+    // A stale index from before a git pull: REF_A last passed.
+    absoluteFs.seed(
+      INDEX_PATH,
+      JSON.stringify({
+        v: 1,
+        depth: 50,
+        scenarios: {
+          [REF_A]: {
+            latest: { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            recent: [
+              { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            ],
+          },
+        },
+      }),
+    );
+    // The freshly pulled log says REF_A now fails.
+    fs.folders.add("Test Evidence");
+    fs.files.set(
+      vp("Test Evidence/2026/06/RUN-2026-06-10-100000/scenarios.ndjson"),
+      JSON.stringify({
+        v: 1,
+        scenarioRef: REF_A,
+        runId: "NEW",
+        status: "failed",
+        at: "2026-06-10T10:01:00.000Z",
+        scope: "all",
+      }) + "\n",
+    );
+
+    // Mirror main.ts: kick the load rebuild, then read without awaiting it.
+    const rebuilding = service.rebuildIndex();
+    const reading = service.latestStatuses();
+    const [, statuses] = await Promise.all([rebuilding, reading]);
+
+    // Serialized behind the rebuild, the read sees the rebuilt (failed) status,
+    // never the stale pre-pull "passed".
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("failed");
+  });
+
   it("does not materialize the .testrunner index on a fresh/uninitialized vault (codex P2)", async () => {
     const { service, absoluteFs } = build(); // no Evidence root seeded
     await service.rebuildIndex();
