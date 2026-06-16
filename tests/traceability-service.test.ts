@@ -364,6 +364,71 @@ describe("DefaultTraceabilityService legacy fallback (US-057 migration)", () => 
     expect(result.value.automatedUseCases).toBe(0);
   });
 
+  it("derives (not stale) after a feature file is renamed/moved once history exists (codex P2)", async () => {
+    const { bus } = recordingEventBus();
+    // The UC frontmatter now points at the NEW feature path; prior history is
+    // orphaned under the OLD path. With history present the grace is lifted, so
+    // the UC must derive from its current refs (→ never-run), not keep "passing".
+    const newPath = "Specifications/features/UC-001-renamed.feature";
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp(newPath)],
+        automationStatus: "passing",
+        lastTestRun: { runId: "RUN-OLD", status: "passed", date: "2026-06-01T09:00:00Z" },
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      // History exists only under the OLD feature path.
+      stubScenarioHistory({ "Specifications/features/UC-001-old.feature::S": "passed" }),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.passingUseCases).toBe(0);
+    expect(result.value.automatedUseCases).toBe(0);
+  });
+
+  it("lifts the grace for a not-yet-rerun legacy UC once another UC records history", async () => {
+    const { bus } = recordingEventBus();
+    // The grace is vault-wide: once ANY post-upgrade run records history, a
+    // legacy UC that hasn't been rerun derives to never-run (the accepted
+    // transitional trade-off of the empty-index grace).
+    const otherPath = "Specifications/features/UC-002-a.feature";
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp("Specifications/features/UC-001-a.feature")],
+        automationStatus: "passing",
+        lastTestRun: { runId: "RUN-OLD", status: "passed", date: "2026-06-01T09:00:00Z" },
+      }),
+      useCase({
+        id: "UC-002",
+        featureFiles: [vp(otherPath)],
+        lastTestRun: { runId: "RUN-NEW", status: "passed", date: "2026-06-10T09:00:00Z" },
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      // Only UC-002 has post-upgrade history; UC-001 hasn't been rerun.
+      stubScenarioHistory({ [refS(otherPath)]: "passed" }),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // UC-002 derives passing; UC-001's grace is lifted → never-run (planned).
+    expect(result.value.passingUseCases).toBe(1);
+  });
+
   it("switches to history once a scenario has a result, ignoring the persisted status", async () => {
     const { bus } = recordingEventBus();
     const ucs = [
