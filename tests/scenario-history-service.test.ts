@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import type { TestRun } from "../src/domain/entities/test-run";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
+import { err } from "../src/shared/result/result";
 import {
   FakeAbsoluteFileSystem,
   FakeVaultFileSystem,
@@ -848,6 +849,46 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     await service.rebuildIndex();
     const statuses = await service.latestStatuses();
     // The stale cache is cleared rather than served as phantom history.
+    expect(statuses.ok && statuses.value.size).toBe(0);
+  });
+
+  it("degrades to empty instead of serving a stale cache when the rebuild can't refresh it (codex P2)", async () => {
+    const { service, fs, absoluteFs } = build();
+    fs.folders.add("Test Evidence");
+    fs.files.set(
+      vp("Test Evidence/2026/06/RUN-X/scenarios.ndjson"),
+      JSON.stringify({
+        v: 1,
+        scenarioRef: REF_A,
+        runId: "RX",
+        status: "passed",
+        at: "2026-06-01T10:00:00.000Z",
+        scope: "all",
+      }) + "\n",
+    );
+    // A stale cache built from a DIFFERENT (old) Evidence root.
+    absoluteFs.seed(
+      INDEX_PATH,
+      JSON.stringify({
+        v: 1,
+        depth: 50,
+        root: "Old Evidence",
+        scenarios: {
+          [REF_B]: {
+            latest: { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            recent: [
+              { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            ],
+          },
+        },
+      }),
+    );
+    // The rebuild's index write fails, so the stale cache stays on disk.
+    absoluteFs.writeAbsolute = async () => err({ code: "INIT_FAILED", message: "disk full" });
+
+    const statuses = await service.latestStatuses();
+    // Root still mismatches after the failed rebuild → serve empty, not the
+    // stale "Old Evidence" history.
     expect(statuses.ok && statuses.value.size).toBe(0);
   });
 });

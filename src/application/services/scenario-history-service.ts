@@ -138,6 +138,11 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     if (index?.root !== root || index?.depth !== depth) {
       await this.rebuildInternal();
       index = await this.readIndex();
+      // If the rebuild couldn't refresh the cache (Evidence listing or the index
+      // write failed), the old stale file may still be on disk. Don't serve it:
+      // degrade to an empty map rather than statuses from the previous
+      // tree/window (codex P2).
+      if (index?.root !== root || index?.depth !== depth) index = null;
     }
     const map = new Map<string, ScenarioLatestStatus>();
     if (index) {
