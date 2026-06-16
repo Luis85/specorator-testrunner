@@ -1,6 +1,9 @@
 import type { ImportedReport } from "./report-import-service";
 import type { SettingsService } from "./settings-service";
-import { parseScenarioEvidenceBlock } from "../content/scenario-evidence-block";
+import {
+  parseScenarioEvidenceBlock,
+  stripScenarioEvidenceBlock,
+} from "../content/scenario-evidence-block";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import { EXECUTION_SCOPES, type ExecutionScope, type TestRun } from "../../domain/entities/test-run";
@@ -405,7 +408,29 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
         reason: deleted.error.message,
       });
     }
+    // Also tombstone the colocated note's scenario block. With Markdown
+    // generation off the note isn't regenerated on re-import, so a rebuild would
+    // otherwise fall back to its stale block and resurrect the very results this
+    // retraction removed (codex P2). When Markdown is on, evidence generation
+    // already rewrote the note this import, so this is a no-op.
+    await this.stripNoteScenarioBlock(run, evidenceRoot);
     if (await this.readIndex()) await this.rebuildInternal();
+  }
+
+  /** Strips the stale `testrunner-scenarios` block from a run's note, if any. */
+  private async stripNoteScenarioBlock(run: TestRun, evidenceRoot: VaultPath): Promise<void> {
+    const notePath = this.summaryPath(run, evidenceRoot);
+    const read = await this.vaultFs.readFile(notePath);
+    if (!read.ok) return; // no note (or unreadable) — nothing to strip
+    const stripped = stripScenarioEvidenceBlock(read.value);
+    if (stripped === read.value) return; // no block present
+    const written = await this.vaultFs.writeFile(notePath, stripped);
+    if (!written.ok) {
+      this.logger.warn("Could not strip scenario block from note on retract", {
+        runId: run.id,
+        reason: written.error.message,
+      });
+    }
   }
 
   private depth(configured: number | undefined): number {
@@ -414,13 +439,23 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       : HISTORY_DEPTH_DEFAULT;
   }
 
-  /** `Test Evidence/YYYY/MM/<runId>/scenarios.ndjson` from the run start (ADR-0016). */
-  private ndjsonPath(run: TestRun, root: VaultPath): VaultPath {
+  /** `Test Evidence/YYYY/MM/<runId>` from the run start (ADR-0016 partition). */
+  private runFolder(run: TestRun, root: VaultPath): VaultPath {
     const started = new Date(run.startedAt);
     const valid = Number.isNaN(started.getTime()) ? this.now() : started;
     const year = String(valid.getUTCFullYear());
     const month = String(valid.getUTCMonth() + 1).padStart(2, "0");
-    return joinVaultPath(root, year, month, run.id, "scenarios.ndjson");
+    return joinVaultPath(root, year, month, run.id);
+  }
+
+  /** `…/<runId>/scenarios.ndjson` — the committed per-run history log. */
+  private ndjsonPath(run: TestRun, root: VaultPath): VaultPath {
+    return joinVaultPath(this.runFolder(run, root), "scenarios.ndjson");
+  }
+
+  /** `…/<runId>/summary.md` — the colocated Evidence note (rebuild fallback). */
+  private summaryPath(run: TestRun, root: VaultPath): VaultPath {
+    return joinVaultPath(this.runFolder(run, root), "summary.md");
   }
 
   private async indexAbsolutePath(): Promise<string | undefined> {

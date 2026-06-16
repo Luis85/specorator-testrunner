@@ -40,6 +40,19 @@ export const renderScenarioEvidenceBlock = (entries: ScenarioEvidenceEntry[]): s
 };
 
 /**
+ * Removes the fenced `testrunner-scenarios` block (if present) from a note body,
+ * leaving the rest of the note intact. Used to tombstone a run's stale scenario
+ * history when a zero-ref re-import retracts it AND Markdown generation is off
+ * (so the note isn't regenerated), preventing a rebuild's note fallback from
+ * resurrecting the removed results (codex P2). Idempotent: a note without the
+ * block is returned unchanged.
+ */
+export const stripScenarioEvidenceBlock = (noteContent: string): string => {
+  const fence = new RegExp("\\n?```" + SCENARIO_BLOCK_FENCE + "\\r?\\n[\\s\\S]*?\\r?\\n```", "g");
+  return noteContent.replace(fence, "");
+};
+
+/**
  * Extracts the per-scenario entries from an Evidence note's content. Best-effort
  * and never throws: a missing or malformed block yields `[]`, and individual
  * entries lacking a `ref` or a valid `status` are dropped — a corrupt/edited

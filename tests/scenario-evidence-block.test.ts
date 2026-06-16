@@ -3,6 +3,7 @@ import {
   parseScenarioEvidenceBlock,
   renderScenarioEvidenceBlock,
   SCENARIO_BLOCK_FENCE,
+  stripScenarioEvidenceBlock,
   type ScenarioEvidenceEntry,
 } from "../src/application/content/scenario-evidence-block";
 
@@ -34,6 +35,20 @@ describe("scenario-evidence-block (US-057 minimal US-060 slice)", () => {
       status: "failed",
     });
     expect("durationMs" in parsed[1]).toBe(false);
+  });
+
+  it("strips the block from a note, leaving surrounding content and no parseable block", () => {
+    const note = `# Evidence\n\n## Scenarios\n\n${renderScenarioEvidenceBlock(entries)}\n\n## Artifacts\n`;
+    const stripped = stripScenarioEvidenceBlock(note);
+    expect(stripped).toContain("# Evidence");
+    expect(stripped).toContain("## Artifacts");
+    expect(stripped).not.toContain(SCENARIO_BLOCK_FENCE);
+    expect(parseScenarioEvidenceBlock(stripped)).toEqual([]);
+  });
+
+  it("leaves a note without the block unchanged (idempotent strip)", () => {
+    const note = "# Just a note\n\nno block here\n";
+    expect(stripScenarioEvidenceBlock(note)).toBe(note);
   });
 
   it("returns [] when no block is present", () => {

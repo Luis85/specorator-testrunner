@@ -246,6 +246,44 @@ describe("DefaultScenarioHistoryService.record", () => {
     expect(statuses.ok && statuses.value.has(REF_A)).toBe(false);
   });
 
+  it("tombstones the note's scenario block on a zero-ref retract so rebuild can't resurrect it (codex P2)", async () => {
+    const { service, fs } = build();
+    const folder = "Test Evidence/2026/06/RUN-2026-06-01-100000";
+    // First import records A (writes the ndjson log).
+    await service.record(
+      run(),
+      report({
+        scenarioResults: [{ feature: "F", scenario: "A", status: "passed", scenarioRef: REF_A }],
+      }),
+    );
+    // A colocated note carrying the scenario block (as evidence generation wrote
+    // it), which — with Markdown now off — won't be regenerated on re-import.
+    fs.files.set(
+      vp(`${folder}/summary.md`),
+      buildNote(
+        {
+          type: "test-evidence",
+          run_id: "RUN-2026-06-01-100000",
+          run_at: "2026-06-01T10:01:00.000Z",
+          scope: "use-case",
+        },
+        renderScenarioEvidenceBlock([{ ref: REF_A, status: "passed" }]),
+      ),
+    );
+
+    // Re-import the SAME run, now resolving zero refs.
+    await service.record(
+      run(),
+      report({ scenarioResults: [{ feature: "F", scenario: "A", status: "passed" }] }),
+    );
+
+    // The note's block is stripped, so the rebuild's note fallback can't re-add A.
+    const note = fs.files.get(vp(`${folder}/summary.md`)) ?? "";
+    expect(note).not.toContain("testrunner-scenarios");
+    const statuses = await service.latestStatuses();
+    expect(statuses.ok && statuses.value.has(REF_A)).toBe(false);
+  });
+
   it("does not write a log or event when no result has a reference", async () => {
     const { service, fs, types } = build();
     await service.record(
