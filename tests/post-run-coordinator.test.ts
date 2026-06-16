@@ -404,6 +404,21 @@ describe("PostRunCoordinator", () => {
       expect(env.traceability.refreshes).toBe(1);
     });
 
+    it("records history and refreshes even when evidence generation fails (codex P2)", async () => {
+      const env = build();
+      env.evidenceGen.result = err(appError("INIT_FAILED", "note write boom"));
+      env.setLastRun(run({ status: "passed" }));
+
+      const outcome = await env.coordinator.importLastRun();
+
+      // The evidence-note failure is surfaced to the caller...
+      expect(outcome.ok).toBe(false);
+      // ...but per-scenario history was still recorded and the dashboard still
+      // refreshed, so the roll-up doesn't silently drop the run.
+      expect(env.recordSpy).toHaveBeenCalledTimes(1);
+      expect(env.traceability.refreshes).toBe(1);
+    });
+
     it("does not refresh the dashboard when import fails", async () => {
       const env = build();
       env.reportImport.result = err(appError("REPORT_NOT_FOUND", "no report"));
