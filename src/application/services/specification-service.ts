@@ -6,11 +6,8 @@ import {
   serialiseFeature,
   useCaseIdFromPath,
 } from "../content/gherkin";
-import {
-  isStepDefined,
-  parseStepDefinitions,
-  type StepDefinitionPattern,
-} from "../content/step-definitions";
+import { isStepDefined, type StepDefinitionPattern } from "../content/step-definitions";
+import { loadStepDefinitions } from "./load-step-definitions";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { VaultFileSystem } from "../ports/vault-file-system";
@@ -304,7 +301,7 @@ export class DefaultSpecificationService implements SpecificationService {
   async listStepPatterns(): Promise<StepDefinitionPattern[]> {
     const settings = await this.settingsService.load();
     const stepsDir = joinVaultPath(settings.paths.testRunnerPath, "src/steps");
-    return this.loadStepDefinitions(stepsDir);
+    return loadStepDefinitions(this.fs, stepsDir);
   }
 
   /** UC-007 / US-020: parse the Feature and report structural errors. */
@@ -439,24 +436,5 @@ export class DefaultSpecificationService implements SpecificationService {
         .filter((path) => path.endsWith(".feature"))
         .map((path) => ({ path, label: path.slice(folder.length + 1) })),
     );
-  }
-
-  /**
-   * Reads every `*.ts` under the steps folder (recursively, matching the
-   * runner's `src/steps/**` glob) and scrapes its patterns. A missing folder
-   * yields no definitions, so every step is reported missing.
-   */
-  private async loadStepDefinitions(stepsDir: VaultPath) {
-    const listed = await this.fs.listFilesRecursive(stepsDir);
-    if (!listed.ok) return []; // genuine listing failure → treat as no definitions
-
-    const patterns = [];
-    for (const path of listed.value) {
-      if (!path.endsWith(".ts")) continue;
-      const read = await this.fs.readFile(path);
-      if (!read.ok) continue; // best-effort: skip unreadable files
-      patterns.push(...parseStepDefinitions(read.value));
-    }
-    return patterns;
   }
 }
