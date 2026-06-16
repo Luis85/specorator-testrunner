@@ -884,6 +884,16 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     expect(absoluteFs.written.has(INDEX_PATH)).toBe(false);
   });
 
+  it("does not materialize the .testrunner index when the Evidence folder exists but is empty (codex P2)", async () => {
+    const { service, absoluteFs, fs } = build();
+    fs.folders.add("Test Evidence"); // folder created, but no run logs yet
+    await service.rebuildIndex();
+    await service.latestStatuses();
+    // An empty-but-existing Evidence folder must not create
+    // .testrunner/history before the user initializes the Test Hub.
+    expect(absoluteFs.written.has(INDEX_PATH)).toBe(false);
+  });
+
   it("clears a stale index when the Evidence root is absent (codex P2)", async () => {
     const { service, absoluteFs } = build(); // Evidence root NOT seeded → absent
     // A populated index lingers from an Evidence root that has since been

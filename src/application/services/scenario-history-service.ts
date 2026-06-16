@@ -337,7 +337,16 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       for (const { ref, entry } of entries) this.fold(index, ref, entry, depth);
     }
 
-    await this.writeIndex(index);
+    // The Evidence root exists but may still be EMPTY (a fresh vault whose user
+    // created the folder but never ran). Persisting here would create
+    // `.testrunner/history/scenario-index.json` before the Test Hub is
+    // initialized — the same partial `.testrunner` state the absent-root guard
+    // above avoids. Only materialize the index when there is history to project,
+    // or an index ALREADY exists (a populated vault whose logs were since removed —
+    // then writing the empty index correctly clears the stale cache) (codex P2).
+    if (keys.length > 0 || (await this.readIndex())) {
+      await this.writeIndex(index);
+    }
     this.logger.info("Scenario history index rebuilt", {
       runs: keys.length,
       scenarios: Object.keys(index.scenarios).length,
