@@ -138,33 +138,17 @@ export class DefaultTraceabilityService implements TraceabilityService {
   /**
    * Derives a UC's effective automation status via UseCaseAutomationPolicy
    * (ADR-0017, history-derived per ADR-0022/US-057) from its parsed Features and
-   * the per-scenario history, rather than trusting a possibly-stale persisted
-   * `automationStatus`. Best-effort: unreadable or unparseable feature files are
-   * skipped. The `latestStatusFor` lookup is resolved once per snapshot and
-   * threaded in so each UC shares the same history read.
+   * the per-scenario history — never the possibly-stale persisted
+   * `automationStatus`. A UC with no scenario history reads as `planned`; there
+   * is no pre-history migration grace (the plugin keeps no pre-US-057 runs to
+   * honor). Best-effort: unreadable or unparseable feature files are skipped. The
+   * `latestStatusFor` lookup is resolved once per snapshot and threaded in so
+   * every UC shares the same history read.
    */
   private async withDerivedStatus(
     useCase: UseCase,
     latestStatusFor: ScenarioStatusLookup,
-    historyIsEmpty: boolean,
   ): Promise<UseCase> {
-    // Migration grace (US-057): immediately after an upgrade no per-scenario
-    // history has been recorded yet, so a UC that RAN before the upgrade has a
-    // persisted `lastTestRun`/`automationStatus` but nothing for the policy to
-    // derive from (old Evidence notes aren't keyed by Scenario Reference, so
-    // they can't be backfilled). Deriving would drop every such UC to `planned`.
-    // While the history index is EMPTY, trust the persisted status instead.
-    //
-    // The grace is vault-wide and transitional: the moment ANY run records
-    // history we derive for every UC. That deliberately collapses three cases
-    // that are otherwise indistinguishable from a single UC's perspective — a
-    // renamed scenario, a renamed/moved feature file (history orphaned under the
-    // old ref/path), and a simply-not-yet-rerun UC — so all read from history
-    // (→ never-run) rather than keeping a stale status keyed by refs/paths that
-    // no longer match (codex P2: a per-path guard can't tell a true migration
-    // from a feature-file rename). Re-running the UC refreshes it.
-    if (historyIsEmpty && useCase.lastTestRun !== undefined) return useCase;
-
     const features: FeatureSpecification[] = [];
     for (const path of useCase.featureFiles) {
       const read = await this.fs.readFile(path);
@@ -192,19 +176,13 @@ export class DefaultTraceabilityService implements TraceabilityService {
     const latestStatusFor: ScenarioStatusLookup = statuses.ok
       ? (ref) => statuses.value.get(ref)
       : () => undefined;
-    // The migration grace applies only while NO per-scenario history exists yet —
-    // a fresh upgrade, or a transient history-read fault (treated as empty so a
-    // blip preserves persisted KPIs rather than flapping them to planned). Once
-    // any run records history we derive for every UC (US-057). See
-    // withDerivedStatus.
-    const historyIsEmpty = !statuses.ok || statuses.value.size === 0;
 
     // Derive each UC's automation status from its Features + scenario history via
     // the policy (ADR-0017) so KPI counts reflect reality, not a stale
     // frontmatter value.
     const derived: UseCase[] = [];
     for (const useCase of all.value) {
-      derived.push(await this.withDerivedStatus(useCase, latestStatusFor, historyIsEmpty));
+      derived.push(await this.withDerivedStatus(useCase, latestStatusFor));
     }
 
     return ok(projectDashboardSnapshot(derived));

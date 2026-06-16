@@ -281,11 +281,12 @@ describe("DefaultTraceabilityService.snapshot", () => {
   });
 });
 
-describe("DefaultTraceabilityService legacy fallback (US-057 migration)", () => {
-  it("keeps a pre-upgrade UC's persisted status when it has a run but no scenario history", async () => {
+describe("DefaultTraceabilityService history-derived status (US-057)", () => {
+  it("derives 'planned' for a UC with a persisted run but no scenario history", async () => {
     const { bus } = recordingEventBus();
-    // Ran before the upgrade: lastTestRun + persisted "passing", but no per-
-    // scenario history exists to rebuild from (empty stub history).
+    // A persisted lastTestRun + "passing" is NOT honored: status derives purely
+    // from per-scenario history, and there is no pre-history migration grace
+    // (the plugin keeps no pre-US-057 runs to preserve). No history → planned.
     const ucs = [
       useCase({
         id: "UC-001",
@@ -303,13 +304,14 @@ describe("DefaultTraceabilityService legacy fallback (US-057 migration)", () => 
     );
 
     const result = await service.snapshot();
-    expect(result.ok && result.value.passingUseCases).toBe(1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.passingUseCases).toBe(0);
+    expect(result.value.automatedUseCases).toBe(0);
   });
 
-  it("derives 'planned' (not the stale persisted status) for a never-run UC with no history", async () => {
+  it("derives 'planned' for a never-run UC, ignoring a stale persisted status", async () => {
     const { bus } = recordingEventBus();
-    // No lastTestRun → the fallback must NOT apply; a stale persisted "passing"
-    // is ignored and the policy derives from the (empty) history → planned.
     const ucs = [
       useCase({
         id: "UC-001",
@@ -332,12 +334,11 @@ describe("DefaultTraceabilityService legacy fallback (US-057 migration)", () => 
     expect(result.value.automatedUseCases).toBe(0);
   });
 
-  it("does NOT keep the stale status when a rename detached the history (codex P2)", async () => {
+  it("derives 'planned' when a rename detached the history from the current refs", async () => {
     const { bus } = recordingEventBus();
-    // The UC ran post-upgrade (history recorded), then every scenario was
-    // renamed: history lingers under the OLD ref for this feature path, but the
+    // Every scenario was renamed: history lingers under the OLD ref, but the
     // current scenario "S" has none. A rename detaches history (ADR-0022/US-056),
-    // so the UC must derive to never-run rather than keep its persisted "passing".
+    // so the UC reads as never-run rather than keeping its persisted "passing".
     const featurePath = "Specifications/features/UC-001-a.feature";
     const ucs = [
       useCase({
@@ -352,8 +353,6 @@ describe("DefaultTraceabilityService legacy fallback (US-057 migration)", () => 
       fsWithFeatures(ucs),
       bus,
       silentLogger,
-      // History exists for the feature path, but only under the now-renamed
-      // scenario — nothing under the current `::S` ref.
       stubScenarioHistory({ [`${featurePath}::OldName`]: "passed" }),
     );
 
@@ -364,41 +363,10 @@ describe("DefaultTraceabilityService legacy fallback (US-057 migration)", () => 
     expect(result.value.automatedUseCases).toBe(0);
   });
 
-  it("derives (not stale) after a feature file is renamed/moved once history exists (codex P2)", async () => {
+  it("derives each UC independently from its own scenario history", async () => {
     const { bus } = recordingEventBus();
-    // The UC frontmatter now points at the NEW feature path; prior history is
-    // orphaned under the OLD path. With history present the grace is lifted, so
-    // the UC must derive from its current refs (→ never-run), not keep "passing".
-    const newPath = "Specifications/features/UC-001-renamed.feature";
-    const ucs = [
-      useCase({
-        id: "UC-001",
-        featureFiles: [vp(newPath)],
-        automationStatus: "passing",
-        lastTestRun: { runId: "RUN-OLD", status: "passed", date: "2026-06-01T09:00:00Z" },
-      }),
-    ];
-    const service = new DefaultTraceabilityService(
-      stubUseCaseService(ucs),
-      fsWithFeatures(ucs),
-      bus,
-      silentLogger,
-      // History exists only under the OLD feature path.
-      stubScenarioHistory({ "Specifications/features/UC-001-old.feature::S": "passed" }),
-    );
-
-    const result = await service.snapshot();
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.passingUseCases).toBe(0);
-    expect(result.value.automatedUseCases).toBe(0);
-  });
-
-  it("lifts the grace for a not-yet-rerun legacy UC once another UC records history", async () => {
-    const { bus } = recordingEventBus();
-    // The grace is vault-wide: once ANY post-upgrade run records history, a
-    // legacy UC that hasn't been rerun derives to never-run (the accepted
-    // transitional trade-off of the empty-index grace).
+    // UC-002 has history (passing); UC-001 has none. Each UC's status reflects
+    // ONLY its own scenarios' history — no cross-UC or persisted influence.
     const otherPath = "Specifications/features/UC-002-a.feature";
     const ucs = [
       useCase({
@@ -418,14 +386,13 @@ describe("DefaultTraceabilityService legacy fallback (US-057 migration)", () => 
       fsWithFeatures(ucs),
       bus,
       silentLogger,
-      // Only UC-002 has post-upgrade history; UC-001 hasn't been rerun.
       stubScenarioHistory({ [refS(otherPath)]: "passed" }),
     );
 
     const result = await service.snapshot();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // UC-002 derives passing; UC-001's grace is lifted → never-run (planned).
+    // UC-002 → passing (its scenario passed); UC-001 → planned (no history).
     expect(result.value.passingUseCases).toBe(1);
   });
 
