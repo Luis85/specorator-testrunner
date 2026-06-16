@@ -248,11 +248,14 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
 
     for (const key of keys) {
       const { ndjson, summary } = folders.get(key) ?? {};
-      const entries = ndjson
-        ? await this.entriesFromLog(ndjson)
-        : summary
-          ? await this.entriesFromNote(summary)
-          : [];
+      // Prefer the NDJSON log, but fall back to the colocated note when the log
+      // yields NO usable entries — an empty/truncated/all-skipped log (external
+      // corruption or a partial write) shouldn't silently drop a run whose
+      // authoritative `testrunner-scenarios` block is still intact (codex P2).
+      // A normal run never leaves an empty log: record writes ≥1 line or the
+      // zero-ref path deletes it.
+      let entries = ndjson ? await this.entriesFromLog(ndjson) : [];
+      if (entries.length === 0 && summary) entries = await this.entriesFromNote(summary);
       for (const { ref, entry } of entries) this.fold(index, ref, entry, depth);
     }
 

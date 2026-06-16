@@ -289,6 +289,28 @@ describe("DefaultScenarioHistoryService.rebuildIndex", () => {
     expect(statuses.ok && statuses.value.get(REF_B)).toBe("passed");
   });
 
+  it("falls back to the note when the log exists but yields no usable entries (codex P2)", async () => {
+    const { service, fs } = build();
+    fs.folders.add("Test Evidence");
+    const folder = "Test Evidence/2026/06/RUN-2026-06-07-100000";
+    // A truncated/corrupt log: present but every line is unparseable, so
+    // entriesFromLog() yields nothing.
+    fs.files.set(vp(`${folder}/scenarios.ndjson`), "{ this is not json\n\n");
+    // The colocated note still holds the authoritative block.
+    fs.files.set(
+      vp(`${folder}/summary.md`),
+      buildNote(
+        { type: "test-evidence", run_id: "R7", created_at: "2026-06-07T10:01:00.000Z", scope: "all" },
+        renderScenarioEvidenceBlock([{ ref: REF_B, status: "passed" }]),
+      ),
+    );
+
+    await service.rebuildIndex();
+    const statuses = await service.latestStatuses();
+    // The note salvaged the run rather than the corrupt log dropping it.
+    expect(statuses.ok && statuses.value.get(REF_B)).toBe("passed");
+  });
+
   it("prefers the NDJSON log over the note when both exist", async () => {
     const { service, fs } = build();
     fs.folders.add("Test Evidence");
