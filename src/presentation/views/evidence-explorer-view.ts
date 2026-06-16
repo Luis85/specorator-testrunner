@@ -1,4 +1,4 @@
-import { ItemView, type WorkspaceLeaf } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import type { RunHistoryService } from "../../application/services/run-history-service";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -11,7 +11,7 @@ import {
   type EvidenceStatusFilter,
 } from "./evidence-explorer-rows";
 import { activateOnEnterOrSpace } from "./keyboard-activation";
-import { LiveRefresh } from "./live-refresh";
+import { LiveDashboardView } from "./live-dashboard-view";
 import { renderLoadError } from "./modal-helpers";
 
 export const EVIDENCE_EXPLORER_VIEW_TYPE = "e2e-test-hub-evidence";
@@ -33,8 +33,7 @@ export interface EvidenceExplorerViewDeps {
  * Recent Runs which shows only the latest run per Use Case. Month-grouped,
  * status-filterable, paged via "Load older"; every row opens its evidence note.
  */
-export class EvidenceExplorerView extends ItemView {
-  private readonly live: LiveRefresh;
+export class EvidenceExplorerView extends LiveDashboardView {
   // Each render re-reads history fresh (same pattern as the other explorers);
   // visibleLimit only remembers how far "Load older" has extended the page.
   private visibleLimit = EVIDENCE_PAGE_SIZE;
@@ -44,8 +43,7 @@ export class EvidenceExplorerView extends ItemView {
     leaf: WorkspaceLeaf,
     private readonly deps: EvidenceExplorerViewDeps,
   ) {
-    super(leaf);
-    this.live = new LiveRefresh(deps.eventBus, () => this.render());
+    super(leaf, deps.eventBus, ["evidence.generated"]);
   }
 
   getViewType(): string {
@@ -60,15 +58,7 @@ export class EvidenceExplorerView extends ItemView {
     return "history";
   }
 
-  async onOpen(): Promise<void> {
-    await this.live.open(["evidence.generated"]);
-  }
-
-  async onClose(): Promise<void> {
-    this.live.close();
-  }
-
-  private async render(): Promise<void> {
+  protected async render(): Promise<void> {
     const container = this.contentEl;
     container.empty();
     container.createEl("h2", { text: "Evidence Explorer" });

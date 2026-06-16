@@ -1,4 +1,4 @@
-import { ItemView, type WorkspaceLeaf } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { PrdService } from "../../application/services/prd-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
@@ -20,7 +20,7 @@ import {
 } from "./dashboard-rows";
 import { renderRecentRuns } from "./dashboard-recent-runs";
 import { EnvironmentPickerModal } from "./environment-picker-modal";
-import { LiveRefresh } from "./live-refresh";
+import { LiveDashboardView } from "./live-dashboard-view";
 import { renderLoadError } from "./modal-helpers";
 
 export const DASHBOARD_VIEW_TYPE = "e2e-test-hub-dashboard";
@@ -129,19 +129,12 @@ export interface DashboardViewDeps {
  * adds the `dashboard.opened` event on open and projects the snapshot to a view
  * model via the pure {@link projectDashboard}.
  */
-export class DashboardView extends ItemView {
-  private readonly live: LiveRefresh;
-
+export class DashboardView extends LiveDashboardView {
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: DashboardViewDeps,
   ) {
-    super(leaf);
-    // Renders are async (they await refreshDashboard). Firing them concurrently
-    // lets a slower render with STALE data empty + rebuild the container last,
-    // clobbering fresher output. The scheduler chains them so they run one at a
-    // time, and coalesces a burst of events into a single trailing render.
-    this.live = new LiveRefresh(deps.eventBus, () => this.render());
+    super(leaf, deps.eventBus, REFRESH_ON);
   }
 
   getViewType(): string {
@@ -167,16 +160,12 @@ export class DashboardView extends ItemView {
     // already-pending render instead of being missed in a subscribe gap.
     // Subsequent event-driven re-renders read the non-emitting snapshot() so
     // they never loop.
-    const initialRender = this.live.open(REFRESH_ON);
+    const initialRender = this.live.open(this.refreshOn);
     await this.deps.traceabilityService.refreshDashboard().catch(() => undefined);
     await initialRender;
   }
 
-  async onClose(): Promise<void> {
-    this.live.close();
-  }
-
-  private async render(): Promise<void> {
+  protected async render(): Promise<void> {
     const container = this.contentEl;
     container.empty();
     container.createEl("h2", { text: "Test Hub dashboard" });

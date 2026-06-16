@@ -1,4 +1,4 @@
-import { ItemView, type WorkspaceLeaf } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SpecificationService } from "../../application/services/specification-service";
@@ -12,7 +12,7 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import { type ChecklistRow } from "../settings/settings-rows";
 import type { RunLauncher } from "../run/run-launcher";
 import { EditUseCaseModal } from "./edit-use-case-modal";
-import { LiveRefresh } from "./live-refresh";
+import { LiveDashboardView } from "./live-dashboard-view";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
 import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
 import { PRD_VIEW_TYPE } from "./prd-explorer-view";
@@ -98,8 +98,7 @@ export interface UseCaseDetailDeps {
  * — so a user gets from a Use Case to executable, traceable Features without the
  * command palette.
  */
-export class UseCaseDetailView extends ItemView {
-  private readonly live: LiveRefresh;
+export class UseCaseDetailView extends LiveDashboardView {
   private useCaseId: UseCaseId | null = null;
   private isOpen = false;
 
@@ -107,8 +106,7 @@ export class UseCaseDetailView extends ItemView {
     leaf: WorkspaceLeaf,
     private readonly deps: UseCaseDetailDeps,
   ) {
-    super(leaf);
-    this.live = new LiveRefresh(deps.eventBus, () => this.render());
+    super(leaf, deps.eventBus, REFRESH_ON);
   }
 
   getViewType(): string {
@@ -147,7 +145,7 @@ export class UseCaseDetailView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.isOpen = true;
-    await this.live.open(REFRESH_ON);
+    await this.live.open(this.refreshOn);
   }
 
   async onClose(): Promise<void> {
@@ -158,7 +156,7 @@ export class UseCaseDetailView extends ItemView {
   // Untested view render method — its CRAP score is high only because views are
   // unit-test-exempt (AGENTS.md, 0 coverage), not from logic density.
   // fallow-ignore-next-line complexity
-  private async render(): Promise<void> {
+  protected async render(): Promise<void> {
     const container = this.contentEl;
     container.empty();
     container.addClass("e2e-test-hub-uc-detail");

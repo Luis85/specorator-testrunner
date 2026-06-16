@@ -1,9 +1,9 @@
-import { ItemView, Notice, type WorkspaceLeaf } from "obsidian";
+import { Notice, type WorkspaceLeaf } from "obsidian";
 import type { GuidedTourService } from "../../application/services/guided-tour-service";
 import type { TourActionId } from "../../domain/onboarding/tour-steps";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { projectTour, TOUR_DONE_MESSAGE, type TourStepRow } from "./guided-tour-rows";
-import { LiveRefresh } from "./live-refresh";
+import { LiveDashboardView } from "./live-dashboard-view";
 
 export const GUIDED_TOUR_VIEW_TYPE = "e2e-test-hub-guided-tour";
 
@@ -28,15 +28,20 @@ export interface GuidedTourViewDeps {
  * The Guided Tour: a right-sidebar checklist over the full V1 loop that
  * auto-advances as the GuidedTourService observes the user's real actions.
  */
-export class GuidedTourView extends ItemView {
-  private readonly live: LiveRefresh;
-
+export class GuidedTourView extends LiveDashboardView {
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: GuidedTourViewDeps,
   ) {
-    super(leaf);
-    this.live = new LiveRefresh(deps.eventBus, () => this.render());
+    // tour.* drives progress repaints; evidence.generated flips the manual
+    // step's in-memory "armed" hint, which publishes no tour event.
+    super(leaf, deps.eventBus, [
+      "tour.started",
+      "tour.step.completed",
+      "tour.step.skipped",
+      "tour.completed",
+      "evidence.generated",
+    ]);
   }
 
   getViewType(): string {
@@ -51,23 +56,7 @@ export class GuidedTourView extends ItemView {
     return "graduation-cap";
   }
 
-  async onOpen(): Promise<void> {
-    // tour.* drives progress repaints; evidence.generated flips the manual
-    // step's in-memory "armed" hint, which publishes no tour event.
-    await this.live.open([
-      "tour.started",
-      "tour.step.completed",
-      "tour.step.skipped",
-      "tour.completed",
-      "evidence.generated",
-    ]);
-  }
-
-  async onClose(): Promise<void> {
-    this.live.close();
-  }
-
-  private render(): void {
+  protected render(): void {
     const container = this.contentEl;
     container.empty();
     container.createEl("h2", { text: "Guided tour" });

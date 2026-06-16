@@ -1,4 +1,4 @@
-import { ItemView, type WorkspaceLeaf } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SuiteService } from "../../application/services/suite-service";
@@ -6,7 +6,7 @@ import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
-import { LiveRefresh } from "./live-refresh";
+import { LiveDashboardView } from "./live-dashboard-view";
 import { projectSuiteRows, scenarioCountCell } from "./suite-rows";
 
 export const SUITE_VIEW_TYPE = "e2e-test-hub-suites";
@@ -43,17 +43,12 @@ export interface SuiteDashboardDeps {
  * events. The default Smoke/Regression suites seeded by `createDefaults` surface
  * here via `findAll`.
  */
-export class SuiteDashboardView extends ItemView {
-  private readonly live: LiveRefresh;
-
+export class SuiteDashboardView extends LiveDashboardView {
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: SuiteDashboardDeps,
   ) {
-    super(leaf);
-    // Renders await findAll(); coalesce concurrent event-driven renders so a
-    // slow render with stale data can't empty + rebuild the list last (PRES-M2).
-    this.live = new LiveRefresh(deps.eventBus, () => this.render());
+    super(leaf, deps.eventBus, REFRESH_ON);
   }
 
   getViewType(): string {
@@ -68,23 +63,13 @@ export class SuiteDashboardView extends ItemView {
     return "layers";
   }
 
-  async onOpen(): Promise<void> {
-    await this.live.open(REFRESH_ON);
-  }
-
-  async onClose(): Promise<void> {
-    this.live.close();
-  }
-
-  private async render(): Promise<void> {
-    const container = this.contentEl;
-    container.empty();
-
-    const header = container.createDiv({ cls: "e2e-test-hub-suite-header" });
-    header.createEl("h2", { text: "Test Suites" });
-    header
-      .createEl("button", { text: "New Test Suite", cls: "mod-cta" })
-      .addEventListener("click", () => this.deps.onCreate());
+  protected async render(): Promise<void> {
+    const container = this.renderListHeader({
+      headerCls: "e2e-test-hub-suite-header",
+      title: "Test Suites",
+      actionLabel: "New Test Suite",
+      onAction: () => this.deps.onCreate(),
+    });
 
     const result = await this.deps.suiteService.findAll();
     if (!result.ok) {
