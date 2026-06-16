@@ -180,32 +180,24 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       return ok(undefined);
     }
 
-    // 2) Fold the run into the index read model.
+    // 2) Update the index read model. A FIRST import folds the run in
+    // incrementally — the fast steady-state path. A RE-import (the run already
+    // contributed to the index) or a missing/corrupt index instead rebuilds from
+    // the authoritative committed logs; the new log was rewritten above, so it is
+    // included. Rebuilding is what keeps re-imports correct: it handles a
+    // changed/emptied ref set AND restores any depth-trimmed older results for a
+    // ref this run drops — neither of which an in-place patch of the projection
+    // can see (codex P2). rebuildInternal (not the queued rebuildIndex) runs in
+    // this already-queued task without re-entrancy.
     const depth = this.depth(settings.automation.historyDepth);
-    let index = await this.readIndex();
-    if (!index) {
-      // The regenerable index is gone or corrupt (e.g. Reset Test Hub recreated
-      // `.testrunner`, or the cache was deleted) while committed Evidence logs —
-      // including the one just written above — still exist. Rebuild from those
-      // logs FIRST so folding the new run doesn't leave an index containing only
-      // this run, which would regress every untouched scenario's roll-up until a
-      // reload/manual rebuild (codex P2). rebuildInternal (not the queued
-      // rebuildIndex) runs in this already-queued task without re-entrancy.
+    const existing = await this.readIndex();
+    if (!existing || this.indexHasRun(existing, run.id)) {
       await this.rebuildInternal();
-      index = await this.readIndex();
+    } else {
+      existing.depth = depth;
+      for (const line of lines) this.fold(existing, line.scenarioRef, lineToEntry(line), depth);
+      await this.writeIndex(existing);
     }
-    index ??= { v: SCHEMA_VERSION, depth, scenarios: {} };
-    index.depth = depth;
-    // Re-import idempotency: a re-import of the SAME run may resolve a DIFFERENT
-    // set of Scenario References than before (e.g. a scenario was renamed/removed
-    // between imports, US-056), and the NDJSON log above was just overwritten to
-    // match. Drop every prior entry for this run.id across ALL refs before
-    // refolding so a ref the re-import no longer resolves doesn't retain this
-    // run's stale result until a full rebuild (codex P2); fold()'s within-ref
-    // de-dupe then handles the refs still present.
-    this.purgeRun(index, run.id);
-    for (const line of lines) this.fold(index, line.scenarioRef, lineToEntry(line), depth);
-    await this.writeIndex(index);
 
     await this.eventBus.publish(
       createEvent(
@@ -266,13 +258,23 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     for (const key of keys) {
       const { ndjson, summary } = folders.get(key) ?? {};
       // Prefer the NDJSON log, but fall back to the colocated note when the log
-      // yields NO usable entries — an empty/truncated/all-skipped log (external
-      // corruption or a partial write) shouldn't silently drop a run whose
-      // authoritative `testrunner-scenarios` block is still intact (codex P2).
-      // A normal run never leaves an empty log: record writes ≥1 line or the
+      // is unusable OR partially corrupt — empty, all-skipped, or with any
+      // malformed/mid-line-truncated line (external corruption or a partial
+      // write). Rebuilding from a truncated subset would silently drop the
+      // run's later scenarios even though the note's `testrunner-scenarios`
+      // block can still hold the full run (codex P2). A normal run never leaves
+      // an empty/partial log: record writes the lines atomically or the
       // zero-ref path deletes it.
-      let entries = ndjson ? await this.entriesFromLog(ndjson) : [];
-      if (entries.length === 0 && summary) entries = await this.entriesFromNote(summary);
+      let entries: { ref: string; entry: HistoryEntry }[] = [];
+      if (ndjson) {
+        const log = await this.entriesFromLog(ndjson);
+        entries = log.entries;
+        if ((entries.length === 0 || log.hadError) && summary) {
+          entries = await this.entriesFromNote(summary);
+        }
+      } else if (summary) {
+        entries = await this.entriesFromNote(summary);
+      }
       for (const { ref, entry } of entries) this.fold(index, ref, entry, depth);
     }
 
@@ -284,24 +286,35 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     return ok(undefined);
   }
 
-  /** Parses a per-run NDJSON log into ref+entry pairs (skips malformed lines). */
-  private async entriesFromLog(path: VaultPath): Promise<{ ref: string; entry: HistoryEntry }[]> {
+  /**
+   * Parses a per-run NDJSON log into ref+entry pairs. Reports `hadError` when a
+   * non-empty line failed to parse or had the wrong shape (corruption or a
+   * mid-line truncated write), so the caller can prefer the colocated note
+   * rather than rebuild from a partial subset (codex P2).
+   */
+  private async entriesFromLog(
+    path: VaultPath,
+  ): Promise<{ entries: { ref: string; entry: HistoryEntry }[]; hadError: boolean }> {
     const read = await this.vaultFs.readFile(path);
-    if (!read.ok) return [];
-    const out: { ref: string; entry: HistoryEntry }[] = [];
+    if (!read.ok) return { entries: [], hadError: true };
+    const entries: { ref: string; entry: HistoryEntry }[] = [];
+    let hadError = false;
     for (const raw of read.value.split("\n")) {
       const trimmed = raw.trim();
       if (trimmed === "") continue;
       try {
         const line = JSON.parse(trimmed) as HistoryLine;
         if (typeof line.scenarioRef === "string" && typeof line.status === "string") {
-          out.push({ ref: line.scenarioRef, entry: lineToEntry(line) });
+          entries.push({ ref: line.scenarioRef, entry: lineToEntry(line) });
+        } else {
+          hadError = true; // parsed but not a usable history line
         }
       } catch {
-        // A hand-edited/corrupt line is skipped — the Markdown stays authoritative.
+        // A hand-edited/corrupt/truncated line — the Markdown stays authoritative.
+        hadError = true;
       }
     }
-    return out;
+    return { entries, hadError };
   }
 
   /** Fallback rebuild source (D2): the note's `testrunner-scenarios` block. */
@@ -338,38 +351,21 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     index.scenarios[ref] = { latest: trimmed[0], recent: trimmed };
   }
 
-  /**
-   * Removes every entry contributed by `runId` from all scenario records,
-   * dropping a record entirely when the run was its only result. A pre-pass
-   * before refolding a re-imported run so a ref the re-import no longer resolves
-   * doesn't keep that run's stale result (codex P2). `recent` stays sorted
-   * newest-first (fold maintains it), so the filtered head is still `latest`.
-   * Returns whether anything was removed, so a retract can skip a no-op write.
-   */
-  private purgeRun(index: ScenarioIndex, runId: string): boolean {
-    const next: Record<string, ScenarioRecord> = {};
-    let changed = false;
-    for (const [ref, record] of Object.entries(index.scenarios)) {
-      const recent = record.recent.filter((e) => e.runId !== runId);
-      if (recent.length === record.recent.length) {
-        next[ref] = record; // run absent here — keep as-is
-      } else {
-        changed = true;
-        // recent.length === 0 → the run was this ref's only result; drop the ref.
-        if (recent.length > 0) next[ref] = { latest: recent[0], recent };
-      }
-    }
-    if (changed) index.scenarios = next;
-    return changed;
+  /** True when any scenario record still retains a result contributed by `runId`. */
+  private indexHasRun(index: ScenarioIndex, runId: string): boolean {
+    return Object.values(index.scenarios).some((record) =>
+      record.recent.some((entry) => entry.runId === runId),
+    );
   }
 
   /**
-   * Retracts a run's prior history contribution: deletes its per-run NDJSON log
-   * and drops its entries from the index. Used when a re-import of the same run
-   * now resolves ZERO Scenario References, so the stale log can't resurrect the
-   * old results on a later rebuild (codex P2). `deleteFile` is idempotent and the
-   * index is only rewritten when one already exists and actually changed, so a
-   * first-time zero-ref run never materializes the evidence/runner trees.
+   * Retracts a run whose re-import now resolves ZERO Scenario References: deletes
+   * its per-run NDJSON log, then rebuilds the index from the REMAINING committed
+   * logs. Rebuilding (rather than an in-place purge) restores any depth-trimmed
+   * older results for the refs this run touched and drops refs that were only
+   * this run's (codex P2). `deleteFile` is idempotent and the rebuild only runs
+   * when an index already exists, so a first-time zero-ref run on a fresh vault
+   * materializes nothing.
    */
   private async retractRun(run: TestRun, evidenceRoot: VaultPath): Promise<void> {
     const deleted = await this.vaultFs.deleteFile(this.ndjsonPath(run, evidenceRoot));
@@ -379,8 +375,7 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
         reason: deleted.error.message,
       });
     }
-    const index = await this.readIndex();
-    if (index && this.purgeRun(index, run.id)) await this.writeIndex(index);
+    if (await this.readIndex()) await this.rebuildInternal();
   }
 
   private depth(configured: number | undefined): number {

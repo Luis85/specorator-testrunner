@@ -168,6 +168,43 @@ describe("DefaultScenarioHistoryService.record", () => {
     expect(statuses.ok && statuses.value.get(REF_B)).toBe("passed");
   });
 
+  it("restores depth-trimmed older results when a re-import drops a ref (codex P2)", async () => {
+    const { service, fs } = build(1); // historyDepth 1 — index keeps only the latest per ref
+    fs.folders.add("Test Evidence");
+    // An older committed run recorded A=passed.
+    fs.files.set(
+      vp("Test Evidence/2026/06/RUN-R0/scenarios.ndjson"),
+      JSON.stringify({
+        v: 1,
+        scenarioRef: REF_A,
+        runId: "RUN-R0",
+        status: "passed",
+        at: "2026-06-01T10:00:00.000Z",
+        scope: "all",
+      }) + "\n",
+    );
+    // A newer run R1 records A=failed; at depth 1 the index keeps only A=failed.
+    const r1 = {
+      id: "RUN-R1",
+      startedAt: "2026-06-02T10:00:00.000Z",
+      finishedAt: "2026-06-02T10:01:00.000Z",
+    };
+    await service.record(run(r1), report({ runId: "RUN-R1", scenarioResults: [
+      { feature: "F", scenario: "A", status: "failed", scenarioRef: REF_A },
+    ] }));
+
+    // Re-import R1, now resolving only B (A dropped from this run).
+    await service.record(run(r1), report({ runId: "RUN-R1", scenarioResults: [
+      { feature: "F", scenario: "B", status: "failed", scenarioRef: REF_B },
+    ] }));
+
+    const statuses = await service.latestStatuses();
+    // A is restored from R0's committed log (depth-1 trimmed it from the index,
+    // but the re-import rebuild recovers it) rather than reported never-run.
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
+    expect(statuses.ok && statuses.value.get(REF_B)).toBe("failed");
+  });
+
   it("skips results with no Scenario Reference (degrade gracefully, ADR-0022)", async () => {
     const { service, fs, absoluteFs } = build();
     await service.record(
@@ -357,6 +394,45 @@ describe("DefaultScenarioHistoryService.rebuildIndex", () => {
     const statuses = await service.latestStatuses();
     // The note salvaged the run rather than the corrupt log dropping it.
     expect(statuses.ok && statuses.value.get(REF_B)).toBe("passed");
+  });
+
+  it("falls back to the note when the log is partially corrupt/truncated (codex P2)", async () => {
+    const { service, fs } = build();
+    fs.folders.add("Test Evidence");
+    const folder = "Test Evidence/2026/06/RUN-2026-06-08-100000";
+    // A truncated log: a valid first line, then a line cut off mid-write. The
+    // log yields a non-empty SUBSET, so a zero-entry guard alone wouldn't catch
+    // it — but the malformed tail must still route to the note.
+    fs.files.set(
+      vp(`${folder}/scenarios.ndjson`),
+      JSON.stringify({
+        v: 1,
+        scenarioRef: REF_A,
+        runId: "R8",
+        status: "passed",
+        at: "2026-06-08T10:01:00.000Z",
+        scope: "all",
+      }) +
+        "\n" +
+        '{"v":1,"scenarioRef":"' /* truncated mid-line */,
+    );
+    // The note holds the full run (both A and B).
+    fs.files.set(
+      vp(`${folder}/summary.md`),
+      buildNote(
+        { type: "test-evidence", run_id: "R8", created_at: "2026-06-08T10:01:00.000Z", scope: "all" },
+        renderScenarioEvidenceBlock([
+          { ref: REF_A, status: "passed" },
+          { ref: REF_B, status: "failed" },
+        ]),
+      ),
+    );
+
+    await service.rebuildIndex();
+    const statuses = await service.latestStatuses();
+    // Both scenarios are recovered from the note, not just the one intact log line.
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
+    expect(statuses.ok && statuses.value.get(REF_B)).toBe("failed");
   });
 
   it("prefers the NDJSON log over the note when both exist", async () => {
