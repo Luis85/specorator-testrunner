@@ -239,6 +239,7 @@ export class DefaultSettingsService implements SettingsService {
         DEFAULT_SETTINGS.automation[field] as boolean,
       );
     const retention = settings.automation.evidenceRetentionDays;
+    const historyDepth = settings.automation.historyDepth;
     return {
       ...settings,
       ci: {
@@ -274,6 +275,15 @@ export class DefaultSettingsService implements SettingsService {
           retention,
           retention === undefined ||
             (typeof retention === "number" && Number.isFinite(retention) && retention > 0),
+          undefined,
+        ),
+        // undefined = default depth (HISTORY_DEPTH_DEFAULT, US-057). Preserve a
+        // valid configured value across load so the projection window honors it.
+        historyDepth: repair<number | undefined>(
+          "automation.historyDepth",
+          historyDepth,
+          historyDepth === undefined ||
+            (typeof historyDepth === "number" && Number.isFinite(historyDepth) && historyDepth > 0),
           undefined,
         ),
       } satisfies AutomationSettings,

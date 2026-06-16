@@ -185,10 +185,13 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     const depth = this.depth(settings.automation.historyDepth);
     const index: ScenarioIndex = { v: SCHEMA_VERSION, depth, scenarios: {} };
 
-    if (!(await this.vaultFs.exists(root))) {
-      await this.writeIndex(index);
-      return ok(undefined);
-    }
+    // A fresh/uninitialized vault has no Evidence root yet. Do NOT write the
+    // index here: the absolute FS would create `.testrunner/history/...` before
+    // the user has initialized the Test Hub, dirtying the vault and leaving a
+    // partial runner folder for validation to trip over (codex P2). With no
+    // history to project, an absent index is correct — latestStatuses() returns
+    // an empty map.
+    if (!(await this.vaultFs.exists(root))) return ok(undefined);
     const listed = await this.vaultFs.listFilesRecursive(root);
     if (!listed.ok) {
       this.logger.warn("Could not list evidence for history rebuild", {

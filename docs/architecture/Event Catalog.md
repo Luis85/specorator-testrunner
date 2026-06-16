@@ -408,6 +408,22 @@ Subscribers waiting on terminal state should listen to all three event types.
 }
 ```
 
+### `scenario.history.recorded`
+
+Published after a finished run's per-scenario results are written to the history
+projection (US-057): the committed per-run `scenarios.ndjson` plus the
+`.testrunner` index. `scenarioCount` is the number of resolved-`scenarioRef`
+results recorded (results with no reference are skipped). Resolves the reserved
+§16 NDJSON-log V2 candidate without making the log an authoritative store
+(ADR-0022).
+
+```ts
+{
+  runId: string;
+  scenarioCount: number;
+}
+```
+
 ---
 
 ## 9. Evidence Events

@@ -37,20 +37,45 @@ each scenario's `scenarioRef`. Today's note renders a human-readable
 machine-parseable — that is US-060's job, which is still `proposed`. D2 pulls the
 **minimal** slice of US-060 forward so the projection stays rebuildable now.
 
+**When evidence Markdown is disabled** (`generateEvidenceMarkdown = false`) no
+note — and therefore no `scenarioRef` block — is written, so the committed
+per-run `scenarios.ndjson` is the only on-disk scenario record. Decision (codex
+P2): the per-run NDJSON log is itself a **committed artifact in the Evidence
+tree** (the "append-only NDJSON under `Test Evidence/`" EPIC-014's DoD sanctions),
+so it is the committed record for that case — history is never lost and the index
+rebuilds from it. The note's `testrunner-scenarios` block is an **additional**
+rebuild source available only when notes are enabled (the default). The slice's
+rebuild-from-the-human-note property therefore holds for the common case; the
+opt-out is respected (no note is forced).
+
 ## Decisions
 
 ### D1 — Two projections over the authoritative notes
 
 | Artifact | Where | Committed? | Role |
 | --- | --- | --- | --- |
-| Per-run scenario log | `Test Evidence/YYYY/MM/<runId>/scenarios.ndjson` (ADR-0016 partition, beside `summary.md`) | **Yes** — git-mergeable | The AC's "append-only NDJSON history"; one immutable file per run |
-| Scenario index | `.testrunner/history/scenario-index.json` (ADR-0002 runtime) | No — git-ignored, regenerable | Fast `scenarioRef → latest status + last-N` read model for the roll-up |
+| Per-run scenario log | `<evidenceRoot>/YYYY/MM/<runId>/scenarios.ndjson` (ADR-0016 partition, beside `summary.md`) | **Yes** — git-mergeable | The AC's "append-only NDJSON history"; one immutable file per run |
+| Scenario index | `<testRunnerRoot>/history/scenario-index.json` (ADR-0002 runtime) | No — git-ignored, regenerable | Fast `scenarioRef → latest status + last-N` read model for the roll-up |
+
+Both locations use the **configured roots** — `settings.paths.evidencePath` and
+`settings.paths.testRunnerPath` — never the literal defaults, so a vault that
+customizes either folder keeps its logs/index inside the configured trees (codex
+P2). The table shows the default folder names only for illustration.
 
 - **Per-run log is write-once.** All of a run's scenario lines are written in a
   single `writeFile` of a new per-run file. So it is append-only at the *history*
   level (a new file per run) with **no append primitive** needed on
   `VaultFileSystem`, and **git-mergeable** by construction (distinct runs never
   touch the same file). Goes through `VaultFileSystem` (vault-indexed).
+- **Idempotent re-imports.** `PostRunCoordinator.importLastRun()` can re-run the
+  flow for the same `runId`. The log `writeFile` **overwrites** the deterministic
+  per-run file (no append, no duplication, no failure), and the index `fold`
+  **de-dupes by `runId`** (drops any prior entry for that run before pushing) so a
+  re-import never inflates a scenario's `recent` history (codex P2).
+- **Never materializes `.testrunner` prematurely.** On a fresh/uninitialized
+  vault the Evidence root is absent; the rebuild returns **without writing** the
+  index, so it does not create `.testrunner/history/...` before the user
+  initializes the Test Hub (codex P2). An absent index reads as empty history.
 - **Index is a regenerable cache** under `.testrunner/` via `AbsoluteFileSystem`
   (`writeAbsolute`/`readAbsolute`/`getVaultBasePath`). Only the per-run logs are
   committed, so the git-mergeable guarantee stays clean. On load, if the index is
@@ -102,9 +127,22 @@ drops `useCase.automationStatus` (the floor) and the scope-awareness branch from
 the pass decision:
 
 ```
-computeAutomationStatus(useCase, features, latestStatusFor)
+computeAutomationStatus(features, latestStatusFor)
   latestStatusFor: (scenarioRef) => "passed" | "failed" | "skipped" | undefined
 ```
+
+The `useCase` argument is dropped entirely: with the floor and scope-awareness
+gone, the policy no longer reads `useCase.automationStatus` or `lastTestRun`.
+
+**Migration fallback (codex P2).** An upgraded vault has Use Cases with a
+persisted `lastTestRun` + `automationStatus` but no per-scenario history yet (old
+Evidence notes aren't keyed by `scenarioRef`, so they can't be backfilled).
+Deriving from an empty history would drop their KPIs to `planned` until a rerun.
+`withDerivedStatus` therefore keeps the **persisted status** for a UC that has a
+`lastTestRun` but *no* history for any of its scenarios; it switches to the
+history-derived value the moment any scenario records a result (self-healing). A
+genuinely never-run UC (no `lastTestRun`) takes the policy path normally, so a
+stale persisted status can't mask a real `planned`/`not-planned`.
 
 Each non-`@wip` Feature's state is derived from its scenarios' latest statuses
 (`featureScenarioRefs(feature)` → `latestStatusFor`):

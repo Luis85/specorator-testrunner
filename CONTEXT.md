@@ -61,7 +61,7 @@ A tag-expression string (Gherkin/BDD standard) such as `@smoke and not @wip` tha
 _Avoid_: Tag list, tag query, filter.
 
 **`@wip` Tag**:
-The conventional BDD tag for "work in progress." A Feature tagged `@wip` is excluded from the dashboard's KPI roll-up (per ADR-0017) so half-built work does not drag the dashboard red. Granularity is the Feature, not the scenario.
+The conventional BDD tag for "work in progress." A Feature tagged `@wip` is excluded from the dashboard's KPI roll-up (per ADR-0017, whose run-state input is now per-scenario history — US-057) so half-built work does not drag the dashboard red. Granularity is the Feature, not the scenario.
 _Avoid_: Draft tag, todo tag, skip tag.
 
 **Test Run**:
@@ -83,6 +83,21 @@ Computed name-derived at parse time and attached to report results by the
 `ScenarioIdentityResolver` (no ID write-back into `.feature` files). It is the
 unit of scenario-level identity that per-scenario history (US-057) builds on.
 _Avoid_: Scenario id, scenario key, test id.
+
+**Scenario History** _(implemented — see ADR-0022, US-057)_:
+The per-scenario record of recent run results, keyed by Scenario Reference. Each
+finished run writes a committed, git-mergeable `scenarios.ndjson` per run under
+the Evidence partition (ADR-0016); a regenerable `.testrunner/history` index
+projects each scenario's latest status + last-N results (configurable
+`historyDepth`, default 50) and is rebuilt from the logs (the note's
+`testrunner-scenarios` block as fallback). The Use Case automation roll-up
+derives from this history (latest status per scenario → Feature → UC), which
+**removed the ADR-0017 prior-status "floor" and scope-awareness workaround**:
+because each scenario keeps its own last-known status, a targeted rerun can
+neither regress nor inflate the roll-up. An upgraded UC with a recorded run but
+no history yet keeps its persisted status until its next run backfills history.
+_Avoid_: run log (the per-run NDJSON is the *history log*; "Evidence" is the
+human note), the floor.
 
 **Evidence**:
 A Markdown note under `Test Evidence/` that records the audit trail for one Test Run: result counts, links to reports, screenshots, and traces. Always **links** to artifacts in `.testrunner/reports/`, never duplicates them.

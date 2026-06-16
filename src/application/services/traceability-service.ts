@@ -7,6 +7,7 @@ import {
   type ScenarioStatusLookup,
 } from "../../domain/policies/use-case-automation-policy";
 import type { FeatureSpecification } from "../../domain/entities/specification";
+import { featureScenarioRefs } from "../../domain/value-objects/scenario-reference";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { TestRunSummary } from "../../domain/entities/test-run";
 import type { RunId, SuiteId, UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
@@ -154,6 +155,18 @@ export class DefaultTraceabilityService implements TraceabilityService {
       const feature = parseFeature(read.value, path);
       if (feature) features.push(feature);
     }
+
+    // Migration fallback (US-057): a UC that RAN before this upgrade has a
+    // persisted `lastTestRun`/`automationStatus` but no per-scenario history yet
+    // (old Evidence notes aren't keyed by Scenario Reference, so they can't be
+    // backfilled). Deriving from an empty history would drop its KPIs to
+    // `planned` until a rerun. Trust the persisted status until the first run
+    // records history; this self-heals the moment any scenario has a result.
+    const hasAnyHistory = features.some((feature) =>
+      featureScenarioRefs(feature).some(({ ref }) => latestStatusFor(ref) !== undefined),
+    );
+    if (!hasAnyHistory && useCase.lastTestRun !== undefined) return useCase;
+
     return { ...useCase, automationStatus: computeAutomationStatus(features, latestStatusFor) };
   }
 

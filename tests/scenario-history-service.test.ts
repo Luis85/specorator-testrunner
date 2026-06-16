@@ -295,4 +295,13 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     const statuses = await service.latestStatuses();
     expect(statuses.ok && statuses.value.size).toBe(0);
   });
+
+  it("does not materialize the .testrunner index on a fresh/uninitialized vault (codex P2)", async () => {
+    const { service, absoluteFs } = build(); // no Evidence root seeded
+    await service.rebuildIndex();
+    await service.latestStatuses();
+    // No index file written — the absolute FS would otherwise create
+    // .testrunner/history before the user initializes the Test Hub.
+    expect(absoluteFs.written.has(INDEX_PATH)).toBe(false);
+  });
 });

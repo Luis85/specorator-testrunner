@@ -281,6 +281,85 @@ describe("DefaultTraceabilityService.snapshot", () => {
   });
 });
 
+describe("DefaultTraceabilityService legacy fallback (US-057 migration)", () => {
+  it("keeps a pre-upgrade UC's persisted status when it has a run but no scenario history", async () => {
+    const { bus } = recordingEventBus();
+    // Ran before the upgrade: lastTestRun + persisted "passing", but no per-
+    // scenario history exists to rebuild from (empty stub history).
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp("Specifications/features/UC-001-a.feature")],
+        automationStatus: "passing",
+        lastTestRun: { runId: "RUN-OLD", status: "passed", date: "2026-06-01T09:00:00Z" },
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      stubScenarioHistory(),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok && result.value.passingUseCases).toBe(1);
+  });
+
+  it("derives 'planned' (not the stale persisted status) for a never-run UC with no history", async () => {
+    const { bus } = recordingEventBus();
+    // No lastTestRun → the fallback must NOT apply; a stale persisted "passing"
+    // is ignored and the policy derives from the (empty) history → planned.
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp("Specifications/features/UC-001-a.feature")],
+        automationStatus: "passing",
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      stubScenarioHistory(),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.passingUseCases).toBe(0);
+    expect(result.value.automatedUseCases).toBe(0);
+  });
+
+  it("switches to history once a scenario has a result, ignoring the persisted status", async () => {
+    const { bus } = recordingEventBus();
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp("Specifications/features/UC-001-a.feature")],
+        automationStatus: "passing",
+        lastTestRun: { runId: "RUN-OLD", status: "passed", date: "2026-06-01T09:00:00Z" },
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      // History now exists and the latest result is a failure — overrides the
+      // persisted "passing".
+      stubScenarioHistory({ [refS("Specifications/features/UC-001-a.feature")]: "failed" }),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.passingUseCases).toBe(0);
+    expect(result.value.failingUseCases).toBe(1);
+  });
+});
+
 describe("DefaultTraceabilityService.linksFor", () => {
   it("resolves a UC's traceability links from its frontmatter", async () => {
     const { bus } = recordingEventBus();

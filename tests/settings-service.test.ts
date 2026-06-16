@@ -910,6 +910,28 @@ describe("scalar shape repair (ci.* / automation.*)", () => {
     });
     expect(settings.automation.evidenceRetentionDays).toBe(30);
   });
+
+  it("preserves a configured historyDepth across load (US-057)", async () => {
+    const store = new FakeDataStore();
+    await store.save({
+      ...DEFAULT_SETTINGS,
+      automation: { ...DEFAULT_SETTINGS.automation, historyDepth: 25 },
+    });
+    const service = buildServiceWith(store);
+    const settings = await service.load();
+    expect(settings.automation.historyDepth).toBe(25);
+  });
+
+  it("drops an invalid historyDepth to undefined (default depth, US-057)", async () => {
+    const store = new FakeDataStore();
+    await store.save({
+      ...DEFAULT_SETTINGS,
+      automation: { ...DEFAULT_SETTINGS.automation, historyDepth: -5 },
+    });
+    const service = buildServiceWith(store);
+    const settings = await service.load();
+    expect(settings.automation.historyDepth).toBeUndefined();
+  });
 });
 
 describe("schemaVersion envelope (2.1)", () => {
