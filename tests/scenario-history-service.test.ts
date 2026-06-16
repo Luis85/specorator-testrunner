@@ -910,9 +910,10 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     expect(statuses.ok && statuses.value.size).toBe(0);
   });
 
-  it("degrades to empty instead of serving a stale cache when the rebuild can't refresh it (codex P2)", async () => {
+  it("serves freshly rebuilt history (not the stale cache) even when the index write fails (codex P2)", async () => {
     const { service, fs, absoluteFs } = build();
     fs.folders.add("Test Evidence");
+    // A committed log says REF_A passed under the CURRENT Evidence root.
     fs.files.set(
       vp("Test Evidence/2026/06/RUN-X/scenarios.ndjson"),
       JSON.stringify({
@@ -924,7 +925,7 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
         scope: "all",
       }) + "\n",
     );
-    // A stale cache built from a DIFFERENT (old) Evidence root.
+    // A stale cache from a DIFFERENT (old) Evidence root listing REF_B.
     absoluteFs.seed(
       INDEX_PATH,
       JSON.stringify({
@@ -941,12 +942,42 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
         },
       }),
     );
-    // The rebuild's index write fails, so the stale cache stays on disk.
+    // Every index write fails (read-only .testrunner / disk full), so the stale
+    // cache can never be overwritten on disk.
     absoluteFs.writeAbsolute = async () => err({ code: "INIT_FAILED", message: "disk full" });
 
     const statuses = await service.latestStatuses();
-    // Root still mismatches after the failed rebuild → serve empty, not the
-    // stale "Old Evidence" history.
-    expect(statuses.ok && statuses.value.size).toBe(0);
+    // The in-memory rebuild from the committed logs is served: REF_A appears and
+    // the stale REF_B does not, despite the failed disk write.
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
+    expect(statuses.ok && statuses.value.has(REF_B)).toBe(false);
+  });
+
+  it("rebuilds and serves fresh data after an index write fails with matching root/depth (codex P2)", async () => {
+    const { service, fs, absoluteFs } = build();
+    fs.folders.add("Test Evidence");
+    // Record one run successfully so a valid index exists on disk.
+    await service.record(
+      run(),
+      report({
+        scenarioResults: [{ feature: "F", scenario: "A", status: "passed", scenarioRef: REF_A }],
+      }),
+    );
+    // Now writes start failing, and a SECOND run is recorded: its log is
+    // committed but the index write fails, leaving a stale on-disk cache whose
+    // root/depth still match.
+    absoluteFs.writeAbsolute = async () => err({ code: "INIT_FAILED", message: "disk full" });
+    await service.record(
+      run({ id: "RUN-2026-06-02-100000", startedAt: "2026-06-02T10:00:00.000Z", finishedAt: "2026-06-02T10:01:00.000Z" }),
+      report({
+        runId: "RUN-2026-06-02-100000",
+        scenarioResults: [{ feature: "F", scenario: "A", status: "failed", scenarioRef: REF_A }],
+      }),
+    );
+
+    // The fast path is bypassed (indexWriteFailed) and the in-memory rebuild from
+    // the committed logs surfaces the newer "failed", not the stale "passed".
+    const statuses = await service.latestStatuses();
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("failed");
   });
 });

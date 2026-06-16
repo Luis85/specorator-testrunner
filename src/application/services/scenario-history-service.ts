@@ -100,6 +100,13 @@ const SUMMARY_PATTERN = /^(\d{4})\/(\d{2})\/([^/]+)\/summary\.md$/;
 export class DefaultScenarioHistoryService implements ScenarioHistoryService {
   private readonly queue = new SerialQueue();
 
+  /**
+   * True when the last {@link writeIndex} failed, so the on-disk cache is stale
+   * even if its `root`/`depth` still match. Forces {@link latestStatusesInternal}
+   * to rebuild and serve the in-memory index until a write succeeds (codex P2).
+   */
+  private indexWriteFailed = false;
+
   constructor(
     private readonly settingsService: SettingsService,
     private readonly vaultFs: VaultFileSystem,
@@ -114,7 +121,10 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
   }
 
   async rebuildIndex(): Promise<Result<void>> {
-    return this.queue.run(() => this.rebuildInternal());
+    return this.queue.run(async () => {
+      await this.rebuildInternal();
+      return ok(undefined);
+    });
   }
 
   async latestStatuses(): Promise<Result<Map<string, ScenarioLatestStatus>>> {
@@ -130,18 +140,19 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     const depth = this.depth(settings.automation.historyDepth);
     let index = await this.readIndex();
     // Reconstruct from the committed logs when the index is absent, was built from
-    // a different Evidence root (the user repointed paths.evidencePath), OR was
-    // built at a different history depth (the user changed it) while the plugin
-    // stayed open — the cache then describes a stale tree/window (codex P2).
-    // rebuildInternal is called directly, NOT the queued rebuildIndex: we already
-    // hold the queue slot, so re-entering queue.run here would deadlock.
-    if (index?.root !== root || index?.depth !== depth) {
-      await this.rebuildInternal();
-      index = await this.readIndex();
-      // If the rebuild couldn't refresh the cache (Evidence listing or the index
-      // write failed), the old stale file may still be on disk. Don't serve it:
-      // degrade to an empty map rather than statuses from the previous
-      // tree/window (codex P2).
+    // a different Evidence root (repointed paths.evidencePath), was built at a
+    // different history depth, OR a prior index write failed (so the on-disk cache
+    // is stale even though its root/depth still match — codex P2). rebuildInternal
+    // is called directly, NOT the queued rebuildIndex: we already hold the queue
+    // slot, so re-entering queue.run here would deadlock.
+    if (index?.root !== root || index?.depth !== depth || this.indexWriteFailed) {
+      // Serve the freshly rebuilt IN-MEMORY index — it reflects the committed logs
+      // even when the disk write failed (read-only `.testrunner` / disk full), so
+      // a failed cache write never serves stale statuses (codex P2). Only fall
+      // back to a disk re-read if the rebuild couldn't build (listing failure).
+      index = (await this.rebuildInternal()) ?? (await this.readIndex());
+      // Still mismatched (e.g. listing failed and the disk cache is stale)? Don't
+      // serve it — degrade to an empty map rather than the previous tree/window.
       if (index?.root !== root || index?.depth !== depth) index = null;
     }
     const map = new Map<string, ScenarioLatestStatus>();
@@ -238,7 +249,14 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     return ok(undefined);
   }
 
-  private async rebuildInternal(): Promise<Result<void>> {
+  /**
+   * Rebuilds the index from the committed logs and returns the freshly built
+   * in-memory index — even when the disk write fails — so callers can serve fresh
+   * data without re-reading a possibly-stale file (codex P2). Returns `null` only
+   * when it could not build (a transient Evidence-listing failure), so the caller
+   * falls back to the existing on-disk cache rather than discarding it.
+   */
+  private async rebuildInternal(): Promise<ScenarioIndex | null> {
     const settings = await this.settingsService.load();
     const root = this.normalizeRoot(settings.paths.evidencePath);
     const depth = this.depth(settings.automation.historyDepth);
@@ -256,14 +274,14 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     // exists, so skip the absent-root check and list from the root (codex P2).
     if (root !== "" && !(await this.vaultFs.exists(root))) {
       if (await this.readIndex()) await this.writeIndex(index);
-      return ok(undefined);
+      return index; // empty, current root/depth — there is no history to project
     }
     const listed = await this.vaultFs.listFilesRecursive(root);
     if (!listed.ok) {
       this.logger.warn("Could not list evidence for history rebuild", {
         reason: listed.error.message,
       });
-      return ok(undefined);
+      return null; // couldn't build — caller keeps the existing cache
     }
 
     // Group per run folder; the YYYY/MM/<runId> layout encodes recency, so a
@@ -317,7 +335,7 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       runs: keys.length,
       scenarios: Object.keys(index.scenarios).length,
     });
-    return ok(undefined);
+    return index;
   }
 
   /**
@@ -524,6 +542,9 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     const path = await this.indexAbsolutePath();
     if (!path) return;
     const written = await this.absoluteFs.writeAbsolute(path, JSON.stringify(index, null, 2));
+    // Track whether the on-disk cache reflects what we just built: a failed write
+    // leaves a stale file that latestStatuses must not serve from the fast path.
+    this.indexWriteFailed = !written.ok;
     if (!written.ok) {
       this.logger.warn("Could not write scenario history index", {
         reason: written.error.message,
