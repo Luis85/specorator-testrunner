@@ -488,6 +488,30 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
   });
 
+  it("rebuilds when the persisted index is parseable but malformed (codex P2)", async () => {
+    const { service, fs, absoluteFs } = build();
+    fs.folders.add("Test Evidence");
+    fs.files.set(
+      vp("Test Evidence/2026/06/RUN-2026-06-01-100000/scenarios.ndjson"),
+      JSON.stringify({
+        v: 1,
+        scenarioRef: REF_A,
+        runId: "R1",
+        status: "passed",
+        at: "2026-06-01T10:01:00.000Z",
+        scope: "all",
+      }) + "\n",
+    );
+    // A hand-edited / partially-written cache: valid JSON, wrong shape (a record
+    // missing latest/recent). It must be treated as absent and rebuilt, not
+    // dereferenced.
+    absoluteFs.seed(INDEX_PATH, JSON.stringify({ v: 1, depth: 50, scenarios: { [REF_A]: {} } }));
+
+    const statuses = await service.latestStatuses();
+    expect(statuses.ok).toBe(true);
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
+  });
+
   it("returns an empty map when there is no history at all", async () => {
     const { service } = build();
     const statuses = await service.latestStatuses();

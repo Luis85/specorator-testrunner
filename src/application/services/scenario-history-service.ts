@@ -408,9 +408,14 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     const read = await this.absoluteFs.readAbsolute(path);
     if (!read.ok) return null;
     try {
-      const parsed = JSON.parse(read.value) as ScenarioIndex;
-      if (parsed && typeof parsed === "object" && parsed.scenarios) return parsed;
-      return null;
+      const parsed: unknown = JSON.parse(read.value);
+      // Validate the SHAPE, not just JSON-ness: this cache is regenerable and
+      // can be hand-edited or left partially written. A parseable-but-malformed
+      // index (e.g. `scenarios` an array, or a record missing latest/recent)
+      // must read as absent so the rebuild path runs, rather than passing here
+      // and crashing a later `entry.latest.status` / `record.recent` deref
+      // (codex P2).
+      return isScenarioIndex(parsed) ? parsed : null;
     } catch {
       return null;
     }
@@ -438,3 +443,27 @@ const lineToEntry = (line: HistoryLine): HistoryEntry => ({
 
 const asString = (value: string | string[] | undefined): string | undefined =>
   typeof value === "string" && value !== "" ? value : undefined;
+
+/** A value usable as a {@link HistoryEntry}: has the fields the reads deref. */
+const isHistoryEntry = (value: unknown): value is HistoryEntry =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as HistoryEntry).status === "string" &&
+  typeof (value as HistoryEntry).runId === "string";
+
+/**
+ * Structural guard for a persisted {@link ScenarioIndex}. Rejects a
+ * parseable-but-malformed cache (e.g. `scenarios` not a plain object, or a
+ * record missing a usable `latest`/`recent`) so {@link DefaultScenarioHistoryService}
+ * rebuilds from the committed logs instead of crashing a later deref (codex P2).
+ */
+const isScenarioIndex = (value: unknown): value is ScenarioIndex => {
+  if (typeof value !== "object" || value === null) return false;
+  const scenarios = (value as { scenarios?: unknown }).scenarios;
+  if (typeof scenarios !== "object" || scenarios === null || Array.isArray(scenarios)) return false;
+  return Object.values(scenarios as Record<string, unknown>).every((record) => {
+    if (typeof record !== "object" || record === null) return false;
+    const { latest, recent } = record as { latest?: unknown; recent?: unknown };
+    return isHistoryEntry(latest) && Array.isArray(recent) && recent.every(isHistoryEntry);
+  });
+};
