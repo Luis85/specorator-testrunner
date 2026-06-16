@@ -327,6 +327,11 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
         run_id: evidence.runId,
         status: noteStatus,
         created_at: evidence.createdAt,
+        // The run's actual completion time — NOT this (possibly re-import) note
+        // time. A history rebuild that falls back to this note keys ordering off
+        // run_at, matching the NDJSON log's `at`, so a re-imported older run
+        // can't masquerade as the latest result (codex P2).
+        run_at: run.finishedAt ?? run.startedAt,
         passed: result.passed,
         failed: result.failed,
         skipped: result.skipped,

@@ -75,6 +75,14 @@ interface ScenarioRecord {
 interface ScenarioIndex {
   v: number;
   depth: number;
+  /**
+   * The configured evidence root this projection was built from. A mismatch with
+   * the current `paths.evidencePath` means the cache describes a different tree
+   * (the user repointed the Evidence folder while the plugin was open), so it is
+   * stale and must be rebuilt rather than served (codex P2). Optional for
+   * back-compat: an index written before this field is treated as stale once.
+   */
+  root?: string;
   scenarios: Record<string, ScenarioRecord>;
 }
 
@@ -111,11 +119,14 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
   }
 
   private async latestStatusesInternal(): Promise<Result<Map<string, ScenarioLatestStatus>>> {
+    const root = (await this.settingsService.load()).paths.evidencePath;
     let index = await this.readIndex();
-    if (!index) {
-      // No (or unreadable) index — reconstruct it from the committed logs once.
-      // Calls rebuildInternal directly, NOT the queued rebuildIndex: we already
-      // hold the queue slot, so re-entering queue.run here would deadlock.
+    // Reconstruct from the committed logs when the index is absent OR was built
+    // from a different Evidence root (the user repointed paths.evidencePath while
+    // the plugin stayed open, so the cache describes the old tree — codex P2).
+    // rebuildInternal is called directly, NOT the queued rebuildIndex: we already
+    // hold the queue slot, so re-entering queue.run here would deadlock.
+    if (index?.root !== root) {
       await this.rebuildInternal();
       index = await this.readIndex();
     }
@@ -182,16 +193,18 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
 
     // 2) Update the index read model. A FIRST import folds the run in
     // incrementally — the fast steady-state path. A RE-import (the run already
-    // contributed to the index) or a missing/corrupt index instead rebuilds from
-    // the authoritative committed logs; the new log was rewritten above, so it is
-    // included. Rebuilding is what keeps re-imports correct: it handles a
-    // changed/emptied ref set AND restores any depth-trimmed older results for a
-    // ref this run drops — neither of which an in-place patch of the projection
-    // can see (codex P2). rebuildInternal (not the queued rebuildIndex) runs in
-    // this already-queued task without re-entrancy.
+    // contributed to the index), a missing/corrupt index, OR an index built from
+    // a different Evidence root instead rebuilds from the authoritative committed
+    // logs; the new log was rewritten above, so it is included. Rebuilding is
+    // what keeps re-imports correct: it handles a changed/emptied ref set AND
+    // restores any depth-trimmed older results for a ref this run drops — neither
+    // of which an in-place patch of the projection can see (codex P2).
+    // rebuildInternal (not the queued rebuildIndex) runs in this already-queued
+    // task without re-entrancy.
     const depth = this.depth(settings.automation.historyDepth);
+    const root = settings.paths.evidencePath;
     const existing = await this.readIndex();
-    if (!existing || this.indexHasRun(existing, run.id)) {
+    if (existing?.root !== root || this.indexHasRun(existing, run.id)) {
       await this.rebuildInternal();
     } else {
       existing.depth = depth;
@@ -214,7 +227,7 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     const settings = await this.settingsService.load();
     const root = settings.paths.evidencePath;
     const depth = this.depth(settings.automation.historyDepth);
-    const index: ScenarioIndex = { v: SCHEMA_VERSION, depth, scenarios: {} };
+    const index: ScenarioIndex = { v: SCHEMA_VERSION, depth, root, scenarios: {} };
 
     // A fresh/uninitialized vault has no Evidence root yet. Do NOT materialize
     // the index here: the absolute FS would create `.testrunner/history/...`
@@ -323,7 +336,10 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     if (!read.ok) return [];
     const frontmatter = parseFrontmatter(read.value);
     const runId = asString(frontmatter.run_id) ?? "";
-    const at = asString(frontmatter.created_at) ?? "";
+    // Prefer run_at (the run's completion time) so fold()'s newest-wins ordering
+    // matches the NDJSON history; created_at is the note/import time and would
+    // mis-order a re-imported older run (codex P2). Older notes lack run_at.
+    const at = asString(frontmatter.run_at) ?? asString(frontmatter.created_at) ?? "";
     const scope = (asString(frontmatter.scope) as ExecutionScope) ?? "all";
     return parseScenarioEvidenceBlock(read.value).map((block) => ({
       ref: block.ref,
@@ -352,9 +368,12 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
   }
 
   /** True when any scenario record still retains a result contributed by `runId`. */
-  private indexHasRun(index: ScenarioIndex, runId: string): boolean {
-    return Object.values(index.scenarios).some((record) =>
-      record.recent.some((entry) => entry.runId === runId),
+  private indexHasRun(index: ScenarioIndex | null, runId: string): boolean {
+    return (
+      index !== null &&
+      Object.values(index.scenarios).some((record) =>
+        record.recent.some((entry) => entry.runId === runId),
+      )
     );
   }
 

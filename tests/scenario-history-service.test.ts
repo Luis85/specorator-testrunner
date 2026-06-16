@@ -360,6 +360,45 @@ describe("DefaultScenarioHistoryService.rebuildIndex", () => {
     expect(readIndex(absoluteFs).scenarios[REF_A].recent).toHaveLength(2);
   });
 
+  it("orders note-fallback entries by run_at, not the note's created_at (codex P2)", async () => {
+    const { service, fs } = build();
+    fs.folders.add("Test Evidence");
+    // An older run (run_at earlier) that was RE-imported later (created_at newer).
+    fs.files.set(
+      vp("Test Evidence/2026/06/RUN-OLD/summary.md"),
+      buildNote(
+        {
+          type: "test-evidence",
+          run_id: "RUN-OLD",
+          created_at: "2026-06-09T10:00:00.000Z",
+          run_at: "2026-06-01T10:00:00.000Z",
+          scope: "all",
+        },
+        renderScenarioEvidenceBlock([{ ref: REF_A, status: "passed" }]),
+      ),
+    );
+    // A newer run (run_at later) imported earlier (created_at older).
+    fs.files.set(
+      vp("Test Evidence/2026/06/RUN-NEW/summary.md"),
+      buildNote(
+        {
+          type: "test-evidence",
+          run_id: "RUN-NEW",
+          created_at: "2026-06-02T10:00:00.000Z",
+          run_at: "2026-06-05T10:00:00.000Z",
+          scope: "all",
+        },
+        renderScenarioEvidenceBlock([{ ref: REF_A, status: "failed" }]),
+      ),
+    );
+
+    await service.rebuildIndex();
+    const statuses = await service.latestStatuses();
+    // Ordered by run_at, RUN-NEW (06-05) is latest → failed; created_at ordering
+    // would have wrongly picked RUN-OLD's later import time → passed.
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("failed");
+  });
+
   it("falls back to the note's testrunner-scenarios block when a log is absent (D2)", async () => {
     const { service, fs } = build();
     fs.folders.add("Test Evidence");
@@ -510,6 +549,43 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     const statuses = await service.latestStatuses();
     expect(statuses.ok).toBe(true);
     expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
+  });
+
+  it("rebuilds when the index was built from a different Evidence root (codex P2)", async () => {
+    const { service, fs, absoluteFs } = build();
+    fs.folders.add("Test Evidence");
+    fs.files.set(
+      vp("Test Evidence/2026/06/RUN-X/scenarios.ndjson"),
+      JSON.stringify({
+        v: 1,
+        scenarioRef: REF_A,
+        runId: "RUN-X",
+        status: "failed",
+        at: "2026-06-02T10:00:00.000Z",
+        scope: "all",
+      }) + "\n",
+    );
+    // A cache built from a previous Evidence root the user has since repointed.
+    absoluteFs.seed(
+      INDEX_PATH,
+      JSON.stringify({
+        v: 1,
+        depth: 50,
+        root: "Old Evidence",
+        scenarios: {
+          [REF_A]: {
+            latest: { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            recent: [
+              { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            ],
+          },
+        },
+      }),
+    );
+
+    const statuses = await service.latestStatuses();
+    // The stale cache is rebuilt from the current root's logs, not served.
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("failed");
   });
 
   it("returns an empty map when there is no history at all", async () => {
