@@ -284,6 +284,28 @@ describe("DefaultScenarioHistoryService.record", () => {
     expect(statuses.ok && statuses.value.has(REF_A)).toBe(false);
   });
 
+  it("rebuilds correctly when the Evidence root is saved with a trailing slash (codex P2)", async () => {
+    const settings = {
+      async load() {
+        return {
+          ...DEFAULT_SETTINGS,
+          paths: { ...DEFAULT_SETTINGS.paths, evidencePath: vp("Test Evidence/") },
+        };
+      },
+    } as unknown as SettingsService;
+    const fs = new FakeVaultFileSystem();
+    const absoluteFs = new FakeAbsoluteFileSystem();
+    const { bus } = recordingEventBus();
+    const service = new DefaultScenarioHistoryService(settings, fs, absoluteFs, bus, silentLogger);
+
+    await service.record(run(), report());
+
+    // The normalized root makes the rebuild's path slice exact, so REF_A is
+    // folded rather than dropped (which would leave the index empty).
+    const statuses = await service.latestStatuses();
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
+  });
+
   it("does not write a log or event when no result has a reference", async () => {
     const { service, fs, types } = build();
     await service.record(

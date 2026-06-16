@@ -126,7 +126,7 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
 
   private async latestStatusesInternal(): Promise<Result<Map<string, ScenarioLatestStatus>>> {
     const settings = await this.settingsService.load();
-    const root = settings.paths.evidencePath;
+    const root = this.normalizeRoot(settings.paths.evidencePath);
     const depth = this.depth(settings.automation.historyDepth);
     let index = await this.readIndex();
     // Reconstruct from the committed logs when the index is absent, was built from
@@ -150,6 +150,7 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
 
   private async recordInternal(run: TestRun, report: ImportedReport): Promise<Result<void>> {
     const settings = await this.settingsService.load();
+    const root = this.normalizeRoot(settings.paths.evidencePath);
     const at = run.finishedAt ?? run.startedAt;
     const lines: HistoryLine[] = [];
     for (const scenario of report.scenarioResults) {
@@ -174,13 +175,13 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       // a later rebuild resurrects the stale results from the log (codex P2). A
       // genuine first-time zero-ref run touches nothing (idempotent delete; no
       // index to rewrite).
-      await this.retractRun(run, settings.paths.evidencePath);
+      await this.retractRun(run, root);
       return ok(undefined);
     }
 
     // 1) Write the committed per-run NDJSON log (write-once; overwrite so a
     // re-import of the same run refreshes its log deterministically).
-    const logPath = this.ndjsonPath(run, settings.paths.evidencePath);
+    const logPath = this.ndjsonPath(run, root);
     const folder = unsafeVaultPath(logPath.slice(0, logPath.lastIndexOf("/")));
     const folderCreated = await this.vaultFs.createFolder(folder);
     if (!folderCreated.ok) {
@@ -212,7 +213,6 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     // the projection can see (codex P2). rebuildInternal (not the queued
     // rebuildIndex) runs in this already-queued task without re-entrancy.
     const depth = this.depth(settings.automation.historyDepth);
-    const root = settings.paths.evidencePath;
     const existing = await this.readIndex();
     if (existing?.root !== root || existing?.depth !== depth || this.indexHasRun(existing, run.id)) {
       await this.rebuildInternal();
@@ -235,7 +235,7 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
 
   private async rebuildInternal(): Promise<Result<void>> {
     const settings = await this.settingsService.load();
-    const root = settings.paths.evidencePath;
+    const root = this.normalizeRoot(settings.paths.evidencePath);
     const depth = this.depth(settings.automation.historyDepth);
     const index: ScenarioIndex = { v: SCHEMA_VERSION, depth, root, scenarios: {} };
 
@@ -437,6 +437,18 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     return configured !== undefined && Number.isFinite(configured) && configured > 0
       ? Math.floor(configured)
       : HISTORY_DEPTH_DEFAULT;
+  }
+
+  /**
+   * Evidence root with any trailing slash stripped. `joinVaultPath` already
+   * normalizes when BUILDING paths, but `rebuildInternal` slices listed paths by
+   * `root.length` and the index persists `root` for its staleness check — both
+   * need the canonical form so a user-saved `Test Evidence/` doesn't drop the
+   * first path character (leaving the rebuilt index empty) or churn the cache
+   * (codex P2).
+   */
+  private normalizeRoot(root: VaultPath): VaultPath {
+    return unsafeVaultPath(root.replace(/\/+$/, ""));
   }
 
   /** `Test Evidence/YYYY/MM/<runId>` from the run start (ADR-0016 partition). */
