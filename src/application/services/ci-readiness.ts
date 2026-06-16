@@ -1,7 +1,7 @@
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import { VALIDATED_RUNNER_FILES } from "../content/runner-manifest";
 import { buildGitHubActionsWorkflow, isNpmCiCommand } from "../content/ci-workflow-content";
-import { isSafeCiCommand } from "./pipeline-generation-service";
+import { isSafeCiCommand } from "./ci-pipeline-screening";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
 import type { TestHubSettings } from "../../domain/settings/settings";
 
