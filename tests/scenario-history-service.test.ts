@@ -285,6 +285,25 @@ describe("DefaultScenarioHistoryService.record", () => {
     expect(statuses.ok && statuses.value.has(REF_A)).toBe(false);
   });
 
+  it("emits scenario.history.recorded (count 0) when a re-import retracts a run (codex P2)", async () => {
+    const { service, types } = build();
+    // First import records A, so there is a prior contribution to retract.
+    await service.record(
+      run(),
+      report({
+        scenarioResults: [{ feature: "F", scenario: "A", status: "passed", scenarioRef: REF_A }],
+      }),
+    );
+    // Re-import the SAME run, now resolving zero refs → retraction.
+    await service.record(
+      run(),
+      report({ scenarioResults: [{ feature: "F", scenario: "A", status: "passed" }] }),
+    );
+    // Open views relying on the event must learn the projection changed even
+    // though no scenario refs were recorded this time.
+    expect(types().filter((t) => t === "scenario.history.recorded")).toHaveLength(2);
+  });
+
   it("rebuilds correctly when the Evidence root is saved with a trailing slash (codex P2)", async () => {
     const settings = {
       async load() {

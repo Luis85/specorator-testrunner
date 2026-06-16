@@ -191,7 +191,22 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       // a later rebuild resurrects the stale results from the log (codex P2). A
       // genuine first-time zero-ref run touches nothing (idempotent delete; no
       // index to rewrite).
-      await this.retractRun(run, root);
+      const retracted = await this.retractRun(run, root);
+      // The retraction removed this run's prior contribution, but the normal
+      // record path's scenario.history.recorded event was skipped on this branch.
+      // Emit it (count 0) so open Use Case views relying on it re-derive — with
+      // updateUseCaseFrontmatterAfterRun off, no usecase.updated would otherwise
+      // follow. A genuine first-time zero-ref run retracted nothing → stay silent
+      // so a no-op import doesn't churn the views (codex P2).
+      if (retracted) {
+        await this.eventBus.publish(
+          createEvent(
+            "scenario.history.recorded",
+            { runId: run.id, scenarioCount: 0 },
+            { correlationId: run.id },
+          ),
+        );
+      }
       return ok(undefined);
     }
 
@@ -238,7 +253,13 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       this.indexWriteFailed ||
       this.indexHasRun(existing, run.id)
     ) {
-      await this.rebuildInternal();
+      const rebuilt = await this.rebuildInternal();
+      // A transient Evidence-listing failure returns null: the index was NOT
+      // refreshed for this (re-)import even though its root/depth still match, so
+      // latestStatuses' fast path would keep serving the pre-reimport statuses
+      // indefinitely. Flag the cache stale so the next read retries the rebuild
+      // rather than trusting the unchanged on-disk index (codex P2).
+      if (!rebuilt) this.indexWriteFailed = true;
     } else {
       existing.depth = depth;
       for (const line of lines) this.fold(existing, line.scenarioRef, lineToEntry(line), depth);
@@ -445,7 +466,7 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
    * when an index already exists, so a first-time zero-ref run on a fresh vault
    * materializes nothing.
    */
-  private async retractRun(run: TestRun, evidenceRoot: VaultPath): Promise<void> {
+  private async retractRun(run: TestRun, evidenceRoot: VaultPath): Promise<boolean> {
     const deleted = await this.vaultFs.deleteFile(this.ndjsonPath(run, evidenceRoot));
     if (!deleted.ok) {
       this.logger.warn("Could not delete scenario history log on retract", {
@@ -459,7 +480,16 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     // retraction removed (codex P2). When Markdown is on, evidence generation
     // already rewrote the note this import, so this is a no-op.
     await this.stripNoteScenarioBlock(run, evidenceRoot);
-    if (await this.readIndex()) await this.rebuildInternal();
+    // Only an EXISTING index could hold this run's prior contribution; a
+    // first-time zero-ref run has nothing to retract. Returns whether a
+    // retraction against existing history occurred so the caller can notify views.
+    if (!(await this.readIndex())) return false;
+    const rebuilt = await this.rebuildInternal();
+    // A transient listing failure leaves the on-disk index still holding the
+    // run; flag the cache stale so the next read retries rather than serving the
+    // un-retracted statuses (mirrors the record path, codex P2).
+    if (!rebuilt) this.indexWriteFailed = true;
+    return true;
   }
 
   /** Strips the stale `testrunner-scenarios` block from a run's note, if any. */
