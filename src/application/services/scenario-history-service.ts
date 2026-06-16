@@ -178,6 +178,14 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     const depth = this.depth(settings.automation.historyDepth);
     const index = (await this.readIndex()) ?? { v: SCHEMA_VERSION, depth, scenarios: {} };
     index.depth = depth;
+    // Re-import idempotency: a re-import of the SAME run may resolve a DIFFERENT
+    // set of Scenario References than before (e.g. a scenario was renamed/removed
+    // between imports, US-056), and the NDJSON log above was just overwritten to
+    // match. Drop every prior entry for this run.id across ALL refs before
+    // refolding so a ref the re-import no longer resolves doesn't retain this
+    // run's stale result until a full rebuild (codex P2); fold()'s within-ref
+    // de-dupe then handles the refs still present.
+    this.purgeRun(index, run.id);
     for (const line of lines) this.fold(index, line.scenarioRef, lineToEntry(line), depth);
     await this.writeIndex(index);
 
@@ -302,6 +310,27 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     recent.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
     const trimmed = recent.slice(0, depth);
     index.scenarios[ref] = { latest: trimmed[0], recent: trimmed };
+  }
+
+  /**
+   * Removes every entry contributed by `runId` from all scenario records,
+   * deleting a record entirely when the run was its only result. A pre-pass
+   * before refolding a re-imported run so a ref the re-import no longer resolves
+   * doesn't keep that run's stale result (codex P2). `recent` stays sorted
+   * newest-first (fold maintains it), so the filtered head is still `latest`.
+   */
+  private purgeRun(index: ScenarioIndex, runId: string): void {
+    const next: Record<string, ScenarioRecord> = {};
+    for (const [ref, record] of Object.entries(index.scenarios)) {
+      const recent = record.recent.filter((e) => e.runId !== runId);
+      if (recent.length === record.recent.length) {
+        next[ref] = record; // run absent here — keep as-is
+      } else if (recent.length > 0) {
+        next[ref] = { latest: recent[0], recent };
+      }
+      // recent.length === 0 → the run was this ref's only result; drop the ref.
+    }
+    index.scenarios = next;
   }
 
   private depth(configured: number | undefined): number {

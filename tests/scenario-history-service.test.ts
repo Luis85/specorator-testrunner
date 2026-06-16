@@ -93,6 +93,33 @@ describe("DefaultScenarioHistoryService.record", () => {
     });
   });
 
+  it("drops refs a same-run re-import no longer resolves (codex P2)", async () => {
+    const { service } = build();
+    // First import resolves A and B.
+    await service.record(
+      run(),
+      report({
+        scenarioResults: [
+          { feature: "F", scenario: "A", status: "passed", scenarioRef: REF_A },
+          { feature: "F", scenario: "B", status: "passed", scenarioRef: REF_B },
+        ],
+      }),
+    );
+    // Re-import of the SAME run now resolves only A (B was renamed/removed).
+    await service.record(
+      run(),
+      report({
+        scenarioResults: [{ feature: "F", scenario: "A", status: "failed", scenarioRef: REF_A }],
+      }),
+    );
+
+    const statuses = await service.latestStatuses();
+    expect(statuses.ok && statuses.value.get(REF_A)).toBe("failed");
+    // B carried only this run's result, so the re-import must drop it — not leave
+    // its stale "passed" lingering in the index.
+    expect(statuses.ok && statuses.value.has(REF_B)).toBe(false);
+  });
+
   it("skips results with no Scenario Reference (degrade gracefully, ADR-0022)", async () => {
     const { service, fs, absoluteFs } = build();
     await service.record(
