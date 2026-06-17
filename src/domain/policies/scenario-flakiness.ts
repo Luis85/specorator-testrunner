@@ -13,8 +13,7 @@ import type { ScenarioLatestStatus } from "./use-case-automation-policy";
  */
 
 /** Flakiness classification bands (D2); see {@link computeFlakiness}. */
-export const FLAKINESS_BANDS = ["unknown", "stable", "suspect", "flaky"] as const;
-export type FlakinessBand = (typeof FLAKINESS_BANDS)[number];
+export type FlakinessBand = "unknown" | "stable" | "suspect" | "flaky";
 
 export interface ScenarioFlakiness {
   /** Pass/fail results considered after dropping `skipped`. */
@@ -29,8 +28,12 @@ export interface ScenarioFlakiness {
 }
 
 /** Fewer pass/fail results than this cannot exhibit a flip — band is `unknown`. */
-export const MIN_RUNS_FOR_SCORE = 2;
-/** At or above this flip rate a scenario is `flaky`; below (but > 0) is `suspect`. */
+const MIN_RUNS_FOR_SCORE = 2;
+/**
+ * At or above this flip rate a scenario is `flaky`; below (but > 0) is `suspect`.
+ * Exported so tests (and the upcoming dashboard/cap slice) share the one
+ * threshold rather than hard-coding `0.5`.
+ */
 export const FLAKY_SCORE = 0.5;
 
 /**
