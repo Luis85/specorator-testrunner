@@ -134,15 +134,22 @@ computeAutomationStatus(features, latestStatusFor)
 The `useCase` argument is dropped entirely: with the floor and scope-awareness
 gone, the policy no longer reads `useCase.automationStatus` or `lastTestRun`.
 
-**Migration fallback (codex P2).** An upgraded vault has Use Cases with a
-persisted `lastTestRun` + `automationStatus` but no per-scenario history yet (old
-Evidence notes aren't keyed by `scenarioRef`, so they can't be backfilled).
-Deriving from an empty history would drop their KPIs to `planned` until a rerun.
-`withDerivedStatus` therefore keeps the **persisted status** for a UC that has a
-`lastTestRun` but *no* history for any of its scenarios; it switches to the
-history-derived value the moment any scenario records a result (self-healing). A
-genuinely never-run UC (no `lastTestRun`) takes the policy path normally, so a
-stale persisted status can't mask a real `planned`/`not-planned`.
+**Migration fallback — considered and dropped (codex P2).** An upgraded vault has
+Use Cases with a persisted `lastTestRun` + `automationStatus` but no per-scenario
+history yet (old Evidence notes aren't keyed by `scenarioRef`, so they can't be
+backfilled), so on first load they derive to `planned`/`missing-steps` until a
+rerun. An earlier draft kept the **persisted status** for a UC with a
+`lastTestRun` but no history, self-healing once any scenario recorded a result.
+We **deliberately did not ship it**: the fallback's trigger (`lastTestRun` + no
+history for the current refs) is *indistinguishable* from a UC whose history was
+detached by a scenario **rename** (ADR-0022/US-056) — and that case must read as
+never-run, not silently keep a stale `passing` (a rename should not preserve a
+result that no longer maps to any current scenario). Honoring the migration
+fallback would re-introduce exactly that masking. We accept the one-time KPI dip
+for upgraded vaults instead: it self-corrects on the next run, and per ADR-0022
+the history is a regenerable projection. `withDerivedStatus` therefore derives
+purely from history with **no migration grace**, and a UC with no history for its
+current refs reads as never-run regardless of `lastTestRun`.
 
 Each non-`@wip` Feature's state is derived from its scenarios' latest statuses
 (`featureScenarioRefs(feature)` → `latestStatusFor`):
