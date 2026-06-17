@@ -437,9 +437,7 @@ export class TestHubSettingTab extends PluginSettingTab {
   private async persistHistoryDepth(raw: string, field: TextComponent): Promise<void> {
     const current = this.host.getSettings();
     const persistedText =
-      current.automation.historyDepth === undefined
-        ? ""
-        : String(current.automation.historyDepth);
+      current.automation.historyDepth === undefined ? "" : String(current.automation.historyDepth);
     const trimmed = raw.trim();
     let next: number | undefined;
     if (trimmed === "") {

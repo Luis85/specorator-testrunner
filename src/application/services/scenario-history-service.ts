@@ -6,7 +6,11 @@ import {
 } from "../content/scenario-evidence-block";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { VaultFileSystem } from "../ports/vault-file-system";
-import { EXECUTION_SCOPES, type ExecutionScope, type TestRun } from "../../domain/entities/test-run";
+import {
+  EXECUTION_SCOPES,
+  type ExecutionScope,
+  type TestRun,
+} from "../../domain/entities/test-run";
 import {
   SCENARIO_LATEST_STATUSES,
   type ScenarioLatestStatus,
@@ -167,11 +171,40 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
   private async recordInternal(run: TestRun, report: ImportedReport): Promise<Result<void>> {
     const settings = await this.settingsService.load();
     const root = this.normalizeRoot(settings.paths.evidencePath);
+    const lines = this.buildHistoryLines(run, report);
+
+    if (lines.length === 0) {
+      await this.handleZeroRefImport(run, root);
+      return ok(undefined);
+    }
+
+    // Best-effort: a failed log write degrades the roll-up but never errors, and
+    // leaves the index untouched (nothing was committed to fold/rebuild from).
+    if (!(await this.writeRunLog(run, root, lines))) return ok(undefined);
+
+    const depth = this.depth(settings.automation.historyDepth);
+    await this.updateIndexAfterRecord(run, root, depth, lines);
+
+    await this.eventBus.publish(
+      createEvent(
+        "scenario.history.recorded",
+        { runId: run.id, scenarioCount: lines.length },
+        { correlationId: run.id },
+      ),
+    );
+    this.logger.info("Scenario history recorded", { runId: run.id, scenarios: lines.length });
+    return ok(undefined);
+  }
+
+  /**
+   * Projects a finished run's report into per-scenario history lines. Results with
+   * no resolved Scenario Reference (US-056 fallback) are shown in the note but NOT
+   * aggregated into history (ADR-0022), so they are skipped here.
+   */
+  private buildHistoryLines(run: TestRun, report: ImportedReport): HistoryLine[] {
     const at = run.finishedAt ?? run.startedAt;
     const lines: HistoryLine[] = [];
     for (const scenario of report.scenarioResults) {
-      // Results with no resolved Scenario Reference (US-056 fallback) are shown in
-      // the note but NOT aggregated into history (ADR-0022).
       if (!scenario.scenarioRef) continue;
       lines.push({
         v: SCHEMA_VERSION,
@@ -183,35 +216,37 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
         scope: run.scope,
       });
     }
+    return lines;
+  }
 
-    if (lines.length === 0) {
-      this.logger.info("No scenario references to record for run history", { runId: run.id });
-      // A RE-import that now resolves zero refs must retract this run's prior
-      // contribution; otherwise its old NDJSON log and index entries linger and
-      // a later rebuild resurrects the stale results from the log (codex P2). A
-      // genuine first-time zero-ref run touches nothing (idempotent delete; no
-      // index to rewrite).
-      const retracted = await this.retractRun(run, root);
-      // The retraction removed this run's prior contribution, but the normal
-      // record path's scenario.history.recorded event was skipped on this branch.
-      // Emit it (count 0) so open Use Case views relying on it re-derive — with
-      // updateUseCaseFrontmatterAfterRun off, no usecase.updated would otherwise
-      // follow. A genuine first-time zero-ref run retracted nothing → stay silent
-      // so a no-op import doesn't churn the views (codex P2).
-      if (retracted) {
-        await this.eventBus.publish(
-          createEvent(
-            "scenario.history.recorded",
-            { runId: run.id, scenarioCount: 0 },
-            { correlationId: run.id },
-          ),
-        );
-      }
-      return ok(undefined);
-    }
+  /**
+   * Handles an import that resolved zero Scenario References. A RE-import must
+   * retract this run's prior contribution; otherwise its old NDJSON log and index
+   * entries linger and a later rebuild resurrects the stale results (codex P2).
+   * The retraction skips the normal path's `scenario.history.recorded` event, so
+   * emit it (count 0) when something was actually retracted — open Use Case views
+   * relying on it re-derive even with `updateUseCaseFrontmatterAfterRun` off. A
+   * genuine first-time zero-ref run retracts nothing → stay silent so a no-op
+   * import doesn't churn the views (codex P2).
+   */
+  private async handleZeroRefImport(run: TestRun, root: VaultPath): Promise<void> {
+    this.logger.info("No scenario references to record for run history", { runId: run.id });
+    if (!(await this.retractRun(run, root))) return;
+    await this.eventBus.publish(
+      createEvent(
+        "scenario.history.recorded",
+        { runId: run.id, scenarioCount: 0 },
+        { correlationId: run.id },
+      ),
+    );
+  }
 
-    // 1) Write the committed per-run NDJSON log (write-once; overwrite so a
-    // re-import of the same run refreshes its log deterministically).
+  /**
+   * Writes the committed per-run NDJSON log (write-once; overwrite so a re-import
+   * of the same run refreshes its log deterministically). Returns false on a
+   * folder/file write failure so the caller skips the index update (best-effort).
+   */
+  private async writeRunLog(run: TestRun, root: VaultPath, lines: HistoryLine[]): Promise<boolean> {
     const logPath = this.ndjsonPath(run, root);
     const folder = unsafeVaultPath(logPath.slice(0, logPath.lastIndexOf("/")));
     const folderCreated = await this.vaultFs.createFolder(folder);
@@ -220,7 +255,7 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
         runId: run.id,
         reason: folderCreated.error.message,
       });
-      return ok(undefined); // best-effort; the roll-up degrades, never errors
+      return false;
     }
     const ndjson = lines.map((line) => JSON.stringify(line)).join("\n") + "\n";
     const written = await this.vaultFs.writeFile(logPath, ndjson);
@@ -229,23 +264,30 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
         runId: run.id,
         reason: written.error.message,
       });
-      return ok(undefined);
+      return false;
     }
+    return true;
+  }
 
-    // 2) Update the index read model. A FIRST import folds the run in
-    // incrementally — the fast steady-state path. A RE-import (the run already
-    // contributed to the index), a missing/corrupt index, an index built from a
-    // different Evidence root, one built at a different history depth, OR a prior
-    // index write that failed (so the on-disk cache is missing an earlier run's
-    // scenarios) instead rebuilds from the authoritative committed logs; the new
-    // log was rewritten above, so it is included. Rebuilding is what keeps
-    // re-imports correct: it handles a changed/emptied ref set, restores any
-    // depth-trimmed older results for a ref this run drops, re-applies a changed
-    // depth across ALL refs (raising backfills, lowering re-trims), and recovers
-    // runs whose index write failed — none of which an in-place patch of the
-    // projection can see (codex P2). rebuildInternal (not the queued rebuildIndex)
-    // runs in this already-queued task without re-entrancy.
-    const depth = this.depth(settings.automation.historyDepth);
+  /**
+   * Updates the index read model after a successful log write. A FIRST import
+   * folds the run in incrementally — the fast steady-state path. A RE-import (the
+   * run already contributed), a missing/corrupt index, an index built from a
+   * different Evidence root or history depth, OR a prior index write that failed
+   * instead rebuilds from the authoritative committed logs (the new log was
+   * rewritten above, so it is included). Rebuilding is what keeps re-imports
+   * correct: it handles a changed/emptied ref set, restores depth-trimmed older
+   * results for a ref this run drops, re-applies a changed depth across ALL refs,
+   * and recovers runs whose index write failed — none of which an in-place patch
+   * can see (codex P2). A transient listing failure returns null; flag the cache
+   * stale so the next read retries rather than serving pre-reimport statuses.
+   */
+  private async updateIndexAfterRecord(
+    run: TestRun,
+    root: VaultPath,
+    depth: number,
+    lines: HistoryLine[],
+  ): Promise<void> {
     const existing = await this.readIndex();
     if (
       existing?.root !== root ||
@@ -254,27 +296,12 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       this.indexHasRun(existing, run.id)
     ) {
       const rebuilt = await this.rebuildInternal();
-      // A transient Evidence-listing failure returns null: the index was NOT
-      // refreshed for this (re-)import even though its root/depth still match, so
-      // latestStatuses' fast path would keep serving the pre-reimport statuses
-      // indefinitely. Flag the cache stale so the next read retries the rebuild
-      // rather than trusting the unchanged on-disk index (codex P2).
       if (!rebuilt) this.indexWriteFailed = true;
-    } else {
-      existing.depth = depth;
-      for (const line of lines) this.fold(existing, line.scenarioRef, lineToEntry(line), depth);
-      await this.writeIndex(existing);
+      return;
     }
-
-    await this.eventBus.publish(
-      createEvent(
-        "scenario.history.recorded",
-        { runId: run.id, scenarioCount: lines.length },
-        { correlationId: run.id },
-      ),
-    );
-    this.logger.info("Scenario history recorded", { runId: run.id, scenarios: lines.length });
-    return ok(undefined);
+    existing.depth = depth;
+    for (const line of lines) this.fold(existing, line.scenarioRef, lineToEntry(line), depth);
+    await this.writeIndex(existing);
   }
 
   /**
@@ -312,49 +339,12 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       return null; // couldn't build — caller keeps the existing cache
     }
 
-    // Group per run folder; the YYYY/MM/<runId> layout encodes recency, so a
-    // descending sort visits runs newest-first (matches RunHistoryService). The
-    // prefix is `root + "/"`, or "" at the vault root, so the relative path is
-    // computed exactly regardless of root (codex P2).
-    const prefix = root === "" ? "" : `${root}/`;
-    const folders = new Map<string, { ndjson?: VaultPath; summary?: VaultPath }>();
-    for (const path of listed.value) {
-      if (!path.startsWith(prefix)) continue;
-      const relative = path.slice(prefix.length);
-      const nd = NDJSON_PATTERN.exec(relative);
-      if (nd) {
-        const key = `${nd[1]}/${nd[2]}/${nd[3]}`;
-        folders.set(key, { ...folders.get(key), ndjson: path });
-        continue;
-      }
-      const sm = SUMMARY_PATTERN.exec(relative);
-      if (sm) {
-        const key = `${sm[1]}/${sm[2]}/${sm[3]}`;
-        folders.set(key, { ...folders.get(key), summary: path });
-      }
-    }
+    // The YYYY/MM/<runId> layout encodes recency, so a descending sort visits
+    // runs newest-first (matches RunHistoryService).
+    const folders = this.groupRunFolders(listed.value, root);
     const keys = [...folders.keys()].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
-
     for (const key of keys) {
-      const { ndjson, summary } = folders.get(key) ?? {};
-      // Prefer the NDJSON log, but fall back to the colocated note when the log
-      // is unusable OR partially corrupt — empty, all-skipped, or with any
-      // malformed/mid-line-truncated line (external corruption or a partial
-      // write). Rebuilding from a truncated subset would silently drop the
-      // run's later scenarios even though the note's `testrunner-scenarios`
-      // block can still hold the full run (codex P2). A normal run never leaves
-      // an empty/partial log: record writes the lines atomically or the
-      // zero-ref path deletes it.
-      let entries: { ref: string; entry: HistoryEntry }[] = [];
-      if (ndjson) {
-        const log = await this.entriesFromLog(ndjson);
-        entries = log.entries;
-        if ((entries.length === 0 || log.hadError) && summary) {
-          entries = await this.entriesFromNote(summary);
-        }
-      } else if (summary) {
-        entries = await this.entriesFromNote(summary);
-      }
+      const entries = await this.resolveRunEntries(folders.get(key) ?? {});
       for (const { ref, entry } of entries) this.fold(index, ref, entry, depth);
     }
 
@@ -373,6 +363,62 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
       scenarios: Object.keys(index.scenarios).length,
     });
     return index;
+  }
+
+  /**
+   * Groups the listed Evidence files into per-run folders keyed `YYYY/MM/<runId>`,
+   * pairing each run's NDJSON log with its colocated note. The prefix is
+   * `root + "/"`, or "" at the vault root, so the relative path is computed
+   * exactly regardless of root (codex P2).
+   */
+  private groupRunFolders(
+    paths: VaultPath[],
+    root: VaultPath,
+  ): Map<string, { ndjson?: VaultPath; summary?: VaultPath }> {
+    const prefix = root === "" ? "" : `${root}/`;
+    const folders = new Map<string, { ndjson?: VaultPath; summary?: VaultPath }>();
+    for (const path of paths) {
+      if (!path.startsWith(prefix)) continue;
+      const relative = path.slice(prefix.length);
+      const nd = NDJSON_PATTERN.exec(relative);
+      if (nd) {
+        const key = `${nd[1]}/${nd[2]}/${nd[3]}`;
+        folders.set(key, { ...folders.get(key), ndjson: path });
+        continue;
+      }
+      const sm = SUMMARY_PATTERN.exec(relative);
+      if (sm) {
+        const key = `${sm[1]}/${sm[2]}/${sm[3]}`;
+        folders.set(key, { ...folders.get(key), summary: path });
+      }
+    }
+    return folders;
+  }
+
+  /**
+   * Resolves a run folder's ref+entry pairs. Prefers the NDJSON log, but falls
+   * back to the colocated note when the log is unusable OR partially corrupt —
+   * empty, all-skipped, or with any malformed/mid-line-truncated line (external
+   * corruption or a partial write). Rebuilding from a truncated subset would
+   * silently drop the run's later scenarios even though the note's
+   * `testrunner-scenarios` block can still hold the full run (codex P2). A normal
+   * run never leaves an empty/partial log: record writes the lines atomically or
+   * the zero-ref path deletes it.
+   */
+  private async resolveRunEntries(folder: {
+    ndjson?: VaultPath;
+    summary?: VaultPath;
+  }): Promise<{ ref: string; entry: HistoryEntry }[]> {
+    const { ndjson, summary } = folder;
+    if (ndjson) {
+      const log = await this.entriesFromLog(ndjson);
+      if ((log.entries.length === 0 || log.hadError) && summary) {
+        return this.entriesFromNote(summary);
+      }
+      return log.entries;
+    }
+    if (summary) return this.entriesFromNote(summary);
+    return [];
   }
 
   /**

@@ -190,14 +190,22 @@ describe("DefaultScenarioHistoryService.record", () => {
       startedAt: "2026-06-02T10:00:00.000Z",
       finishedAt: "2026-06-02T10:01:00.000Z",
     };
-    await service.record(run(r1), report({ runId: "RUN-R1", scenarioResults: [
-      { feature: "F", scenario: "A", status: "failed", scenarioRef: REF_A },
-    ] }));
+    await service.record(
+      run(r1),
+      report({
+        runId: "RUN-R1",
+        scenarioResults: [{ feature: "F", scenario: "A", status: "failed", scenarioRef: REF_A }],
+      }),
+    );
 
     // Re-import R1, now resolving only B (A dropped from this run).
-    await service.record(run(r1), report({ runId: "RUN-R1", scenarioResults: [
-      { feature: "F", scenario: "B", status: "failed", scenarioRef: REF_B },
-    ] }));
+    await service.record(
+      run(r1),
+      report({
+        runId: "RUN-R1",
+        scenarioResults: [{ feature: "F", scenario: "B", status: "failed", scenarioRef: REF_B }],
+      }),
+    );
 
     const statuses = await service.latestStatuses();
     // A is restored from R0's committed log (depth-1 trimmed it from the index,
@@ -344,9 +352,9 @@ describe("DefaultScenarioHistoryService.record", () => {
 
     // The log is written at the CANONICAL path (no '/./' segment), matching what
     // the adapter would list, so the rebuild slice stays exact.
-    expect(
-      fs.files.has(vp("Test Evidence/2026/06/RUN-2026-06-01-100000/scenarios.ndjson")),
-    ).toBe(true);
+    expect(fs.files.has(vp("Test Evidence/2026/06/RUN-2026-06-01-100000/scenarios.ndjson"))).toBe(
+      true,
+    );
     const statuses = await service.latestStatuses();
     expect(statuses.ok && statuses.value.get(REF_A)).toBe("passed");
   });
@@ -614,7 +622,12 @@ describe("DefaultScenarioHistoryService.rebuildIndex", () => {
     fs.files.set(
       vp(`${folder}/summary.md`),
       buildNote(
-        { type: "test-evidence", run_id: "R7", created_at: "2026-06-07T10:01:00.000Z", scope: "all" },
+        {
+          type: "test-evidence",
+          run_id: "R7",
+          created_at: "2026-06-07T10:01:00.000Z",
+          scope: "all",
+        },
         renderScenarioEvidenceBlock([{ ref: REF_B, status: "passed" }]),
       ),
     );
@@ -649,7 +662,12 @@ describe("DefaultScenarioHistoryService.rebuildIndex", () => {
     fs.files.set(
       vp(`${folder}/summary.md`),
       buildNote(
-        { type: "test-evidence", run_id: "R8", created_at: "2026-06-08T10:01:00.000Z", scope: "all" },
+        {
+          type: "test-evidence",
+          run_id: "R8",
+          created_at: "2026-06-08T10:01:00.000Z",
+          scope: "all",
+        },
         renderScenarioEvidenceBlock([
           { ref: REF_A, status: "passed" },
           { ref: REF_B, status: "failed" },
@@ -683,7 +701,12 @@ describe("DefaultScenarioHistoryService.rebuildIndex", () => {
     fs.files.set(
       vp(`${folder}/summary.md`),
       buildNote(
-        { type: "test-evidence", run_id: "R8", created_at: "2026-06-08T10:01:00.000Z", scope: "all" },
+        {
+          type: "test-evidence",
+          run_id: "R8",
+          created_at: "2026-06-08T10:01:00.000Z",
+          scope: "all",
+        },
         renderScenarioEvidenceBlock([{ ref: REF_B, status: "passed" }]),
       ),
     );
@@ -718,7 +741,12 @@ describe("DefaultScenarioHistoryService.rebuildIndex", () => {
         root: "Test Evidence",
         scenarios: {
           [REF_A]: {
-            latest: { status: "failed ", runId: "R9", at: "2026-06-09T10:01:00.000Z", scope: "all" },
+            latest: {
+              status: "failed ",
+              runId: "R9",
+              at: "2026-06-09T10:01:00.000Z",
+              scope: "all",
+            },
             recent: [
               { status: "failed ", runId: "R9", at: "2026-06-09T10:01:00.000Z", scope: "all" },
             ],
@@ -832,7 +860,12 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
         root: "Old Evidence",
         scenarios: {
           [REF_A]: {
-            latest: { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            latest: {
+              status: "passed",
+              runId: "OLD",
+              at: "2026-05-01T00:00:00.000Z",
+              scope: "all",
+            },
             recent: [
               { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
             ],
@@ -862,7 +895,12 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
         depth: 50,
         scenarios: {
           [REF_A]: {
-            latest: { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            latest: {
+              status: "passed",
+              runId: "OLD",
+              at: "2026-05-01T00:00:00.000Z",
+              scope: "all",
+            },
             recent: [
               { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
             ],
@@ -924,7 +962,12 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
         depth: 50,
         scenarios: {
           [REF_A]: {
-            latest: { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            latest: {
+              status: "passed",
+              runId: "OLD",
+              at: "2026-05-01T00:00:00.000Z",
+              scope: "all",
+            },
             recent: [
               { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
             ],
@@ -963,7 +1006,12 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
         root: "Old Evidence",
         scenarios: {
           [REF_B]: {
-            latest: { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
+            latest: {
+              status: "passed",
+              runId: "OLD",
+              at: "2026-05-01T00:00:00.000Z",
+              scope: "all",
+            },
             recent: [
               { status: "passed", runId: "OLD", at: "2026-05-01T00:00:00.000Z", scope: "all" },
             ],
@@ -997,7 +1045,11 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     // root/depth still match.
     absoluteFs.writeAbsolute = async () => err({ code: "INIT_FAILED", message: "disk full" });
     await service.record(
-      run({ id: "RUN-2026-06-02-100000", startedAt: "2026-06-02T10:00:00.000Z", finishedAt: "2026-06-02T10:01:00.000Z" }),
+      run({
+        id: "RUN-2026-06-02-100000",
+        startedAt: "2026-06-02T10:00:00.000Z",
+        finishedAt: "2026-06-02T10:01:00.000Z",
+      }),
       report({
         runId: "RUN-2026-06-02-100000",
         scenarioResults: [{ feature: "F", scenario: "A", status: "failed", scenarioRef: REF_A }],
@@ -1017,7 +1069,11 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
 
     // run0 records successfully → on-disk index has REF_B.
     await service.record(
-      run({ id: "RUN-0", startedAt: "2026-06-01T10:00:00.000Z", finishedAt: "2026-06-01T10:01:00.000Z" }),
+      run({
+        id: "RUN-0",
+        startedAt: "2026-06-01T10:00:00.000Z",
+        finishedAt: "2026-06-01T10:01:00.000Z",
+      }),
       report({
         runId: "RUN-0",
         scenarioResults: [{ feature: "F", scenario: "B", status: "passed", scenarioRef: REF_B }],
@@ -1028,7 +1084,11 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     // on-disk cache, and indexWriteFailed is now set.
     absoluteFs.writeAbsolute = async () => err({ code: "INIT_FAILED", message: "disk full" });
     await service.record(
-      run({ id: "RUN-1", startedAt: "2026-06-02T10:00:00.000Z", finishedAt: "2026-06-02T10:01:00.000Z" }),
+      run({
+        id: "RUN-1",
+        startedAt: "2026-06-02T10:00:00.000Z",
+        finishedAt: "2026-06-02T10:01:00.000Z",
+      }),
       report({
         runId: "RUN-1",
         scenarioResults: [{ feature: "F", scenario: "A", status: "passed", scenarioRef: REF_A }],
@@ -1040,7 +1100,11 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     // rebuild from all committed logs.
     absoluteFs.writeAbsolute = realWrite;
     await service.record(
-      run({ id: "RUN-2", startedAt: "2026-06-03T10:00:00.000Z", finishedAt: "2026-06-03T10:01:00.000Z" }),
+      run({
+        id: "RUN-2",
+        startedAt: "2026-06-03T10:00:00.000Z",
+        finishedAt: "2026-06-03T10:01:00.000Z",
+      }),
       report({
         runId: "RUN-2",
         scenarioResults: [{ feature: "F", scenario: "C", status: "passed", scenarioRef: REF_C }],

@@ -478,9 +478,7 @@ describe("DefaultTraceabilityService.deriveAll / deriveById (US-057)", () => {
   it("derives automationStatus from history, not the persisted frontmatter value", async () => {
     const { bus } = recordingEventBus();
     const path = "Specifications/features/UC-001-a.feature";
-    const ucs = [
-      useCase({ id: "UC-001", featureFiles: [vp(path)], automationStatus: "passing" }),
-    ];
+    const ucs = [useCase({ id: "UC-001", featureFiles: [vp(path)], automationStatus: "passing" })];
     const service = new DefaultTraceabilityService(
       stubUseCaseService(ucs),
       fsWithFeatures(ucs),

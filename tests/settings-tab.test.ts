@@ -271,11 +271,7 @@ const makeFakeField = (initial: string): { setValue: ReturnType<typeof vi.fn>; v
 };
 
 /** Reach the private persistHistoryDepth method via a type-cast escape hatch. */
-const persistHistoryDepth = (
-  tab: TestHubSettingTab,
-  raw: string,
-  field: unknown,
-): Promise<void> =>
+const persistHistoryDepth = (tab: TestHubSettingTab, raw: string, field: unknown): Promise<void> =>
   (
     tab as unknown as {
       persistHistoryDepth(raw: string, field: unknown): Promise<void>;
