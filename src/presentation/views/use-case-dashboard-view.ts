@@ -1,11 +1,11 @@
-import { ItemView, type WorkspaceLeaf } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { SpecificationService } from "../../application/services/specification-service";
 import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
-import { LiveRefresh } from "./live-refresh";
+import { LiveDashboardView } from "./live-dashboard-view";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
 import { featureCountCell, projectUseCaseRows } from "./use-case-rows";
 
@@ -57,17 +57,12 @@ export interface UseCaseDashboardDeps {
  * ID, Title, Status, and Automation Status, refreshing on use-case events. The
  * richer Markdown traceability dashboard arrives with EPIC-009.
  */
-export class UseCaseDashboardView extends ItemView {
-  private readonly live: LiveRefresh;
-
+export class UseCaseDashboardView extends LiveDashboardView {
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: UseCaseDashboardDeps,
   ) {
-    super(leaf);
-    // Renders await findAll(); coalesce concurrent event-driven renders so a
-    // slow render with stale data can't empty + rebuild the list last (PRES-M2).
-    this.live = new LiveRefresh(deps.eventBus, () => this.render());
+    super(leaf, deps.eventBus, REFRESH_ON);
   }
 
   getViewType(): string {
@@ -82,23 +77,13 @@ export class UseCaseDashboardView extends ItemView {
     return "list-checks";
   }
 
-  async onOpen(): Promise<void> {
-    await this.live.open(REFRESH_ON);
-  }
-
-  async onClose(): Promise<void> {
-    this.live.close();
-  }
-
-  private async render(): Promise<void> {
-    const container = this.contentEl;
-    container.empty();
-
-    const header = container.createDiv({ cls: "e2e-test-hub-uc-header" });
-    header.createEl("h2", { text: "Use Cases" });
-    header
-      .createEl("button", { text: "New Use Case", cls: "mod-cta" })
-      .addEventListener("click", () => this.deps.onCreate());
+  protected async render(): Promise<void> {
+    const container = this.renderListHeader({
+      headerCls: "e2e-test-hub-uc-header",
+      title: "Use Cases",
+      actionLabel: "New Use Case",
+      onAction: () => this.deps.onCreate(),
+    });
 
     const [result, listed] = await Promise.all([
       this.deps.traceability.deriveAll(),

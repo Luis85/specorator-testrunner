@@ -178,3 +178,33 @@ export const renameAdvisory = (
     message: `Scenario "${name}" was renamed or removed — its run history and quarantine state won't carry over.`,
   }));
 };
+
+/** A validation strip entry paired with its ✓/✗/! display symbol. */
+export interface ValidationDisplayEntry {
+  level: "error" | "warning" | "ok";
+  symbol: "✓" | "✗" | "!";
+  message: string;
+}
+
+/**
+ * The full ✓/✗/! strip the editor renders: the structural + typing-time issues
+ * ({@link projectValidation}) plus the rename advisory ({@link renameAdvisory}),
+ * each mapped to its symbol. An empty issue list collapses to a single OK entry.
+ * Pure so the symbol/empty-state logic is unit-tested away from the DOM (the
+ * view's refreshValidation just iterates the result).
+ */
+export const validationDisplayEntries = (
+  specification: FeatureSpecification,
+  baselineScenarioNames: readonly string[] | null,
+): ValidationDisplayEntry[] => {
+  const items = projectValidation(specification);
+  items.push(...renameAdvisory(baselineScenarioNames, specification));
+  if (items.length === 0) {
+    return [{ level: "ok", symbol: "✓", message: "Feature is structurally valid." }];
+  }
+  return items.map((item) => ({
+    level: item.level,
+    symbol: item.level === "error" ? "✗" : "!",
+    message: item.message,
+  }));
+};

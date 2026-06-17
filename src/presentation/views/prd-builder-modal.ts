@@ -1,14 +1,20 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
 import type { Prd } from "../../domain/entities/prd";
 import type { UseCase } from "../../domain/entities/use-case";
-import type { CreatePrdRequest, PrdService } from "../../application/services/prd-service";
+import type { PrdService } from "../../application/services/prd-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { PrdBuilderState } from "../../application/services/prd-builder";
 import {
   addDomainOption,
+  deriveDomains,
+  filterUseCasesByDomains,
   prdBuilderStepTitle,
+  prdReviewLines,
   resolveParentPrdId,
+  toCreatePrdRequest,
+  toggleMembership,
 } from "../../application/services/prd-builder";
+import { renderCheckboxList } from "./modal-helpers";
 
 /**
  * Dependencies for {@link PrdBuilderModal}. Mirrors the narrow-contract pattern
@@ -82,9 +88,7 @@ export class PrdBuilderModal extends Modal {
     ]);
     if (ucs.ok) {
       this.useCases = ucs.value;
-      this.domains = Array.from(
-        new Set(ucs.value.map((uc) => uc.domain).filter((d): d is string => Boolean(d))),
-      ).sort();
+      this.domains = deriveDomains(ucs.value);
     }
     if (prds.ok) {
       this.prds = prds.value;
@@ -129,24 +133,6 @@ export class PrdBuilderModal extends Modal {
     this.renderButtons(contentEl);
   }
 
-  /** Renders a list of toggleable checkboxes (shared by domains and Use Cases). */
-  private renderCheckboxList(
-    parent: HTMLElement,
-    rows: { id: string; label: string }[],
-    isChecked: (id: string) => boolean,
-    onToggle: (id: string, checked: boolean) => void,
-  ): void {
-    for (const row of rows) {
-      const container = parent.createEl("div");
-      const checkbox = container.createEl("input", { attr: { type: "checkbox" } });
-      checkbox.id = `prd-opt-${row.id}`;
-      checkbox.checked = isChecked(row.id);
-      checkbox.addEventListener("change", () => onToggle(row.id, checkbox.checked));
-      const label = container.createEl("label", { text: row.label });
-      label.htmlFor = checkbox.id;
-    }
-  }
-
   private renderError(contentEl: HTMLElement, field: string): void {
     const errorMsg = this.state.errorMessages[field];
     if (errorMsg) {
@@ -178,16 +164,15 @@ export class PrdBuilderModal extends Modal {
       });
     }
 
-    this.renderCheckboxList(
+    renderCheckboxList(
       contentEl,
+      "prd-opt",
       this.domains.map((d) => ({ id: d, label: d })),
       (id) => this.state.selectedDomains.includes(id),
       (id, checked) => {
         this.state = {
           ...this.state,
-          selectedDomains: checked
-            ? [...this.state.selectedDomains, id]
-            : this.state.selectedDomains.filter((d) => d !== id),
+          selectedDomains: toggleMembership(this.state.selectedDomains, id, checked),
         };
       },
     );
@@ -343,21 +328,17 @@ export class PrdBuilderModal extends Modal {
     contentEl.createEl("p", { text: "Select Use Cases to assign to this PRD:" });
 
     // Scope the list to the chosen domains (all UCs when no domain is selected).
-    const filtered = this.useCases.filter((uc) => {
-      if (this.state.selectedDomains.length === 0) return true;
-      return this.state.selectedDomains.includes(uc.domain ?? "");
-    });
+    const filtered = filterUseCasesByDomains(this.useCases, this.state.selectedDomains);
 
-    this.renderCheckboxList(
+    renderCheckboxList(
       contentEl,
+      "prd-opt",
       filtered.map((uc) => ({ id: uc.id, label: `${uc.id} — ${uc.title}` })),
       (id) => this.state.selectedUcs.includes(id),
       (id, checked) => {
         this.state = {
           ...this.state,
-          selectedUcs: checked
-            ? [...this.state.selectedUcs, id]
-            : this.state.selectedUcs.filter((ucId) => ucId !== id),
+          selectedUcs: toggleMembership(this.state.selectedUcs, id, checked),
         };
       },
     );
@@ -367,15 +348,9 @@ export class PrdBuilderModal extends Modal {
     contentEl.createEl("h3", { text: "Review PRD details" });
 
     const summary = contentEl.createEl("div", { cls: "prd-summary" });
-    summary.createEl("p", { text: `Title: ${this.state.title || "(none)"}` });
-    summary.createEl("p", {
-      text: `Parent: ${this.state.parentPrdId ?? "None (root product vision)"}`,
-    });
-    summary.createEl("p", { text: `Domains: ${this.state.selectedDomains.join(", ") || "None"}` });
-    summary.createEl("p", { text: `Vision: ${this.state.vision || "(none)"}` });
-    summary.createEl("p", { text: `Scope In: ${this.state.scopeIn.join(", ") || "None"}` });
-    summary.createEl("p", { text: `Scope Out: ${this.state.scopeOut.join(", ") || "None"}` });
-    summary.createEl("p", { text: `Use Cases: ${this.state.selectedUcs.join(", ") || "None"}` });
+    for (const line of prdReviewLines(this.state)) {
+      summary.createEl("p", { text: line });
+    }
   }
 
   private renderButtons(contentEl: HTMLElement): void {
@@ -417,16 +392,7 @@ export class PrdBuilderModal extends Modal {
     this.submitting = true;
 
     try {
-      const request: CreatePrdRequest = {
-        title: this.state.title,
-        parentPrdId: this.state.parentPrdId,
-        domains: this.state.selectedDomains,
-        vision: this.state.vision,
-        scopeIn: this.state.scopeIn,
-        scopeOut: this.state.scopeOut,
-        research: this.state.research,
-      };
-      const result = await this.deps.prdService.create(request);
+      const result = await this.deps.prdService.create(toCreatePrdRequest(this.state));
 
       if (!result.ok) {
         new Notice(`Could not create PRD: ${result.error.message}`);

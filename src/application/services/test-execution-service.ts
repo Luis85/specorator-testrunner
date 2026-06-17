@@ -1,4 +1,5 @@
 import { assertSafeAndResolveCwd } from "./runner-paths";
+import { snapshotFeatures, snapshotReport } from "./run-artifacts";
 import type { SettingsService } from "./settings-service";
 import type { SuiteService } from "./suite-service";
 import type { UseCaseService } from "./use-case-service";
@@ -16,8 +17,9 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { redactSecrets } from "../../shared/logging/redact";
 import { err, ok, type Result } from "../../shared/result/result";
-import { joinVaultPath, relativeVaultPath } from "../../shared/utils/vault-path";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
+import { displayCommand, resolveRunnerCommand } from "./runner-command";
+export { tokenizeCommand } from "./runner-command";
 
 /** Test execution contract (TIS §8.10). */
 export interface TestExecutionService {
@@ -87,17 +89,6 @@ export interface ExecuteTestRequest {
   target: string; // id or path of the scoped entity
 }
 
-/**
- * A resolved runner invocation: the literal argv plus any scope-specific env
- * the spawn must carry. The suite scope drives playwright-bdd's native tag
- * filtering through `env.BDD_TAGS` (the generated config reads it) rather than
- * a CLI arg, so the command needs to convey env without mutating the argv.
- */
-interface ResolvedCommand {
-  args: string[];
-  env?: Record<string, string>;
-}
-
 /** In-flight run state: the single active run per ADR-0018, plus its EN-2 guard. */
 interface ActiveRun {
   run: TestRun;
@@ -114,98 +105,6 @@ interface ActiveRun {
   completion: Promise<void>;
   settle: () => void;
 }
-
-/**
- * Renders an argv as a human-readable display string for `TestRun.command` and
- * the `testrun.started` event. The runner spawns these args with `shell: false`
- * (the PR #7 decision to rework the runner to argv arrays), so this is for
- * display only — args with spaces are quoted purely for readability, never to
- * survive a shell (TIS §13.2).
- */
-const displayCommand = (args: string[]): string =>
-  args.map((arg) => (arg.includes(" ") ? `"${arg}"` : arg)).join(" ");
-
-// Consumes one character while inside a quote: returns the next quote state and
-// accumulated token, plus whether a `\"`/`\\` escape also consumed the following
-// char. Only double quotes honour escapes; single quotes are literal. Split out
-// of `tokenizeCommand` to keep its loop's cognitive complexity low (TD-008).
-const consumeQuoted = (
-  ch: string,
-  next: string,
-  quote: '"' | "'",
-  current: string,
-): { quote: '"' | "'" | null; current: string; consumedNext: boolean } => {
-  if (ch === quote) return { quote: null, current, consumedNext: false };
-  if (quote === '"' && ch === "\\" && (next === '"' || next === "\\")) {
-    return { quote, current: current + next, consumedNext: true };
-  }
-  return { quote, current: current + ch, consumedNext: false };
-};
-
-/**
- * Tokenizes a configured runner command into argv with shell-style quoting, so
- * a value like `npm run test -- --grep "Open Example Page"`
- * keeps the quoted title as ONE argument (the runner spawns with `shell: false`,
- * so a naive whitespace split would hand Playwright broken `"Open` + `Example`
- * + `Page"` tokens). Single quotes are literal; double quotes allow `\"`
- * and `\\`. An UNquoted backslash is kept literal so Windows path arguments
- * (e.g. `C:\tmp\specs`) survive — it never escapes outside quotes.
- */
-export const tokenizeCommand = (command: string): string[] => {
-  const tokens: string[] = [];
-  let current: string | null = null;
-  let quote: '"' | "'" | null = null;
-  for (let i = 0; i < command.length; i++) {
-    const ch = command[i];
-    if (quote) {
-      const consumed = consumeQuoted(ch, command[i + 1], quote, current ?? "");
-      quote = consumed.quote;
-      current = consumed.current;
-      if (consumed.consumedNext) i++;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      current = current ?? "";
-    } else if (/\s/.test(ch)) {
-      if (current !== null) tokens.push(current);
-      current = null;
-    } else current = (current ?? "") + ch;
-  }
-  if (current !== null) tokens.push(current);
-  return tokens;
-};
-
-/** Tokenizes a configured runner command string into argv, or the fallback if blank. */
-const toArgv = (command: string, fallback: string[]): string[] => {
-  const parts = tokenizeCommand(command);
-  return parts.length > 0 ? parts : fallback;
-};
-
-/**
- * A test-execution command must be an `npm run <script>` form (TIS §13.2).
- * CommandSafetyPolicy also accepts install/probe commands (`npm install`,
- * `node --version`, `npx playwright install …`) because validation/maintenance
- * need them, so the run path needs this stricter, context-specific check —
- * otherwise a synced/edited `defaultRunCommand` could make a non-test command
- * exit 0 and be reported as a passing run.
- */
-const isNpmRun = (argv: string[]): boolean => {
-  const program = (argv[0]?.split(/[/\\]/).pop() ?? "").replace(/\.(exe|cmd)$/i, "");
-  return program === "npm" && argv[1] === "run";
-};
-
-/**
- * The neutral state of BOTH playwright-bdd scope controls. Every scoped spawn
- * spreads this first and overrides only the variable it owns, so a scope that
- * sets just `BDD_TAGS` (suite/demo) or just `BDD_FEATURES` (feature/all/use-case)
- * still passes an explicit empty value for the other. The runner merges
- * `process.env` into each spawn, so without this an ambient `BDD_FEATURES`/
- * `BDD_TAGS` inherited from the shell that launched Obsidian (or a CI env) would
- * leak in and silently re-scope the run; the generated config reads `""` as
- * "no filter" (`process.env.X ? … : default` / `process.env.X || undefined`).
- */
-const CLEARED_BDD_SCOPE: Readonly<Record<string, string>> = { BDD_FEATURES: "", BDD_TAGS: "" };
 
 /** UTC `RUN-YYYY-MM-DD-HHMMSS` id (TIS §3.3). */
 const runId = (now: Date): RunId => {
@@ -365,7 +264,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
       const settings = await this.settingsService.load();
       run.workingDirectory = settings.paths.testRunnerPath;
 
-      const command = await this.resolveCommand(request, settings);
+      const command = await resolveRunnerCommand(request.scope, request.target, settings, {
+        useCaseService: this.useCaseService,
+        suiteService: this.suiteService,
+      });
       if (!command.ok) return err(command.error);
       const argv = command.value.args;
       // Scope-specific env (BDD_TAGS for suite tag-expression runs) layered on
@@ -398,7 +300,10 @@ export class DefaultTestExecutionService implements TestExecutionService {
       // scenario-identity resolution reflects the content bddgen actually ran
       // even if the user edits a `.feature` mid-run (US-056). Best-effort: a
       // failure just leaves the resolver to read the live files.
-      await this.snapshotFeatures(run, cwd.value, String(settings.paths.featureFilesPath));
+      await snapshotFeatures(run, cwd.value, String(settings.paths.featureFilesPath), {
+        absoluteFs: this.absoluteFs,
+        logger: this.logger,
+      });
       // Human-readable display string; the runner is given the raw argv below.
       run.command = displayCommand(argv);
 
@@ -462,7 +367,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
       // (now slot-free) cancelled-run import would race a new run's cleanup of
       // the fixed report and lose/mis-attribute that evidence.
       if (activeRun.terminated) {
-        await this.snapshotReport(run, cwd.value);
+        await snapshotReport(run, cwd.value, this.absoluteFs);
         return ok(run);
       }
       // The process has closed: from here only best-effort snapshot I/O remains
@@ -485,7 +390,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
       run.status = exitCode === 0 ? "passed" : "failed";
       this.finish(run, startedAt, result.value.durationMs);
 
-      await this.snapshotReport(run, cwd.value);
+      await snapshotReport(run, cwd.value, this.absoluteFs);
 
       if (run.scope === "suite") {
         // UC-013 supporting event, before the terminal event.
@@ -599,89 +504,6 @@ export class DefaultTestExecutionService implements TestExecutionService {
   }
 
   /**
-   * Snapshots the fixed Cucumber report to a run-specific path
-   * (reports/<runId>.json) BEFORE the active slot frees, so a later run's
-   * pre-run cleanup of reports/cucumber-report.json can't delete it while the
-   * (passed/failed/cancelled) run's evidence import reads it. Best-effort: a
-   * run with no report (e.g. spawn fault) simply leaves reportPaths.json unset.
-   */
-  private async snapshotReport(run: TestRun, cwd: string): Promise<void> {
-    const liveReport = await this.absoluteFs.readAbsolute(`${cwd}/reports/cucumber-report.json`);
-    if (!liveReport.ok) return;
-    const snapshot = await this.absoluteFs.writeAbsolute(
-      `${cwd}/reports/${run.id}.json`,
-      liveReport.value,
-    );
-    if (snapshot.ok) {
-      run.reportPaths.json = joinVaultPath(run.workingDirectory, "reports", `${run.id}.json`);
-    }
-  }
-
-  /**
-   * Captures every `.feature` file under the configured features folder as it is
-   * at run start, into `reports/<runId>.features.json` keyed by vault-relative
-   * path. Post-run identity resolution (US-056) prefers this snapshot over the
-   * live vault file, so editing a feature mid-run cannot mis-key that run's
-   * Scenario References. Best-effort and fully isolated: any fault is logged and
-   * leaves `reportPaths.features` unset (the resolver then reads live files).
-   */
-  private async snapshotFeatures(run: TestRun, cwd: string, featuresDir: string): Promise<void> {
-    try {
-      const base = await this.absoluteFs.getVaultBasePath();
-      if (!base.ok) return;
-      // Normalize the vault-relative key base EXACTLY as the resolver normalizes
-      // report URIs (`resolveVaultPath`): drop empty and `.` segments and collapse
-      // any `/`/`\` runs. So a `featureFilesPath` saved with a trailing/duplicate
-      // separator or a `.` segment (e.g. `Specifications/./features`) still yields
-      // keys the resolver can find (codex P2). `..` can't occur — PathSafetyPolicy
-      // rejects it as a whole segment.
-      const featuresRel = featuresDir
-        .split(/[/\\]+/)
-        .filter((segment) => segment !== "" && segment !== ".")
-        .join("/");
-      const root = `${base.value.replace(/[/\\]$/, "")}/${featuresRel}`;
-      const snapshot: Record<string, string> = {};
-      await this.collectFeatures(root, featuresRel, snapshot);
-      if (Object.keys(snapshot).length === 0) return;
-      const written = await this.absoluteFs.writeAbsolute(
-        `${cwd}/reports/${run.id}.features.json`,
-        JSON.stringify(snapshot),
-      );
-      if (written.ok) {
-        run.reportPaths.features = joinVaultPath(
-          run.workingDirectory,
-          "reports",
-          `${run.id}.features.json`,
-        );
-      }
-    } catch (error) {
-      this.logger.warn("Feature snapshot failed; identity resolution will read live files", {
-        runId: run.id,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  /** Recursively reads `.feature` files under `absDir` into `out`, keyed by their
-   * vault-relative path. Non-`.feature` entries are treated as subfolders. */
-  private async collectFeatures(
-    absDir: string,
-    vaultRel: string,
-    out: Record<string, string>,
-  ): Promise<void> {
-    for (const name of await this.absoluteFs.listAbsolute(absDir)) {
-      const childAbs = `${absDir}/${name}`;
-      const childRel = `${vaultRel}/${name}`;
-      if (name.endsWith(".feature")) {
-        const read = await this.absoluteFs.readAbsolute(childAbs);
-        if (read.ok) out[childRel] = read.value;
-      } else {
-        await this.collectFeatures(childAbs, childRel, out);
-      }
-    }
-  }
-
-  /**
    * Builds the runner subprocess env from the Active SUT environment
    * (ADR-0013/0014): `BASE_URL` plus any `auth.env` credentials, injected
    * verbatim. The host process env is merged by the ChildProcessRunner adapter.
@@ -706,182 +528,6 @@ export class DefaultTestExecutionService implements TestExecutionService {
       ...(active.auth?.env ?? {}),
       TESTRUNNER_BROWSERS: browsers,
     };
-  }
-
-  /**
-   * Resolves the runner invocation for a scope (TIS §13.2): a literal argv plus
-   * any scope env. Feature paths are appended verbatim as positional filters
-   * (AD-4, no quoting/escaping) — under shell: false they pass through as-is, so
-   * a path with `$`, `&`, or spaces survives unchanged (the PR #7 argv rework);
-   * playwright-bdd filters by path substring against the trailing
-   * `playwright test`. The suite scope instead conveys the tag expression via
-   * `env.BDD_TAGS` (the generated config's `defineBddConfig` reads it). A thin
-   * dispatch over per-scope helpers — keep it that way.
-   */
-  private async resolveCommand(
-    request: ExecuteTestRequest,
-    settings: TestHubSettings,
-  ): Promise<Result<ResolvedCommand>> {
-    // Honor the user's configured runner commands (a wrapper script, extra
-    // flags, a different npm script). Scoped runs convey their scope via the
-    // spawn ENV — BDD_TAGS for suites, BDD_FEATURES for feature paths — so
-    // `bddgen` generates ONLY the targeted features (the base command is
-    // unchanged). This keeps a scoped run from failing because an unrelated
-    // feature elsewhere in the vault doesn't parse.
-    const base = toArgv(settings.runner.defaultRunCommand, ["npm", "run", "test"]);
-    if (!isNpmRun(base)) {
-      return err(
-        appError(
-          "VALIDATION_FAILED",
-          `Configured run command must be "npm run <script>": "${settings.runner.defaultRunCommand}".`,
-        ),
-      );
-    }
-    switch (request.scope) {
-      case "demo":
-        return this.demoScopeCommand(settings);
-      case "all":
-        return ok(await this.allScopeCommand(base, settings));
-      case "suite":
-        return this.suiteScopeCommand(base, request.target);
-      case "feature":
-        return ok({
-          args: [...base],
-          env: { ...CLEARED_BDD_SCOPE, BDD_FEATURES: this.featurePath(settings, request.target) },
-        });
-      case "use-case":
-        return ok(await this.useCaseScopeCommand(base, settings, request.target));
-    }
-  }
-
-  /**
-   * `demo`: the configured smoke command (`npm run test:smoke`). Also sets
-   * `BDD_TAGS=@smoke` so the `bddgen` step inside that script generates ONLY
-   * @smoke features — otherwise a malformed non-@smoke feature elsewhere would
-   * fail generation before `playwright test --grep @smoke` ever filters.
-   */
-  private demoScopeCommand(settings: TestHubSettings): Result<ResolvedCommand> {
-    const smoke = toArgv(settings.runner.smokeRunCommand, ["npm", "run", "test:smoke"]);
-    if (!isNpmRun(smoke)) {
-      return err(
-        appError(
-          "VALIDATION_FAILED",
-          `Configured smoke command must be "npm run <script>": "${settings.runner.smokeRunCommand}".`,
-        ),
-      );
-    }
-    return ok({ args: smoke, env: { ...CLEARED_BDD_SCOPE, BDD_TAGS: "@smoke" } });
-  }
-
-  /**
-   * `all`: bare `base` (the config glob over every feature) unless a Use Case is
-   * deprecated (ADR-0012) — then scope generation (via `env.BDD_FEATURES`) to the
-   * explicit union of the NON-deprecated UCs' feature paths (every feature is
-   * generated from a UC, so that union is "all features minus the retired ones").
-   * With no deprecated UCs we keep the cheap glob; if the UC index can't be read
-   * we fall back to it rather than silently running nothing. When every
-   * non-deprecated UC is unautomated (or all UCs are deprecated) there is no
-   * active coverage, so we scope to a path that matches no feature.
-   */
-  private async allScopeCommand(
-    base: string[],
-    settings: TestHubSettings,
-  ): Promise<ResolvedCommand> {
-    const all = await this.useCaseService.findAll();
-    if (!(all.ok && all.value.some((uc) => uc.status === "deprecated"))) {
-      // Whole-vault glob: still clear both controls so no ambient scope leaks in.
-      return { args: [...base], env: { ...CLEARED_BDD_SCOPE } };
-    }
-    const activeFiles = all.value
-      .filter((uc) => uc.status !== "deprecated")
-      .flatMap((uc) => uc.featureFiles);
-    if (activeFiles.length > 0) {
-      return {
-        args: [...base],
-        env: { ...CLEARED_BDD_SCOPE, BDD_FEATURES: this.bddFeatures(settings, activeFiles) },
-      };
-    }
-    // No active coverage: scope generation to a path that matches no feature →
-    // zero tests (a clean pass with `--pass-with-no-tests`).
-    return {
-      args: [...base],
-      env: {
-        ...CLEARED_BDD_SCOPE,
-        BDD_FEATURES: `${this.featurePrefix(settings)}/__no_active_features__.feature`,
-      },
-    };
-  }
-
-  /**
-   * `suite`: resolve the tag expression and convey it via `env.BDD_TAGS` (the
-   * generated `defineBddConfig` reads it; bddgen applies the FULL cucumber tag
-   * expression at generation). NO CLI arg — the base command is unchanged.
-   */
-  private async suiteScopeCommand(
-    base: string[],
-    target: string,
-  ): Promise<Result<ResolvedCommand>> {
-    const tags = await this.suiteService.resolveTagExpression(target);
-    if (!tags.ok) return err(tags.error);
-    return ok({ args: [...base], env: { ...CLEARED_BDD_SCOPE, BDD_TAGS: tags.value } });
-  }
-
-  /**
-   * `use-case` (UC-011): scope generation (via `env.BDD_FEATURES`) to the Use
-   * Case's declared featureFiles. Falls back to the `<UC-id>-*.feature` glob when
-   * the UC or its links can't be resolved (e.g. a brand-new UC with the standard
-   * naming) — bddgen expands the glob.
-   */
-  private async useCaseScopeCommand(
-    base: string[],
-    settings: TestHubSettings,
-    target: string,
-  ): Promise<ResolvedCommand> {
-    const found = await this.useCaseService.findById(target);
-    const featureFiles = found.ok && found.value ? found.value.featureFiles : [];
-    if (featureFiles.length > 0) {
-      return {
-        args: [...base],
-        env: { ...CLEARED_BDD_SCOPE, BDD_FEATURES: this.bddFeatures(settings, featureFiles) },
-      };
-    }
-    return {
-      args: [...base],
-      env: {
-        ...CLEARED_BDD_SCOPE,
-        BDD_FEATURES: `${this.featurePrefix(settings)}/${target}-*.feature`,
-      },
-    };
-  }
-
-  /**
-   * Newline-separated runner-relative feature paths for `env.BDD_FEATURES` (the
-   * generated config splits on `\n`). Newline — not comma — because a vault path
-   * may contain a comma but never a control character.
-   */
-  private bddFeatures(settings: TestHubSettings, targets: string[]): string {
-    return targets.map((target) => this.featurePath(settings, target)).join("\n");
-  }
-
-  /**
-   * A single Feature as a runner-relative path for `BDD_FEATURES` (the generated
-   * config's `features`, resolved relative to the runner dir). bddgen generates
-   * ONLY the features in BDD_FEATURES, so an unrelated/malformed feature
-   * elsewhere never blocks a scoped run.
-   */
-  private featurePath(settings: TestHubSettings, target: string): string {
-    const prefix = settings.paths.featureFilesPath;
-    // Accept a vault path or a bare basename; reduce to the file path relative
-    // to the configured features folder, then re-anchor to the runner cwd.
-    const basename = target.startsWith(`${prefix}/`)
-      ? target.slice(prefix.length + 1)
-      : (target.split("/").pop() ?? target);
-    return `${this.featurePrefix(settings)}/${basename}`;
-  }
-
-  /** Runner-cwd-relative features folder, e.g. `../Specifications/features`. */
-  private featurePrefix(settings: TestHubSettings): string {
-    return relativeVaultPath(settings.paths.testRunnerPath, settings.paths.featureFilesPath);
   }
 
   private finish(run: TestRun, startedAt: Date, durationMs?: number): void {

@@ -2,11 +2,29 @@ import { describe, expect, it } from "vitest";
 import type { PrdBuilderState } from "../src/application/services/prd-builder";
 import {
   addDomainOption,
+  deriveDomains,
+  filterUseCasesByDomains,
   prdBuilderStepTitle,
+  prdReviewLines,
   resolveParentPrdId,
+  toCreatePrdRequest,
+  toggleMembership,
 } from "../src/application/services/prd-builder";
 import type { Prd } from "../src/domain/entities/prd";
+import type { UseCase } from "../src/domain/entities/use-case";
 import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
+
+const useCase = (over: Partial<UseCase> = {}): UseCase => ({
+  id: "UC-001",
+  title: "Example",
+  status: "specified",
+  automationStatus: "implemented",
+  featureFiles: [],
+  suites: [],
+  evidence: [],
+  path: unsafeVaultPath("Use Cases/UC-001.md"),
+  ...over,
+});
 
 const prd = (id: string, parent: string | undefined): Prd => ({
   id,
@@ -208,6 +226,150 @@ describe("addDomainOption", () => {
     expect(addDomainOption(["api"], ["api"], "   ")).toEqual({
       available: ["api"],
       selected: ["api"],
+    });
+  });
+});
+
+describe("deriveDomains", () => {
+  it("returns the unique, sorted, non-empty domains across Use Cases", () => {
+    expect(
+      deriveDomains([
+        useCase({ domain: "dashboard" }),
+        useCase({ domain: "api" }),
+        useCase({ domain: "dashboard" }),
+      ]),
+    ).toEqual(["api", "dashboard"]);
+  });
+
+  it("drops Use Cases that carry no domain", () => {
+    expect(deriveDomains([useCase({ domain: undefined }), useCase({ domain: "api" })])).toEqual([
+      "api",
+    ]);
+  });
+
+  it("returns an empty list when no Use Case has a domain", () => {
+    expect(deriveDomains([useCase({ domain: undefined })])).toEqual([]);
+  });
+});
+
+describe("filterUseCasesByDomains", () => {
+  const ucs = [
+    useCase({ id: "UC-001", domain: "auth" }),
+    useCase({ id: "UC-002", domain: "dashboard" }),
+    useCase({ id: "UC-003", domain: undefined }),
+  ];
+
+  it("returns every Use Case when no domain is selected", () => {
+    expect(filterUseCasesByDomains(ucs, []).map((uc) => uc.id)).toEqual([
+      "UC-001",
+      "UC-002",
+      "UC-003",
+    ]);
+  });
+
+  it("keeps only Use Cases whose domain is selected", () => {
+    expect(filterUseCasesByDomains(ucs, ["auth"]).map((uc) => uc.id)).toEqual(["UC-001"]);
+  });
+
+  it("never matches domainless Use Cases against a selection", () => {
+    expect(filterUseCasesByDomains(ucs, ["auth", "dashboard"]).map((uc) => uc.id)).toEqual([
+      "UC-001",
+      "UC-002",
+    ]);
+  });
+});
+
+describe("toggleMembership", () => {
+  it("adds an id that has become present", () => {
+    expect(toggleMembership(["a"], "b", true)).toEqual(["a", "b"]);
+  });
+
+  it("removes an id that is no longer present", () => {
+    expect(toggleMembership(["a", "b"], "a", false)).toEqual(["b"]);
+  });
+
+  it("does not duplicate an already-present id", () => {
+    expect(toggleMembership(["a"], "a", true)).toEqual(["a"]);
+  });
+
+  it("is a no-op when removing an absent id", () => {
+    expect(toggleMembership(["a"], "b", false)).toEqual(["a"]);
+  });
+});
+
+describe("prdReviewLines", () => {
+  const base: PrdBuilderState = {
+    currentStep: 7,
+    title: "Reporting",
+    parentPrdId: "PRD-000",
+    selectedDomains: ["dashboard", "api"],
+    research: "",
+    vision: "One source of truth",
+    scopeIn: ["charts"],
+    scopeOut: ["billing"],
+    selectedUcs: ["UC-001"],
+    errorMessages: {},
+  };
+
+  it("renders one summary line per PRD field, in review order", () => {
+    expect(prdReviewLines(base)).toEqual([
+      "Title: Reporting",
+      "Parent: PRD-000",
+      "Domains: dashboard, api",
+      "Vision: One source of truth",
+      "Scope In: charts",
+      "Scope Out: billing",
+      "Use Cases: UC-001",
+    ]);
+  });
+
+  it("shows explicit placeholders for empty fields", () => {
+    expect(
+      prdReviewLines({
+        ...base,
+        title: "",
+        parentPrdId: undefined,
+        selectedDomains: [],
+        vision: "",
+        scopeIn: [],
+        scopeOut: [],
+        selectedUcs: [],
+      }),
+    ).toEqual([
+      "Title: (none)",
+      "Parent: None (root product vision)",
+      "Domains: None",
+      "Vision: (none)",
+      "Scope In: None",
+      "Scope Out: None",
+      "Use Cases: None",
+    ]);
+  });
+});
+
+describe("toCreatePrdRequest", () => {
+  it("maps the collected wizard fields onto a PrdService.create request", () => {
+    expect(
+      toCreatePrdRequest({
+        currentStep: 7,
+        title: "Reporting",
+        parentPrdId: "PRD-000",
+        selectedDomains: ["dashboard", "api"],
+        research: "Market notes",
+        vision: "One source of truth",
+        scopeIn: ["charts"],
+        scopeOut: ["billing"],
+        selectedUcs: ["UC-001"],
+        errorMessages: {},
+      }),
+    ).toEqual({
+      title: "Reporting",
+      parentPrdId: "PRD-000",
+      domains: ["dashboard", "api"],
+      vision: "One source of truth",
+      scopeIn: ["charts"],
+      scopeOut: ["billing"],
+      research: "Market notes",
     });
   });
 });

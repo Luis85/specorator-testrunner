@@ -1,4 +1,4 @@
-import { ItemView, Notice, type WorkspaceLeaf } from "obsidian";
+import { Notice, type WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { PrdService } from "../../application/services/prd-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
@@ -6,7 +6,7 @@ import type { Prd } from "../../domain/entities/prd";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
-import { LiveRefresh } from "./live-refresh";
+import { LiveDashboardView } from "./live-dashboard-view";
 
 export const PRD_VIEW_TYPE = "e2e-test-hub-prds";
 
@@ -68,15 +68,12 @@ export interface PrdExplorerDeps {
  * with per-PRD Use Case counts. Mirrors the Suites explorer (ItemView +
  * LiveRefresh). Ids are immutable; the tree orders by `displayOrder`.
  */
-export class PrdExplorerView extends ItemView {
-  private readonly live: LiveRefresh;
-
+export class PrdExplorerView extends LiveDashboardView {
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: PrdExplorerDeps,
   ) {
-    super(leaf);
-    this.live = new LiveRefresh(deps.eventBus, () => this.render());
+    super(leaf, deps.eventBus, REFRESH_ON);
   }
 
   getViewType(): string {
@@ -91,23 +88,13 @@ export class PrdExplorerView extends ItemView {
     return "git-fork";
   }
 
-  async onOpen(): Promise<void> {
-    await this.live.open(REFRESH_ON);
-  }
-
-  async onClose(): Promise<void> {
-    this.live.close();
-  }
-
-  private async render(): Promise<void> {
-    const container = this.contentEl;
-    container.empty();
-
-    const header = container.createDiv({ cls: "e2e-test-hub-prd-header" });
-    header.createEl("h2", { text: "PRDs" });
-    header
-      .createEl("button", { text: "New PRD", cls: "mod-cta" })
-      .addEventListener("click", () => this.deps.openPrdBuilder());
+  protected async render(): Promise<void> {
+    const container = this.renderListHeader({
+      headerCls: "e2e-test-hub-prd-header",
+      title: "PRDs",
+      actionLabel: "New PRD",
+      onAction: () => this.deps.openPrdBuilder(),
+    });
 
     const [prds, counts] = await Promise.all([
       this.deps.prdService.findAll(),

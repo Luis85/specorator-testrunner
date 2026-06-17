@@ -240,6 +240,23 @@ describe("DefaultTestExecutionService", () => {
     expect(keys.some((k) => k.includes("//"))).toBe(false);
   });
 
+  it("keys root-level features by bare name when featureFilesPath is '.' (#55)", async () => {
+    const { service, absoluteFs, settings } = build();
+    const current = await settings.load();
+    await settings.save({ ...current, paths: { ...current.paths, featureFilesPath: vp(".") } });
+    // Feature lives at the vault root; the resolver resolves `../UC-001.feature`
+    // to `UC-001.feature`, so the snapshot key must have no leading slash.
+    absoluteFs.seed("/vault/UC-001-login.feature", "Feature: F\n  Scenario: Login\n    Given x\n");
+    await service.execute({ scope: "demo", target: "demo" });
+    const raw = absoluteFs.written.get(
+      "/vault/.testrunner/reports/RUN-2026-06-01-100000.features.json",
+    );
+    expect(raw).toBeDefined();
+    const keys = Object.keys(JSON.parse(raw ?? "{}"));
+    expect(keys).toContain("UC-001-login.feature");
+    expect(keys.some((k) => k.startsWith("/"))).toBe(false);
+  });
+
   it("mints unique run ids for sequential runs in the same second", async () => {
     const { service } = build(); // fixed clock → same UTC second every call
     const first = await service.execute({ scope: "demo", target: "demo" });

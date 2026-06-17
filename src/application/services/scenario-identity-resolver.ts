@@ -5,7 +5,10 @@ import type { ParsedReport, ScenarioResult } from "../ports/report-parser";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { FeatureSpecification } from "../../domain/entities/specification";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
-import { featureScenarioRefs } from "../../domain/value-objects/scenario-reference";
+import {
+  featureScenarioRefs,
+  type ScenarioRefEntry,
+} from "../../domain/value-objects/scenario-reference";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import type { Logger } from "../../shared/logging/logger";
 
@@ -159,8 +162,7 @@ export class ScenarioIdentityResolver {
     const groups = groupBy(results, (result) => result.scenario);
 
     for (const [name, group] of groups) {
-      const refs = (refEntries.get(name) ?? []).map((entry) => entry.ref);
-      this.assignGroup(group, refs, name, vaultPath);
+      this.assignGroup(group, refEntries.get(name) ?? [], name, vaultPath);
     }
   }
 
@@ -185,10 +187,10 @@ export class ScenarioIdentityResolver {
     return false;
   }
 
-  /** Zips one name-group's report rows onto its ordered refs by line position. */
+  /** Assigns one name-group's report rows their Scenario Reference. */
   private assignGroup(
     group: ScenarioResult[],
-    refs: string[],
+    entries: ScenarioRefEntry[],
     name: string,
     vaultPath: string,
   ): void {
@@ -196,17 +198,28 @@ export class ScenarioIdentityResolver {
     // varying param) AND the report carries a different count — a tag filter
     // dropped some rows, so position no longer identifies the row. Index-zipping
     // would hand a row another row's content digest (codex P1).
-    const ambiguous = refs.length > 1 && group.length !== refs.length;
+    const ambiguous = entries.length > 1 && group.length !== entries.length;
+    // In the ambiguous case fall back to matching by feature-file line: the
+    // report row and the source example row carry the same line, so a filtered
+    // row still gets its OWN content-stable ref (US-056 follow-up). Built only
+    // when needed and only from entries that actually carry a line.
+    const byRowLine = ambiguous
+      ? new Map(entries.flatMap((e) => (e.line !== undefined ? [[e.line, e.ref] as const] : [])))
+      : null;
     [...group].sort(byLine).forEach((result, index) => {
-      const ref = ambiguous ? undefined : refs[index];
+      const ref = ambiguous
+        ? result.line !== undefined
+          ? byRowLine?.get(result.line)
+          : undefined
+        : entries[index]?.ref;
       if (ref !== undefined) {
         result.scenarioRef = ref;
         return;
       }
-      // Unresolvable: a filtered same-name Outline row, or more report rows than
-      // the feature declares. Leave scenarioRef UNSET — a positional fallback
-      // would collide across runs that select different single rows and merge
-      // distinct history (codex). Unknown identity, not a guess.
+      // Unresolvable: a filtered same-name Outline row with no line match, or more
+      // report rows than the feature declares. Leave scenarioRef UNSET — a
+      // positional fallback would collide across runs that select different single
+      // rows and merge distinct history (codex). Unknown identity, not a guess.
       this.logger.warn("Scenario identity: unresolved outline row; ref left unset", {
         vaultPath,
         name,

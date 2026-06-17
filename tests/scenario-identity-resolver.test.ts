@@ -215,22 +215,43 @@ describe("ScenarioIdentityResolver", () => {
     expect(warnOf(log)).toHaveBeenCalled();
   });
 
-  it("leaves the ref unset (no collision) when a filter drops same-named outline rows (codex P1)", async () => {
-    const text = [
-      "Feature: F",
-      "  Scenario Outline: Login", // name omits the varying param -> rows share matchName
-      "    Given I am <role>",
-      "    Examples:",
-      "      | role  |",
-      "      | admin |",
-      "      | user  |",
-      "",
-    ].join("\n");
-    const log = logger();
-    const resolver = new ScenarioIdentityResolver(fsWith({ [FEATURE]: text }), log);
-    // Only one row ran; the report can't tell us WHICH, so a positional key would
-    // collide with another run that selected a different single row.
+  // A Scenario Outline whose name omits the varying param: every row shares one
+  // matchName, so a tag filter that drops some rows leaves the report unable to
+  // identify the survivor by name OR position. The feature-file line (carried by
+  // both the report row and the parsed example row) disambiguates (#55).
+  const SAME_NAME_OUTLINE = [
+    "Feature: F",
+    "  Scenario Outline: Login", // line 2
+    "    Given I am <role>", // line 3
+    "    Examples:", // line 4
+    "      | role  |", // line 5
+    "      | admin |", // line 6
+    "      | user  |", // line 7
+    "",
+  ].join("\n");
+
+  it("resolves a filtered same-name outline row to its own digest, matched by line (#55)", async () => {
+    const resolver = new ScenarioIdentityResolver(
+      fsWith({ [FEATURE]: SAME_NAME_OUTLINE }),
+      logger(),
+    );
+    // Only the `user` row ran; the report row carries its source line (7).
     const out = await resolver.enrich(report([row({ scenario: "Login", line: 7 })]), RUNNER);
+    expect(out.scenarioResults[0]?.scenarioRef).toBe(
+      `${FEATURE}::Login::row-${rowDigest([["role", "user"]])}`,
+    );
+    // NOT the first (admin) row's digest — line match, not positional.
+    expect(out.scenarioResults[0]?.scenarioRef).not.toBe(
+      `${FEATURE}::Login::row-${rowDigest([["role", "admin"]])}`,
+    );
+  });
+
+  it("leaves a filtered same-name outline row unset when no line matches (#55)", async () => {
+    const log = logger();
+    const resolver = new ScenarioIdentityResolver(fsWith({ [FEATURE]: SAME_NAME_OUTLINE }), log);
+    // The report row has no usable line (or a line that matches no example row),
+    // so it stays UNSET rather than getting a colliding positional key.
+    const out = await resolver.enrich(report([row({ scenario: "Login", line: 999 })]), RUNNER);
     expect(out.scenarioResults[0]?.scenarioRef).toBeUndefined();
     expect(warnOf(log)).toHaveBeenCalled();
   });

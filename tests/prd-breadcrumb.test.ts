@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prdBreadcrumbLabel } from "../src/presentation/views/use-case-detail-view";
+import { prdBreadcrumbLabel } from "../src/presentation/views/use-case-detail-rows";
 
 describe("prdBreadcrumbLabel", () => {
   const titles = new Map([["PRD-001", "Dashboard & KPI"]]);

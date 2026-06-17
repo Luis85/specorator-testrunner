@@ -145,7 +145,9 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
   let openDocString: DocString | null = null;
   let docStringIndent = "";
 
+  let lineNo = 0;
   for (const raw of lines) {
+    lineNo += 1; // 1-based feature-file line of `raw`
     const line = raw.trim();
 
     if (openDocString !== null) {
@@ -254,7 +256,10 @@ export const parseFeature = (content: string, path: VaultPath): FeatureSpecifica
       const cells = parseTableRow(line);
       if (currentExamples) {
         if (currentExamples.header.length === 0) currentExamples.header = cells;
-        else currentExamples.rows.push(cells);
+        else {
+          currentExamples.rows.push(cells);
+          (currentExamples.rowLines ??= []).push(lineNo);
+        }
       } else if (lastStep) {
         if (lastStep.argument === undefined) {
           lastStep.argument = { kind: "table", rows: [cells] };

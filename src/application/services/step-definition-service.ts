@@ -2,8 +2,8 @@ import {
   buildAppendedStubs,
   buildStepDefinitionStubFile,
   findMissingSteps,
-  parseStepDefinitions,
 } from "../content/step-definitions";
+import { loadStepDefinitions } from "./load-step-definitions";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
@@ -71,7 +71,7 @@ export class DefaultStepDefinitionService implements StepDefinitionService {
     // Re-diff against every existing definition (not just the caller's list) so
     // generation is non-destructive: a step that has since been hand-implemented
     // anywhere under src/steps is never re-stubbed (ADR-0012 / RV-8 spirit).
-    const definitions = await this.loadStepDefinitions(stepsDir);
+    const definitions = await loadStepDefinitions(this.fs, stepsDir);
     const stillMissing = findMissingSteps(missingSteps, definitions);
 
     if (stillMissing.length === 0) {
@@ -123,25 +123,5 @@ export class DefaultStepDefinitionService implements StepDefinitionService {
       appended: exists,
     });
     return ok({ generatedSteps: stillMissing, stepFile, appended: exists });
-  }
-
-  /**
-   * Reads every `*.ts` under the steps folder (recursively, matching the
-   * runner's `src/steps/**` glob) and scrapes its patterns. Mirrors
-   * SpecificationService so detection and generation share one view of what is
-   * already defined; a missing folder yields no definitions.
-   */
-  private async loadStepDefinitions(stepsDir: VaultPath) {
-    const listed = await this.fs.listFilesRecursive(stepsDir);
-    if (!listed.ok) return [];
-
-    const patterns = [];
-    for (const path of listed.value) {
-      if (!path.endsWith(".ts")) continue;
-      const read = await this.fs.readFile(path);
-      if (!read.ok) continue;
-      patterns.push(...parseStepDefinitions(read.value));
-    }
-    return patterns;
   }
 }

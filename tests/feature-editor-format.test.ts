@@ -20,6 +20,7 @@ import {
   stepIsImplemented,
   stepSuggestions,
   suggestedKeyword,
+  validationDisplayEntries,
 } from "../src/presentation/views/feature-editor-format";
 
 const VALID = parseFeature(
@@ -238,5 +239,63 @@ describe("renameAdvisory (US-056)", () => {
   it("de-duplicates repeated removed names", () => {
     const next = feature("  Scenario: B\n    Given x\n");
     expect(renameAdvisory(["A", "A"], next)).toHaveLength(1);
+  });
+});
+
+describe("validationDisplayEntries", () => {
+  it("collapses a clean feature to a single OK entry", () => {
+    expect(VALID).not.toBeNull();
+    if (VALID) {
+      expect(validationDisplayEntries(VALID, null)).toEqual([
+        { level: "ok", symbol: "✓", message: "Feature is structurally valid." },
+      ]);
+    }
+  });
+
+  it("maps an error issue to the ✗ symbol", () => {
+    const orphan = parseFeature("Feature: F\n\n  Scenario: S\n    Given x\n", vp("orphan.feature"));
+    if (!orphan) return;
+    const entries = validationDisplayEntries(orphan, null);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].level).toBe("error");
+    expect(entries[0].symbol).toBe("✗");
+  });
+
+  it("maps a warning issue to the ! symbol (rowless Scenario Outline)", () => {
+    const entries = validationDisplayEntries(
+      {
+        path: vp("Specifications/features/UC-001-w.feature"),
+        useCaseId: "UC-001",
+        featureName: "F",
+        tags: [],
+        scenarios: [
+          {
+            keyword: "Scenario Outline",
+            name: "O",
+            tags: [],
+            steps: [{ keyword: "Given", text: "x" }],
+            examples: [],
+          },
+        ],
+      },
+      null,
+    );
+    expect(entries.every((entry) => entry.symbol === "!" && entry.level === "warning")).toBe(true);
+    expect(entries.some((entry) => entry.message.includes("no Examples rows"))).toBe(true);
+  });
+
+  it("includes the rename advisory as a warning entry", () => {
+    const next = parseFeature(
+      "Feature: F\n\n  Scenario: B\n    Given x\n",
+      vp("Specifications/features/UC-001-r.feature"),
+    );
+    if (!next) return;
+    const entries = validationDisplayEntries(next, ["A"]);
+    expect(entries).toContainEqual({
+      level: "warning",
+      symbol: "!",
+      message:
+        'Scenario "A" was renamed or removed — its run history and quarantine state won\'t carry over.',
+    });
   });
 });
