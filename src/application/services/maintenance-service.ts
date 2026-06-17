@@ -102,23 +102,9 @@ export class DefaultMaintenanceService implements MaintenanceService {
   async repair(): Promise<Result<RepairResult>> {
     // Repair re-syncs `.testrunner` (and may reinstall deps/browsers); doing so
     // while a run is in flight could rewrite files the runner is reading and
-    // redirect report/evidence writes. Acquire the maintenance lock SYNCHRONOUSLY
-    // (no await before it) so a `runTest` issued in the check-then-act gap cannot
-    // reserve the single-run slot while we mutate `.testrunner` (security L1).
-    // The lock's begin() also performs the ADR-0018 / P0-3 active-run refusal.
-    const lock = this.maintenanceLock;
-    const acquired = lock ? lock.begin() : this.refuseIfActive();
-    if (!acquired.ok) return err(acquired.error);
-    try {
-      // When no lock is wired (repair-only construction/tests), keep the legacy
-      // wait-for-settle behaviour so an already-finishing run drains first.
-      if (!lock) await this.activeRun?.whenActiveSettles().catch(() => undefined);
-
-      // Drain the tail of the previous run's post-run import/evidence chain
-      // UNDER the lock (no new run can start now) so the re-sync below cannot
-      // overlap in-flight evidence I/O. See the constructor doc.
-      await this.whenPostRunSettled?.().catch(() => undefined);
-
+    // redirect report/evidence writes, so the whole re-sync runs under the
+    // maintenance lock (acquired synchronously — see underMaintenanceLock).
+    return this.underMaintenanceLock<RepairResult>(async () => {
       const settings = await this.settingsService.load();
 
       // 1. Diagnose what's broken (RV-8 step 1).
@@ -182,9 +168,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
         reinstalledPackages,
         reinstalledBrowsers,
       });
-    } finally {
-      lock?.end();
-    }
+    });
   }
 
   /**
@@ -213,9 +197,12 @@ export class DefaultMaintenanceService implements MaintenanceService {
    * there would take user content with it.
    */
   async reset(): Promise<Result<ResetResult>> {
-    if (!this.initialization || !this.fs) {
-      // Defensive: reset() requires the init service + vault FS; a repair-only
-      // construction cannot reset.
+    // Defensive: reset() requires the init service + vault FS; a repair-only
+    // construction cannot reset. Refuse BEFORE acquiring the lock, capturing the
+    // now-narrowed references so the locked body below can close over them.
+    const initialization = this.initialization;
+    const fs = this.fs;
+    if (!initialization || !fs) {
       return err(
         appError(
           "INIT_FAILED",
@@ -224,23 +211,10 @@ export class DefaultMaintenanceService implements MaintenanceService {
       );
     }
 
-    // Mutual exclusion with runs, acquired SYNCHRONOUSLY before any await so a
-    // `runTest` issued in the gap cannot reserve the single-run slot while we
-    // delete `.testrunner` and re-initialize (security L1 TOCTOU close). begin()
-    // also enforces the ADR-0018 active-run refusal.
-    const lock = this.maintenanceLock;
-    const acquired = lock ? lock.begin() : this.refuseIfActive();
-    if (!acquired.ok) return err(acquired.error);
-    try {
-      if (!lock) await this.activeRun?.whenActiveSettles().catch(() => undefined);
-
-      // Drain the tail of the previous run's post-run import/evidence chain
-      // UNDER the lock — evidence writes outlive the active-run slot, and the
-      // lock is already held so no new run can enqueue more work. This must
-      // happen before the destructive delete below so a late evidence write
-      // cannot overlap the reset (see the constructor doc).
-      await this.whenPostRunSettled?.().catch(() => undefined);
-
+    // Acquire the maintenance lock synchronously and drain the previous run's
+    // post-run evidence chain before the destructive delete (see
+    // underMaintenanceLock); the TOCTOU rationale is in the method doc above.
+    return this.underMaintenanceLock<ResetResult>(async () => {
       // One id for the whole reset flow (Event Catalog §19 "reset invocation id").
       const correlationId = newId();
 
@@ -280,7 +254,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
         );
       }
 
-      const deleted = await this.fs.deleteFolder(runnerPath);
+      const deleted = await fs.deleteFolder(runnerPath);
       if (!deleted.ok) return err(deleted.error);
       this.logger.info("Removed regenerable runner runtime for reset", {
         correlationId,
@@ -298,7 +272,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
       //    install is expensive and may be intact under ms-playwright's cache);
       //    re-init re-materialises the scaffolding and validation reports any
       //    missing deps so the user can Repair if needed.
-      const initialized = await this.initialization.initialize(
+      const initialized = await initialization.initialize(
         {
           settings: DEFAULT_SETTINGS,
           installDependencies: false,
@@ -321,6 +295,39 @@ export class DefaultMaintenanceService implements MaintenanceService {
         recreatedFiles: initialized.value.createdFiles,
         correlationId,
       });
+    });
+  }
+
+  /**
+   * Run `body` under the maintenance lock, mutually excluded with test runs.
+   *
+   * Acquires the lock SYNCHRONOUSLY before any await so a `runTest` issued in the
+   * check-then-act gap cannot reserve the single-run slot while maintenance
+   * mutates `.testrunner` (security L1 TOCTOU close — no await before begin()).
+   * begin() also performs the ADR-0018 / P0-3 active-run refusal; with no lock
+   * wired (repair-only construction/tests) the legacy wait-for-settle drains an
+   * already-finishing run instead.
+   *
+   * Either way the previous run's post-run import/evidence chain is drained
+   * UNDER the lock — evidence I/O outlives the active-run slot, and holding the
+   * lock guarantees no new run can enqueue more work — before `body` touches any
+   * files (see the constructor doc).
+   */
+  private async underMaintenanceLock<T>(body: () => Promise<Result<T>>): Promise<Result<T>> {
+    const lock = this.maintenanceLock;
+    const acquired = lock ? lock.begin() : this.refuseIfActive();
+    if (!acquired.ok) return err(acquired.error);
+    try {
+      // When no lock is wired (repair-only construction/tests), keep the legacy
+      // wait-for-settle behaviour so an already-finishing run drains first.
+      if (!lock) await this.activeRun?.whenActiveSettles().catch(() => undefined);
+
+      // Drain the tail of the previous run's post-run import/evidence chain UNDER
+      // the lock (no new run can start now) so `body` cannot overlap in-flight
+      // evidence I/O. See the constructor doc.
+      await this.whenPostRunSettled?.().catch(() => undefined);
+
+      return await body();
     } finally {
       lock?.end();
     }
