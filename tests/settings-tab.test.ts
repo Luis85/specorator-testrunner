@@ -227,6 +227,96 @@ describe("TestHubSettingTab browser toggles (US-055)", () => {
   });
 });
 
+// ── Scenario history depth (US-057) ────────────────────────────────────────
+
+/** Builds a tab whose host tracks `automation.historyDepth` across saves. */
+const makeTabWithHistoryDepth = (
+  initialDepth: number | undefined,
+): {
+  tab: TestHubSettingTab;
+  updateSettingsMock: ReturnType<typeof vi.fn>;
+  getSettings: () => { automation: { historyDepth?: number } };
+} => {
+  const fakePlugin = { app: {} } as unknown as ConstructorParameters<typeof TestHubSettingTab>[0];
+  let currentSettings = {
+    ...DEFAULT_SETTINGS,
+    automation: { ...DEFAULT_SETTINGS.automation, historyDepth: initialDepth },
+  };
+  const updateSettingsMock = vi.fn(async (next: typeof currentSettings) => {
+    currentSettings = next;
+    return ok(undefined as never);
+  });
+  const host: SettingsHost = {
+    getSettings: vi.fn(() => currentSettings),
+    updateSettings: updateSettingsMock,
+    resetSettings: vi.fn(async () => {}),
+  };
+  const fakeServices = {} as unknown as ConstructorParameters<typeof TestHubSettingTab>[2];
+  return {
+    tab: new TestHubSettingTab(fakePlugin, host, fakeServices),
+    updateSettingsMock,
+    getSettings: () => currentSettings,
+  };
+};
+
+/** Minimal TextComponent stub: tracks the value persist re-syncs on reject. */
+const makeFakeField = (initial: string): { setValue: ReturnType<typeof vi.fn>; value: string } => {
+  const field = {
+    value: initial,
+    setValue: vi.fn((v: string) => {
+      field.value = v;
+    }),
+  };
+  return field;
+};
+
+/** Reach the private persistHistoryDepth method via a type-cast escape hatch. */
+const persistHistoryDepth = (tab: TestHubSettingTab, raw: string, field: unknown): Promise<void> =>
+  (
+    tab as unknown as {
+      persistHistoryDepth(raw: string, field: unknown): Promise<void>;
+    }
+  ).persistHistoryDepth(raw, field);
+
+describe("TestHubSettingTab scenario history depth (US-057)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("persists a positive whole number", async () => {
+    const { tab, updateSettingsMock } = makeTabWithHistoryDepth(undefined);
+    await persistHistoryDepth(tab, "100", makeFakeField(""));
+    expect(updateSettingsMock).toHaveBeenCalledOnce();
+    const saved = updateSettingsMock.mock.calls[0][0] as { automation: { historyDepth?: number } };
+    expect(saved.automation.historyDepth).toBe(100);
+  });
+
+  it("clears the override to the default when the field is blanked", async () => {
+    const { tab, updateSettingsMock } = makeTabWithHistoryDepth(20);
+    await persistHistoryDepth(tab, "  ", makeFakeField("20"));
+    const saved = updateSettingsMock.mock.calls[0][0] as { automation: { historyDepth?: number } };
+    expect(saved.automation.historyDepth).toBeUndefined();
+  });
+
+  it("refuses a non-positive / non-integer value and re-syncs the field", async () => {
+    const { tab, updateSettingsMock } = makeTabWithHistoryDepth(20);
+    const field = makeFakeField("0");
+    await persistHistoryDepth(tab, "0", field);
+    expect(updateSettingsMock).not.toHaveBeenCalled();
+    // Re-synced to the persisted value, not left showing the rejected input.
+    expect(field.setValue).toHaveBeenCalledWith("20");
+
+    await persistHistoryDepth(tab, "2.5", makeFakeField("20"));
+    expect(updateSettingsMock).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op when the value is unchanged", async () => {
+    const { tab, updateSettingsMock } = makeTabWithHistoryDepth(50);
+    await persistHistoryDepth(tab, "50", makeFakeField("50"));
+    expect(updateSettingsMock).not.toHaveBeenCalled();
+  });
+});
+
 // ── Install browsers button (US-055) ──────────────────────────────────────
 
 /**

@@ -52,7 +52,15 @@ export class FakeVaultFileSystem implements VaultFileSystem {
     if (this.failOn?.path === path) {
       return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
     }
-    this.folders.add(path);
+    // `mkdir -p`: registering a nested folder makes every ancestor exist too, as
+    // a real vault does — so exists("Test Evidence") holds after creating
+    // "Test Evidence/2026/06/<run>".
+    const segments = path.split("/");
+    let prefix = "";
+    for (const segment of segments) {
+      prefix = prefix === "" ? segment : `${prefix}/${segment}`;
+      this.folders.add(prefix);
+    }
     return ok(undefined);
   }
 
@@ -81,7 +89,10 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async listFilesRecursive(path: VaultPath): Promise<Result<VaultPath[]>> {
-    return ok([...this.files.keys()].filter((p) => p.startsWith(`${path}/`)).map(unsafeVaultPath));
+    // An empty path is the vault root: the real adapter lists every file
+    // (`adapter.list("")`), so match that rather than filtering on "/".
+    const prefix = path === "" ? "" : `${path}/`;
+    return ok([...this.files.keys()].filter((p) => p.startsWith(prefix)).map(unsafeVaultPath));
   }
 
   async listFolders(): Promise<Result<VaultPath[]>> {

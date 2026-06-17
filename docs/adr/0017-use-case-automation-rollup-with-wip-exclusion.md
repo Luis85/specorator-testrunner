@@ -6,6 +6,7 @@ title: Use Case Automation Status Rolls Up From Features With @wip Exclusion
 date: 2026-05-30
 related:
   - "[[0012-use-case-to-feature-is-one-to-many]]"
+  - "[[0022-scenario-identity-and-history-store]]"
   - "[[Solution Design]]"
   - "[[Technical Interface Specification]]"
   - "[[Event Catalog]]"
@@ -27,6 +28,21 @@ related:
 | Features have run, none failed, some never ran | `implemented` |
 
 ## Pass roll-up refinement: run scope + a prior-status floor
+
+> **Superseded by ADR-0022 / US-057 (V2).** The scope-awareness branch and the
+> prior-status "floor" described in this section were workarounds for V1's lack of
+> per-Feature/per-scenario run history. V2 gives every scenario a real history
+> (per-scenario `scenarios.ndjson` + `.testrunner` index), and
+> `computeAutomationStatus` now derives each Feature's state from its scenarios'
+> *latest* recorded results (latest status per scenario → Feature → UC). The
+> policy no longer reads `UseCase.automationStatus` or `lastTestRun`: because each
+> scenario retains its own last-known status, a targeted single-Feature/scenario
+> rerun updates only the scenarios it touched, so siblings can neither regress nor
+> inflate the roll-up — the floor and scope-awareness are unnecessary and removed.
+> The base table above still holds, now evaluated per scenario. (An upgraded UC
+> with a recorded run but no history yet keeps its persisted status until its next
+> run backfills history.) The two sub-sections below are retained as the historical
+> V1 rationale.
 
 The base table reads "all Features have run, all passed → `passing`", but the V1 implementation (`UseCaseAutomationPolicy.computeAutomationStatus`) does **not** treat a single passing run as proof that the *whole* Use Case passes. Two refinements, both accepted as the intended behaviour, sit on top of the table for the `passed` case:
 

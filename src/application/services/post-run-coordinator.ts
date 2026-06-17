@@ -1,5 +1,6 @@
 import type { EvidenceGenerationService } from "./evidence-generation-service";
 import type { ReportImportService } from "./report-import-service";
+import type { ScenarioHistoryService } from "./scenario-history-service";
 import type { ScenarioIdentityResolver } from "./scenario-identity-resolver";
 import type { TraceabilityService } from "./traceability-service";
 import type { TestRun, TestRunStatus } from "../../domain/entities/test-run";
@@ -40,6 +41,7 @@ export interface PostRunCoordinatorDeps {
   reportImportService: ReportImportService;
   evidenceGenerationService: EvidenceGenerationService;
   scenarioIdentityResolver: ScenarioIdentityResolver;
+  scenarioHistoryService: ScenarioHistoryService;
   traceabilityService: TraceabilityService;
   eventBus: EventBus;
   logger: Logger;
@@ -246,6 +248,19 @@ export class PostRunCoordinator {
         run.workingDirectory,
         imported.value.featureSnapshot,
       );
+      // Record per-scenario history FIRST — best-effort, always-on, and
+      // independent of evidence-note generation. It keys on `enriched` (not the
+      // note), so a Markdown note create/write failure must not drop the run from
+      // the roll-up history (codex P2). Recorded before the refresh so the roll-up
+      // reads fresh data (US-057); a history fault must not fail the user-visible
+      // import/evidence outcome.
+      const recorded = await this.deps.scenarioHistoryService.record(run, enriched);
+      if (!recorded.ok) {
+        this.logger.warn("Scenario history recording failed", {
+          runId: run.id,
+          reason: recorded.error.message,
+        });
+      }
       const evidence = await this.deps.evidenceGenerationService.generate({
         run,
         report: enriched,
@@ -255,10 +270,11 @@ export class PostRunCoordinator {
           runId: run.id,
           reason: evidence.error.message,
         });
-        return err(evidence.error);
       }
-      // PUSH the dashboard KPI events from the run flow (P2-6). Best-effort: a
-      // refresh fault must not fail the import/evidence outcome the user sees.
+      // PUSH the dashboard KPI events from the run flow (P2-6) regardless of the
+      // evidence-note outcome, so the just-recorded history surfaces even when the
+      // note write failed. Best-effort: a refresh fault must not fail the
+      // import/evidence outcome the user sees.
       const refreshed = await this.deps.traceabilityService.refreshDashboard();
       if (!refreshed.ok) {
         this.logger.warn("Dashboard refresh after run failed", {
@@ -266,6 +282,9 @@ export class PostRunCoordinator {
           reason: refreshed.error.message,
         });
       }
+      // Surface the evidence-note failure now that history is recorded and the
+      // dashboard has been refreshed.
+      if (!evidence.ok) return err(evidence.error);
       // generate() may return ok without writing a note (Markdown disabled) —
       // tell the UI which so it doesn't point the user at a missing file.
       if (this.deps.isEvidenceMarkdownEnabled()) {

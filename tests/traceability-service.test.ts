@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { UseCaseService } from "../src/application/services/use-case-service";
+import type { ScenarioHistoryService } from "../src/application/services/scenario-history-service";
 import {
   DefaultTraceabilityService,
   projectDashboardSnapshot,
 } from "../src/application/services/traceability-service";
 import type { TestRunSummary } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
+import type { ScenarioLatestStatus } from "../src/domain/policies/use-case-automation-policy";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { ok, err, type Result } from "../src/shared/result/result";
 import { appError } from "../src/shared/errors/errors";
@@ -13,6 +15,28 @@ import { FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
 /** A valid one-scenario Gherkin feature (non-@wip, has steps). */
 const FEATURE_CONTENT = "Feature: F\n  Scenario: S\n    Given a step\n    Then a result\n";
+
+/**
+ * Status now derives from per-scenario history (US-057), not `lastTestRun`. A
+ * stub history that maps each scenario's reference (`<featurePath>::<name>`) to a
+ * latest status; an unmapped reference reads as never-run.
+ */
+const stubScenarioHistory = (
+  entries: Record<string, ScenarioLatestStatus> = {},
+): ScenarioHistoryService => ({
+  async record() {
+    return ok(undefined);
+  },
+  async rebuildIndex() {
+    return ok(undefined);
+  },
+  async latestStatuses() {
+    return ok(new Map(Object.entries(entries)));
+  },
+});
+
+/** Scenario Reference of the single `S` scenario in {@link FEATURE_CONTENT}. */
+const refS = (featurePath: string): string => `${featurePath}::S`;
 
 /** A FakeVaultFileSystem seeding valid feature content for every UC feature file. */
 const fsWithFeatures = (useCases: UseCase[]): FakeVaultFileSystem => {
@@ -164,6 +188,10 @@ describe("DefaultTraceabilityService.refreshDashboard", () => {
       fsWithFeatures(ucs),
       bus,
       silentLogger,
+      stubScenarioHistory({
+        [refS("Specifications/features/UC-001-a.feature")]: "passed",
+        [refS("Specifications/features/UC-002-a.feature")]: "failed",
+      }),
     );
 
     const result = await service.refreshDashboard();
@@ -204,6 +232,7 @@ describe("DefaultTraceabilityService.refreshDashboard", () => {
       new FakeVaultFileSystem(),
       bus,
       silentLogger,
+      stubScenarioHistory(),
     );
 
     const result = await service.refreshDashboard();
@@ -234,6 +263,10 @@ describe("DefaultTraceabilityService.snapshot", () => {
       fsWithFeatures(ucs),
       bus,
       silentLogger,
+      stubScenarioHistory({
+        [refS("Specifications/features/UC-001-a.feature")]: "passed",
+        [refS("Specifications/features/UC-002-a.feature")]: "failed",
+      }),
     );
 
     const result = await service.snapshot();
@@ -245,6 +278,149 @@ describe("DefaultTraceabilityService.snapshot", () => {
     expect(result.value.failingUseCases).toBe(1);
     // The whole point: a render reads this WITHOUT re-publishing dashboard.*.
     expect(types()).toEqual([]);
+  });
+});
+
+describe("DefaultTraceabilityService history-derived status (US-057)", () => {
+  it("derives 'planned' for a UC with a persisted run but no scenario history", async () => {
+    const { bus } = recordingEventBus();
+    // A persisted lastTestRun + "passing" is NOT honored: status derives purely
+    // from per-scenario history, and there is no pre-history migration grace
+    // (the plugin keeps no pre-US-057 runs to preserve). No history → planned.
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp("Specifications/features/UC-001-a.feature")],
+        automationStatus: "passing",
+        lastTestRun: { runId: "RUN-OLD", status: "passed", date: "2026-06-01T09:00:00Z" },
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      stubScenarioHistory(),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.passingUseCases).toBe(0);
+    expect(result.value.automatedUseCases).toBe(0);
+  });
+
+  it("derives 'planned' for a never-run UC, ignoring a stale persisted status", async () => {
+    const { bus } = recordingEventBus();
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp("Specifications/features/UC-001-a.feature")],
+        automationStatus: "passing",
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      stubScenarioHistory(),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.passingUseCases).toBe(0);
+    expect(result.value.automatedUseCases).toBe(0);
+  });
+
+  it("derives 'planned' when a rename detached the history from the current refs", async () => {
+    const { bus } = recordingEventBus();
+    // Every scenario was renamed: history lingers under the OLD ref, but the
+    // current scenario "S" has none. A rename detaches history (ADR-0022/US-056),
+    // so the UC reads as never-run rather than keeping its persisted "passing".
+    const featurePath = "Specifications/features/UC-001-a.feature";
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp(featurePath)],
+        automationStatus: "passing",
+        lastTestRun: { runId: "RUN-OLD", status: "passed", date: "2026-06-01T09:00:00Z" },
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      stubScenarioHistory({ [`${featurePath}::OldName`]: "passed" }),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.passingUseCases).toBe(0);
+    expect(result.value.automatedUseCases).toBe(0);
+  });
+
+  it("derives each UC independently from its own scenario history", async () => {
+    const { bus } = recordingEventBus();
+    // UC-002 has history (passing); UC-001 has none. Each UC's status reflects
+    // ONLY its own scenarios' history — no cross-UC or persisted influence.
+    const otherPath = "Specifications/features/UC-002-a.feature";
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp("Specifications/features/UC-001-a.feature")],
+        automationStatus: "passing",
+        lastTestRun: { runId: "RUN-OLD", status: "passed", date: "2026-06-01T09:00:00Z" },
+      }),
+      useCase({
+        id: "UC-002",
+        featureFiles: [vp(otherPath)],
+        lastTestRun: { runId: "RUN-NEW", status: "passed", date: "2026-06-10T09:00:00Z" },
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      stubScenarioHistory({ [refS(otherPath)]: "passed" }),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // UC-002 → passing (its scenario passed); UC-001 → planned (no history).
+    expect(result.value.passingUseCases).toBe(1);
+  });
+
+  it("switches to history once a scenario has a result, ignoring the persisted status", async () => {
+    const { bus } = recordingEventBus();
+    const ucs = [
+      useCase({
+        id: "UC-001",
+        featureFiles: [vp("Specifications/features/UC-001-a.feature")],
+        automationStatus: "passing",
+        lastTestRun: { runId: "RUN-OLD", status: "passed", date: "2026-06-01T09:00:00Z" },
+      }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      // History now exists and the latest result is a failure — overrides the
+      // persisted "passing".
+      stubScenarioHistory({ [refS("Specifications/features/UC-001-a.feature")]: "failed" }),
+    );
+
+    const result = await service.snapshot();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.passingUseCases).toBe(0);
+    expect(result.value.failingUseCases).toBe(1);
   });
 });
 
@@ -267,6 +443,7 @@ describe("DefaultTraceabilityService.linksFor", () => {
       new FakeVaultFileSystem(),
       bus,
       silentLogger,
+      stubScenarioHistory(),
     );
 
     const result = await service.linksFor("UC-001");
@@ -288,10 +465,53 @@ describe("DefaultTraceabilityService.linksFor", () => {
       new FakeVaultFileSystem(),
       bus,
       silentLogger,
+      stubScenarioHistory(),
     );
     const result = await service.linksFor("UC-999");
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+});
+
+describe("DefaultTraceabilityService.deriveAll / deriveById (US-057)", () => {
+  it("derives automationStatus from history, not the persisted frontmatter value", async () => {
+    const { bus } = recordingEventBus();
+    const path = "Specifications/features/UC-001-a.feature";
+    const ucs = [useCase({ id: "UC-001", featureFiles: [vp(path)], automationStatus: "passing" })];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      // History says the scenario now fails — the derived status must reflect it.
+      stubScenarioHistory({ [refS(path)]: "failed" }),
+    );
+
+    const result = await service.deriveAll();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value[0].automationStatus).toBe("failing");
+  });
+
+  it("deriveById derives one UC's status and returns null for an unknown id", async () => {
+    const { bus } = recordingEventBus();
+    const path = "Specifications/features/UC-001-a.feature";
+    const ucs = [
+      useCase({ id: "UC-001", featureFiles: [vp(path)], automationStatus: "not-planned" }),
+    ];
+    const service = new DefaultTraceabilityService(
+      stubUseCaseService(ucs),
+      fsWithFeatures(ucs),
+      bus,
+      silentLogger,
+      stubScenarioHistory({ [refS(path)]: "passed" }),
+    );
+
+    const derived = await service.deriveById("UC-001");
+    expect(derived.ok && derived.value?.automationStatus).toBe("passing");
+
+    const missing = await service.deriveById("UC-404");
+    expect(missing.ok && missing.value).toBeNull();
   });
 });

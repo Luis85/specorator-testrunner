@@ -71,7 +71,9 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
     USE_CASE_VIEW_TYPE,
     (leaf) =>
       new UseCaseDashboardView(leaf, {
-        useCaseService: s.useCaseService,
+        // US-057: the Automation column derives from per-scenario history via
+        // traceability.deriveAll(), not the stale frontmatter automationStatus.
+        traceability: s.traceabilityService,
         specificationService: s.specificationService,
         workspace,
         eventBus,
@@ -89,6 +91,9 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
     USE_CASE_DETAIL_VIEW_TYPE,
     (leaf) =>
       new UseCaseDetailView(leaf, {
+        // US-057: the header's Automation status derives from per-scenario
+        // history via traceability.deriveById(), not the frontmatter value.
+        traceability: s.traceabilityService,
         useCaseService: s.useCaseService,
         prdService: s.prdService,
         specificationService: s.specificationService,

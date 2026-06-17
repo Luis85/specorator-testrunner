@@ -43,7 +43,17 @@ export interface AutomationSettings {
   generateEvidenceMarkdown: boolean;
   openDashboardAfterInitialization: boolean;
   evidenceRetentionDays?: number; // undefined = keep forever (V1 default)
+  /**
+   * How many recent results per scenario the history projection retains
+   * (US-057). The committed per-run NDJSON logs are not trimmed by this (that is
+   * US-066 retention); only the `.testrunner` index window. Undefined uses
+   * {@link HISTORY_DEPTH_DEFAULT}.
+   */
+  historyDepth?: number;
 }
+
+/** Default per-scenario history window when `historyDepth` is unset (US-057). */
+export const HISTORY_DEPTH_DEFAULT = 50;
 
 export interface CiSettings {
   provider: CiProvider;

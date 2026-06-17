@@ -1,7 +1,11 @@
 import { parseFeature } from "../content/gherkin";
 import type { VaultFileSystem } from "../ports/vault-file-system";
+import type { ScenarioHistoryService } from "./scenario-history-service";
 import type { UseCaseService } from "./use-case-service";
-import { computeAutomationStatus } from "../../domain/policies/use-case-automation-policy";
+import {
+  computeAutomationStatus,
+  type ScenarioStatusLookup,
+} from "../../domain/policies/use-case-automation-policy";
 import type { FeatureSpecification } from "../../domain/entities/specification";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { TestRunSummary } from "../../domain/entities/test-run";
@@ -68,6 +72,15 @@ export interface TraceabilityService {
    * so a render never re-triggers a refresh (no loop, P2-6).
    */
   snapshot(): Promise<Result<DashboardSnapshot>>;
+  /**
+   * All Use Cases with `automationStatus` derived from per-scenario history
+   * (ADR-0022/US-057), so non-dashboard surfaces (the Use Cases explorer) show
+   * the SAME live status as the KPIs instead of the never-updated frontmatter
+   * value. Single source of truth: history, no persisted copy (codex P2).
+   */
+  deriveAll(): Promise<Result<UseCase[]>>;
+  /** One Use Case with history-derived `automationStatus`, or null when absent. */
+  deriveById(useCaseId: UseCaseId): Promise<Result<UseCase | null>>;
   linksFor(useCaseId: UseCaseId): Promise<Result<TraceabilityRecord>>;
 }
 
@@ -128,15 +141,23 @@ export class DefaultTraceabilityService implements TraceabilityService {
     private readonly fs: VaultFileSystem,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
+    private readonly scenarioHistory: ScenarioHistoryService,
   ) {}
 
   /**
    * Derives a UC's effective automation status via UseCaseAutomationPolicy
-   * (ADR-0017) from its parsed Features + last run, rather than trusting a
-   * possibly-stale persisted `automationStatus`. Best-effort: unreadable or
-   * unparseable feature files are skipped.
+   * (ADR-0017, history-derived per ADR-0022/US-057) from its parsed Features and
+   * the per-scenario history — never the possibly-stale persisted
+   * `automationStatus`. A UC with no scenario history reads as `planned`; there
+   * is no pre-history migration grace (the plugin keeps no pre-US-057 runs to
+   * honor). Best-effort: unreadable or unparseable feature files are skipped. The
+   * `latestStatusFor` lookup is resolved once per snapshot and threaded in so
+   * every UC shares the same history read.
    */
-  private async withDerivedStatus(useCase: UseCase): Promise<UseCase> {
+  private async withDerivedStatus(
+    useCase: UseCase,
+    latestStatusFor: ScenarioStatusLookup,
+  ): Promise<UseCase> {
     const features: FeatureSpecification[] = [];
     for (const path of useCase.featureFiles) {
       const read = await this.fs.readFile(path);
@@ -144,7 +165,7 @@ export class DefaultTraceabilityService implements TraceabilityService {
       const feature = parseFeature(read.value, path);
       if (feature) features.push(feature);
     }
-    return { ...useCase, automationStatus: computeAutomationStatus(useCase, features) };
+    return { ...useCase, automationStatus: computeAutomationStatus(features, latestStatusFor) };
   }
 
   /**
@@ -154,16 +175,36 @@ export class DefaultTraceabilityService implements TraceabilityService {
    * view reacting to `dashboard.*` would loop).
    */
   async snapshot(): Promise<Result<DashboardSnapshot>> {
+    const derived = await this.deriveAll();
+    if (!derived.ok) return err(derived.error);
+    return ok(projectDashboardSnapshot(derived.value));
+  }
+
+  async deriveAll(): Promise<Result<UseCase[]>> {
     const all = await this.useCaseService.findAll();
     if (!all.ok) return err(all.error);
-
-    // Derive each UC's automation status from its Features + last run via the
-    // policy (ADR-0017) so KPI counts reflect reality, not a stale frontmatter
-    // value.
+    // Resolve the per-scenario history once so every UC's roll-up reads the same
+    // projection (ADR-0022/US-057); a history fault degrades to "no history".
+    const latestStatusFor = await this.resolveStatusLookup();
     const derived: UseCase[] = [];
-    for (const useCase of all.value) derived.push(await this.withDerivedStatus(useCase));
+    for (const useCase of all.value) {
+      derived.push(await this.withDerivedStatus(useCase, latestStatusFor));
+    }
+    return ok(derived);
+  }
 
-    return ok(projectDashboardSnapshot(derived));
+  async deriveById(useCaseId: UseCaseId): Promise<Result<UseCase | null>> {
+    const found = await this.useCaseService.findById(useCaseId);
+    if (!found.ok) return err(found.error);
+    if (found.value === null) return ok(null);
+    const latestStatusFor = await this.resolveStatusLookup();
+    return ok(await this.withDerivedStatus(found.value, latestStatusFor));
+  }
+
+  /** The per-scenario history lookup; a history fault reads as "no history". */
+  private async resolveStatusLookup(): Promise<ScenarioStatusLookup> {
+    const statuses = await this.scenarioHistory.latestStatuses();
+    return statuses.ok ? (ref) => statuses.value.get(ref) : () => undefined;
   }
 
   /**

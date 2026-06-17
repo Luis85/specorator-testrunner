@@ -1,7 +1,7 @@
 import type { WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { SpecificationService } from "../../application/services/specification-service";
-import type { UseCaseService } from "../../application/services/use-case-service";
+import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
@@ -19,10 +19,24 @@ const REFRESH_ON: DomainEventType[] = [
   "usecase.status.changed",
   // Wave F: a newly generated Feature changes the "Features" column count.
   "specification.created",
+  // US-057: the Automation column is derived via traceability.deriveAll() from
+  // both the parsed Features and per-scenario history, so a Feature EDIT (adding
+  // @wip, adding steps, renaming a scenario) changes the derived roll-up without
+  // any Use Case event — re-render on it as the dashboard does.
+  "specification.updated",
+  // US-057: the Automation column is now derived from per-scenario history, so a
+  // recorded run must re-render the explorer for it to reflect the new status.
+  "scenario.history.recorded",
+  // deriveAll() reads scenario history under the configured Evidence root, so an
+  // evidencePath change (persisted via settings.updated) repoints the history
+  // tree — re-render so the column isn't served from the old root.
+  "settings.updated",
 ];
 
 export interface UseCaseDashboardDeps {
-  useCaseService: UseCaseService;
+  // Use Cases with history-derived automationStatus (US-057), so the Automation
+  // column matches the dashboard KPIs rather than the stale frontmatter value.
+  traceability: Pick<TraceabilityService, "deriveAll">;
   // Wave F insight: the Feature listing powers the per-Use-Case "Features"
   // column (count by the ADR-0012 filename back-reference).
   specificationService: Pick<SpecificationService, "listFeatures">;
@@ -72,7 +86,7 @@ export class UseCaseDashboardView extends LiveDashboardView {
     });
 
     const [result, listed] = await Promise.all([
-      this.deps.useCaseService.findAll(),
+      this.deps.traceability.deriveAll(),
       this.deps.specificationService.listFeatures(),
     ]);
     if (!result.ok) {

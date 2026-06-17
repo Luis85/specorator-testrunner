@@ -1,28 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeAutomationStatus } from "../src/domain/policies/use-case-automation-policy";
+import {
+  computeAutomationStatus,
+  type ScenarioLatestStatus,
+  type ScenarioStatusLookup,
+} from "../src/domain/policies/use-case-automation-policy";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
-import type { ExecutionScope, TestRunStatus } from "../src/domain/entities/test-run";
-import type { UseCase } from "../src/domain/entities/use-case";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
-
-const useCase = (over: Partial<UseCase> = {}): UseCase => ({
-  id: "UC-001",
-  title: "Demo",
-  status: "specified",
-  automationStatus: "not-planned",
-  featureFiles: [],
-  suites: [],
-  evidence: [],
-  path: vp("Use Cases/UC-001 Demo.md"),
-  ...over,
-});
-
-const lastRun = (status: TestRunStatus, scope?: ExecutionScope): UseCase["lastTestRun"] => ({
-  runId: "RUN-1",
-  status,
-  date: "2026-06-01T10:00:00Z",
-  scope,
-});
 
 const feature = (over: Partial<FeatureSpecification> = {}): FeatureSpecification => ({
   path: vp("Specifications/features/UC-001.feature"),
@@ -33,96 +16,169 @@ const feature = (over: Partial<FeatureSpecification> = {}): FeatureSpecification
   ...over,
 });
 
-describe("computeAutomationStatus (ADR-0017 roll-up)", () => {
+/** Scenario Reference of a plain scenario in a feature (`<path>::<name>`). */
+const refOf = (feat: FeatureSpecification, scenarioName: string): string =>
+  `${String(feat.path)}::${scenarioName}`;
+
+/** A history lookup backed by an explicit ref→status map; unknown refs = unrun. */
+const history =
+  (entries: Record<string, ScenarioLatestStatus>): ScenarioStatusLookup =>
+  (ref) =>
+    entries[ref];
+
+/** No scenario has ever run. */
+const noHistory: ScenarioStatusLookup = () => undefined;
+
+describe("computeAutomationStatus (ADR-0017 roll-up, history-derived — US-057)", () => {
   it("not-planned when no Features exist", () => {
-    expect(computeAutomationStatus(useCase(), [])).toBe("not-planned");
+    expect(computeAutomationStatus([], noHistory)).toBe("not-planned");
   });
 
-  it("planned when Features exist but the UC has never run", () => {
-    expect(computeAutomationStatus(useCase(), [feature()])).toBe("planned");
+  it("planned when Features exist but no scenario has run", () => {
+    expect(computeAutomationStatus([feature()], noHistory)).toBe("planned");
   });
 
   it("missing-steps when a Feature has a scenario with no steps", () => {
     const incomplete = feature({ scenarios: [{ name: "S1", tags: [], steps: [] }] });
-    expect(computeAutomationStatus(useCase({ lastTestRun: lastRun("passed") }), [incomplete])).toBe(
-      "missing-steps",
-    );
+    // Outranks any run history.
+    expect(
+      computeAutomationStatus([incomplete], history({ [refOf(incomplete, "S1")]: "passed" })),
+    ).toBe("missing-steps");
   });
 
   it("missing-steps when a Feature declares no scenarios", () => {
-    expect(computeAutomationStatus(useCase(), [feature({ scenarios: [] })])).toBe("missing-steps");
+    expect(computeAutomationStatus([feature({ scenarios: [] })], noHistory)).toBe("missing-steps");
   });
 
-  it("passing when the UC has run and the last result passed", () => {
-    expect(computeAutomationStatus(useCase({ lastTestRun: lastRun("passed") }), [feature()])).toBe(
-      "passing",
+  it("passing when the Feature's only scenario's latest result passed", () => {
+    const f = feature();
+    expect(computeAutomationStatus([f], history({ [refOf(f, "S1")]: "passed" }))).toBe("passing");
+  });
+
+  it("failing when a scenario's latest result failed", () => {
+    const f = feature();
+    expect(computeAutomationStatus([f], history({ [refOf(f, "S1")]: "failed" }))).toBe("failing");
+  });
+
+  it("implemented when a scenario ran but only skipped (exercised, not passing)", () => {
+    const f = feature();
+    expect(computeAutomationStatus([f], history({ [refOf(f, "S1")]: "skipped" }))).toBe(
+      "implemented",
     );
   });
 
-  it("stays implemented when only one of several Features was run (ADR-0017, no latest-wins)", () => {
+  describe("multi-Feature roll-up (per-scenario, no floor)", () => {
     const f1 = feature({ path: vp("Specifications/features/UC-001-a.feature") });
     const f2 = feature({ path: vp("Specifications/features/UC-001-b.feature") });
-    // A single feature-scope passing run does not make the whole multi-Feature UC passing.
-    expect(
-      computeAutomationStatus(useCase({ lastTestRun: lastRun("passed", "feature") }), [f1, f2]),
-    ).toBe("implemented");
+
+    it("passing only when every Feature's scenarios all passed", () => {
+      expect(
+        computeAutomationStatus(
+          [f1, f2],
+          history({ [refOf(f1, "S1")]: "passed", [refOf(f2, "S1")]: "passed" }),
+        ),
+      ).toBe("passing");
+    });
+
+    it("implemented when one Feature passed and the other never ran", () => {
+      expect(computeAutomationStatus([f1, f2], history({ [refOf(f1, "S1")]: "passed" }))).toBe(
+        "implemented",
+      );
+    });
+
+    it("failing when any Feature has a failed scenario", () => {
+      expect(
+        computeAutomationStatus(
+          [f1, f2],
+          history({ [refOf(f1, "S1")]: "passed", [refOf(f2, "S1")]: "failed" }),
+        ),
+      ).toBe("failing");
+    });
+
+    it("a targeted pass of one Feature does not by itself make the whole UC passing", () => {
+      // The replacement for the old "floor": no persisted status is consulted —
+      // f2 simply has no history, so the UC is still only partially exercised.
+      expect(computeAutomationStatus([f1, f2], history({ [refOf(f1, "S1")]: "passed" }))).toBe(
+        "implemented",
+      );
+    });
+
+    it("siblings keep their last-known status across a targeted rerun (no regression)", () => {
+      // Both passed earlier; a later rerun touches only f1 (still passing). f2's
+      // recorded pass remains, so the UC stays passing — no floor needed.
+      expect(
+        computeAutomationStatus(
+          [f1, f2],
+          history({ [refOf(f1, "S1")]: "passed", [refOf(f2, "S1")]: "passed" }),
+        ),
+      ).toBe("passing");
+    });
   });
 
-  it("does not regress an already-passing multi-Feature UC on a single-Feature rerun", () => {
-    const f1 = feature({ path: vp("Specifications/features/UC-001-a.feature") });
-    const f2 = feature({ path: vp("Specifications/features/UC-001-b.feature") });
-    // The UC already reached "passing" (e.g. via an earlier UC-wide run); a
-    // later successful feature-scope rerun must not drop it back to implemented.
-    expect(
-      computeAutomationStatus(
-        useCase({ automationStatus: "passing", lastTestRun: lastRun("passed", "feature") }),
-        [f1, f2],
-      ),
-    ).toBe("passing");
-  });
+  describe("per-scenario granularity within one Feature", () => {
+    const f = feature({
+      scenarios: [
+        { name: "A", tags: [], steps: [{ keyword: "Given", text: "x" }] },
+        { name: "B", tags: [], steps: [{ keyword: "Given", text: "x" }] },
+      ],
+    });
 
-  it("passing for a multi-Feature UC when a UC-wide run passed", () => {
-    const f1 = feature({ path: vp("Specifications/features/UC-001-a.feature") });
-    const f2 = feature({ path: vp("Specifications/features/UC-001-b.feature") });
-    expect(
-      computeAutomationStatus(useCase({ lastTestRun: lastRun("passed", "use-case") }), [f1, f2]),
-    ).toBe("passing");
-  });
+    it("passing only when all scenarios passed", () => {
+      expect(
+        computeAutomationStatus(
+          [f],
+          history({ [refOf(f, "A")]: "passed", [refOf(f, "B")]: "passed" }),
+        ),
+      ).toBe("passing");
+    });
 
-  it("failing when the last run failed", () => {
-    expect(computeAutomationStatus(useCase({ lastTestRun: lastRun("failed") }), [feature()])).toBe(
-      "failing",
-    );
-  });
+    it("implemented when some scenarios passed and others never ran", () => {
+      expect(computeAutomationStatus([f], history({ [refOf(f, "A")]: "passed" }))).toBe(
+        "implemented",
+      );
+    });
 
-  it("failing when the last run errored", () => {
-    expect(computeAutomationStatus(useCase({ lastTestRun: lastRun("errored") }), [feature()])).toBe(
-      "failing",
-    );
-  });
-
-  it("implemented when the UC has run but the last result was not a clean pass/fail", () => {
-    expect(
-      computeAutomationStatus(useCase({ lastTestRun: lastRun("cancelled") }), [feature()]),
-    ).toBe("implemented");
+    it("failing when any scenario failed even if others passed", () => {
+      expect(
+        computeAutomationStatus(
+          [f],
+          history({ [refOf(f, "A")]: "passed", [refOf(f, "B")]: "failed" }),
+        ),
+      ).toBe("failing");
+    });
   });
 
   describe("@wip exclusion (Feature granularity)", () => {
     it("excludes a @wip Feature so a lone @wip Feature counts as no Features", () => {
       const wip = feature({ tags: ["@wip"] });
-      expect(computeAutomationStatus(useCase(), [wip])).toBe("not-planned");
+      expect(computeAutomationStatus([wip], history({ [refOf(wip, "S1")]: "passed" }))).toBe(
+        "not-planned",
+      );
     });
 
     it("ignores undefined steps inside a @wip Feature", () => {
       const wipIncomplete = feature({ tags: ["@wip"], scenarios: [] });
       const good = feature({ path: vp("Specifications/features/UC-001b.feature") });
       // Only the non-@wip Feature counts; it is complete but never run.
-      expect(computeAutomationStatus(useCase(), [wipIncomplete, good])).toBe("planned");
+      expect(computeAutomationStatus([wipIncomplete, good], noHistory)).toBe("planned");
     });
 
     it("matches @wip case-insensitively", () => {
       const wip = feature({ tags: ["@WIP"] });
-      expect(computeAutomationStatus(useCase(), [wip])).toBe("not-planned");
+      expect(computeAutomationStatus([wip], history({ [refOf(wip, "S1")]: "passed" }))).toBe(
+        "not-planned",
+      );
+    });
+  });
+
+  describe("all-unresolved-Feature edge (ADR-0022)", () => {
+    it("treats a Feature whose scenarios have no history as not-run", () => {
+      // Every ref unresolved → not-run → with a sibling that passed, implemented.
+      const f1 = feature({ path: vp("Specifications/features/UC-001-a.feature") });
+      const f2 = feature({ path: vp("Specifications/features/UC-001-b.feature") });
+      expect(computeAutomationStatus([f1, f2], history({ [refOf(f1, "S1")]: "passed" }))).toBe(
+        "implemented",
+      );
     });
   });
 });

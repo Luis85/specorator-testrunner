@@ -11,6 +11,7 @@ import { DefaultFeatureInsightService } from "./application/services/feature-ins
 import { CucumberJsonReportParser } from "./application/services/cucumber-json-report-parser";
 import { DefaultReportImportService } from "./application/services/report-import-service";
 import { PostRunCoordinator } from "./application/services/post-run-coordinator";
+import { DefaultScenarioHistoryService } from "./application/services/scenario-history-service";
 import { ScenarioIdentityResolver } from "./application/services/scenario-identity-resolver";
 import { DefaultGuidedTourService } from "./application/services/guided-tour-service";
 import { DEMO_FEATURE_FILE_NAME, DEMO_USE_CASE_ID } from "./application/content/demo-content";
@@ -79,6 +80,7 @@ export interface ComposedServices {
   runLauncher: RunLauncher;
   reportImportService: DefaultReportImportService;
   evidenceGenerationService: DefaultEvidenceGenerationService;
+  scenarioHistoryService: DefaultScenarioHistoryService;
   traceabilityService: DefaultTraceabilityService;
   runHistoryService: DefaultRunHistoryService;
   postRunCoordinator: PostRunCoordinator;
@@ -257,13 +259,32 @@ export const composeServices = (ctx: ComposeContext): ComposedServices => {
     logger,
   );
 
+  // EPIC-014 (US-057): per-scenario run history. Records a committed per-run
+  // NDJSON log + a regenerable .testrunner index that the Use Case roll-up reads
+  // (ADR-0022). Rebuilt from the committed logs on load so a git-pulled history
+  // surfaces without a fresh run.
+  services.scenarioHistoryService = new DefaultScenarioHistoryService(
+    hubSettingsService,
+    vault,
+    absoluteFs,
+    eventBus,
+    logger,
+  );
+  void services.scenarioHistoryService.rebuildIndex().catch((error: unknown) =>
+    logger.warn("Scenario history index rebuild on load failed", {
+      reason: (error as Error).message,
+    }),
+  );
+
   // EPIC-009 Dashboard (UC-018): aggregate the Use Case index into KPI counts +
-  // recent runs for the live Test Hub Dashboard.
+  // recent runs for the live Test Hub Dashboard. The roll-up derives the
+  // automation status from per-scenario history (US-057).
   services.traceabilityService = new DefaultTraceabilityService(
     services.useCaseService,
     vault,
     eventBus,
     logger,
+    services.scenarioHistoryService,
   );
   services.runHistoryService = new DefaultRunHistoryService(hubSettingsService, vault, logger);
 
@@ -274,6 +295,7 @@ export const composeServices = (ctx: ComposeContext): ComposedServices => {
     reportImportService: services.reportImportService,
     evidenceGenerationService: services.evidenceGenerationService,
     scenarioIdentityResolver,
+    scenarioHistoryService: services.scenarioHistoryService,
     traceabilityService: services.traceabilityService,
     eventBus,
     logger,

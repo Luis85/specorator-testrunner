@@ -2,6 +2,7 @@ import type { WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SpecificationService } from "../../application/services/specification-service";
+import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { StepDefinitionService } from "../../application/services/step-definition-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { PrdService } from "../../application/services/prd-service";
@@ -51,6 +52,15 @@ const REFRESH_ON: DomainEventType[] = [
   "testrun.completed",
   "testrun.failed",
   "testrun.cancelled",
+  // US-057: the header's Automation status is derived from per-scenario history,
+  // which is recorded AFTER testrun.completed — re-render when it lands so the
+  // status isn't a render behind.
+  "scenario.history.recorded",
+  // deriveById() reads scenario history under the configured Evidence root, so an
+  // evidencePath change (persisted via settings.updated) repoints the history
+  // tree — re-render so the header isn't served from the old root, matching the
+  // main dashboard.
+  "settings.updated",
 ];
 
 /**
@@ -61,9 +71,12 @@ const REFRESH_ON: DomainEventType[] = [
  * the command palette's slug-prompt flow rather than forking it).
  */
 export interface UseCaseDetailDeps {
-  // findById powers the render; updateMetadata backs the header's quick-edit
-  // modal (Wave G §3).
-  useCaseService: Pick<UseCaseService, "findById" | "updateMetadata" | "assignToPrd">;
+  // traceability.deriveById powers the render so the header's Automation status
+  // reflects per-scenario history (US-057), not the never-updated frontmatter
+  // value; updateMetadata/assignToPrd back the header's quick-edit modal (Wave
+  // G §3) and PRD assignment.
+  traceability: Pick<TraceabilityService, "deriveById">;
+  useCaseService: Pick<UseCaseService, "updateMetadata" | "assignToPrd">;
   // Resolves the parent PRD's title for the header breadcrumb (Task 16b) and
   // lists PRDs for the Use Case editor's Parent PRD selector (Task 16c).
   prdService: Pick<PrdService, "findById" | "findAll">;
@@ -166,7 +179,7 @@ export class UseCaseDetailView extends LiveDashboardView {
       return;
     }
 
-    const found = await this.deps.useCaseService.findById(this.useCaseId);
+    const found = await this.deps.traceability.deriveById(this.useCaseId);
     if (!found.ok) {
       // Recoverable dead-end: offer a retry instead of a bare terminal message.
       renderLoadError(
