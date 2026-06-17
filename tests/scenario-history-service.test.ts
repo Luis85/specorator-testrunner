@@ -1117,3 +1117,75 @@ describe("DefaultScenarioHistoryService.latestStatuses", () => {
     expect(statuses.ok && statuses.value.get(REF_C)).toBe("passed");
   });
 });
+
+describe("DefaultScenarioHistoryService.flakiness", () => {
+  /** Seeds a committed per-run log so a flakiness read rebuilds from it (US-058). */
+  const seedRun = (
+    fs: FakeVaultFileSystem,
+    runId: string,
+    at: string,
+    ref: string,
+    status: string,
+  ): void => {
+    fs.folders.add("Test Evidence");
+    fs.files.set(
+      vp(`Test Evidence/2026/06/${runId}/scenarios.ndjson`),
+      JSON.stringify({ v: 1, scenarioRef: ref, runId, status, at, scope: "all" }) + "\n",
+    );
+  };
+
+  it("returns an empty map for a vault with no history", async () => {
+    const { service } = build();
+    const result = await service.flakiness();
+    expect(result.ok && result.value.size).toBe(0);
+  });
+
+  it("scores an alternating scenario as flaky and a steady one as stable", async () => {
+    const { service, fs } = build();
+    // REF_A flips pass→fail→pass; REF_B is steadily passing.
+    seedRun(fs, "R1", "2026-06-01T10:00:00.000Z", REF_A, "passed");
+    seedRun(fs, "R2", "2026-06-02T10:00:00.000Z", REF_A, "failed");
+    seedRun(fs, "R3", "2026-06-03T10:00:00.000Z", REF_A, "passed");
+    seedRun(fs, "R4", "2026-06-01T10:00:00.000Z", REF_B, "passed");
+    seedRun(fs, "R5", "2026-06-02T10:00:00.000Z", REF_B, "passed");
+
+    const result = await service.flakiness();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.get(REF_A)).toMatchObject({ flips: 2, score: 1, band: "flaky" });
+    expect(result.value.get(REF_B)).toMatchObject({ flips: 0, band: "stable" });
+  });
+
+  it("treats a single-run scenario as unknown", async () => {
+    const { service, fs } = build();
+    seedRun(fs, "R1", "2026-06-01T10:00:00.000Z", REF_A, "passed");
+
+    const result = await service.flakiness();
+    expect(result.ok && result.value.get(REF_A)).toMatchObject({ runs: 1, band: "unknown" });
+  });
+
+  it("reflects results recorded through the normal write path", async () => {
+    const { service } = build();
+    await service.record(
+      run({ id: "RUN-1", finishedAt: "2026-06-01T10:01:00.000Z" }),
+      report({
+        runId: "RUN-1",
+        scenarioResults: [{ feature: "F", scenario: "A", status: "passed", scenarioRef: REF_A }],
+      }),
+    );
+    await service.record(
+      run({ id: "RUN-2", finishedAt: "2026-06-02T10:01:00.000Z" }),
+      report({
+        runId: "RUN-2",
+        scenarioResults: [{ feature: "F", scenario: "A", status: "failed", scenarioRef: REF_A }],
+      }),
+    );
+
+    const result = await service.flakiness();
+    expect(result.ok && result.value.get(REF_A)).toMatchObject({
+      runs: 2,
+      flips: 1,
+      band: "flaky",
+    });
+  });
+});
