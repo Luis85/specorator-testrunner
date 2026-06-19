@@ -204,9 +204,9 @@ display_order: 1
 
 | Slice ↓ / Activity → | Configure SUT | Author spec | Run tests | Read evidence |
 | --- | --- | --- | --- | --- |
-| **Walking skeleton** | [[UC-013]] | [[UC-037]] | [[UC-011]] | … |
-| **Next**             |            | [[UC-035]]  |            |              |
-| **Later**            |            | [[UC-036]]  |            |              |
+| **Walking skeleton** | [[UC-013 Configure SUT\|UC-013]] | [[UC-037 Author a Use Case\|UC-037]] | [[UC-011 Run a Suite\|UC-011]] | … |
+| **Next**             |            | [[UC-035 Facilitate discovery\|UC-035]]  |            |              |
+| **Later**            |            | [[UC-036 Promote a checklist item\|UC-036]]  |            |              |
 ```
 
 Why this exact shape: every value is a string scalar or block-sequence of string
@@ -217,6 +217,17 @@ of containment truth); the map parents nothing (it's an index anchored by
 `product:`); the body grid is a derived rendering, so git diffs stay small and
 meaningful. This subset is **round-trippable to storymaps.io's YAML** later if we
 want interop.
+
+> **Rendering caveat (implementation, not schema).** The stored `cards` value is
+> the bare `UC-NNN` id — that is the stable key. But the rendered body grid must
+> use a **resolved, aliased wikilink** `[[<note name>|UC-NNN]]`, because generated
+> Use Case notes are titled `UC-NNN <Title>.md` and a bare `[[UC-NNN]]` does
+> **not** resolve in Obsidian. This mirrors the existing evidence renderer, which
+> resolves each linked UC's note basename for exactly this reason
+> (`src/application/services/evidence-generation-service.ts:99-101`, `:380-383`:
+> `[[Note Name|UC-001]]` resolves to the real note while still showing the id).
+> The Story Map grid projection must reuse that same UC-note-name resolution so
+> cells never become dangling links.
 
 ---
 
@@ -267,9 +278,12 @@ The codebase renders **trees** (`prd-explorer-view.ts:121`) and **tables**
 with the V2 non-goal "no visual/drag-drop builder":
 
 - **Render** the grid as a semantic **HTML `<table>`** (activities = columns,
-  slices = rows, cells = `[[UC-NNN]]` links) — mirrors the existing UC table,
-  accessible, mobile-degrades by horizontal scroll. Keep the grid *model* in a
-  unit-tested `*-rows.ts` projection; the view stays thin (AGENTS.md rule).
+  slices = rows, cells = links to the referenced Use Cases) — mirrors the
+  existing UC table, accessible, mobile-degrades by horizontal scroll. Resolve
+  each `UC-NNN` to its real note (reusing the evidence renderer's UC-note-name
+  resolution; see §4 caveat) so cells link to titled notes rather than dangling.
+  Keep the grid *model* in a unit-tested `*-rows.ts` projection; the view stays
+  thin (AGENTS.md rule).
 - **Author** via a structured detail view following the shipped **Feature
   Editor** pattern (round-trip parse/serialize, raw-mode fallback, live
   validation strip) — *not* a canvas. The builder modal stays a short wizard
