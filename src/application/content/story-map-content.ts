@@ -5,6 +5,8 @@ import {
   encodeCard,
   encodeStep,
   isStoryMapStatus,
+  normalizeLabels,
+  normalizeSteps,
   parseCard,
   parseStep,
   type StoryMap,
@@ -214,19 +216,26 @@ export const parseStoryMapNote = (content: string, path: VaultPath): StoryMap | 
   const cards = asArray(fm.cards)
     .map(parseCard)
     .filter((card): card is StoryMapCard => card !== null);
-  const steps = asArray(fm.steps)
-    .map(parseStep)
-    .filter((step): step is StoryMapStep => step !== null);
+  // Normalize axes on read (mirrors the create path) so hand-edited frontmatter
+  // can't render duplicate activity sub-tables / slice rows or double-count the
+  // points roll-up. Steps are filtered against the normalized backbone.
+  const activities = normalizeLabels(asArray(fm.activities));
+  const steps = normalizeSteps(
+    asArray(fm.steps)
+      .map(parseStep)
+      .filter((step): step is StoryMapStep => step !== null),
+    activities,
+  );
   return {
     id: fm.id,
     title: typeof fm.title === "string" ? fm.title : fm.id,
     status: isStoryMapStatus(fm.status) ? fm.status : "draft",
     product:
       typeof fm.product === "string" && fm.product !== "" ? fm.product : STORY_MAP_DEFAULT_PRODUCT,
-    users: asArray(fm.users),
-    activities: asArray(fm.activities),
+    users: normalizeLabels(asArray(fm.users)),
+    activities,
     steps,
-    slices: asArray(fm.slices),
+    slices: normalizeLabels(asArray(fm.slices)),
     cards,
     displayOrder:
       Number.parseInt(typeof fm.display_order === "string" ? fm.display_order : "0", 10) || 0,

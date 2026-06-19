@@ -107,6 +107,51 @@ export const parseStep = (raw: string): StoryMapStep | null => {
   return { activity, step };
 };
 
+/** Collapse whitespace/pipe runs to a single space and trim — the label invariant. */
+const cleanLabel = (raw: string): string => raw.replace(/[\s|]+/g, " ").trim();
+
+/**
+ * Normalizes a label list (users, activities, slices): collapses whitespace and
+ * the reserved `|`, drops blanks, and dedupes preserving order. Applied on BOTH
+ * the create path and the read model so hand-edited frontmatter can't produce
+ * duplicate columns/rows or a mismatch with card placement coordinates. Pure.
+ */
+export const normalizeLabels = (values: readonly string[] | undefined): string[] => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values ?? []) {
+    const value = cleanLabel(raw);
+    if (value === "" || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+};
+
+/**
+ * Normalizes steps: cleans both fields, drops a step whose activity is not on the
+ * (already-normalized) backbone, and dedupes by (activity, step). Applied on both
+ * create and read so the grid columns stay duplicate-free. Pure.
+ */
+export const normalizeSteps = (
+  steps: readonly StoryMapStep[] | undefined,
+  activities: readonly string[],
+): StoryMapStep[] => {
+  const allowed = new Set(activities);
+  const seen = new Set<string>();
+  const out: StoryMapStep[] = [];
+  for (const raw of steps ?? []) {
+    const activity = cleanLabel(raw.activity);
+    const step = cleanLabel(raw.step);
+    // `|` is a safe key delimiter: cleanLabel has stripped it from both fields.
+    const key = `${activity}|${step}`;
+    if (activity === "" || step === "" || !allowed.has(activity) || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ activity, step });
+  }
+  return out;
+};
+
 /**
  * A non-negative integer or undefined, parsed from a (possibly empty) field.
  * Uses the FULL numeric value (not `parseInt`), so a hand-edited non-integer
@@ -184,7 +229,10 @@ const richCard = (fields: string[]): StoryMapCard | null => {
  * empty, or a free-text card has no title.
  */
 export const parseCard = (raw: string): StoryMapCard | null => {
-  const parts = raw.split(FIELD_DELIMITER).map((part) => part.trim());
+  // Collapse interior whitespace (not just trim) so a card's activity/step/slice
+  // coordinate matches the normalized axis labels — otherwise "Sign  in" would
+  // miss the "Sign in" column and vanish from the grid while still counting.
+  const parts = raw.split(FIELD_DELIMITER).map((part) => part.replace(/\s+/g, " ").trim());
   if (parts.length === 3) {
     const [ref, activity, slice] = parts;
     if (ref === "" || activity === "" || slice === "") return null;

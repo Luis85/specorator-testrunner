@@ -6,6 +6,8 @@ import {
   encodeStep,
   isCardStatus,
   isStoryMapStatus,
+  normalizeLabels,
+  normalizeSteps,
   parseCard,
   parseStep,
   type StoryMap,
@@ -45,7 +47,35 @@ describe("encodeStep / parseStep", () => {
   });
 });
 
+describe("normalizeLabels / normalizeSteps", () => {
+  it("collapses whitespace/pipes, drops blanks, and dedupes labels (order preserved)", () => {
+    expect(normalizeLabels(["  Sign  in ", "a|b", "Sign in", "", "  "])).toEqual([
+      "Sign in",
+      "a b",
+    ]);
+    expect(normalizeLabels(undefined)).toEqual([]);
+  });
+
+  it("normalizes steps, drops off-backbone, and dedupes by (activity, step)", () => {
+    const steps = normalizeSteps(
+      [
+        { activity: "Author  spec", step: " Draft " },
+        { activity: "Author spec", step: "Draft" }, // duplicate after normalization
+        { activity: "Unknown", step: "x" }, // off-backbone
+      ],
+      ["Author spec"],
+    );
+    expect(steps).toEqual([{ activity: "Author spec", step: "Draft" }]);
+  });
+});
+
 describe("encodeCard / parseCard (rich)", () => {
+  it("collapses interior whitespace in coordinates so a card matches its axis label", () => {
+    const card = parseCard("UC-001 | Sign  in |  | Walking  skeleton |  |  |  |  | T");
+    expect(card?.activity).toBe("Sign in");
+    expect(card?.slice).toBe("Walking skeleton");
+  });
+
   it("round-trips a fully-populated rich card through the 9-field encoding", () => {
     const card: StoryMapCard = {
       ref: "UC-013",

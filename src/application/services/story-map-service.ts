@@ -8,6 +8,9 @@ import {
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import {
+  encodeCard,
+  normalizeLabels,
+  normalizeSteps,
   type StoryMap,
   type StoryMapCard,
   type StoryMapId,
@@ -18,7 +21,6 @@ import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
-import { encodeCard } from "../../domain/entities/story-map";
 import {
   addCardToList,
   removeCardFromList,
@@ -102,43 +104,6 @@ const STORY_MAP_MUTATE_KEY = "story-map:mutate";
 
 const DEFAULT_PRODUCT = "PRD-000";
 
-/** Drop blanks, collapse newlines, reject the `|` card delimiter, and dedupe. */
-const normalizeLabels = (values: string[] | undefined): string[] => {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of values ?? []) {
-    const value = raw.replace(/[\s|]+/g, " ").trim();
-    if (value === "" || seen.has(value)) continue;
-    seen.add(value);
-    out.push(value);
-  }
-  return out;
-};
-
-/**
- * Normalizes steps: collapses pipes/whitespace in both fields, drops a step
- * whose activity is not on the backbone, and dedupes by (activity, step). Pure.
- */
-const normalizeSteps = (
-  steps: StoryMapStep[] | undefined,
-  activities: readonly string[],
-): StoryMapStep[] => {
-  const allowed = new Set(activities);
-  const seen = new Set<string>();
-  const out: StoryMapStep[] = [];
-  for (const raw of steps ?? []) {
-    const activity = raw.activity.replace(/[\s|]+/g, " ").trim();
-    const step = raw.step.replace(/[\s|]+/g, " ").trim();
-    // `|` is a safe key delimiter: both fields have had pipes/whitespace
-    // collapsed above, so neither can contain it.
-    const key = `${activity}|${step}`;
-    if (activity === "" || step === "" || !allowed.has(activity) || seen.has(key)) continue;
-    seen.add(key);
-    out.push({ activity, step });
-  }
-  return out;
-};
-
 /** The defined `UC-NNN` refs of a card set (reference-less cards contribute none). */
 const cardRefs = (cards: readonly StoryMapCard[]): string[] =>
   cards.map((c) => c.ref).filter((ref): ref is string => ref !== undefined);
@@ -178,7 +143,9 @@ export class DefaultStoryMapService implements StoryMapService {
   ) {}
 
   async create(request: CreateStoryMapRequest): Promise<Result<StoryMap>> {
-    const title = request.title.trim();
+    // Collapse whitespace/newlines so the title is a single parser-safe line (a
+    // pasted multi-line title would otherwise break the frontmatter scalar).
+    const title = request.title.replace(/\s+/g, " ").trim();
     if (title === "") {
       return err(appError("VALIDATION_FAILED", "A Story Map title is required."));
     }
@@ -243,7 +210,9 @@ export class DefaultStoryMapService implements StoryMapService {
           steps,
           slices,
           cards,
-          displayOrder: existing.value.length,
+          // max+1 (not count) so a value freed by a delete can't collide with a
+          // surviving sibling's order.
+          displayOrder: existing.value.reduce((m, x) => Math.max(m, x.displayOrder), -1) + 1,
           path,
         };
 

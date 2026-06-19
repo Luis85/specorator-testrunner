@@ -41,6 +41,15 @@ describe("buildFrontmatter", () => {
     expect(fm).toContain('n: "123"');
   });
 
+  it("quotes a value with an interior newline so it can't split the scalar across lines", () => {
+    const fm = buildFrontmatter({ title: "Login\nflow" });
+    // Must be a single physical line (JSON-escaped), not two lines.
+    expect(fm).toContain('title: "Login\\nflow"');
+    expect(fm.split("\n").filter((l) => l.startsWith("title")).length).toBe(1);
+    // And it round-trips back to the original through the parser.
+    expect(parseFrontmatter(fm).title).toBe("Login\nflow");
+  });
+
   it("buildNote joins frontmatter and body", () => {
     const note = buildNote({ id: "x" }, "# Title\n");
     expect(note.startsWith("---\nid: x\n---\n\n# Title")).toBe(true);

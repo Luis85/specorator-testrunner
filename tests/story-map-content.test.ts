@@ -7,6 +7,7 @@ import {
   renderActivityTable,
   renderLegend,
   renderPointsRollup,
+  parseStoryMapNote,
   renderStoryMapGridTable,
   replaceGridBlock,
   storyMapFolderName,
@@ -150,6 +151,32 @@ describe("buildStoryMapNote", () => {
   it("falls back to a bare product link when the PRD note name is unresolved", () => {
     const note = buildStoryMapNote(map, new Map());
     expect(note).toContain("[[PRD-000]]");
+  });
+});
+
+describe("parseStoryMapNote", () => {
+  it("dedupes hand-edited duplicate axes so the grid + roll-up don't double-count", () => {
+    const note = [
+      "---",
+      "id: SM-001",
+      "type: story-map",
+      "title: J",
+      "activities:",
+      "  - Author spec",
+      "  - Author spec",
+      "slices:",
+      "  - Walking skeleton",
+      "  - Walking skeleton",
+      "steps:",
+      "  - Author spec | Draft",
+      "  - Author spec | Draft",
+      "---",
+      "",
+    ].join("\n");
+    const map = parseStoryMapNote(note, unsafeVaultPath("Story Maps/SM-001/SM-001.md"));
+    expect(map?.activities).toEqual(["Author spec"]);
+    expect(map?.slices).toEqual(["Walking skeleton"]);
+    expect(map?.steps).toEqual([{ activity: "Author spec", step: "Draft" }]);
   });
 });
 

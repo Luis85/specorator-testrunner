@@ -175,6 +175,20 @@ describe("DefaultStoryMapService.create", () => {
     expect(result.ok && result.value.cards).toHaveLength(1);
   });
 
+  it("collapses a multi-line title into a single parser-safe line", async () => {
+    const { service, fs } = build();
+    const result = await service.create({
+      title: "Login\nflow",
+      activities: ["a"],
+      slices: ["s"],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.title).toBe("Login flow");
+    const note = fs.files.get(result.value.path) ?? "";
+    expect(note).toContain("title: Login flow");
+  });
+
   it("rejects a map with no activities or no slices", async () => {
     const { service } = build();
     const noActivities = await service.create({ title: "M", activities: [], slices: ["s"] });
