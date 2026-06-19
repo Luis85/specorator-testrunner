@@ -1,3 +1,4 @@
+import { evidenceRunFolder } from "./evidence-paths";
 import type { ImportedReport } from "./report-import-service";
 import type { SettingsService } from "./settings-service";
 import { stripScenarioEvidenceBlock } from "../content/scenario-evidence-block";
@@ -445,11 +446,7 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
 
   /** `Test Evidence/YYYY/MM/<runId>` from the run start (ADR-0016 partition). */
   private runFolder(run: TestRun, root: VaultPath): VaultPath {
-    const started = new Date(run.startedAt);
-    const valid = Number.isNaN(started.getTime()) ? this.now() : started;
-    const year = String(valid.getUTCFullYear());
-    const month = String(valid.getUTCMonth() + 1).padStart(2, "0");
-    return joinVaultPath(root, year, month, run.id);
+    return evidenceRunFolder(root, run, this.now);
   }
 
   /** `…/<runId>/scenarios.ndjson` — the committed per-run history log. */
