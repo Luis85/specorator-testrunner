@@ -204,15 +204,17 @@ export class DefaultStoryMapService implements StoryMapService {
     // two concurrent creates can't pick the same next id.
     return this.prds.withMutationLock(() =>
       this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
-        // The product anchor must exist (except the reserved root PRD-000, which is
-        // never deletable so it cannot dangle). Checked under the PRD lock, so it
-        // can't pass and then be deleted before the write lands.
-        if (product !== DEFAULT_PRODUCT) {
-          const found = await this.prds.findById(product);
-          if (!found.ok) return found;
-          if (!found.value) {
-            return err(appError("VALIDATION_FAILED", `Unknown product PRD: ${product}.`));
-          }
+        // The product anchor must resolve to a real PRD note — including the root
+        // PRD-000 — so the map's product link never dangles (a bare `[[PRD-000]]`
+        // rendered before the root exists would stay dangling forever, since no
+        // path rewrites the product paragraph later). Checked under the PRD lock,
+        // so it can't pass and then be deleted before the write lands.
+        const found = await this.prds.findById(product);
+        if (!found.ok) return found;
+        if (!found.value) {
+          return err(
+            appError("VALIDATION_FAILED", `Unknown product PRD: ${product}. Create it first.`),
+          );
         }
 
         const existing = await this.findAll();
@@ -344,8 +346,24 @@ export class DefaultStoryMapService implements StoryMapService {
       const { body } = parseNote(normalized);
       const nextBody = replaceGridBlock(body, renderStoryMapGridTable(map, ucNoteNames));
       const frontmatter = normalized.slice(0, normalized.length - body.length);
-      return this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
+      const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
+      if (!written.ok) return written;
+      // Live views refresh on this (the explorer's row count + captured map go
+      // stale otherwise after a hand-edit + rebuild).
+      await this.publishUpdated(map);
+      return ok(undefined);
     });
+  }
+
+  /** Publishes `storymap.updated` so live views re-render after a write. */
+  private async publishUpdated(map: Pick<StoryMap, "id" | "path">): Promise<void> {
+    await this.eventBus.publish(
+      createEvent(
+        "storymap.updated",
+        { storyMapId: map.id, path: String(map.path) },
+        { correlationId: map.id },
+      ),
+    );
   }
 
   async addCard(id: StoryMapId, card: StoryMapCard): Promise<Result<StoryMap>> {
@@ -418,13 +436,7 @@ export class DefaultStoryMapService implements StoryMapService {
     if (!written.ok) return written;
     // Notify live views (the explorer's row counts + captured map go stale
     // otherwise) that this map's cards changed.
-    await this.eventBus.publish(
-      createEvent(
-        "storymap.updated",
-        { storyMapId: map.id, path: String(map.path) },
-        { correlationId: map.id },
-      ),
-    );
+    await this.publishUpdated(map);
     return ok(map);
   }
 

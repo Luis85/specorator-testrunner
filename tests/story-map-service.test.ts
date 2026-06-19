@@ -21,7 +21,10 @@ const resolver = (paths: Record<string, string> = {}): PrdGuard => ({
   withMutationLock: (operation) => operation(),
 });
 
-const build = (ucPaths?: Record<string, string>, prdPaths?: Record<string, string>) => {
+/** The default PRD set resolves the root PRD-000 (most create tests anchor there). */
+const ROOT_PRD = { "PRD-000": "PRDs/PRD-000-product-vision/PRD-000-product-vision.md" };
+
+const build = (ucPaths?: Record<string, string>, prdPaths: Record<string, string> = ROOT_PRD) => {
   const fs = new FakeVaultFileSystem();
   const { bus, types, events } = recordingEventBus();
   const settings = new DefaultSettingsService(
@@ -103,7 +106,7 @@ describe("DefaultStoryMapService.create", () => {
   });
 
   it("rejects a non-root product PRD that does not exist", async () => {
-    const { service } = build(); // no PRDs known to the resolver
+    const { service } = build(); // PRD-007 not known to the resolver
     const result = await service.create({
       title: "Map",
       product: "PRD-007",
@@ -126,8 +129,16 @@ describe("DefaultStoryMapService.create", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("allows the reserved root PRD-000 even when no PRD note exists yet", async () => {
-    const { service } = build(); // PRD-000 not known to the resolver
+  it("rejects the reserved root PRD-000 when its note does not exist yet (would dangle)", async () => {
+    const { service } = build({}, {}); // no PRD notes resolve at all
+    const result = await service.create({ title: "Map", activities: ["a"], slices: ["s"] });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("PRD-000");
+  });
+
+  it("anchors to the root PRD-000 once its note exists", async () => {
+    const { service } = build(); // ROOT_PRD resolves PRD-000
     const result = await service.create({ title: "Map", activities: ["a"], slices: ["s"] });
     expect(result.ok && result.value.product).toBe("PRD-000");
   });
@@ -270,7 +281,7 @@ describe("DefaultStoryMapService.deleteStoryMap", () => {
 
 describe("DefaultStoryMapService.rebuildGrid", () => {
   it("regenerates the managed grid block with a resolved, pipe-escaped UC link", async () => {
-    const { service, fs } = build({ "UC-037": "Use Cases/UC-037 Author a Use Case.md" });
+    const { service, fs, types } = build({ "UC-037": "Use Cases/UC-037 Author a Use Case.md" });
     // A hand-edited note: a card was added to the frontmatter, but the body grid
     // block is still empty (the user has not rebuilt yet).
     const path = "Story Maps/SM-001-j/SM-001-j.md";
@@ -309,6 +320,8 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
     // Hand-written sections survive the managed-block replacement.
     expect(note).toContain("## Notes");
     expect(note).toContain("keep me");
+    // The explorer refreshes on this event after a hand-edit + rebuild.
+    expect(types()).toContain("storymap.updated");
   });
 
   it("rebuilds a CRLF note without corrupting the frontmatter boundary", async () => {
