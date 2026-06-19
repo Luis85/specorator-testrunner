@@ -48,8 +48,8 @@ _Avoid_: parent, parentId, root flag.
 The PRD frontmatter field that orders sibling PRDs. Kept separate from the immutable `PRD-NNN` id so siblings can be reordered **without renaming ids** and breaking cross-references (per ADR-0026).
 _Avoid_: order, sort key, sequence, index.
 
-**Story Map** _(accepted — see ADR-0027)_:
-A **sibling overlay to the PRD** (not a node in the Domain → PRD → Use Case tree) that shapes the product journey. Identified as `SM-NNN`, anchored to a product via its `product` field (a PRD id). It adds the two facts the single-parent tree was designed not to hold — an ordered **backbone** (`activities`) and ordered **release slices** (`slices`, first = the walking skeleton) — over Use Cases referenced **by id only** in `cards` (it never copies Use Case content). Stored one folder per map at `<storyMapsPath>/<id>-<slug>/<id>-<slug>.md`. Composes *above* an **Example Map** along the shared `UC-NNN` seam; the two are never conflated.
+**Story Map** _(accepted — see ADR-0027, extended by ADR-0028)_:
+A **sibling overlay to the PRD** (not a node in the Domain → PRD → Use Case tree) that shapes the product journey, vault-local and single-user. Identified as `SM-NNN`, anchored to a product via its `product` field (a PRD id). It holds the facts the single-parent tree was designed not to hold: an audience lane (`users`), an ordered **backbone** (`activities`), task-level **steps**, and ordered **release slices** (`slices`, first = the walking skeleton), over rich **Story Map Cards**. Stored one folder per map at `<storyMapsPath>/<id>-<slug>/<id>-<slug>.md`. Composes *above* an **Example Map** along the shared `UC-NNN` seam; the two are never conflated. Deliberately not interoperable with, or collaborative like, the storymaps.io tool it parallels (ADR-0028).
 _Avoid_: Roadmap, backlog, journey map (a journey map is UX research, not this), example map.
 
 **Backbone**:
@@ -60,9 +60,13 @@ _Avoid_: Activities row, epics, columns.
 A horizontal band of a **Story Map** that groups the Use Cases shipped together in one end-to-end increment — deliberately spanning PRD branches. The topmost slice is the **walking skeleton** (the thinnest shippable end-to-end system). Distinct from a Use Case's branch-local `increment` field.
 _Avoid_: Release, sprint, milestone, swimlane.
 
-**Story Map Card**:
-A single Use Case placement on a **Story Map**, encoded as the parser-safe string `"UC-NNN | activity | slice"`. References a Use Case by id at an (activity, slice) coordinate; it is the unit of the map's grid. Renders as a resolved, aliased wikilink `[[<note name>\|UC-NNN]]` so titled Use Case notes never dangle.
-_Avoid_: Story, card, ticket, cell.
+**Story Map Card** _(rich model — see ADR-0028)_:
+A placement on a **Story Map**, encoded as the parser-safe nine-field string `"ref | activity | step | slice | status | points | tags | color | title"`. The `ref` is an **optional** `UC-NNN` (a reference-less card is a free-text story not yet promoted to a Use Case). Alongside the (activity, step, slice) coordinate it carries map-owned planning attributes — a free-text **title**, a hand-set **planning status** (`planned`/`in-progress`/`done`/`blocked`, distinct from a Use Case's run-derived automation status), **story points**, **tags**, and a **color**. A referenced card renders its title plus a resolved, aliased wikilink `[[<note name>\|UC-NNN]]` so titled notes never dangle. The legacy three-field `"UC-NNN | activity | slice"` form (ADR-0027) still parses.
+_Avoid_: Ticket, cell. (A reference-less card IS a "story" here, per ADR-0028.)
+
+**Planning Status** _(accepted — see ADR-0028)_:
+A **Story Map Card**'s hand-set lifecycle state — one of `planned`, `in-progress`, `done`, `blocked`. Deliberately distinct from a Use Case's **automation** status (passing/failing, derived from test runs): a card can be `planned` while its Use Case has no automation. The map owns this axis; it never mirrors the automation roll-up.
+_Avoid_: Automation status, test status, state.
 
 **Feature Specification**:
 A `.feature` file in Gherkin that makes part of a Use Case executable. Each Feature belongs to exactly one Use Case; the back-reference is encoded both in the filename (`<UC-id>-<slug>.feature`) and in the Feature's frontmatter. Sharing test logic across Use Cases is done via step definitions (`createBdd()` steps) and Gherkin `Background`, never via shared Feature files.

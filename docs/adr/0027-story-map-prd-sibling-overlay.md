@@ -35,5 +35,5 @@ A Story Map **composes with, and sits above, Example Maps** (EPIC-017): the map 
 
 - The hierarchy gains **journey sequence** and **cross-capability release slices** without disturbing the single-parent tree — the map is an overlay, `prd-id` stays the one true parent.
 - **One source of truth**: the map stores only `UC-NNN` references plus `(activity, slice)` coordinates; broken references are detectable (a future dangling-reference lint can flag a card pointing at a deleted/deprecated Use Case).
-- A new `storyMapsPath` setting (default `Story Maps/`) and `storymap.created` / `storymap.deleted` domain events are added; the feature mirrors the PRD vertical slice (entity → content → service → builder → explorer) end to end.
+- A new `storyMapsPath` setting (default `Story Maps/`) and `storymap.created` / `storymap.deleted` domain events are added (ADR-0028 adds `storymap.updated` for rich-card authoring); the feature mirrors the PRD vertical slice (entity → content → service → builder → explorer) end to end.
 - Optional interop: because the model is a clean-room reimplementation of a plain JSON/YAML schema, a later import/export adapter could round-trip with storymaps.io's YAML/CLI.
