@@ -95,6 +95,22 @@ export const nextUseCaseId = (existing: UseCase[]): UseCaseId => {
   return `UC-${String(max + 1).padStart(3, "0")}`;
 };
 
+/**
+ * What {@link DefaultUseCaseService.mutateNote} does once it has re-read a Use
+ * Case under the per-path write lock: `render` the new note content from the
+ * current file content, the `changedFields` for the `usecase.updated` event, the
+ * `result` entity to return, the log line, and any `publishFollowUps` events to
+ * emit after `usecase.updated`. Returning `null` from the planner is a no-op.
+ */
+interface NoteMutation {
+  render: (content: string) => string;
+  changedFields: string[];
+  result: UseCase;
+  logMessage: string;
+  logFields: Record<string, unknown>;
+  publishFollowUps?: () => Promise<void>;
+}
+
 export class DefaultUseCaseService implements UseCaseService {
   // UC notes have three read-modify-write writers (post-run evidence linking,
   // edit modal, feature linking) that can interleave across awaits (review §4);
@@ -262,80 +278,51 @@ export class DefaultUseCaseService implements UseCaseService {
       return err(appError("VALIDATION_FAILED", `Invalid Use Case status: ${changes.status}.`));
     }
 
-    // Pre-lock lookup resolves the lock key only; the locked re-read below is
-    // authoritative. The note path is stable per id — title edits rewrite the
-    // heading in place; no file move is ever performed.
-    const preLock = await this.findById(id);
-    if (!preLock.ok) return err(preLock.error);
-    if (preLock.value === null) {
-      return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
-    }
-    const notePath = preLock.value.path;
-
-    return this.noteWrites.run(notePath, async () => {
-      // Re-read inside the lock so the no-op guard and changedFields are always
-      // computed against the latest on-disk state, not a stale pre-lock snapshot.
-      // Two concurrent calls sending the same change would otherwise both pass the
-      // no-op guard and each produce a phantom second write + usecase.updated event.
-      const fresh = await this.findById(id);
-      if (!fresh.ok) return err(fresh.error);
-      if (fresh.value === null) {
-        // Another writer cannot delete the note today, but keep the guard for
-        // forward-compatibility (matches the not-found error shape above).
-        return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
-      }
-      const existing = fresh.value;
-
+    return this.mutateNote(id, (existing) => {
       const nextTitle = title ?? existing.title;
       const nextStatus = changes.status ?? existing.status;
       const changedFields = [
         ...(nextTitle !== existing.title ? ["title"] : []),
         ...(nextStatus !== existing.status ? ["status"] : []),
       ];
-      // No-op: nothing changed, so neither write nor publish (subscribers would
-      // otherwise re-render for a phantom edit).
-      if (changedFields.length === 0) return ok(existing);
+      // No-op: nothing changed.
+      if (changedFields.length === 0) return null;
 
-      const read = await this.fs.readFile(existing.path);
-      if (!read.ok) return err(read.error);
-      let content = updateNoteFrontmatter(read.value, { title: nextTitle, status: nextStatus });
-      if (nextTitle !== existing.title) {
-        // create() writes the body H1 as `# <id> <title>`; mirror that exact
-        // format on retitle so heading and frontmatter don't drift. Only the
-        // FIRST matching H1 is touched (no /g): hand-written headings stay.
-        // The replacement is a FUNCTION so a title containing `$&`/`$$`/`$1`
-        // is inserted literally instead of being interpreted as a
-        // String.replace substitution pattern (review: data corruption).
-        const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        content = content.replace(
-          new RegExp(`^# ${escapedId} .*$`, "m"),
-          () => `# ${id} ${nextTitle}`,
-        );
-      }
-      const written = await this.fs.writeFile(existing.path, content);
-      if (!written.ok) return err(written.error);
-
-      // Subscribers are read-only today (render schedulers / tour service's own
-      // queue); a subscriber that re-entered noteWrites.run for the same path
-      // would deadlock (see SerialQueue docs).
-      await this.eventBus.publish(
-        createEvent(
-          "usecase.updated",
-          { useCaseId: id, path: existing.path, changedFields },
-          { correlationId: id },
-        ),
-      );
-      if (nextStatus !== existing.status) {
-        await this.eventBus.publish(
-          createEvent(
-            "usecase.status.changed",
-            { useCaseId: id, previousStatus: existing.status, nextStatus },
-            { correlationId: id },
-          ),
-        );
-      }
-      this.logger.info("Use Case metadata updated", { id, changedFields });
-      return ok({ ...existing, title: nextTitle, status: nextStatus });
+      return {
+        render: (content) => {
+          let next = updateNoteFrontmatter(content, { title: nextTitle, status: nextStatus });
+          if (nextTitle !== existing.title) {
+            // create() writes the body H1 as `# <id> <title>`; mirror that exact
+            // format on retitle so heading and frontmatter don't drift. Only the
+            // FIRST matching H1 is touched (no /g): hand-written headings stay.
+            // The replacement is a FUNCTION so a title containing `$&`/`$$`/`$1`
+            // is inserted literally instead of being interpreted as a
+            // String.replace substitution pattern (review: data corruption).
+            const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            next = next.replace(
+              new RegExp(`^# ${escapedId} .*$`, "m"),
+              () => `# ${id} ${nextTitle}`,
+            );
+          }
+          return next;
+        },
+        changedFields,
+        result: { ...existing, title: nextTitle, status: nextStatus },
+        logMessage: "Use Case metadata updated",
+        logFields: { id, changedFields },
+        publishFollowUps:
+          nextStatus !== existing.status
+            ? async () => {
+                await this.eventBus.publish(
+                  createEvent(
+                    "usecase.status.changed",
+                    { useCaseId: id, previousStatus: existing.status, nextStatus },
+                    { correlationId: id },
+                  ),
+                );
+              }
+            : undefined,
+      };
     });
   }
 
@@ -358,41 +345,74 @@ export class DefaultUseCaseService implements UseCaseService {
         return err(appError("VALIDATION_FAILED", `Unknown PRD: ${target}`));
       }
 
-      const preLock = await this.findById(id);
-      if (!preLock.ok) return err(preLock.error);
-      if (preLock.value === null) {
+      return this.mutateNote(id, (existing) => {
+        // No-op when already linked to the same PRD (avoids a phantom event).
+        if (existing.prdId === target) return null;
+        return {
+          render: (content) => updateNoteFrontmatter(content, { "prd-id": target }),
+          changedFields: ["prd-id"],
+          result: { ...existing, prdId: target },
+          logMessage: "Use Case linked to PRD",
+          logFields: { id, prdId: target },
+        };
+      });
+    });
+  }
+
+  /**
+   * The locked read-modify-write flow shared by {@link updateMetadata} and
+   * {@link assignToPrd}. The pre-lock lookup resolves the note path (stable per
+   * id — no file move is ever performed); then under the per-path note-write lock
+   * it RE-READS the Use Case so the no-op guard and changedFields are computed
+   * against the latest on-disk state, never a stale pre-lock snapshot, and hands
+   * the fresh entity to `plan`. A `null` plan is a no-op: the entity is returned
+   * WITHOUT writing or publishing. Otherwise the rendered content is written and
+   * `usecase.updated` (correlationId = id, §19) is published, then any
+   * `publishFollowUps` and the log line.
+   */
+  private async mutateNote(
+    id: UseCaseId,
+    plan: (existing: UseCase) => NoteMutation | null,
+  ): Promise<Result<UseCase>> {
+    const preLock = await this.findById(id);
+    if (!preLock.ok) return err(preLock.error);
+    if (preLock.value === null) {
+      return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
+    }
+
+    return this.noteWrites.run(preLock.value.path, async () => {
+      // Re-read inside the lock so two concurrent calls sending the same change
+      // can't both pass the no-op guard and each produce a phantom write + event.
+      const fresh = await this.findById(id);
+      if (!fresh.ok) return err(fresh.error);
+      if (fresh.value === null) {
+        // Another writer cannot delete the note today, but keep the guard for
+        // forward-compatibility (matches the pre-lock not-found shape above).
         return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
       }
+      const existing = fresh.value;
 
-      return this.noteWrites.run(preLock.value.path, async () => {
-        // Re-read under the lock so we never clobber a concurrent write (evidence
-        // linking, metadata edit) with a stale snapshot — that race is exactly
-        // why this lives on the Use Case write queue.
-        const fresh = await this.findById(id);
-        if (!fresh.ok) return err(fresh.error);
-        if (fresh.value === null) {
-          return err(appError("VALIDATION_FAILED", `Unknown Use Case: ${id}`));
-        }
-        const existing = fresh.value;
-        // No-op when already linked to the same PRD (avoids a phantom event).
-        if (existing.prdId === target) return ok(existing);
+      const mutation = plan(existing);
+      if (mutation === null) return ok(existing); // no-op: no write, no publish
 
-        const read = await this.fs.readFile(existing.path);
-        if (!read.ok) return err(read.error);
-        const content = updateNoteFrontmatter(read.value, { "prd-id": target });
-        const written = await this.fs.writeFile(existing.path, content);
-        if (!written.ok) return err(written.error);
+      const read = await this.fs.readFile(existing.path);
+      if (!read.ok) return err(read.error);
+      const written = await this.fs.writeFile(existing.path, mutation.render(read.value));
+      if (!written.ok) return err(written.error);
 
-        await this.eventBus.publish(
-          createEvent(
-            "usecase.updated",
-            { useCaseId: id, path: existing.path, changedFields: ["prd-id"] },
-            { correlationId: id },
-          ),
-        );
-        this.logger.info("Use Case linked to PRD", { id, prdId: target });
-        return ok({ ...existing, prdId: target });
-      });
+      // Subscribers are read-only today (render schedulers / tour service's own
+      // queue); a subscriber that re-entered noteWrites.run for the same path
+      // would deadlock (see SerialQueue docs).
+      await this.eventBus.publish(
+        createEvent(
+          "usecase.updated",
+          { useCaseId: id, path: existing.path, changedFields: mutation.changedFields },
+          { correlationId: id },
+        ),
+      );
+      if (mutation.publishFollowUps) await mutation.publishFollowUps();
+      this.logger.info(mutation.logMessage, mutation.logFields);
+      return ok(mutation.result);
     });
   }
 
