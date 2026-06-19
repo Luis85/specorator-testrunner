@@ -404,6 +404,22 @@ describe("DefaultPrdService.deletePrd", () => {
     expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(true);
   });
 
+  it("ignores a non-story-map note under Story Maps that merely carries a product field", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    // An auxiliary note (e.g. a preserved attachment) with a `product:` field but
+    // not type: story-map must NOT block deletion (mirrors findAll's type filter).
+    fs.files.set(
+      "Story Maps/SM-001-j/notes.md",
+      ["---", "type: note", "product: PRD-001", "---", "scratch"].join("\n"),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok).toBe(true);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
+  });
+
   it("never deletes the root PRD-000", async () => {
     const { service, fs } = build();
     seedRoot(fs);

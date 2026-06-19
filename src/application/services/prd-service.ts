@@ -358,7 +358,16 @@ export class DefaultPrdService implements PrdService {
       // Fail closed (destructive delete): an unreadable map could anchor here.
       if (!read.ok) return read;
       const { frontmatter: fm } = parseNote(read.value);
-      if (typeof fm.product === "string" && fm.product.trim() === prdId) count++;
+      // Only real Story Map notes anchor a product — mirror StoryMapService.findAll
+      // (type: story-map), so an auxiliary note/attachment under the Story Maps
+      // folder that merely carries a `product:` field can't block PRD deletion.
+      if (
+        fm.type === "story-map" &&
+        typeof fm.product === "string" &&
+        fm.product.trim() === prdId
+      ) {
+        count++;
+      }
     }
     return ok(count);
   }
