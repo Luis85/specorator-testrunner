@@ -206,15 +206,30 @@ const cardPlanningFields = (
   return out;
 };
 
+/**
+ * A canonical Use Case id: `UC-` + a zero-padded number (≥ 3 digits, matching
+ * `use-case-service`'s `UC-${n.padStart(3, "0")}` generation). The single source
+ * of truth for the card-ref format, shared by the application-layer placement
+ * validator and the frontmatter parser below — so a hand-edited `cards` entry
+ * can't smuggle a non-id ref (shorthand like `UC-37`, or an injection payload
+ * like `UC-001]] ![[Other]]`) into the grid renderer, which wraps `ref` in a
+ * bare `[[…]]` wikilink.
+ */
+export const isValidUseCaseRef = (ref: string): boolean => /^UC-\d{3,}$/.test(ref);
+
 /** Builds a rich card from the nine positional fields, validating coordinates. */
 const richCard = (fields: string[]): StoryMapCard | null => {
   const [ref, activity, step, slice, status, points, tags, color, title] = fields;
   if (activity === "" || slice === "") return null;
-  const resolvedTitle = title !== "" ? title : ref;
+  // Drop a non-canonical ref: the card becomes reference-less and must stand on
+  // its own title — never fall back to the invalid ref as the title, since it
+  // could itself carry `[[…]]` and render as a link.
+  const validRef = isValidUseCaseRef(ref) ? ref : "";
+  const resolvedTitle = title !== "" ? title : validRef;
   // A free-text (reference-less) card must carry its own title.
-  if (ref === "" && resolvedTitle === "") return null;
+  if (validRef === "" && resolvedTitle === "") return null;
   return {
-    ...(ref !== "" ? { ref } : {}),
+    ...(validRef !== "" ? { ref: validRef } : {}),
     title: resolvedTitle,
     activity,
     ...(step !== "" ? { step } : {}),
@@ -239,6 +254,9 @@ export const parseCard = (raw: string): StoryMapCard | null => {
   if (parts.length === 3) {
     const [ref, activity, slice] = parts;
     if (ref === "" || activity === "" || slice === "") return null;
+    // A legacy card's ref is also its title; a non-canonical value is malformed
+    // — drop it rather than render a dangling/injected `[[…]]` link.
+    if (!isValidUseCaseRef(ref)) return null;
     return { ref, title: ref, activity, slice, tags: [] };
   }
   if (parts.length < 4) return null;

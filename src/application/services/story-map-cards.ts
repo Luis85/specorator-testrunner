@@ -1,4 +1,8 @@
-import type { StoryMap, StoryMapCard } from "../../domain/entities/story-map";
+import {
+  isValidUseCaseRef,
+  type StoryMap,
+  type StoryMapCard,
+} from "../../domain/entities/story-map";
 
 /**
  * Pure, tested card-mutation + placement-validation helpers for the Story Map
@@ -33,14 +37,6 @@ export const removeCardFromList = (cards: readonly StoryMapCard[], index: number
 
 /** A card field is unsafe if it carries the `|` delimiter or a newline. */
 const hasUnsafeChars = (value: string): boolean => /[|\r\n]/.test(value);
-
-/**
- * A canonical Use Case id: `UC-` followed by a zero-padded number (≥ 3 digits,
- * matching `use-case-service`'s `UC-${n.padStart(3, "0")}` generation). Anchored
- * end-to-end so neither a shorthand like `UC-37` nor an injection payload like
- * `UC-001]] ![[Other]]` can pass as a reference and corrupt the rendered link.
- */
-const USE_CASE_REF = /^UC-\d{3,}$/;
 
 /** The card's free-text fields that must stay parser-safe (no `|`/newline). */
 const cardTextFields = (card: StoryMapCard): string[] => [
@@ -90,7 +86,7 @@ export const validateCardPlacement = (
   if (cardTextFields(card).some(hasUnsafeChars)) {
     return "Card fields cannot contain the `|` character or line breaks.";
   }
-  if (card.ref !== undefined && !USE_CASE_REF.test(card.ref)) {
+  if (card.ref !== undefined && !isValidUseCaseRef(card.ref)) {
     return `Reference "${card.ref}" is not a valid Use Case id (e.g. UC-001).`;
   }
   if (card.points !== undefined && !Number.isInteger(card.points)) {

@@ -152,6 +152,29 @@ describe("encodeCard / parseCard (rich)", () => {
     expect(parseCard("UC-009 | A | s | Sl |  | 1.5 |  |  | T")?.points).toBeUndefined();
   });
 
+  it("drops a non-canonical rich ref (keeps the card as reference-less)", () => {
+    // Shorthand `UC-37` and an injection payload both fail the UC-id format;
+    // the card survives on its own title with NO ref (so the renderer can't
+    // wrap a dangling/injected `[[…]]` link).
+    const shorthand = parseCard("UC-37 | A | s | Sl |  |  |  |  | Real title");
+    expect(shorthand).toMatchObject({ title: "Real title", activity: "A", slice: "Sl" });
+    expect(shorthand?.ref).toBeUndefined();
+    const injection = parseCard("UC-001]] ![[Other | A | s | Sl |  |  |  |  | T");
+    expect(injection?.ref).toBeUndefined();
+    expect(injection?.title).toBe("T");
+  });
+
+  it("drops a rich card whose only identity is an invalid ref (no title)", () => {
+    // No title to fall back to, and the bad ref must not become the title.
+    expect(parseCard("UC-37 | A | s | Sl |  |  |  |  | ")).toBeNull();
+    expect(parseCard("UC-001]] ![[Other | A | s | Sl |  |  |  |  | ")).toBeNull();
+  });
+
+  it("drops a legacy 3-field card with a non-canonical ref", () => {
+    expect(parseCard("UC-37 | Configure SUT | Walking skeleton")).toBeNull();
+    expect(parseCard("UC-001]] ![[Other | Configure SUT | Walking skeleton")).toBeNull();
+  });
+
   it("returns null for malformed encodings", () => {
     // Empty activity / slice.
     expect(parseCard("UC-013 |  | Walking skeleton")).toBeNull();
