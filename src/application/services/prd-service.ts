@@ -10,7 +10,7 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { parseNote } from "../../shared/utils/frontmatter";
 import { err, ok, type Result } from "../../shared/result/result";
-import { joinVaultPath } from "../../shared/utils/vault-path";
+import { joinVaultPath, parentVaultPath } from "../../shared/utils/vault-path";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
 import { isPrdStatus } from "../../domain/entities/prd";
 
@@ -58,13 +58,6 @@ const PRD_MUTATE_KEY = "prd:mutate";
 /** Drop blanks and collapse newlines so each item is a single parser-safe line. */
 const normalizeLines = (values: string[] | undefined): string[] =>
   (values ?? []).filter((s) => s.trim() !== "").map((s) => s.replace(/\n+/g, " ").trim());
-
-/** The folder containing a note path, e.g. `PRDs/PRD-001-x/PRD-001-x.md` → `PRDs/PRD-001-x`. */
-const parentFolder = (path: VaultPath): VaultPath => {
-  const s = String(path);
-  const idx = s.lastIndexOf("/");
-  return (idx === -1 ? s : s.slice(0, idx)) as VaultPath;
-};
 
 export class DefaultPrdService implements PrdService {
   private readonly noteWrites = new KeyedSerialQueue();
@@ -296,7 +289,7 @@ export class DefaultPrdService implements PrdService {
       }
 
       // Delete only the PRD note; leave any sibling attachments (diagrams, etc.).
-      const folder = parentFolder(target.path);
+      const folder = parentVaultPath(target.path);
       const deleted = await this.fs.deleteFile(target.path);
       if (!deleted.ok) return deleted;
 

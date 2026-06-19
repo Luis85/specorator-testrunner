@@ -9,6 +9,7 @@ import {
   renderPointsRollup,
   parseStoryMapNote,
   renderStoryMapGridTable,
+  renderUsersLane,
   replaceGridBlock,
   storyMapFolderName,
 } from "../src/application/content/story-map-content";
@@ -101,7 +102,18 @@ describe("renderPointsRollup / renderLegend", () => {
   });
 });
 
+describe("renderUsersLane", () => {
+  it("renders the personas lane, and nothing when there are no users", () => {
+    expect(renderUsersLane(map)).toBe("**Users:** Test author · Reviewer");
+    expect(renderUsersLane({ ...map, users: [] })).toBe("");
+  });
+});
+
 describe("renderStoryMapGridTable", () => {
+  it("includes the users lane above the activity sub-tables when users exist", () => {
+    expect(renderStoryMapGridTable(map, new Map())).toContain("**Users:** Test author · Reviewer");
+  });
+
   it("renders a sub-section per activity plus the roll-up and legend", () => {
     const table = renderStoryMapGridTable(map, new Map());
     expect(table).toContain("### Author spec");

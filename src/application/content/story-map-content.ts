@@ -9,15 +9,13 @@ import {
   normalizeSteps,
   parseCard,
   parseStep,
+  STORY_MAP_DEFAULT_PRODUCT,
   type StoryMap,
   type StoryMapCard,
   type StoryMapGridColumn,
   type StoryMapStep,
 } from "../../domain/entities/story-map";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
-
-/** The product a map anchors to when none is recorded — the reserved root PRD. */
-const STORY_MAP_DEFAULT_PRODUCT = "PRD-000";
 
 /** Kebab-case folder/file name shared by a Story Map's folder and its note. */
 export const storyMapFolderName = (id: string, title: string): string => {
@@ -116,9 +114,16 @@ export const renderLegend = (): string =>
   ["#### Legend", "", `Planning status: ${CARD_STATUSES.join(" · ")}`].join("\n");
 
 /**
- * Renders the managed grid as per-activity sub-tables, plus a per-slice points
- * roll-up and a status legend. A map with no activities renders a guidance line
- * instead. Pure: no I/O.
+ * The audience lane: the personas the journey serves — storymaps.io's top
+ * "users" row (ADR-0028 §Rendering). Empty string when no users are set.
+ */
+export const renderUsersLane = (map: StoryMap): string =>
+  map.users.length > 0 ? `**Users:** ${map.users.join(" · ")}` : "";
+
+/**
+ * Renders the managed grid: an audience (users) lane, then per-activity
+ * sub-tables, a per-slice points roll-up, and a status legend. A map with no
+ * activities renders a guidance line instead. Pure: no I/O.
  */
 export const renderStoryMapGridTable = (
   map: StoryMap,
@@ -127,10 +132,16 @@ export const renderStoryMapGridTable = (
   if (map.activities.length === 0) {
     return "_No activities yet — add a backbone to render the map._";
   }
+  const lane = renderUsersLane(map);
   const sections = map.activities.map((activity) =>
     renderActivityTable(map, activity, ucNoteNames),
   );
-  return [...sections, renderPointsRollup(map), renderLegend()].join("\n\n");
+  return [
+    ...(lane !== "" ? [lane] : []),
+    ...sections,
+    renderPointsRollup(map),
+    renderLegend(),
+  ].join("\n\n");
 };
 
 /** Wraps the grid table in its managed-block markers. */

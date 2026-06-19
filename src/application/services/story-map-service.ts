@@ -11,6 +11,7 @@ import {
   encodeCard,
   normalizeLabels,
   normalizeSteps,
+  STORY_MAP_DEFAULT_PRODUCT,
   type StoryMap,
   type StoryMapCard,
   type StoryMapId,
@@ -29,7 +30,7 @@ import {
 } from "./story-map-cards";
 import { parseNote, updateNoteFrontmatter } from "../../shared/utils/frontmatter";
 import { err, ok, type Result } from "../../shared/result/result";
-import { joinVaultPath } from "../../shared/utils/vault-path";
+import { joinVaultPath, parentVaultPath } from "../../shared/utils/vault-path";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
 
 export interface CreateStoryMapRequest {
@@ -102,8 +103,6 @@ const STORY_MAP_ID_RE = /^SM-(\d{3,})$/;
 /** Single queue key so all Story Map id-allocating mutations serialize. */
 const STORY_MAP_MUTATE_KEY = "story-map:mutate";
 
-const DEFAULT_PRODUCT = "PRD-000";
-
 /** The defined `UC-NNN` refs of a card set (reference-less cards contribute none). */
 const cardRefs = (cards: readonly StoryMapCard[]): string[] =>
   cards.map((c) => c.ref).filter((ref): ref is string => ref !== undefined);
@@ -121,13 +120,6 @@ const cardMutationError = (
     return `Card index ${index} is out of range for ${map.id}.`;
   }
   return options.validate?.(map) ?? null;
-};
-
-/** The folder containing a note path, e.g. `Story Maps/SM-001-x/SM-001-x.md` → `Story Maps/SM-001-x`. */
-const parentFolder = (path: VaultPath): VaultPath => {
-  const s = String(path);
-  const idx = s.lastIndexOf("/");
-  return (idx === -1 ? s : s.slice(0, idx)) as VaultPath;
 };
 
 export class DefaultStoryMapService implements StoryMapService {
@@ -159,7 +151,9 @@ export class DefaultStoryMapService implements StoryMapService {
     }
     const trimmedProduct = request.product?.trim();
     const product =
-      trimmedProduct !== undefined && trimmedProduct !== "" ? trimmedProduct : DEFAULT_PRODUCT;
+      trimmedProduct !== undefined && trimmedProduct !== ""
+        ? trimmedProduct
+        : STORY_MAP_DEFAULT_PRODUCT;
     const users = normalizeLabels(request.users);
     const steps = normalizeSteps(request.steps, activities);
     // Initial cards (the interface supports bulk/import create) must pass the
@@ -278,7 +272,7 @@ export class DefaultStoryMapService implements StoryMapService {
       }
 
       // Delete only the map note; leave any sibling attachments (diagrams, etc.).
-      const folder = parentFolder(target.value.path);
+      const folder = parentVaultPath(target.value.path);
       const deleted = await this.fs.deleteFile(target.value.path);
       if (!deleted.ok) return deleted;
 

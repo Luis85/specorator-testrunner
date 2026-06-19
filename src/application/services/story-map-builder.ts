@@ -1,5 +1,5 @@
 import type { CreateStoryMapRequest } from "./story-map-service";
-import type { StoryMapStep } from "../../domain/entities/story-map";
+import { STORY_MAP_DEFAULT_PRODUCT, type StoryMapStep } from "../../domain/entities/story-map";
 
 /** Sensible starting slices (top band = walking skeleton) the wizard pre-fills. */
 export const DEFAULT_SLICES = ["Walking skeleton", "Next", "Later"] as const;
@@ -54,10 +54,14 @@ export const storyMapBuilderStepTitle = (step: number): string => {
  * Pure: no I/O — keeps the builder modal's PRD load thin (AGENTS.md views rule).
  */
 export const pickProductAnchor = (prds: readonly { id: string }[]): string =>
-  prds.find((p) => p.id === "PRD-000")?.id ?? prds[0]?.id ?? "PRD-000";
+  prds.find((p) => p.id === STORY_MAP_DEFAULT_PRODUCT)?.id ??
+  prds[0]?.id ??
+  STORY_MAP_DEFAULT_PRODUCT;
 
 /** A fresh builder state, optionally anchored to a given product. */
-export const initialStoryMapBuilderState = (product = "PRD-000"): StoryMapBuilderState => ({
+export const initialStoryMapBuilderState = (
+  product = STORY_MAP_DEFAULT_PRODUCT,
+): StoryMapBuilderState => ({
   currentStep: 1,
   title: "",
   product,
@@ -115,7 +119,7 @@ export const formatStep = (step: StoryMapStep): string => `${step.activity} → 
  */
 export const storyMapReviewLines = (state: StoryMapBuilderState): string[] => [
   `Title: ${state.title || "(none)"}`,
-  `Product: ${state.product || "PRD-000"}`,
+  `Product: ${state.product || STORY_MAP_DEFAULT_PRODUCT}`,
   `Users: ${state.users.join(", ") || "None"}`,
   `Activities: ${state.activities.join(" → ") || "None"}`,
   `Steps: ${state.steps.map(formatStep).join(", ") || "None"}`,

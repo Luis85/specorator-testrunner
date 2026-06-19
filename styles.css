@@ -1073,3 +1073,70 @@
   margin: 0;
   padding-left: var(--size-4-4, 16px);
 }
+
+/* ---- Story Maps explorer (mirrors the PRD explorer patterns) ---- */
+.e2e-test-hub-story-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-3, 12px);
+  flex-wrap: wrap;
+}
+
+.e2e-test-hub-story-map-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.e2e-test-hub-story-map-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  flex-wrap: wrap;
+  padding: var(--size-2-1, 4px) 0;
+}
+
+/* Status pill — text always present, so colour is never the only signal. */
+.e2e-test-hub-story-map-status {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 var(--size-2-2, 6px);
+  border-radius: var(--radius-s, 4px);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.e2e-test-hub-story-map-status[data-status="active"] {
+  color: var(--text-success);
+  border-color: var(--text-success);
+}
+
+.e2e-test-hub-story-map-status[data-status="deprecated"] {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Builder/card-manager add-item rows. */
+.story-map-items,
+.story-map-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  flex-wrap: wrap;
+}
+
+.e2e-test-hub-story-map-card-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.e2e-test-hub-story-map-card-node {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  flex-wrap: wrap;
+  padding: var(--size-2-1, 4px) 0;
+}
