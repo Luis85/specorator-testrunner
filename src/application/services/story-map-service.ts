@@ -195,6 +195,15 @@ export class DefaultStoryMapService implements StoryMapService {
       trimmedProduct !== undefined && trimmedProduct !== "" ? trimmedProduct : DEFAULT_PRODUCT;
     const users = normalizeLabels(request.users);
     const steps = normalizeSteps(request.steps, activities);
+    // Initial cards (the interface supports bulk/import create) must pass the
+    // SAME placement validation as addCard/updateCard, against the normalized
+    // axes — otherwise an off-map or unsafe card (`|`/newline fields, non-integer
+    // points) would persist and break the encoded frontmatter/roll-up.
+    const cards = request.cards ?? [];
+    for (const card of cards) {
+      const reason = validateCardPlacement({ activities, slices, steps }, card);
+      if (reason !== null) return err(appError("VALIDATION_FAILED", reason));
+    }
 
     const settings = await this.settingsService.load();
 
@@ -233,7 +242,7 @@ export class DefaultStoryMapService implements StoryMapService {
           activities,
           steps,
           slices,
-          cards: request.cards ?? [],
+          cards,
           displayOrder: existing.value.length,
           path,
         };

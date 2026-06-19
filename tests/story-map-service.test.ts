@@ -143,6 +143,38 @@ describe("DefaultStoryMapService.create", () => {
     expect(result.ok && result.value.product).toBe("PRD-000");
   });
 
+  it("validates initial cards against the normalized axes (rejects an off-map placement)", async () => {
+    const { service } = build();
+    const result = await service.create({
+      title: "Map",
+      activities: ["Author spec"],
+      slices: ["Walking skeleton"],
+      cards: [{ title: "X", activity: "Off backbone", slice: "Walking skeleton", tags: [] }],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("backbone");
+  });
+
+  it("accepts a valid initial card placement", async () => {
+    const { service } = build();
+    const result = await service.create({
+      title: "Map",
+      activities: ["Author spec"],
+      slices: ["Walking skeleton"],
+      cards: [
+        {
+          ref: "UC-001",
+          title: "Author",
+          activity: "Author spec",
+          slice: "Walking skeleton",
+          tags: [],
+        },
+      ],
+    });
+    expect(result.ok && result.value.cards).toHaveLength(1);
+  });
+
   it("rejects a map with no activities or no slices", async () => {
     const { service } = build();
     const noActivities = await service.create({ title: "M", activities: [], slices: ["s"] });
