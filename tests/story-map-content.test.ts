@@ -74,6 +74,17 @@ describe("buildStoryMapNote", () => {
     expect(note).toContain(GRID_BLOCK_START);
     expect(note).toContain(GRID_BLOCK_END);
   });
+
+  it("renders the product as a resolved (unescaped) inline link in the body", () => {
+    const note = buildStoryMapNote(map, new Map([["PRD-000", "PRD-000 Product Vision"]]));
+    // Body paragraph is not a table, so the alias pipe is NOT escaped here.
+    expect(note).toContain("[[PRD-000 Product Vision|PRD-000]]");
+  });
+
+  it("falls back to a bare product link when the PRD note name is unresolved", () => {
+    const note = buildStoryMapNote(map, new Map());
+    expect(note).toContain("[[PRD-000]]");
+  });
 });
 
 describe("replaceGridBlock", () => {

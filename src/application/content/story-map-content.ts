@@ -56,6 +56,16 @@ export const renderStoryMapGridTable = (
 const gridBlock = (table: string): string => `${GRID_BLOCK_START}\n${table}\n${GRID_BLOCK_END}`;
 
 /**
+ * An inline (non-table) resolved wikilink to a note. Unlike grid cells, the body
+ * paragraph is not a Markdown table, so the alias pipe is NOT escaped. Falls back
+ * to a bare link when the note name is unresolved.
+ */
+const inlineLink = (id: string, noteNames: Map<string, string>): string => {
+  const noteName = noteNames.get(id);
+  return noteName ? `[[${noteName}|${id}]]` : `[[${id}]]`;
+};
+
+/**
  * Replaces the managed grid block in an existing note body, preserving every
  * other (hand-written) section. Appends a fresh block when the markers are
  * absent (e.g. a note created before the markers existed). Pure: no I/O.
@@ -76,7 +86,7 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
  * sequences of `"UC | activity | slice"` string scalars (ADR-0026 parser rules).
  * The body carries a managed grid block rendered from the cards.
  */
-export const buildStoryMapNote = (map: StoryMap, ucNoteNames: Map<string, string>): string => {
+export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>): string => {
   const fields: Record<string, FrontmatterValue> = {
     id: map.id,
     type: "story-map",
@@ -92,7 +102,7 @@ export const buildStoryMapNote = (map: StoryMap, ucNoteNames: Map<string, string
   const body = [
     `# ${map.id}: ${map.title}`,
     "",
-    `Story map for [[${map.product}]] — backbone (activities) × release slices.`,
+    `Story map for ${inlineLink(map.product, noteNames)} — backbone (activities) × release slices.`,
     "",
     "> Source of truth is the frontmatter (`activities`, `slices`, `cards`). Each",
     "> card references a Use Case by id (`UC-NNN | activity | slice`); edit the",
@@ -100,7 +110,7 @@ export const buildStoryMapNote = (map: StoryMap, ucNoteNames: Map<string, string
     "",
     "## Map",
     "",
-    gridBlock(renderStoryMapGridTable(map, ucNoteNames)),
+    gridBlock(renderStoryMapGridTable(map, noteNames)),
     "",
     "## Notes",
     "",

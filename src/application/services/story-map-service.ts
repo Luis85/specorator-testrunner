@@ -42,11 +42,12 @@ export interface DeleteStoryMapResult {
 }
 
 /**
- * The narrow Use Case slice the service needs to resolve a card's `UC-NNN` to a
- * real note name (so grid links never dangle). Satisfied structurally by
- * UseCaseService.findById.
+ * The narrow lookup the service needs to resolve a `UC-NNN`/`PRD-NNN` id to its
+ * real note path, so the grid's Use Case links and the body's product link
+ * resolve in Obsidian instead of dangling. Satisfied structurally by both
+ * UseCaseService.findById and PrdService.findById.
  */
-export interface UseCaseNoteResolver {
+export interface NoteResolver {
   findById(id: string): Promise<Result<{ path: VaultPath } | null>>;
 }
 
@@ -98,7 +99,8 @@ export class DefaultStoryMapService implements StoryMapService {
     private readonly fs: VaultFileSystem,
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
-    private readonly useCases: UseCaseNoteResolver,
+    private readonly useCases: NoteResolver,
+    private readonly prds: NoteResolver,
   ) {}
 
   async create(request: CreateStoryMapRequest): Promise<Result<StoryMap>> {
@@ -147,8 +149,8 @@ export class DefaultStoryMapService implements StoryMapService {
       const folderResult = await this.fs.createFolder(folderPath);
       if (!folderResult.ok) return folderResult;
 
-      const ucNoteNames = await this.resolveUseCaseNoteNames(map.cards.map((c) => c.ucId));
-      const createResult = await this.fs.createFile(path, buildStoryMapNote(map, ucNoteNames));
+      const noteNames = await this.resolveNoteNames(map);
+      const createResult = await this.fs.createFile(path, buildStoryMapNote(map, noteNames));
       if (!createResult.ok) {
         // Don't leave an orphaned empty folder behind on a note-write failure;
         // only for the folder this call created.
@@ -226,31 +228,61 @@ export class DefaultStoryMapService implements StoryMapService {
   }
 
   async rebuildGrid(id: StoryMapId): Promise<Result<void>> {
-    const found = await this.findById(id);
-    if (!found.ok) return found;
-    if (!found.value) {
-      return err(appError("VALIDATION_FAILED", `Story Map ${id} was not found.`));
+    // Serialize through the SAME mutation key as create/delete: a concurrent
+    // deleteStoryMap must not interleave, or this write could recreate a note
+    // the delete just removed (writeFile recreates missing files). The note is
+    // re-read inside the lock, so a delete that won the lock leaves findById
+    // returning null here and we abort rather than resurrect it.
+    return this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
+      const found = await this.findById(id);
+      if (!found.ok) return found;
+      if (!found.value) {
+        return err(appError("VALIDATION_FAILED", `Story Map ${id} was not found.`));
+      }
+      const map = found.value;
+      const read = await this.fs.readFile(map.path);
+      if (!read.ok) return read;
+      const ucNoteNames = await this.resolveUseCaseNoteNames(map.cards.map((c) => c.ucId));
+      // Normalize CRLF→LF on the raw content BEFORE parsing/slicing: parseNote
+      // returns an LF-normalized body, so subtracting its length from a raw CRLF
+      // string would slice mid-body and corrupt the note. Normalizing first keeps
+      // the frontmatter boundary aligned with the body parseNote returns.
+      const normalized = read.value.replace(/\r\n/g, "\n");
+      const { body } = parseNote(normalized);
+      const nextBody = replaceGridBlock(body, renderStoryMapGridTable(map, ucNoteNames));
+      const frontmatter = normalized.slice(0, normalized.length - body.length);
+      return this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
+    });
+  }
+
+  /** Resolves an id to its note basename via the given lookup, or undefined. */
+  private async noteNameOf(resolver: NoteResolver, id: string): Promise<string | undefined> {
+    const found = await resolver.findById(id);
+    if (found.ok && found.value) {
+      return (String(found.value.path).split("/").pop() ?? id).replace(/\.md$/, "");
     }
-    const map = found.value;
-    const read = await this.fs.readFile(map.path);
-    if (!read.ok) return read;
-    const ucNoteNames = await this.resolveUseCaseNoteNames(map.cards.map((c) => c.ucId));
-    const { body } = parseNote(read.value);
-    const nextBody = replaceGridBlock(body, renderStoryMapGridTable(map, ucNoteNames));
-    // Preserve the frontmatter exactly; only the managed body block changed.
-    const frontmatter = read.value.slice(0, read.value.length - body.length);
-    return this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
+    return undefined;
   }
 
   /** Resolves each Use Case id to its note basename so grid links never dangle. */
   private async resolveUseCaseNoteNames(ids: string[]): Promise<Map<string, string>> {
     const names = new Map<string, string>();
     for (const id of new Set(ids)) {
-      const found = await this.useCases.findById(id);
-      if (found.ok && found.value) {
-        names.set(id, (String(found.value.path).split("/").pop() ?? id).replace(/\.md$/, ""));
-      }
+      const name = await this.noteNameOf(this.useCases, id);
+      if (name !== undefined) names.set(id, name);
     }
+    return names;
+  }
+
+  /**
+   * Note names for everything a freshly built note links: the product PRD (body
+   * link) and every card's Use Case (grid cells). Both render as resolved,
+   * aliased wikilinks so neither dangles for titled notes.
+   */
+  private async resolveNoteNames(map: StoryMap): Promise<Map<string, string>> {
+    const names = await this.resolveUseCaseNoteNames(map.cards.map((c) => c.ucId));
+    const productName = await this.noteNameOf(this.prds, map.product);
+    if (productName !== undefined) names.set(map.product, productName);
     return names;
   }
 

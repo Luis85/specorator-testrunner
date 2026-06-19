@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DefaultStoryMapService } from "../src/application/services/story-map-service";
-import type { UseCaseNoteResolver } from "../src/application/services/story-map-service";
+import type { NoteResolver } from "../src/application/services/story-map-service";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
@@ -8,15 +8,15 @@ import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
 import { ok, type Result } from "../src/shared/result/result";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
-/** Use Case resolver that maps a fixed id → note path so links resolve in tests. */
-const resolver = (paths: Record<string, string> = {}): UseCaseNoteResolver => ({
+/** Resolver that maps a fixed id → note path so links resolve in tests. */
+const resolver = (paths: Record<string, string> = {}): NoteResolver => ({
   async findById(id: string): Promise<Result<{ path: VaultPath } | null>> {
     const path = paths[id];
     return ok(path ? { path: unsafeVaultPath(path) } : null);
   },
 });
 
-const build = (ucPaths?: Record<string, string>) => {
+const build = (ucPaths?: Record<string, string>, prdPaths?: Record<string, string>) => {
   const fs = new FakeVaultFileSystem();
   const { bus, types, events } = recordingEventBus();
   const settings = new DefaultSettingsService(
@@ -24,7 +24,14 @@ const build = (ucPaths?: Record<string, string>) => {
     new DefaultPathSafetyPolicy(),
     bus,
   );
-  const service = new DefaultStoryMapService(settings, fs, bus, silentLogger, resolver(ucPaths));
+  const service = new DefaultStoryMapService(
+    settings,
+    fs,
+    bus,
+    silentLogger,
+    resolver(ucPaths),
+    resolver(prdPaths),
+  );
   return { service, fs, types, events };
 };
 
@@ -220,6 +227,43 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
     // Hand-written sections survive the managed-block replacement.
     expect(note).toContain("## Notes");
     expect(note).toContain("keep me");
+  });
+
+  it("rebuilds a CRLF note without corrupting the frontmatter boundary", async () => {
+    const { service, fs } = build({ "UC-037": "Use Cases/UC-037 Author a Use Case.md" });
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    // A note saved with Windows CRLF line endings.
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "product: PRD-000",
+        "activities:",
+        "  - Author spec",
+        "slices:",
+        "  - Walking skeleton",
+        "cards:",
+        "  - UC-037 | Author spec | Walking skeleton",
+        "---",
+        "## Map",
+        "",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+      ].join("\r\n"),
+    );
+
+    const rebuilt = await service.rebuildGrid("SM-001");
+    expect(rebuilt.ok).toBe(true);
+
+    const note = fs.files.get(path) ?? "";
+    // The frontmatter must not be duplicated or have body text spliced into it.
+    expect(note.match(/^---$/gm)?.length).toBe(2);
+    expect(note).toContain("[[UC-037 Author a Use Case\\|UC-037]]");
+    expect(note).not.toContain("(empty)");
   });
 
   it("refuses to rebuild a map that does not exist", async () => {

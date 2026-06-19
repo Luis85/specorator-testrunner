@@ -205,6 +205,7 @@ export const composeServices = (ctx: ComposeContext): ComposedServices => {
     eventBus,
     logger,
     services.useCaseService,
+    services.prdService,
   );
   services.specificationService = new DefaultSpecificationService(
     hubSettingsService,
