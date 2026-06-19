@@ -4,6 +4,7 @@ import { RunPickerModal } from "../views/run-picker-modal";
 import { TEST_CONSOLE_VIEW_TYPE } from "../views/test-console-view";
 import type { ImportLastRunOutcome } from "../../application/services/post-run-coordinator";
 import type { TestHubCommandDeps } from "./register-commands";
+import { withNonEmptyList } from "./with-non-empty-list";
 
 /**
  * The Notice text for an import-last-run outcome (UC-016 / US-032): one message
@@ -50,61 +51,49 @@ export const registerRunCommands = (plugin: Plugin, deps: TestHubCommandDeps): v
     new Notice(importReportNotice(result.value));
   };
 
-  const runSuite = async (): Promise<void> => {
-    const suites = await deps.suiteService.findAll();
-    if (!suites.ok) {
-      new Notice(`Could not load Test Suites: ${suites.error.message}`, 10000);
-      return;
-    }
-    if (suites.value.length === 0) {
-      new Notice("No Test Suites yet. Create one first.");
-      return;
-    }
-    new RunPickerModal(
-      plugin.app,
-      "Select a Test Suite to run",
-      suites.value.map((s) => ({ id: s.id, label: `${s.id} — ${s.name}` })),
-      (id) => void deps.runLauncher.launch({ scope: "suite", target: id }),
-    ).open();
-  };
+  const runSuite = (): Promise<void> =>
+    withNonEmptyList(
+      deps.suiteService.findAll(),
+      { loadError: "Could not load Test Suites", empty: "No Test Suites yet. Create one first." },
+      (suites) =>
+        new RunPickerModal(
+          plugin.app,
+          "Select a Test Suite to run",
+          suites.map((s) => ({ id: s.id, label: `${s.id} — ${s.name}` })),
+          (id) => void deps.runLauncher.launch({ scope: "suite", target: id }),
+        ).open(),
+    );
 
-  const runUseCase = async (): Promise<void> => {
-    const useCases = await deps.useCaseService.findAll();
-    if (!useCases.ok) {
-      new Notice(`Could not load Use Cases: ${useCases.error.message}`, 10000);
-      return;
-    }
-    if (useCases.value.length === 0) {
-      new Notice("No Use Cases yet. Create one first.");
-      return;
-    }
-    new RunPickerModal(
-      plugin.app,
-      "Select a Use Case to run",
-      useCases.value.map((u) => ({ id: u.id, label: `${u.id} — ${u.title}` })),
-      (id) => void deps.runLauncher.launch({ scope: "use-case", target: id }),
-    ).open();
-  };
+  const runUseCase = (): Promise<void> =>
+    withNonEmptyList(
+      deps.useCaseService.findAll(),
+      { loadError: "Could not load Use Cases", empty: "No Use Cases yet. Create one first." },
+      (useCases) =>
+        new RunPickerModal(
+          plugin.app,
+          "Select a Use Case to run",
+          useCases.map((u) => ({ id: u.id, label: `${u.id} — ${u.title}` })),
+          (id) => void deps.runLauncher.launch({ scope: "use-case", target: id }),
+        ).open(),
+    );
 
-  const runFeature = async (): Promise<void> => {
+  const runFeature = (): Promise<void> =>
     // `.feature` discovery (recursive listing, `.feature` filter, folder-relative
     // labels) lives in SpecificationService.listFeatures (P2-7).
-    const listed = await deps.specificationService.listFeatures();
-    if (!listed.ok) {
-      new Notice(`Could not list Feature files: ${listed.error.message}`, 10000);
-      return;
-    }
-    if (listed.value.length === 0) {
-      new Notice("No feature files yet. Generate one first.");
-      return;
-    }
-    new RunPickerModal(
-      plugin.app,
-      "Select a Feature file to run",
-      listed.value.map((feature) => ({ id: feature.path, label: feature.label })),
-      (path) => void deps.runLauncher.launch({ scope: "feature", target: path }),
-    ).open();
-  };
+    withNonEmptyList(
+      deps.specificationService.listFeatures(),
+      {
+        loadError: "Could not list Feature files",
+        empty: "No feature files yet. Generate one first.",
+      },
+      (features) =>
+        new RunPickerModal(
+          plugin.app,
+          "Select a Feature file to run",
+          features.map((feature) => ({ id: feature.path, label: feature.label })),
+          (path) => void deps.runLauncher.launch({ scope: "feature", target: path }),
+        ).open(),
+    );
 
   // EPIC-007 Test Execution (US-026/027/028/029/030).
   plugin.addCommand({

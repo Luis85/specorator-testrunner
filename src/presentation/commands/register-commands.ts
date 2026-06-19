@@ -21,6 +21,7 @@ import { GUIDED_TOUR_VIEW_TYPE } from "../views/guided-tour-view";
 import { SUITE_VIEW_TYPE } from "../views/suite-dashboard-view";
 import { USE_CASE_VIEW_TYPE } from "../views/use-case-dashboard-view";
 import { registerRunCommands } from "./register-run-commands";
+import { withNonEmptyList } from "./with-non-empty-list";
 
 /**
  * The narrow slice of the composition root the command palette needs: the
@@ -77,26 +78,21 @@ export function registerCommands(
   plugin: Plugin,
   deps: TestHubCommandDeps,
 ): RegisteredCommandHelpers {
-  const openGenerateFeature = async (): Promise<void> => {
-    const useCases = await deps.useCaseService.findAll();
-    if (!useCases.ok) {
-      new Notice(`Could not load Use Cases: ${useCases.error.message}`, 10000);
-      return;
-    }
-    if (useCases.value.length === 0) {
-      new Notice("No Use Cases yet. Create one first.");
-      return;
-    }
-    new GenerateFeatureModal(
-      plugin.app,
-      {
-        useCaseService: deps.useCaseService,
-        specificationService: deps.specificationService,
-        workspace: deps.workspace,
-      },
-      useCases.value,
-    ).open();
-  };
+  const openGenerateFeature = (): Promise<void> =>
+    withNonEmptyList(
+      deps.useCaseService.findAll(),
+      { loadError: "Could not load Use Cases", empty: "No Use Cases yet. Create one first." },
+      (useCases) =>
+        new GenerateFeatureModal(
+          plugin.app,
+          {
+            useCaseService: deps.useCaseService,
+            specificationService: deps.specificationService,
+            workspace: deps.workspace,
+          },
+          useCases,
+        ).open(),
+    );
 
   /** Path of the active note, or a Notice when there is no feature open. */
   const activeFeaturePath = (): VaultPath | null => {
