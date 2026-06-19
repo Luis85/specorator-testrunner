@@ -42,12 +42,17 @@ exclusion happens inside `featureRunState`, not at the Feature filter:
   not an *unwritten* scenario, so a quarantined scenario with no steps still
   surfaces the structural problem (it is an authoring issue, not a flake).
 
-### D2 — Outline rows inherit the scenario's quarantine
+### D2 — Outline quarantine: scenario-level and Examples-block-level
 
 A `@quarantine` on a `Scenario Outline` quarantines **all** its example rows
-(every row shares the scenario's tags). Per-`Examples`-block quarantine is finer
-than this slice needs and is deferred. Feature-level `@quarantine` is not a thing
-— a whole flaky Feature is `@wip`/triage territory, not quarantine.
+(every row shares the scenario's tags). A `@quarantine` on a single `Examples:`
+block quarantines **only that block's rows** — the only way Gherkin scopes a tag
+to particular rows, and the natural fit for parking one flaky pickle of an
+Outline. So each row's reference entry carries `scenario.tags + block.tags`, and
+both the KPI exclusion (`featureRunState`) and the insight count agree on what is
+quarantined (a reviewer caught the earlier draft, which counted block-level
+quarantine but did not exclude it). Feature-level `@quarantine` is not a thing —
+a whole flaky Feature is `@wip`/triage territory, not quarantine.
 
 ### D3 — Plumbing: scenario tags on the reference entry
 

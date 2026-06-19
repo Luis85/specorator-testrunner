@@ -152,6 +152,31 @@ describe("featureScenarioRefs", () => {
     ]);
   });
 
+  it("folds an Examples block's tags into its rows' tags (US-058)", () => {
+    const feature = parseFeature(
+      [
+        "Feature: F",
+        "  Scenario Outline: Search as <role>",
+        "    Given I am <role>",
+        "    @quarantine",
+        "    Examples:",
+        "      | role  |",
+        "      | admin |",
+        "    Examples:",
+        "      | role |",
+        "      | user |",
+        "",
+      ].join("\n"),
+      vp("Specifications/features/UC-001-f.feature"),
+    );
+    if (!feature) throw new Error("parse failed");
+    const entries = featureScenarioRefs(feature);
+    // The first block is @quarantine, so only its row carries the tag; the
+    // second block's row stays untagged.
+    expect(entries.find((e) => e.matchName === "Search as admin")?.tags).toEqual(["@quarantine"]);
+    expect(entries.find((e) => e.matchName === "Search as user")?.tags).toEqual([]);
+  });
+
   it("carries each Outline row's feature-file line (#55)", () => {
     const feature = parseFeature(
       [

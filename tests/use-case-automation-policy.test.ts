@@ -5,6 +5,8 @@ import {
   type ScenarioStatusLookup,
 } from "../src/domain/policies/use-case-automation-policy";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
+import { parseFeature } from "../src/application/content/gherkin";
+import { featureScenarioRefs } from "../src/domain/value-objects/scenario-reference";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const feature = (over: Partial<FeatureSpecification> = {}): FeatureSpecification => ({
@@ -220,6 +222,40 @@ describe("computeAutomationStatus (ADR-0017 roll-up, history-derived — US-057)
       expect(computeAutomationStatus([f], history({ [refOf(f, "Flaky")]: "passed" }))).toBe(
         "missing-steps",
       );
+    });
+
+    it("excludes only the rows of an Examples block tagged @quarantine", () => {
+      // A block-scoped @quarantine quarantines just that block's rows: the admin
+      // row may fail without failing the UC, while the active user row decides it.
+      const f = parseFeature(
+        [
+          "Feature: F",
+          "  Scenario Outline: Search as <role>",
+          "    Given I am <role>",
+          "    @quarantine",
+          "    Examples:",
+          "      | role  |",
+          "      | admin |",
+          "    Examples:",
+          "      | role |",
+          "      | user |",
+          "",
+        ].join("\n"),
+        vp("Specifications/features/UC-001-o.feature"),
+      );
+      if (!f) throw new Error("parse failed");
+      const refs = featureScenarioRefs(f);
+      const refFor = (matchName: string): string => {
+        const entry = refs.find((r) => r.matchName === matchName);
+        if (!entry) throw new Error(`no ref for ${matchName}`);
+        return entry.ref;
+      };
+      expect(
+        computeAutomationStatus(
+          [f],
+          history({ [refFor("Search as admin")]: "failed", [refFor("Search as user")]: "passed" }),
+        ),
+      ).toBe("passing");
     });
   });
 

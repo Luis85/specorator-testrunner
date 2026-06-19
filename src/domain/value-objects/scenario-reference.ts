@@ -95,11 +95,12 @@ export interface ScenarioRefEntry {
   matchName: string;
   ref: string;
   /**
-   * The scenario's own tags (Outline rows inherit the scenario's tags). Lets a
-   * domain policy decide per-scenario exclusions — `@quarantine` (US-058),
-   * scenario-level insight — without re-parsing the Feature. Feature-level tags
-   * are NOT folded in here; a consumer that wants effective tags unions them
-   * with the Feature's separately.
+   * The tags effective for this specific scenario/row: the scenario's own tags,
+   * plus — for an Outline row — its `Examples:` block's tags (the only way
+   * Gherkin scopes a tag to particular rows). Lets a domain policy decide
+   * per-row exclusions — `@quarantine` (US-058) — without re-parsing the Feature.
+   * Feature-level tags are NOT folded in here; a consumer that wants the full
+   * effective set unions them with the Feature's separately.
    */
   tags: string[];
   /**
@@ -131,7 +132,9 @@ export const featureScenarioRefs = (feature: FeatureSpecification): ScenarioRefE
             scenarioName: scenario.name,
             matchName: expandScenarioName(scenario.name, cells),
             ref: outlineRowRef(path, scenario.name, cells),
-            tags: scenario.tags,
+            // A row's effective tags = the scenario's tags + its Examples block's
+            // tags, so a block-scoped `@quarantine` excludes exactly those rows.
+            tags: [...scenario.tags, ...block.tags],
             ...(line !== undefined ? { line } : {}),
           });
         });
