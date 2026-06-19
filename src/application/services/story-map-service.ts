@@ -325,6 +325,13 @@ export class DefaultStoryMapService implements StoryMapService {
         return err(appError("VALIDATION_FAILED", `Story Map ${id} was not found.`));
       }
       const map = found.value;
+      // The product anchor must still resolve before we write: a hand-edit to the
+      // `product` frontmatter (the supported reassignment path) could point at a
+      // non-existent PRD, which we'd otherwise write back as a bare link while the
+      // old PRD — no longer referenced — becomes deletable, anchoring the map to
+      // nothing. Mirrors the create-time product check.
+      const resolvable = await this.requireResolvableProduct(map.product);
+      if (!resolvable.ok) return resolvable;
       const read = await this.fs.readFile(map.path);
       if (!read.ok) return read;
       // Resolve BOTH the card Use Cases (grid cells) and the product PRD (body
@@ -402,6 +409,10 @@ export class DefaultStoryMapService implements StoryMapService {
       const map = found.value;
       const reason = cardMutationError(map, options);
       if (reason !== null) return err(appError("VALIDATION_FAILED", reason));
+      // A card write also refreshes the product paragraph, so the anchor must
+      // resolve here too (see rebuildGrid) — don't persist a dangling product.
+      const resolvable = await this.requireResolvableProduct(map.product);
+      if (!resolvable.ok) return resolvable;
       return this.writeCards({ ...map, cards: transform(map.cards) });
     });
   }
@@ -430,6 +441,24 @@ export class DefaultStoryMapService implements StoryMapService {
     // otherwise) that this map's cards changed.
     await this.publishUpdated(map);
     return ok(map);
+  }
+
+  /**
+   * Confirms the map's product PRD still resolves to a real note before a write.
+   * The supported reassignment path is a hand-edit to the `product` frontmatter +
+   * rebuild; a typo (e.g. `PRD-999`) would otherwise be written back as a bare
+   * product link while the old PRD becomes deletable, leaving the map anchored to
+   * nothing. Same rule the create path enforces up front.
+   */
+  private async requireResolvableProduct(product: string): Promise<Result<void>> {
+    const found = await this.prds.findById(product);
+    if (!found.ok) return found;
+    if (!found.value) {
+      return err(
+        appError("VALIDATION_FAILED", `Unknown product PRD: ${product}. Create it first.`),
+      );
+    }
+    return ok(undefined);
   }
 
   /** Resolves an id to its note basename via the given lookup, or undefined. */

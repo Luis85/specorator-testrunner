@@ -455,6 +455,39 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
     expect(note).toContain("[[UC-037 Author a Use Case\\|UC-037]]");
   });
 
+  it("refuses to rebuild when the product was hand-edited to a non-existent PRD", async () => {
+    // Only PRD-000 resolves (default ROOT_PRD); the note was reassigned to a typo.
+    const { service, fs } = build({ "UC-037": "Use Cases/UC-037 Author a Use Case.md" });
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "product: PRD-999",
+        "activities:",
+        "  - Author spec",
+        "slices:",
+        "  - Walking skeleton",
+        "cards:",
+        "  - UC-037 | Author spec | Walking skeleton",
+        "---",
+        "## Map",
+        "",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+      ].join("\n"),
+    );
+
+    const result = await service.rebuildGrid("SM-001");
+    expect(result.ok).toBe(false);
+    // The note is left untouched — no bare/dangling product link written.
+    expect(fs.files.get(path)).toContain("(empty)");
+  });
+
   it("refuses to rebuild a map that does not exist", async () => {
     const { service } = build();
     const result = await service.rebuildGrid("SM-404");
@@ -533,6 +566,23 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
       title: "Bad",
       activity: "Author spec",
       slice: "Later",
+      tags: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("rejects a card write when the map's product no longer resolves", async () => {
+    // No PRD resolves (empty PRD set), so the seeded note's product is dangling.
+    const { service, fs } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" }, {});
+    seedNote(fs);
+    const result = await service.addCard("SM-001", {
+      ref: "UC-040",
+      title: "Run the suite",
+      activity: "Author spec",
+      step: "Draft",
+      slice: "Next",
       tags: [],
     });
     expect(result.ok).toBe(false);
