@@ -107,11 +107,15 @@ export const parseStep = (raw: string): StoryMapStep | null => {
   return { activity, step };
 };
 
-/** A non-negative integer or undefined, parsed from a (possibly empty) field. */
+/**
+ * A non-negative integer or undefined, parsed from a (possibly empty) field.
+ * Uses the FULL numeric value (not `parseInt`), so a hand-edited non-integer
+ * like `1.5` is dropped rather than truncated to `1`.
+ */
 const parsePoints = (raw: string): number | undefined => {
   if (raw === "") return undefined;
-  const n = Number.parseInt(raw, 10);
-  return Number.isNaN(n) || n < 0 ? undefined : n;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : undefined;
 };
 
 /** Splits the comma-separated tags field into trimmed, non-empty tags. */

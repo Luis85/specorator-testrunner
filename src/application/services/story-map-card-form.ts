@@ -75,11 +75,16 @@ const parseTags = (raw: string): string[] =>
     .map((tag) => tag.trim())
     .filter((tag) => tag !== "");
 
-/** Parses the points field: empty → undefined; else the parsed integer (NaN-safe). */
+/**
+ * Parses the points field: empty → undefined; else the FULL numeric value (not
+ * `parseInt`, which would truncate `1.5`→`1` and silently accept it). A decimal
+ * or non-numeric value passes through (e.g. `1.5`, `NaN`) so the authoritative
+ * {@link validateCardPlacement} rejects it instead of persisting a wrong number.
+ */
 const parsePoints = (raw: string): number | undefined => {
   const trimmed = raw.trim();
   if (trimmed === "") return undefined;
-  return Number.parseInt(trimmed, 10);
+  return Number(trimmed);
 };
 
 /** Narrows a raw status string to a {@link CardStatus} or undefined. */

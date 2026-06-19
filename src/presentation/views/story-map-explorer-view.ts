@@ -9,8 +9,8 @@ import { LiveDashboardView } from "./live-dashboard-view";
 
 export const STORY_MAP_VIEW_TYPE = "e2e-test-hub-story-maps";
 
-/** Refresh the list when a Story Map is created or deleted. */
-const REFRESH_ON: DomainEventType[] = ["storymap.created", "storymap.deleted"];
+/** Refresh when a Story Map is created, has its cards changed, or is deleted. */
+const REFRESH_ON: DomainEventType[] = ["storymap.created", "storymap.updated", "storymap.deleted"];
 
 export interface StoryMapExplorerDeps {
   storyMapService: StoryMapService;

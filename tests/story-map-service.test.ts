@@ -390,8 +390,8 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     return path;
   };
 
-  it("adds a card: rewrites the cards frontmatter and the grid block", async () => {
-    const { service, fs } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
+  it("adds a card: rewrites the cards frontmatter and the grid block, emits storymap.updated", async () => {
+    const { service, fs, types } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
     const path = seedNote(fs);
 
     const result = await service.addCard("SM-001", {
@@ -406,6 +406,8 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.cards).toHaveLength(2);
+    // Live views (the explorer) refresh on this event.
+    expect(types()).toContain("storymap.updated");
 
     const note = fs.files.get(path) ?? "";
     // Both cards survive in the frontmatter, the new one fully encoded.

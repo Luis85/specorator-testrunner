@@ -102,6 +102,10 @@ describe("buildCardFromForm", () => {
   it("yields NaN points for non-numeric input so the validator can reject it", () => {
     expect(buildCardFromForm(form({ points: "abc" })).points).toBeNaN();
   });
+
+  it("keeps a fractional value intact (1.5, not truncated to 1) so the validator can reject it", () => {
+    expect(buildCardFromForm(form({ points: "1.5" })).points).toBe(1.5);
+  });
 });
 
 describe("stepOptionsFor / statusOptions", () => {

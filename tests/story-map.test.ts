@@ -118,6 +118,10 @@ describe("encodeCard / parseCard (rich)", () => {
     expect(parsed?.tags).toEqual(["a"]);
   });
 
+  it("drops a hand-edited fractional points value (1.5) instead of truncating to 1", () => {
+    expect(parseCard("UC-009 | A | s | Sl |  | 1.5 |  |  | T")?.points).toBeUndefined();
+  });
+
   it("returns null for malformed encodings", () => {
     // Empty activity / slice.
     expect(parseCard("UC-013 |  | Walking skeleton")).toBeNull();

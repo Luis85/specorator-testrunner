@@ -416,6 +416,15 @@ export class DefaultStoryMapService implements StoryMapService {
     const frontmatter = withCards.slice(0, withCards.length - body.length);
     const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
     if (!written.ok) return written;
+    // Notify live views (the explorer's row counts + captured map go stale
+    // otherwise) that this map's cards changed.
+    await this.eventBus.publish(
+      createEvent(
+        "storymap.updated",
+        { storyMapId: map.id, path: String(map.path) },
+        { correlationId: map.id },
+      ),
+    );
     return ok(map);
   }
 

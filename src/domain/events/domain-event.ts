@@ -40,6 +40,7 @@ export type DomainEventType =
   | "prd.deleted"
   // story map
   | "storymap.created"
+  | "storymap.updated"
   | "storymap.deleted"
   // specification
   | "specification.created"
@@ -125,6 +126,7 @@ export interface EventPayloads {
 
   // story map
   "storymap.created": { storyMapId: string; title: string; path: string; product: string };
+  "storymap.updated": { storyMapId: string; path: string };
   "storymap.deleted": { storyMapId: string; path: string; preservedFiles: number };
 
   // specification (§5)
