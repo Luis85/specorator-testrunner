@@ -33,6 +33,9 @@ const stubScenarioHistory = (
   async latestStatuses() {
     return ok(new Map(Object.entries(entries)));
   },
+  async flakiness() {
+    return ok(new Map());
+  },
 });
 
 /** Scenario Reference of the single `S` scenario in {@link FEATURE_CONTENT}. */
