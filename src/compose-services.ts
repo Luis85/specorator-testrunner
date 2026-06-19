@@ -10,7 +10,10 @@ import { DefaultEvidenceGenerationService } from "./application/services/evidenc
 import { DefaultFeatureInsightService } from "./application/services/feature-insight-service";
 import { CucumberJsonReportParser } from "./application/services/cucumber-json-report-parser";
 import { DefaultReportImportService } from "./application/services/report-import-service";
-import { PostRunCoordinator } from "./application/services/post-run-coordinator";
+import {
+  DefaultPostRunCoordinator,
+  type PostRunCoordinator,
+} from "./application/services/post-run-coordinator";
 import { DefaultScenarioHistoryService } from "./application/services/scenario-history-service";
 import { ScenarioIdentityResolver } from "./application/services/scenario-identity-resolver";
 import { DefaultGuidedTourService } from "./application/services/guided-tour-service";
@@ -291,7 +294,7 @@ export const composeServices = (ctx: ComposeContext): ComposedServices => {
   // After a run reaches a terminal state (EN-2), the coordinator reacts to the
   // bus event and runs import → evidence → dashboard refresh for the just-
   // finished run, serialized so back-to-back runs can't clobber each other.
-  services.postRunCoordinator = new PostRunCoordinator({
+  services.postRunCoordinator = new DefaultPostRunCoordinator({
     reportImportService: services.reportImportService,
     evidenceGenerationService: services.evidenceGenerationService,
     scenarioIdentityResolver,
