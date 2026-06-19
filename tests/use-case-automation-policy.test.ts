@@ -250,6 +250,24 @@ describe("computeAutomationStatus (ADR-0017 roll-up, history-derived — US-057)
       ).toBe("planned");
     });
 
+    it("feature-level @quarantine does not neutralize a rowless Outline (stays not-run)", () => {
+      // Consistency with a scenario-level tag on the same rowless Outline: there
+      // is nothing runnable to park, so it keeps a not-run signal and a passing
+      // sibling can only reach implemented, never passing.
+      const parked = feature({
+        path: vp("Specifications/features/UC-001-a.feature"),
+        tags: ["@quarantine"],
+        scenarios: [{ name: "O", tags: [], keyword: "Scenario Outline", steps: [step] }],
+      });
+      const solid = feature({
+        path: vp("Specifications/features/UC-001-b.feature"),
+        scenarios: [active("Solid")],
+      });
+      expect(
+        computeAutomationStatus([parked, solid], history({ [refOf(solid, "Solid")]: "passed" })),
+      ).toBe("implemented");
+    });
+
     it("a non-quarantined rowless Outline keeps the Feature in the roll-up", () => {
       // A @quarantine scenario removes all refs, but a sibling rowless Outline is
       // still an active (never-run) scenario, so the Feature is not-run — not

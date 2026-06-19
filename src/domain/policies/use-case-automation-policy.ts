@@ -64,20 +64,30 @@ export const isQuarantined = (tags: string[]): boolean =>
  * quarantine count, so the two can never disagree (the source of several review
  * findings when they were computed separately):
  *
- * - a plain scenario: its own `@quarantine` tag;
+ * - a plain scenario: its own `@quarantine` tag (or `inheritedQuarantine`);
  * - an Outline: contributes only via runnable Examples rows, so a ROWLESS Outline
- *   is never fully quarantined (nothing to exclude — it reads `not-run`). A
- *   runnable Outline qualifies only when every row is excluded — a scenario-level
- *   tag, or every runnable Examples block tagged. A partially-tagged Outline
- *   still has active rows, so it does NOT qualify.
+ *   is NEVER fully quarantined — even under a feature-level tag — because there is
+ *   nothing runnable to park, so it keeps its `not-run` signal (consistent with a
+ *   scenario-level tag on the same rowless Outline). A runnable Outline qualifies
+ *   only when every row is excluded — a scenario-level tag (or `inheritedQuarantine`),
+ *   or every runnable Examples block tagged. A partially-tagged Outline still has
+ *   active rows, so it does NOT qualify.
  *
- * Feature-level `@quarantine` is handled by the caller (it parks every scenario).
+ * `inheritedQuarantine` carries a FEATURE-level `@quarantine` down to the scenario
+ * (it parks every runnable scenario), threaded here rather than short-circuited by
+ * the caller so the rowless-Outline rule applies to it too. Pass the actual
+ * scenario only — never via `Array.filter` directly, whose index arg would leak
+ * into this flag.
  */
-export const isScenarioFullyQuarantined = (scenario: ScenarioSpecification): boolean => {
-  if (!isScenarioOutline(scenario)) return isQuarantined(scenario.tags);
+export const isScenarioFullyQuarantined = (
+  scenario: ScenarioSpecification,
+  inheritedQuarantine = false,
+): boolean => {
+  const quarantined = inheritedQuarantine || isQuarantined(scenario.tags);
+  if (!isScenarioOutline(scenario)) return quarantined;
   const runnable = (scenario.examples ?? []).filter((block) => block.rows.length > 0);
   if (runnable.length === 0) return false;
-  return isQuarantined(scenario.tags) || runnable.every((block) => isQuarantined(block.tags));
+  return runnable.every((block) => quarantined || isQuarantined(block.tags));
 };
 
 /**
@@ -130,9 +140,7 @@ const featureRunState = (
   const featureQuarantined = isQuarantined(feature.tags);
   if (
     feature.scenarios.length > 0 &&
-    feature.scenarios.every(
-      (scenario) => featureQuarantined || isScenarioFullyQuarantined(scenario),
-    )
+    feature.scenarios.every((scenario) => isScenarioFullyQuarantined(scenario, featureQuarantined))
   ) {
     return "excluded";
   }

@@ -127,7 +127,9 @@ export const projectFeatureHealth = (feature: FeatureSpecification): FeatureHeal
   scenarioCount: feature.scenarios.length,
   wipScenarioCount: feature.scenarios.filter(scenarioHasWip).length,
   featureIsWip: hasWipTag(feature.tags),
-  quarantineScenarioCount: feature.scenarios.filter(isScenarioFullyQuarantined).length,
+  // Wrap so `filter`'s index arg never leaks into `inheritedQuarantine`. The count
+  // is scenario-level only; feature-level @quarantine is the separate badge below.
+  quarantineScenarioCount: feature.scenarios.filter((s) => isScenarioFullyQuarantined(s)).length,
   featureIsQuarantined: isQuarantined(feature.tags),
 });
 
