@@ -198,11 +198,29 @@ describe("computeAutomationStatus (ADR-0017 roll-up, history-derived — US-057)
     });
 
     it("a Feature whose every scenario is quarantined contributes no run signal", () => {
-      // not-run → with Features present but none run, the UC reads planned.
+      // Excluded → with Features present but none contributing, the UC reads planned.
       const f = feature({ scenarios: [quarantined("Flaky")] });
       expect(computeAutomationStatus([f], history({ [refOf(f, "Flaky")]: "failed" }))).toBe(
         "planned",
       );
+    });
+
+    it("an all-quarantined Feature stays neutral beside a passing sibling", () => {
+      // Regression: an excluded Feature must NOT drag a passing UC to implemented.
+      const allQuarantined = feature({
+        path: vp("Specifications/features/UC-001-a.feature"),
+        scenarios: [quarantined("Flaky")],
+      });
+      const solid = feature({
+        path: vp("Specifications/features/UC-001-b.feature"),
+        scenarios: [active("Solid")],
+      });
+      expect(
+        computeAutomationStatus(
+          [allQuarantined, solid],
+          history({ [refOf(solid, "Solid")]: "passed" }),
+        ),
+      ).toBe("passing");
     });
 
     it("matches @quarantine case-insensitively", () => {

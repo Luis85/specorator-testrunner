@@ -67,12 +67,18 @@ const hasUndefinedSteps = (feature: FeatureSpecification): boolean =>
   feature.scenarios.length === 0 ||
   feature.scenarios.some((scenario) => scenario.steps.length === 0);
 
-/** Run state of a single Feature, rolled up from its scenarios' latest results. */
-type FeatureRunState = "not-run" | "passing" | "failing" | "partial";
+/**
+ * Run state of a single Feature, rolled up from its scenarios' latest results.
+ * `excluded` is the neutral state for a Feature that contributes no scenarios to
+ * the roll-up (every scenario is `@quarantine`); the aggregate drops it entirely.
+ */
+type FeatureRunState = "excluded" | "not-run" | "passing" | "failing" | "partial";
 
 /**
  * Rolls a Feature up from its scenarios' latest statuses:
- * - `not-run` — none of its scenarios has any recorded result;
+ * - `excluded` — it has scenarios but every one is `@quarantine`, so it
+ *   contributes no run signal and is dropped from the aggregate (US-058);
+ * - `not-run` — none of its (non-quarantined) scenarios has any recorded result;
  * - `failing` — at least one scenario's latest result is `failed`;
  * - `passing` — every scenario has run and its latest result is `passed`;
  * - `partial` — some scenarios ran (none failing) but not all passed (a
@@ -83,14 +89,19 @@ type FeatureRunState = "not-run" | "passing" | "failing" | "partial";
  * scenario degraded to an unset ref — accepted edge, ADR-0022).
  *
  * Scenarios tagged `@quarantine` are dropped first (US-058): a parked flake
- * contributes no pass/fail signal, so a Feature whose scenarios are ALL
- * quarantined reads `not-run`, exactly like an empty Feature.
+ * contributes no pass/fail signal. A Feature whose scenarios are ALL quarantined
+ * has no active refs and reads `excluded` — neutral in the roll-up (a passing
+ * sibling can still make the UC pass), NOT `not-run` (which would drag a passing
+ * UC down to `implemented`).
  */
 const featureRunState = (
   feature: FeatureSpecification,
   latestStatusFor: ScenarioStatusLookup,
 ): FeatureRunState => {
   const refs = featureScenarioRefs(feature).filter((entry) => !isQuarantined(entry.tags));
+  // Has scenarios (else `hasUndefinedSteps` already returned `missing-steps`) but
+  // all are quarantined → no active refs → neutral, not a `not-run` signal.
+  if (refs.length === 0) return "excluded";
   let anyRun = false;
   let anyFailed = false;
   let allPassed = refs.length > 0;
@@ -116,10 +127,11 @@ const featureRunState = (
  * | Non-`@wip` Feature states            | result          |
  * | ------------------------------------ | --------------- |
  * | No Features                          | `not-planned`   |
- * | 1+ Features, none ever run           | `planned`       |
  * | 1+ Features have undefined steps     | `missing-steps` |
- * | All run, all passed                  | `passing`       |
+ * | All Features fully quarantined       | `planned`       |
+ * | No contributing Feature has run      | `planned`       |
  * | Any Feature failing                  | `failing`       |
+ * | All contributing Features passing    | `passing`       |
  * | Some run, none failing, not all pass | `implemented`   |
  */
 export const computeAutomationStatus = (
@@ -132,12 +144,20 @@ export const computeAutomationStatus = (
   if (active.length === 0) return "not-planned";
 
   // A Feature that cannot be executed as written outranks run state: the user
-  // must finish writing it before any pass/fail signal is meaningful.
+  // must finish writing it before any pass/fail signal is meaningful. Checked
+  // over ALL active Features (quarantine parks a flake, not an unwritten step).
   if (active.some(hasUndefinedSteps)) return "missing-steps";
 
-  const states = active.map((feature) => featureRunState(feature, latestStatusFor));
+  // Fully-quarantined Features (`excluded`) contribute no signal and are dropped,
+  // so a passing sibling is not dragged down to `implemented` (US-058). If every
+  // Feature is excluded, `states` is empty and the `every` checks below fall
+  // through to `planned` (no KPI-contributing run).
+  const states = active
+    .map((feature) => featureRunState(feature, latestStatusFor))
+    .filter((state) => state !== "excluded");
 
-  // No scenario across any active Feature has run yet: specified but unexercised.
+  // No scenario across any contributing Feature has run yet (or all are
+  // quarantined): specified but unexercised for the KPI.
   if (states.every((state) => state === "not-run")) return "planned";
 
   // Any failing Feature keeps the UC red until every scenario passes again.

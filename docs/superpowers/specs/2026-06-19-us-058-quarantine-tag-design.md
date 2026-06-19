@@ -36,8 +36,12 @@ exclusion happens inside `featureRunState`, not at the Feature filter:
   `@wip` convention) is dropped from its Feature's run-state computation. Its
   latest status — pass or fail — no longer affects whether the Feature (and thus
   the UC) reads passing / failing.
-- A Feature whose every scenario is quarantined contributes no run signal →
-  `not-run`, exactly as an empty Feature would. Documented, not special-cased.
+- A Feature whose every scenario is quarantined has no active refs and reads
+  `excluded` — **neutral** in the aggregate, dropped before the roll-up decides.
+  This is stronger than `not-run`: a `not-run` sibling would drag a passing UC
+  down to `implemented`, whereas an all-quarantined Feature must let a passing
+  sibling keep the UC `passing` (a reviewer caught this on the first draft). If
+  every Feature is excluded, the UC reads `planned` (no KPI-contributing run).
 - `missing-steps` precedence is unchanged: quarantine parks a *flaky runtime*,
   not an *unwritten* scenario, so a quarantined scenario with no steps still
   surfaces the structural problem (it is an authoring issue, not a flake).
