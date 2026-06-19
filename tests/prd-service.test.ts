@@ -385,6 +385,25 @@ describe("DefaultPrdService.deletePrd", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("refuses to delete a PRD that is a Story Map's product anchor", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    fs.files.set(
+      "Story Maps/SM-001-j/SM-001-j.md",
+      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-001", "---", ""].join(
+        "\n",
+      ),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("Story Map");
+    // The PRD note survives so the map's anchor can't dangle.
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(true);
+  });
+
   it("never deletes the root PRD-000", async () => {
     const { service, fs } = build();
     seedRoot(fs);

@@ -281,6 +281,20 @@ export class DefaultPrdService implements PrdService {
         );
       }
 
+      // A Story Map anchors to a PRD via its `product` field; deleting that PRD
+      // would dangle the map's product link (ADR-0027/0028). Refuse, mirroring
+      // the linked-Use-Case guard above, so the anchor can never go missing.
+      const linkedMaps = await this.countLinkedStoryMaps(id);
+      if (!linkedMaps.ok) return linkedMaps;
+      if (linkedMaps.value > 0) {
+        return err(
+          appError(
+            "VALIDATION_FAILED",
+            `PRD ${id} is the product anchor of ${linkedMaps.value} Story Map(s); reassign them first.`,
+          ),
+        );
+      }
+
       // Delete only the PRD note; leave any sibling attachments (diagrams, etc.).
       const folder = parentFolder(target.path);
       const deleted = await this.fs.deleteFile(target.path);
@@ -324,6 +338,27 @@ export class DefaultPrdService implements PrdService {
       if (!read.ok) return read;
       const { frontmatter: fm } = parseNote(read.value);
       if (typeof fm["prd-id"] === "string" && fm["prd-id"].trim() === prdId) count++;
+    }
+    return ok(count);
+  }
+
+  /** Counts Story Map notes whose `product` frontmatter anchors to `prdId`. */
+  private async countLinkedStoryMaps(prdId: PrdId): Promise<Result<number>> {
+    const settings = await this.settingsService.load();
+    const listed = await this.fs.listFilesRecursive(settings.paths.storyMapsPath);
+    if (!listed.ok) {
+      const messageLC = listed.error.message.toLowerCase();
+      if (messageLC.includes("enoent") || messageLC.includes("not found")) return ok(0);
+      return listed;
+    }
+    let count = 0;
+    for (const path of listed.value) {
+      if (!String(path).endsWith(".md")) continue;
+      const read = await this.fs.readFile(path);
+      // Fail closed (destructive delete): an unreadable map could anchor here.
+      if (!read.ok) return read;
+      const { frontmatter: fm } = parseNote(read.value);
+      if (typeof fm.product === "string" && fm.product.trim() === prdId) count++;
     }
     return ok(count);
   }
