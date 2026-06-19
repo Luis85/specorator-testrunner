@@ -223,6 +223,22 @@ describe("computeAutomationStatus (ADR-0017 roll-up, history-derived — US-057)
       ).toBe("passing");
     });
 
+    it("a rowless Outline is not-run, not excluded (it never executed)", () => {
+      // Zero refs from NO Examples rows (not from @quarantine) must stay not-run,
+      // so it does not let a passing sibling carry the UC to passing.
+      const rowless = feature({
+        path: vp("Specifications/features/UC-001-a.feature"),
+        scenarios: [{ name: "O", tags: [], keyword: "Scenario Outline", steps: [step] }],
+      });
+      const solid = feature({
+        path: vp("Specifications/features/UC-001-b.feature"),
+        scenarios: [active("Solid")],
+      });
+      expect(
+        computeAutomationStatus([rowless, solid], history({ [refOf(solid, "Solid")]: "passed" })),
+      ).toBe("implemented");
+    });
+
     it("matches @quarantine case-insensitively", () => {
       const f = feature({
         scenarios: [{ name: "Flaky", tags: ["@QUARANTINE"], steps: [step] }, active("Solid")],

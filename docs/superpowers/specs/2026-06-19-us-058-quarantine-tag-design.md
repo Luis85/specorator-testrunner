@@ -42,6 +42,10 @@ exclusion happens inside `featureRunState`, not at the Feature filter:
   down to `implemented`, whereas an all-quarantined Feature must let a passing
   sibling keep the UC `passing` (a reviewer caught this on the first draft). If
   every Feature is excluded, the UC reads `planned` (no KPI-contributing run).
+  `excluded` is returned **only** when refs existed and `@quarantine` removed them
+  all — a Feature with no refs to begin with (a rowless Scenario Outline, or all
+  scenarios degraded to unset refs) never executed and stays `not-run`, so it
+  cannot let a passing sibling carry the UC to `passing` (a second reviewer catch).
 - `missing-steps` precedence is unchanged: quarantine parks a *flaky runtime*,
   not an *unwritten* scenario, so a quarantined scenario with no steps still
   surfaces the structural problem (it is an authoring issue, not a flake).
@@ -95,9 +99,11 @@ docs/issues/US-058.md                         (progress)
 ## Testing (TDD)
 
 - **Policy:** a quarantined failing scenario does not make its Feature/UC fail;
-  a quarantined scenario is excluded from the all-passed check; a Feature whose
-  scenarios are all quarantined reads `not-run`; case-insensitive match; Outline
-  rows inherit the scenario's quarantine; `missing-steps` still outranks.
+  a quarantined scenario is excluded from the all-passed check; an all-quarantined
+  Feature is neutral (a passing sibling still passes the UC); a rowless Outline
+  stays `not-run`, not excluded; case-insensitive match; Outline rows inherit the
+  scenario's quarantine, and a block-level `@quarantine` excludes only that
+  block's rows; `missing-steps` still outranks.
 - **Reference:** `featureScenarioRefs` carries each entry's tags (plain +
   Outline rows).
 - **Insight:** `quarantineScenarioCount` over scenario/Examples-block tags;

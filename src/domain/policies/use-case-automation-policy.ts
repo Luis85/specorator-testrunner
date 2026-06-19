@@ -98,10 +98,14 @@ const featureRunState = (
   feature: FeatureSpecification,
   latestStatusFor: ScenarioStatusLookup,
 ): FeatureRunState => {
-  const refs = featureScenarioRefs(feature).filter((entry) => !isQuarantined(entry.tags));
-  // Has scenarios (else `hasUndefinedSteps` already returned `missing-steps`) but
-  // all are quarantined → no active refs → neutral, not a `not-run` signal.
-  if (refs.length === 0) return "excluded";
+  const allRefs = featureScenarioRefs(feature);
+  const refs = allRefs.filter((entry) => !isQuarantined(entry.tags));
+  // `excluded` (neutral) ONLY when there WERE refs and `@quarantine` removed them
+  // all. A Feature with no refs to begin with — a rowless Scenario Outline, or
+  // every scenario degraded to an unset ref (ADR-0022) — never executed, so it
+  // stays `not-run` below rather than silently letting a passing sibling carry
+  // the UC to `passing`.
+  if (refs.length === 0 && allRefs.length > 0) return "excluded";
   let anyRun = false;
   let anyFailed = false;
   let allPassed = refs.length > 0;
