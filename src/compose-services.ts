@@ -24,6 +24,7 @@ import { DefaultTraceabilityService } from "./application/services/traceability-
 import { DefaultTestExecutionService } from "./application/services/test-execution-service";
 import { DefaultUseCaseService } from "./application/services/use-case-service";
 import { DefaultPrdService } from "./application/services/prd-service";
+import { DefaultStoryMapService } from "./application/services/story-map-service";
 import { DefaultRunHistoryService } from "./application/services/run-history-service";
 import { DefaultCommandSafetyPolicy } from "./domain/policies/command-safety-policy";
 import type { PathSafetyPolicy } from "./domain/policies/path-safety-policy";
@@ -72,6 +73,7 @@ export interface ComposedServices {
   initializationService: DefaultInitializationService;
   maintenanceService: DefaultMaintenanceService;
   prdService: DefaultPrdService;
+  storyMapService: DefaultStoryMapService;
   useCaseService: DefaultUseCaseService;
   specificationService: DefaultSpecificationService;
   featureInsightService: DefaultFeatureInsightService;
@@ -194,6 +196,16 @@ export const composeServices = (ctx: ComposeContext): ComposedServices => {
     findById: (id) => services.prdService.findById(id),
     withMutationLock: (op) => services.prdService.withMutationLock(op),
   });
+  // Story Maps (ADR "Story Map as PRD-sibling overlay"): an upstream-design
+  // artifact that references Use Cases by id. Built after useCaseService since it
+  // resolves each card's `UC-NNN` to a real note name so grid links never dangle.
+  services.storyMapService = new DefaultStoryMapService(
+    hubSettingsService,
+    vault,
+    eventBus,
+    logger,
+    services.useCaseService,
+  );
   services.specificationService = new DefaultSpecificationService(
     hubSettingsService,
     services.useCaseService,

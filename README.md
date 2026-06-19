@@ -166,6 +166,7 @@ Vault
 │   └── Troubleshooting.md
 ├── PRDs
 │   └── PRD-000-product-vision
+├── Story Maps
 ├── Domains
 ├── Use Cases
 ├── Specifications

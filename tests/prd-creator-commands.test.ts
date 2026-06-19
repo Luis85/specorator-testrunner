@@ -52,6 +52,7 @@ describe("Create PRD command", () => {
     openCreateSuite: vi.fn(),
     openDocumentation: vi.fn(),
     openPrdBuilder: vi.fn(),
+    openStoryMapBuilder: vi.fn(),
   });
 
   it("registers Create PRD command with correct id", () => {

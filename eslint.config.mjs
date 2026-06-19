@@ -62,6 +62,8 @@ export default tseslint.config(
             "Test Hub",
             "Use Case",
             "Use Cases",
+            "Story Map",
+            "Story Maps",
             "Feature Specification",
             "Feature Specifications",
             "Test Suite",

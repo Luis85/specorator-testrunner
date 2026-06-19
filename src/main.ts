@@ -18,6 +18,7 @@ import type { SuiteService } from "./application/services/suite-service";
 import type { TestExecutionService } from "./application/services/test-execution-service";
 import type { UseCaseService } from "./application/services/use-case-service";
 import type { PrdService } from "./application/services/prd-service";
+import type { StoryMapService } from "./application/services/story-map-service";
 import type { DefaultRunnerInstallationService } from "./application/services/runner-installation-service";
 import { DefaultPathSafetyPolicy } from "./domain/policies/path-safety-policy";
 import type { VaultPath } from "./domain/value-objects/identifiers";
@@ -43,6 +44,8 @@ import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
 import { PrdBuilderModal } from "./presentation/views/prd-builder-modal";
 import { PRD_VIEW_TYPE } from "./presentation/views/prd-explorer-view";
+import { StoryMapBuilderModal } from "./presentation/views/story-map-builder-modal";
+import { STORY_MAP_VIEW_TYPE } from "./presentation/views/story-map-explorer-view";
 import { TEST_CONSOLE_VIEW_TYPE } from "./presentation/views/test-console-view";
 import { USE_CASE_DETAIL_VIEW_TYPE } from "./presentation/views/use-case-detail-view";
 import { openOrNotice } from "./presentation/views/modal-helpers";
@@ -69,6 +72,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private pipelineService!: PipelineGenerationService;
   private useCaseService!: UseCaseService;
   private prdService!: PrdService;
+  private storyMapService!: StoryMapService;
   private specificationService!: SpecificationService;
   // Wave F insight: read-only scenario/tag queries (Tag Expression match
   // counts, per-Feature health) shared by the suites explorer, the
@@ -163,6 +167,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.initializationService = services.initializationService;
     this.maintenanceService = services.maintenanceService;
     this.prdService = services.prdService;
+    this.storyMapService = services.storyMapService;
     this.useCaseService = services.useCaseService;
     this.specificationService = services.specificationService;
     this.featureInsightService = services.featureInsightService;
@@ -188,6 +193,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       openUseCaseDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
       openCreateSuite: () => this.openCreateSuite(),
       openPrdBuilder: (parentPrdId) => this.openPrdBuilder(parentPrdId),
+      openStoryMapBuilder: () => this.openStoryMapBuilder(),
       openWizard: () => this.openWizard(),
       openDocumentation: (documentType) => this.openDocumentation(documentType),
       generateDocumentation: () => this.generateDocumentation(),
@@ -231,6 +237,11 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       "Open PRDs",
       () => void this.workspaceAdapter.openView(PRD_VIEW_TYPE, "sidebar"),
     );
+    this.addRibbonIcon(
+      "map",
+      "Open Story Maps",
+      () => void this.workspaceAdapter.openView(STORY_MAP_VIEW_TYPE, "sidebar"),
+    );
 
     // Command-palette surface (P2-7): the command bodies live in
     // presentation/commands/register-commands.ts behind a narrow deps contract;
@@ -253,6 +264,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       openCreateUseCase: () => this.openCreateUseCase(),
       openCreateSuite: () => this.openCreateSuite(),
       openPrdBuilder: () => this.openPrdBuilder(),
+      openStoryMapBuilder: () => this.openStoryMapBuilder(),
       openDocumentation: (documentType) => this.openDocumentation(documentType),
     });
 
@@ -355,6 +367,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       prdService: this.prdService,
       useCaseService: this.useCaseService,
       parentPrdId,
+    }).open();
+  }
+
+  private openStoryMapBuilder(): void {
+    new StoryMapBuilderModal(this.app, {
+      storyMapService: this.storyMapService,
+      prdService: this.prdService,
     }).open();
   }
 

@@ -48,6 +48,22 @@ _Avoid_: parent, parentId, root flag.
 The PRD frontmatter field that orders sibling PRDs. Kept separate from the immutable `PRD-NNN` id so siblings can be reordered **without renaming ids** and breaking cross-references (per ADR-0026).
 _Avoid_: order, sort key, sequence, index.
 
+**Story Map** _(accepted — see ADR-0027)_:
+A **sibling overlay to the PRD** (not a node in the Domain → PRD → Use Case tree) that shapes the product journey. Identified as `SM-NNN`, anchored to a product via its `product` field (a PRD id). It adds the two facts the single-parent tree was designed not to hold — an ordered **backbone** (`activities`) and ordered **release slices** (`slices`, first = the walking skeleton) — over Use Cases referenced **by id only** in `cards` (it never copies Use Case content). Stored one folder per map at `<storyMapsPath>/<id>-<slug>/<id>-<slug>.md`. Composes *above* an **Example Map** along the shared `UC-NNN` seam; the two are never conflated.
+_Avoid_: Roadmap, backlog, journey map (a journey map is UX research, not this), example map.
+
+**Backbone**:
+The ordered list of **activities** across a **Story Map** — the user journey, left to right. An activity is a high-level user goal that may span several PRDs; it cannot be prioritized (only the cards beneath it can). Distinct from a PRD's `scope_in`, which is an unordered set.
+_Avoid_: Activities row, epics, columns.
+
+**Release Slice**:
+A horizontal band of a **Story Map** that groups the Use Cases shipped together in one end-to-end increment — deliberately spanning PRD branches. The topmost slice is the **walking skeleton** (the thinnest shippable end-to-end system). Distinct from a Use Case's branch-local `increment` field.
+_Avoid_: Release, sprint, milestone, swimlane.
+
+**Story Map Card**:
+A single Use Case placement on a **Story Map**, encoded as the parser-safe string `"UC-NNN | activity | slice"`. References a Use Case by id at an (activity, slice) coordinate; it is the unit of the map's grid. Renders as a resolved, aliased wikilink `[[<note name>\|UC-NNN]]` so titled Use Case notes never dangle.
+_Avoid_: Story, card, ticket, cell.
+
 **Feature Specification**:
 A `.feature` file in Gherkin that makes part of a Use Case executable. Each Feature belongs to exactly one Use Case; the back-reference is encoded both in the filename (`<UC-id>-<slug>.feature`) and in the Feature's frontmatter. Sharing test logic across Use Cases is done via step definitions (`createBdd()` steps) and Gherkin `Background`, never via shared Feature files.
 _Avoid_: Feature file (informal), spec file, BDD file.

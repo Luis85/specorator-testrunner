@@ -38,6 +38,9 @@ export type DomainEventType =
   // prd
   | "prd.created"
   | "prd.deleted"
+  // story map
+  | "storymap.created"
+  | "storymap.deleted"
   // specification
   | "specification.created"
   | "specification.updated"
@@ -119,6 +122,10 @@ export interface EventPayloads {
   // prd
   "prd.created": { prdId: string; title: string; path: string; parentPrdId?: string };
   "prd.deleted": { prdId: string; path: string; preservedFiles: number };
+
+  // story map
+  "storymap.created": { storyMapId: string; title: string; path: string; product: string };
+  "storymap.deleted": { storyMapId: string; path: string; preservedFiles: number };
 
   // specification (§5)
   "specification.created": { useCaseId: string; featurePath: string };

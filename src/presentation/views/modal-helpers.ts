@@ -60,6 +60,14 @@ export const renderLoadError = (
 };
 
 /**
+ * Formats an unknown thrown value into a `"<prefix>: <message>"` Notice string,
+ * narrowing `Error` for its message and falling back otherwise. Shared by the
+ * creation modals' catch blocks so each one stays a single branch (thin views).
+ */
+export const errorText = (prefix: string, err: unknown): string =>
+  `${prefix}: ${err instanceof Error ? err.message : "Unknown error"}`;
+
+/**
  * Renders a vertical list of labelled checkboxes — each `<input>` tied to its
  * `<label>` through a unique id — and reports every toggle. Shared by the PRD
  * wizard's Domains and assign-Use-Cases steps; `idPrefix` namespaces the
