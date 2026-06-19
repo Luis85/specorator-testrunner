@@ -1,0 +1,62 @@
+import { describe, expect, it } from "vitest";
+import { buildBoardScene } from "../src/presentation/views/story-map-board-scene";
+import { computeBoardLayout } from "../src/presentation/views/story-map-board-layout";
+import type { StoryMap } from "../src/domain/entities/story-map";
+import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
+
+const map: StoryMap = {
+  id: "SM-001",
+  title: "Journey",
+  status: "draft",
+  product: "PRD-000",
+  users: ["Customer"],
+  activities: ["Browse"],
+  steps: [],
+  slices: ["Walking skeleton"],
+  cards: [
+    {
+      ref: "UC-001",
+      title: "Filter",
+      activity: "Browse",
+      slice: "Walking skeleton",
+      status: "planned",
+      points: 3,
+      tags: ["x"],
+      color: "#93c5fd",
+    },
+  ],
+  displayOrder: 0,
+  path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+};
+
+describe("buildBoardScene", () => {
+  const scene = () => buildBoardScene(computeBoardLayout(map));
+
+  it("emits a rect + label for the activity header, the slice row header, and each card", () => {
+    const specs = scene();
+    const classes = specs.map((s) => s.class);
+    expect(classes).toContain("sm-board-activity");
+    expect(classes).toContain("sm-board-slice");
+    expect(classes).toContain("sm-board-card");
+    expect(classes).toContain("sm-board-users");
+  });
+
+  it("renders the card title + a compact attribute suffix and carries its color + cardIndex", () => {
+    const card = scene().find((s) => s.class === "sm-board-card" && s.tag === "rect");
+    expect(card?.attrs.fill).toBe("#93c5fd");
+    expect(card?.attrs["data-card-index"]).toBe(0);
+    const text = scene().find((s) => s.class === "sm-board-card-title");
+    expect(text?.text).toContain("Filter");
+    const attrs = scene().find((s) => s.class === "sm-board-card-attrs");
+    expect(attrs?.text).toContain("planned");
+    expect(attrs?.text).toContain("3pts");
+  });
+
+  it("escapes nothing into attributes that aren't strings/numbers", () => {
+    for (const spec of scene()) {
+      for (const v of Object.values(spec.attrs)) {
+        expect(["string", "number"]).toContain(typeof v);
+      }
+    }
+  });
+});
