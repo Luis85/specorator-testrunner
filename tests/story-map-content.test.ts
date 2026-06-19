@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   buildStoryMapNote,
+  cardAttributeSuffix,
   GRID_BLOCK_END,
   GRID_BLOCK_START,
+  renderActivityTable,
+  renderLegend,
+  renderPointsRollup,
   renderStoryMapGridTable,
   replaceGridBlock,
   storyMapFolderName,
@@ -16,11 +20,22 @@ const map: StoryMap = {
   title: "Authoring journey",
   status: "draft",
   product: "PRD-000",
+  users: ["Test author", "Reviewer"],
   activities: ["Author spec", "Run tests"],
+  steps: [{ activity: "Author spec", step: "Draft" }],
   slices: ["Walking skeleton", "Next"],
   cards: [
-    { ucId: "UC-037", activity: "Author spec", slice: "Walking skeleton" },
-    { ucId: "UC-011", activity: "Run tests", slice: "Walking skeleton" },
+    {
+      ref: "UC-037",
+      title: "Author a Use Case",
+      activity: "Author spec",
+      step: "Draft",
+      slice: "Walking skeleton",
+      status: "planned",
+      points: 3,
+      tags: ["auth"],
+    },
+    { ref: "UC-011", title: "UC-011", activity: "Run tests", slice: "Walking skeleton", tags: [] },
   ],
   displayOrder: 0,
   path: unsafeVaultPath("Story Maps/SM-001-authoring-journey/SM-001-authoring-journey.md"),
@@ -33,22 +48,65 @@ describe("storyMapFolderName", () => {
   });
 });
 
-describe("renderStoryMapGridTable", () => {
-  it("renders resolved, aliased, pipe-escaped UC links so cells never dangle", () => {
-    const names = new Map([
-      ["UC-037", "UC-037 Author a Use Case"],
-      // UC-011 deliberately unresolved → falls back to a bare link.
-    ]);
-    const table = renderStoryMapGridTable(map, names);
+describe("cardAttributeSuffix", () => {
+  it("renders status, points, and tags compactly with `·` separators", () => {
+    expect(
+      cardAttributeSuffix({
+        title: "T",
+        activity: "A",
+        slice: "S",
+        status: "planned",
+        points: 3,
+        tags: ["x"],
+      }),
+    ).toBe(" · planned · 3pts · #x");
+  });
 
-    // Header + divider + one row per slice.
-    expect(table).toContain("| Slice ↓ / Activity → | Author spec | Run tests |");
-    // Resolved link uses the escaped-pipe alias so it survives the Markdown table.
+  it("is empty for a card with no planning attributes", () => {
+    expect(cardAttributeSuffix({ title: "T", activity: "A", slice: "S", tags: [] })).toBe("");
+  });
+});
+
+describe("renderActivityTable", () => {
+  it("renders a step-columned table with resolved, pipe-escaped UC links and attributes", () => {
+    const names = new Map([["UC-037", "UC-037 Author a Use Case"]]);
+    const table = renderActivityTable(map, "Author spec", names);
+    expect(table).toContain("### Author spec");
+    expect(table).toContain("| Slice ↓ / Step → | Draft |");
     expect(table).toContain("[[UC-037 Author a Use Case\\|UC-037]]");
-    // Unresolved id falls back to the bare wikilink.
+    expect(table).toContain("· planned · 3pts · #auth");
+  });
+
+  it("renders a single no-step column for a stepless activity", () => {
+    const names = new Map<string, string>();
+    const table = renderActivityTable(map, "Run tests", names);
+    expect(table).toContain("(no step)");
+    // The unresolved id falls back to a bare wikilink.
     expect(table).toContain("[[UC-011]]");
-    expect(table).toContain("| **Walking skeleton** |");
-    expect(table).toContain("| **Next** |  |  |");
+  });
+});
+
+describe("renderPointsRollup / renderLegend", () => {
+  it("rolls up points per slice with a total row", () => {
+    const rollup = renderPointsRollup(map);
+    expect(rollup).toContain("| Walking skeleton | 3 |");
+    expect(rollup).toContain("| Next | 0 |");
+    expect(rollup).toContain("| **Total** | **3** |");
+  });
+
+  it("lists the four planning statuses in the legend", () => {
+    const legend = renderLegend();
+    expect(legend).toContain("planned · in-progress · done · blocked");
+  });
+});
+
+describe("renderStoryMapGridTable", () => {
+  it("renders a sub-section per activity plus the roll-up and legend", () => {
+    const table = renderStoryMapGridTable(map, new Map());
+    expect(table).toContain("### Author spec");
+    expect(table).toContain("### Run tests");
+    expect(table).toContain("#### Points roll-up");
+    expect(table).toContain("#### Legend");
   });
 
   it("renders a guidance line when there is no backbone yet", () => {
@@ -58,26 +116,34 @@ describe("renderStoryMapGridTable", () => {
 });
 
 describe("buildStoryMapNote", () => {
-  it("serializes parser-safe frontmatter and a managed grid block", () => {
+  it("serializes parser-safe frontmatter (users, steps, rich cards) and a grid block", () => {
     const note = buildStoryMapNote(map, new Map());
     const { frontmatter } = parseNote(note);
 
     expect(frontmatter.type).toBe("story-map");
     expect(frontmatter.id).toBe("SM-001");
     expect(frontmatter.product).toBe("PRD-000");
+    expect(frontmatter.users).toEqual(["Test author", "Reviewer"]);
     expect(frontmatter.activities).toEqual(["Author spec", "Run tests"]);
+    expect(frontmatter.steps).toEqual(["Author spec | Draft"]);
     expect(frontmatter.slices).toEqual(["Walking skeleton", "Next"]);
     expect(frontmatter.cards).toEqual([
-      "UC-037 | Author spec | Walking skeleton",
-      "UC-011 | Run tests | Walking skeleton",
+      "UC-037 | Author spec | Draft | Walking skeleton | planned | 3 | auth |  | Author a Use Case",
+      "UC-011 | Run tests |  | Walking skeleton |  |  |  |  | UC-011",
     ]);
     expect(note).toContain(GRID_BLOCK_START);
     expect(note).toContain(GRID_BLOCK_END);
   });
 
+  it("omits users and steps from frontmatter when empty", () => {
+    const note = buildStoryMapNote({ ...map, users: [], steps: [] }, new Map());
+    const { frontmatter } = parseNote(note);
+    expect(frontmatter.users).toBeUndefined();
+    expect(frontmatter.steps).toBeUndefined();
+  });
+
   it("renders the product as a resolved (unescaped) inline link in the body", () => {
     const note = buildStoryMapNote(map, new Map([["PRD-000", "PRD-000 Product Vision"]]));
-    // Body paragraph is not a table, so the alias pipe is NOT escaped here.
     expect(note).toContain("[[PRD-000 Product Vision|PRD-000]]");
   });
 

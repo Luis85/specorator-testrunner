@@ -5,9 +5,12 @@ import type { StoryMapService } from "../../application/services/story-map-servi
 import type { StoryMapBuilderState } from "../../application/services/story-map-builder";
 import {
   addLabel,
+  addStep,
+  formatStep,
   initialStoryMapBuilderState,
   pickProductAnchor,
   removeLabelAt,
+  removeStepAt,
   STORY_MAP_STEP_COUNT,
   storyMapBuilderStepTitle,
   storyMapReviewLines,
@@ -26,10 +29,10 @@ export interface StoryMapBuilderDeps {
 }
 
 /**
- * 4-step wizard for creating a Story Map: title + product anchor, the backbone
- * (activities), the release slices, then review. Use Case cards are added later
- * by editing the note's `cards` frontmatter and rebuilding the grid — the wizard
- * deliberately collects only the two new facts (sequence + slices).
+ * 6-step wizard for creating a Story Map: title + product anchor, users, the
+ * backbone (activities), steps, the release slices, then review. Rich cards are
+ * added later by editing the note's `cards` frontmatter and rebuilding the grid —
+ * the wizard collects the map skeleton (users, backbone, steps, slices).
  */
 export class StoryMapBuilderModal extends Modal {
   private state: StoryMapBuilderState = initialStoryMapBuilderState();
@@ -73,11 +76,13 @@ export class StoryMapBuilderModal extends Modal {
     // than a branching switch); each renderer is a thin view over builder state.
     const renderers: Record<number, () => void> = {
       1: () => this.renderStep1TitleAndProduct(contentEl),
-      2: () =>
-        this.renderLabelStep(contentEl, "activities", "Add an activity (e.g. Configure SUT)"),
+      2: () => this.renderLabelStep(contentEl, "users", "Add a user/persona (e.g. Test author)"),
       3: () =>
+        this.renderLabelStep(contentEl, "activities", "Add an activity (e.g. Configure SUT)"),
+      4: () => this.renderStepsStep(contentEl),
+      5: () =>
         this.renderLabelStep(contentEl, "slices", "Add a release slice (e.g. Walking skeleton)"),
-      4: () => this.renderStep4Review(contentEl),
+      6: () => this.renderReview(contentEl),
     };
     renderers[this.state.currentStep]?.();
 
@@ -122,7 +127,7 @@ export class StoryMapBuilderModal extends Modal {
 
   private renderLabelStep(
     contentEl: HTMLElement,
-    field: "activities" | "slices",
+    field: "users" | "activities" | "slices",
     placeholder: string,
   ): void {
     this.renderError(contentEl, field);
@@ -157,7 +162,55 @@ export class StoryMapBuilderModal extends Modal {
     });
   }
 
-  private renderStep4Review(contentEl: HTMLElement): void {
+  private renderStepsStep(contentEl: HTMLElement): void {
+    this.renderError(contentEl, "steps");
+    if (this.state.activities.length === 0) {
+      contentEl.createEl("p", {
+        text: "Add at least one activity first — steps hang under an activity.",
+        cls: "setting-item-description",
+      });
+      return;
+    }
+    const container = contentEl.createEl("div", { cls: "story-map-items" });
+    this.renderStepList(container);
+    this.renderStepAddForm(container);
+  }
+
+  private renderStepList(container: HTMLElement): void {
+    const steps = this.state.steps;
+    for (let i = 0; i < steps.length; i++) {
+      const itemContainer = container.createEl("div", { cls: "story-map-item" });
+      itemContainer.createEl("span", { text: `${i + 1}. ${formatStep(steps[i])}` });
+      itemContainer.createEl("button", { text: "Remove" }).addEventListener("click", () => {
+        this.state = { ...this.state, steps: removeStepAt(steps, i) };
+        this.render();
+      });
+    }
+  }
+
+  private renderStepAddForm(container: HTMLElement): void {
+    let activity = this.state.activities[0];
+    let label = "";
+    new Setting(container)
+      .setName("Step")
+      .addDropdown((dropdown) => {
+        for (const a of this.state.activities) dropdown.addOption(a, a);
+        dropdown.setValue(activity);
+        dropdown.onChange((value) => (activity = value));
+      })
+      .addText((text) => {
+        text.setPlaceholder("Step label (e.g. Pick a browser)");
+        text.onChange((value) => (label = value));
+      });
+    container.createEl("button", { text: "Add" }).addEventListener("click", () => {
+      const next = addStep(this.state.steps, this.state.activities, activity, label);
+      if (next.length === this.state.steps.length) return;
+      this.state = { ...this.state, steps: next };
+      this.render();
+    });
+  }
+
+  private renderReview(contentEl: HTMLElement): void {
     contentEl.createEl("h3", { text: "Review Story Map" });
     const summary = contentEl.createEl("div", { cls: "story-map-summary" });
     for (const line of storyMapReviewLines(this.state)) {

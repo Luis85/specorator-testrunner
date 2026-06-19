@@ -1,5 +1,13 @@
 import { buildNote, type FrontmatterValue } from "../../shared/utils/frontmatter";
-import { buildStoryMapGrid, encodeCard, type StoryMap } from "../../domain/entities/story-map";
+import {
+  buildStoryMapGrid,
+  CARD_STATUSES,
+  encodeCard,
+  encodeStep,
+  type StoryMap,
+  type StoryMapCard,
+  type StoryMapGridColumn,
+} from "../../domain/entities/story-map";
 
 /** Kebab-case folder/file name shared by a Story Map's folder and its note. */
 export const storyMapFolderName = (id: string, title: string): string => {
@@ -19,19 +27,88 @@ export const GRID_BLOCK_START = "<!-- story-map-grid:start -->";
 export const GRID_BLOCK_END = "<!-- story-map-grid:end -->";
 
 /** A single Use Case cell link: resolved, aliased wikilink so it never dangles. */
-const cellLink = (ucId: string, ucNoteNames: Map<string, string>): string => {
-  const noteName = ucNoteNames.get(ucId);
+const cellLink = (ref: string, ucNoteNames: Map<string, string>): string => {
+  const noteName = ucNoteNames.get(ref);
   // Generated Use Case notes are titled `UC-NNN <Title>.md`, so a bare
   // `[[UC-NNN]]` does NOT resolve in Obsidian — alias the resolved note name
   // while still showing the id (mirrors the evidence renderer).
-  return noteName ? `[[${noteName}\\|${ucId}]]` : `[[${ucId}]]`;
+  return noteName ? `[[${noteName}\\|${ref}]]` : `[[${ref}]]`;
 };
 
+/** Escapes a value for a Markdown table cell (pipes break the column layout). */
+const tableSafe = (value: string): string => value.replace(/\|/g, "\\|");
+
 /**
- * Renders the activity × slice grid as a Markdown table. Columns are activities
- * (the backbone), rows are slices (release bands), and each cell lists the Use
- * Cases placed there as resolved, aliased wikilinks. A map with no activities
- * renders a guidance line instead of an empty table.
+ * The compact attribute suffix shown after a card's title/link: status, points,
+ * and tags, each prefixed with `·`. Empty when the card carries no attributes.
+ * Pure: no I/O.
+ */
+export const cardAttributeSuffix = (card: StoryMapCard): string => {
+  const parts: string[] = [];
+  if (card.status) parts.push(card.status);
+  if (card.points !== undefined) parts.push(`${card.points}pts`);
+  for (const tag of card.tags) parts.push(`#${tag}`);
+  return parts.length > 0 ? ` · ${parts.join(" · ")}` : "";
+};
+
+/** Renders one card in a grid cell: title (or aliased UC link) plus attributes. */
+const renderCard = (card: StoryMapCard, ucNoteNames: Map<string, string>): string => {
+  const head = card.ref
+    ? `${tableSafe(card.title)} ${cellLink(card.ref, ucNoteNames)}`
+    : tableSafe(card.title);
+  return `${head}${tableSafe(cardAttributeSuffix(card))}`;
+};
+
+/** A leaf column's table header label: the step, or the activity for a no-step column. */
+const columnHeader = (column: StoryMapGridColumn): string => tableSafe(column.step ?? "(no step)");
+
+/**
+ * Renders one activity's sub-table: a slices × step-columns Markdown table, each
+ * cell listing its cards. An activity with no declared steps renders a single
+ * column. Pure: no I/O.
+ */
+export const renderActivityTable = (
+  map: StoryMap,
+  activity: string,
+  ucNoteNames: Map<string, string>,
+): string => {
+  const grid = buildStoryMapGrid(map);
+  const columns = grid.columns.filter((c) => c.activity === activity);
+  const header = `| Slice ↓ / Step → | ${columns.map(columnHeader).join(" | ")} |`;
+  const divider = `| --- | ${columns.map(() => "---").join(" | ")} |`;
+  const rows = grid.rows.map((row) => {
+    const cells = columns.map((column) => {
+      const cell = row.cells.find(
+        (c) => c.column.activity === activity && c.column.step === column.step,
+      );
+      const cards = cell?.cards ?? [];
+      return cards.map((card) => renderCard(card, ucNoteNames)).join("<br>");
+    });
+    return `| **${tableSafe(row.slice)}** | ${cells.join(" | ")} |`;
+  });
+  return [`### ${activity}`, "", header, divider, ...rows].join("\n");
+};
+
+/** The per-slice points roll-up table (sum of every card's points in a slice). */
+export const renderPointsRollup = (map: StoryMap): string => {
+  const grid = buildStoryMapGrid(map);
+  const header = "| Slice | Points |";
+  const divider = "| --- | --- |";
+  const rows = grid.rows.map((row) => `| ${tableSafe(row.slice)} | ${row.points} |`);
+  const total = grid.rows.reduce((sum, row) => sum + row.points, 0);
+  return ["#### Points roll-up", "", header, divider, ...rows, `| **Total** | **${total}** |`].join(
+    "\n",
+  );
+};
+
+/** The planning-status legend (the four hand-set statuses). */
+export const renderLegend = (): string =>
+  ["#### Legend", "", `Planning status: ${CARD_STATUSES.join(" · ")}`].join("\n");
+
+/**
+ * Renders the managed grid as per-activity sub-tables, plus a per-slice points
+ * roll-up and a status legend. A map with no activities renders a guidance line
+ * instead. Pure: no I/O.
  */
 export const renderStoryMapGridTable = (
   map: StoryMap,
@@ -40,16 +117,10 @@ export const renderStoryMapGridTable = (
   if (map.activities.length === 0) {
     return "_No activities yet — add a backbone to render the map._";
   }
-  const grid = buildStoryMapGrid(map);
-  const header = `| Slice ↓ / Activity → | ${map.activities.join(" | ")} |`;
-  const divider = `| --- | ${map.activities.map(() => "---").join(" | ")} |`;
-  const rows = grid.rows.map((row) => {
-    const cells = row.cells.map((cell) =>
-      cell.ucIds.length > 0 ? cell.ucIds.map((id) => cellLink(id, ucNoteNames)).join("<br>") : "",
-    );
-    return `| **${row.slice}** | ${cells.join(" | ")} |`;
-  });
-  return [header, divider, ...rows].join("\n");
+  const sections = map.activities.map((activity) =>
+    renderActivityTable(map, activity, ucNoteNames),
+  );
+  return [...sections, renderPointsRollup(map), renderLegend()].join("\n\n");
 };
 
 /** Wraps the grid table in its managed-block markers. */
@@ -82,9 +153,9 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 
 /**
  * Serialize a Story Map to a frontmatter+markdown note. Parser-safe forms only:
- * activities/slices are block sequences of label strings, and cards are block
- * sequences of `"UC | activity | slice"` string scalars (ADR-0026 parser rules).
- * The body carries a managed grid block rendered from the cards.
+ * users/activities/slices are block sequences of label strings, steps are
+ * `"activity | step"` scalars, and cards are nine-field positional scalars
+ * (ADR-0026/0028 parser rules). The body carries a managed grid block.
  */
 export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>): string => {
   const fields: Record<string, FrontmatterValue> = {
@@ -93,7 +164,9 @@ export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>)
     title: map.title,
     status: map.status,
     product: map.product,
+    users: map.users.length > 0 ? map.users : undefined,
     activities: map.activities.length > 0 ? map.activities : undefined,
+    steps: map.steps.length > 0 ? map.steps.map(encodeStep) : undefined,
     slices: map.slices.length > 0 ? map.slices : undefined,
     cards: map.cards.length > 0 ? map.cards.map(encodeCard) : undefined,
     display_order: map.displayOrder,
@@ -102,11 +175,12 @@ export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>)
   const body = [
     `# ${map.id}: ${map.title}`,
     "",
-    `Story map for ${inlineLink(map.product, noteNames)} — backbone (activities) × release slices.`,
+    `Story map for ${inlineLink(map.product, noteNames)} — users, backbone (activities), steps, and release slices.`,
     "",
-    "> Source of truth is the frontmatter (`activities`, `slices`, `cards`). Each",
-    "> card references a Use Case by id (`UC-NNN | activity | slice`); edit the",
-    '> `cards` list, then run "Rebuild grid" to regenerate the table below.',
+    "> Source of truth is the frontmatter (`users`, `activities`, `steps`,",
+    "> `slices`, `cards`). Each card is a `ref | activity | step | slice | status",
+    "> | points | tags | color | title` scalar; edit the `cards` list, then run",
+    '> "Rebuild grid" to regenerate the tables below.',
     "",
     "## Map",
     "",

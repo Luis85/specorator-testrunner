@@ -9,9 +9,11 @@ import type { SettingsService } from "./settings-service";
 import {
   isStoryMapStatus,
   parseCard,
+  parseStep,
   type StoryMap,
   type StoryMapCard,
   type StoryMapId,
+  type StoryMapStep,
 } from "../../domain/entities/story-map";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
@@ -27,11 +29,15 @@ export interface CreateStoryMapRequest {
   title: string;
   /** The product (PRD id) this map anchors to; defaults to "PRD-000". */
   product?: string;
+  /** Audience/persona labels (ordered). Optional. */
+  users?: string[];
   /** Backbone activity labels (ordered). At least one is required. */
   activities: string[];
+  /** Task-level steps, each `"activity | step"`-encoded. Optional. */
+  steps?: StoryMapStep[];
   /** Release slice labels (ordered). At least one is required. */
   slices: string[];
-  /** Optional initial Use Case placements (usually added later via the note). */
+  /** Optional initial rich card placements (usually added later via the note). */
   cards?: StoryMapCard[];
 }
 
@@ -84,6 +90,34 @@ const normalizeLabels = (values: string[] | undefined): string[] => {
   return out;
 };
 
+/**
+ * Normalizes steps: collapses pipes/whitespace in both fields, drops a step
+ * whose activity is not on the backbone, and dedupes by (activity, step). Pure.
+ */
+const normalizeSteps = (
+  steps: StoryMapStep[] | undefined,
+  activities: readonly string[],
+): StoryMapStep[] => {
+  const allowed = new Set(activities);
+  const seen = new Set<string>();
+  const out: StoryMapStep[] = [];
+  for (const raw of steps ?? []) {
+    const activity = raw.activity.replace(/[\s|]+/g, " ").trim();
+    const step = raw.step.replace(/[\s|]+/g, " ").trim();
+    // `|` is a safe key delimiter: both fields have had pipes/whitespace
+    // collapsed above, so neither can contain it.
+    const key = `${activity}|${step}`;
+    if (activity === "" || step === "" || !allowed.has(activity) || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ activity, step });
+  }
+  return out;
+};
+
+/** The defined `UC-NNN` refs of a card set (reference-less cards contribute none). */
+const cardRefs = (cards: readonly StoryMapCard[]): string[] =>
+  cards.map((c) => c.ref).filter((ref): ref is string => ref !== undefined);
+
 /** The folder containing a note path, e.g. `Story Maps/SM-001-x/SM-001-x.md` → `Story Maps/SM-001-x`. */
 const parentFolder = (path: VaultPath): VaultPath => {
   const s = String(path);
@@ -119,6 +153,8 @@ export class DefaultStoryMapService implements StoryMapService {
     const trimmedProduct = request.product?.trim();
     const product =
       trimmedProduct !== undefined && trimmedProduct !== "" ? trimmedProduct : DEFAULT_PRODUCT;
+    const users = normalizeLabels(request.users);
+    const steps = normalizeSteps(request.steps, activities);
 
     const settings = await this.settingsService.load();
 
@@ -137,7 +173,9 @@ export class DefaultStoryMapService implements StoryMapService {
         title,
         status: "draft",
         product,
+        users,
         activities,
+        steps,
         slices,
         cards: request.cards ?? [],
         displayOrder: existing.value.length,
@@ -242,7 +280,7 @@ export class DefaultStoryMapService implements StoryMapService {
       const map = found.value;
       const read = await this.fs.readFile(map.path);
       if (!read.ok) return read;
-      const ucNoteNames = await this.resolveUseCaseNoteNames(map.cards.map((c) => c.ucId));
+      const ucNoteNames = await this.resolveUseCaseNoteNames(cardRefs(map.cards));
       // Normalize CRLF→LF on the raw content BEFORE parsing/slicing: parseNote
       // returns an LF-normalized body, so subtracting its length from a raw CRLF
       // string would slice mid-body and corrupt the note. Normalizing first keeps
@@ -280,7 +318,7 @@ export class DefaultStoryMapService implements StoryMapService {
    * aliased wikilinks so neither dangles for titled notes.
    */
   private async resolveNoteNames(map: StoryMap): Promise<Map<string, string>> {
-    const names = await this.resolveUseCaseNoteNames(map.cards.map((c) => c.ucId));
+    const names = await this.resolveUseCaseNoteNames(cardRefs(map.cards));
     const productName = await this.noteNameOf(this.prds, map.product);
     if (productName !== undefined) names.set(map.product, productName);
     return names;
@@ -303,12 +341,17 @@ export class DefaultStoryMapService implements StoryMapService {
     const cards = asArray(fm.cards)
       .map(parseCard)
       .filter((card): card is StoryMapCard => card !== null);
+    const steps = asArray(fm.steps)
+      .map(parseStep)
+      .filter((step): step is StoryMapStep => step !== null);
     return {
       id: fm.id,
       title: typeof fm.title === "string" ? fm.title : fm.id,
       status: isStoryMapStatus(fm.status) ? fm.status : "draft",
       product: typeof fm.product === "string" && fm.product !== "" ? fm.product : DEFAULT_PRODUCT,
+      users: asArray(fm.users),
       activities: asArray(fm.activities),
+      steps,
       slices: asArray(fm.slices),
       cards,
       displayOrder:

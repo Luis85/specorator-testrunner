@@ -1,21 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
   addLabel,
+  addStep,
   DEFAULT_SLICES,
+  formatStep,
   initialStoryMapBuilderState,
   pickProductAnchor,
   removeLabelAt,
+  removeStepAt,
+  STORY_MAP_STEP_COUNT,
   storyMapBuilderStepTitle,
   storyMapReviewLines,
   toCreateStoryMapRequest,
 } from "../src/application/services/story-map-builder";
 
 describe("storyMapBuilderStepTitle", () => {
-  it("labels each step", () => {
+  it("labels each of the six steps", () => {
+    expect(STORY_MAP_STEP_COUNT).toBe(6);
     expect(storyMapBuilderStepTitle(1)).toBe("Title & product");
-    expect(storyMapBuilderStepTitle(2)).toBe("Backbone (activities)");
-    expect(storyMapBuilderStepTitle(3)).toBe("Release slices");
-    expect(storyMapBuilderStepTitle(4)).toBe("Review");
+    expect(storyMapBuilderStepTitle(2)).toBe("Users");
+    expect(storyMapBuilderStepTitle(3)).toBe("Backbone (activities)");
+    expect(storyMapBuilderStepTitle(4)).toBe("Steps");
+    expect(storyMapBuilderStepTitle(5)).toBe("Release slices");
+    expect(storyMapBuilderStepTitle(6)).toBe("Review");
     expect(storyMapBuilderStepTitle(9)).toBe("Unknown step");
   });
 });
@@ -26,7 +33,9 @@ describe("initialStoryMapBuilderState", () => {
     expect(state.currentStep).toBe(1);
     expect(state.product).toBe("PRD-000");
     expect(state.slices).toEqual([...DEFAULT_SLICES]);
+    expect(state.users).toEqual([]);
     expect(state.activities).toEqual([]);
+    expect(state.steps).toEqual([]);
   });
 });
 
@@ -43,7 +52,6 @@ describe("addLabel / removeLabelAt", () => {
     expect(addLabel([], "  Author spec  ")).toEqual(["Author spec"]);
     expect(addLabel(["Author spec"], "Author spec")).toEqual(["Author spec"]);
     expect(addLabel([], "   ")).toEqual([]);
-    // A pipe (the card delimiter) is collapsed to a space, not stored literally.
     expect(addLabel([], "a | b")).toEqual(["a b"]);
   });
 
@@ -53,17 +61,42 @@ describe("addLabel / removeLabelAt", () => {
   });
 });
 
+describe("addStep / removeStepAt / formatStep", () => {
+  const activities = ["Author spec", "Run tests"];
+
+  it("adds a step under a known activity, ignoring blanks, off-backbone, and duplicates", () => {
+    const one = addStep([], activities, "Author spec", "  Draft  ");
+    expect(one).toEqual([{ activity: "Author spec", step: "Draft" }]);
+    expect(addStep(one, activities, "Author spec", "Draft")).toEqual(one); // duplicate
+    expect(addStep([], activities, "Author spec", "  ")).toEqual([]); // blank
+    expect(addStep([], activities, "Unknown", "Draft")).toEqual([]); // off-backbone
+  });
+
+  it("removes a step at an index and formats it for display", () => {
+    const list = [
+      { activity: "Author spec", step: "Draft" },
+      { activity: "Run tests", step: "Watch" },
+    ];
+    expect(removeStepAt(list, 0)).toEqual([{ activity: "Run tests", step: "Watch" }]);
+    expect(formatStep(list[0])).toBe("Author spec → Draft");
+  });
+});
+
 describe("storyMapReviewLines / toCreateStoryMapRequest", () => {
   it("summarizes the collected state for review", () => {
     const state = {
       ...initialStoryMapBuilderState("PRD-001"),
       title: "Journey",
+      users: ["Test author"],
       activities: ["Author spec", "Run tests"],
+      steps: [{ activity: "Author spec", step: "Draft" }],
     };
     expect(storyMapReviewLines(state)).toEqual([
       "Title: Journey",
       "Product: PRD-001",
+      "Users: Test author",
       "Activities: Author spec → Run tests",
+      "Steps: Author spec → Draft",
       "Slices: Walking skeleton, Next, Later",
     ]);
   });
@@ -72,13 +105,17 @@ describe("storyMapReviewLines / toCreateStoryMapRequest", () => {
     const state = {
       ...initialStoryMapBuilderState("PRD-000"),
       title: "Journey",
+      users: ["Author"],
       activities: ["Author spec"],
+      steps: [{ activity: "Author spec", step: "Draft" }],
       slices: ["Walking skeleton"],
     };
     expect(toCreateStoryMapRequest(state)).toEqual({
       title: "Journey",
       product: "PRD-000",
+      users: ["Author"],
       activities: ["Author spec"],
+      steps: [{ activity: "Author spec", step: "Draft" }],
       slices: ["Walking skeleton"],
     });
   });

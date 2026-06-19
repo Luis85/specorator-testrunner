@@ -79,9 +79,8 @@ export class StoryMapExplorerView extends LiveDashboardView {
     const li = parent.createEl("li", { cls: "e2e-test-hub-story-map-node" });
     const row = li.createDiv({ cls: "e2e-test-hub-story-map-row" });
 
-    const meta = `${map.activities.length}×${map.slices.length}, ${map.cards.length} card${
-      map.cards.length === 1 ? "" : "s"
-    }`;
+    const cardCount = `${map.cards.length} card${map.cards.length === 1 ? "" : "s"}`;
+    const meta = `${map.users.length} users · ${map.activities.length} activities · ${map.steps.length} steps · ${map.slices.length} slices · ${cardCount}`;
     const open = row.createEl("button", {
       text: `${map.id}: ${map.title} (${meta})`,
       cls: "e2e-test-hub-link-button",

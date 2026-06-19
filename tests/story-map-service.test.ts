@@ -42,7 +42,9 @@ describe("DefaultStoryMapService.create", () => {
     const result = await service.create({
       title: "Authoring Journey",
       product: "PRD-000",
+      users: ["Test author"],
       activities: ["Author spec", "Run tests"],
+      steps: [{ activity: "Author spec", step: "Draft" }],
       slices: ["Walking skeleton", "Next"],
     });
 
@@ -74,6 +76,25 @@ describe("DefaultStoryMapService.create", () => {
     if (!result.ok) return;
     expect(result.value.activities).toEqual(["Author spec", "a b"]);
     expect(result.value.product).toBe("PRD-000");
+  });
+
+  it("normalizes users and drops steps whose activity is off the backbone", async () => {
+    const { service } = build();
+    const result = await service.create({
+      title: "Map",
+      users: ["  Author  ", "Author", "  "],
+      activities: ["Author spec"],
+      steps: [
+        { activity: "Author spec", step: "Draft" },
+        { activity: "Author spec", step: "Draft" }, // duplicate dropped
+        { activity: "Unknown", step: "Hangs nowhere" }, // off-backbone dropped
+      ],
+      slices: ["Walking skeleton"],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.users).toEqual(["Author"]);
+    expect(result.value.steps).toEqual([{ activity: "Author spec", step: "Draft" }]);
   });
 
   it("rejects a map with no activities or no slices", async () => {
@@ -111,7 +132,7 @@ describe("DefaultStoryMapService.create", () => {
 });
 
 describe("DefaultStoryMapService.findAll/parse", () => {
-  it("parses notes, decoding cards and dropping malformed lines", async () => {
+  it("parses users, steps, rich + legacy cards, dropping malformed lines", async () => {
     const { service, fs } = build();
     fs.files.set(
       "Story Maps/SM-001-j/SM-001-j.md",
@@ -122,12 +143,18 @@ describe("DefaultStoryMapService.findAll/parse", () => {
         "title: Journey",
         "status: active",
         "product: PRD-000",
+        "users:",
+        "  - Test author",
         "activities:",
         "  - Author spec",
+        "steps:",
+        "  - Author spec | Draft",
+        "  - bad-step",
         "slices:",
         "  - Walking skeleton",
         "cards:",
-        "  - UC-037 | Author spec | Walking skeleton",
+        '  - "UC-037 | Author spec | Draft | Walking skeleton | planned | 3 | auth | blue | Author a UC"',
+        "  - UC-011 | Author spec | Walking skeleton",
         "  - bad-line",
         "display_order: 0",
         "---",
@@ -140,9 +167,29 @@ describe("DefaultStoryMapService.findAll/parse", () => {
     if (!result.ok) return;
     const map = result.value[0];
     expect(map.status).toBe("active");
+    expect(map.users).toEqual(["Test author"]);
     expect(map.activities).toEqual(["Author spec"]);
+    expect(map.steps).toEqual([{ activity: "Author spec", step: "Draft" }]);
     expect(map.cards).toEqual([
-      { ucId: "UC-037", activity: "Author spec", slice: "Walking skeleton" },
+      {
+        ref: "UC-037",
+        title: "Author a UC",
+        activity: "Author spec",
+        step: "Draft",
+        slice: "Walking skeleton",
+        status: "planned",
+        points: 3,
+        tags: ["auth"],
+        color: "blue",
+      },
+      // The legacy 3-field card still parses (ADR-0027 back-compat).
+      {
+        ref: "UC-011",
+        title: "UC-011",
+        activity: "Author spec",
+        slice: "Walking skeleton",
+        tags: [],
+      },
     ]);
   });
 
