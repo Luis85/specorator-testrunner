@@ -48,6 +48,7 @@ describe("projectFeatureHealth", () => {
       wipScenarioCount: 2, // @wip matched case-insensitively, like ADR-0017
       featureIsWip: false,
       quarantineScenarioCount: 0,
+      featureIsQuarantined: false,
     });
   });
 
@@ -59,6 +60,7 @@ describe("projectFeatureHealth", () => {
       wipScenarioCount: 0, // feature-level @wip is the badge, not the (M @wip) count
       featureIsWip: true,
       quarantineScenarioCount: 0,
+      featureIsQuarantined: false,
     });
   });
 
@@ -69,6 +71,16 @@ describe("projectFeatureHealth", () => {
     expect(projectFeatureHealth(f)).toMatchObject({
       scenarioCount: 3,
       quarantineScenarioCount: 2,
+      featureIsQuarantined: false,
+    });
+  });
+
+  it("flags a feature-level @quarantine without folding it into the scenario count", () => {
+    const f = feature({ tags: ["@quarantine"], scenarios: [scenario("a"), scenario("b")] });
+    expect(projectFeatureHealth(f)).toMatchObject({
+      scenarioCount: 2,
+      quarantineScenarioCount: 0, // feature-level is the badge, not the (M quarantined) count
+      featureIsQuarantined: true,
     });
   });
 
@@ -241,6 +253,7 @@ describe("DefaultFeatureInsightService.healthFor", () => {
         wipScenarioCount: 1,
         featureIsWip: false,
         quarantineScenarioCount: 0,
+        featureIsQuarantined: false,
       }),
     );
   });

@@ -89,6 +89,7 @@ describe("featureHealthLine (Wave F)", () => {
     wipScenarioCount: 0,
     featureIsWip: false,
     quarantineScenarioCount: 0,
+    featureIsQuarantined: false,
     ...over,
   });
 
@@ -112,13 +113,31 @@ describe("featureHealthLine (Wave F)", () => {
     ).toBe("3 scenarios (2 @wip, 1 quarantined)");
   });
 
-  it("renders the feature-level @wip badge with the KPI exclusion tooltip", () => {
-    const line = featureHealthLine(health({ featureIsWip: true }));
-    expect(line.wipBadge).toBe(true);
-    expect(line.wipTooltip).toContain("excluded from the KPI roll-up");
+  it("emits no badges for a Feature with no feature-level exclusion tags", () => {
+    expect(featureHealthLine(health()).badges).toEqual([]);
+  });
+
+  it("emits the feature-level @wip badge with the KPI exclusion tooltip", () => {
+    const badges = featureHealthLine(health({ featureIsWip: true })).badges;
+    expect(badges).toHaveLength(1);
+    expect(badges[0]?.text).toBe("@wip");
+    expect(badges[0]?.cls).toBe("e2e-test-hub-wip-badge");
+    expect(badges[0]?.tooltip).toContain("excluded from the KPI roll-up");
     // Internal decision ids (ADR-NNNN) stay out of user copy.
-    expect(line.wipTooltip).not.toContain("ADR-0017");
-    expect(featureHealthLine(health()).wipBadge).toBe(false);
+    expect(badges[0]?.tooltip).not.toContain("ADR-0017");
+  });
+
+  it("emits the feature-level @quarantine badge with the KPI exclusion tooltip (US-058)", () => {
+    const badges = featureHealthLine(health({ featureIsQuarantined: true })).badges;
+    expect(badges).toHaveLength(1);
+    expect(badges[0]?.text).toBe("@quarantine");
+    expect(badges[0]?.cls).toBe("e2e-test-hub-quarantine-badge");
+    expect(badges[0]?.tooltip).toContain("excluded from the KPI roll-up");
+  });
+
+  it("emits both badges when a Feature is tagged @wip and @quarantine", () => {
+    const badges = featureHealthLine(health({ featureIsWip: true, featureIsQuarantined: true }));
+    expect(badges.badges.map((b) => b.text)).toEqual(["@wip", "@quarantine"]);
   });
 });
 

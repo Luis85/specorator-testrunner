@@ -89,17 +89,22 @@ type FeatureRunState = "excluded" | "not-run" | "passing" | "failing" | "partial
  * scenario degraded to an unset ref — accepted edge, ADR-0022).
  *
  * Scenarios tagged `@quarantine` are dropped first (US-058): a parked flake
- * contributes no pass/fail signal. A Feature whose scenarios are ALL quarantined
- * has no active refs and reads `excluded` — neutral in the roll-up (a passing
- * sibling can still make the UC pass), NOT `not-run` (which would drag a passing
- * UC down to `implemented`).
+ * contributes no pass/fail signal. A **feature-level** `@quarantine` parks the
+ * whole Feature — equivalent to tagging every scenario — so none of its refs are
+ * active. Either way, a Feature with no active refs but some refs to begin with
+ * reads `excluded` — neutral in the roll-up (a passing sibling can still make the
+ * UC pass), NOT `not-run` (which would drag a passing UC down to `implemented`).
  */
 const featureRunState = (
   feature: FeatureSpecification,
   latestStatusFor: ScenarioStatusLookup,
 ): FeatureRunState => {
   const allRefs = featureScenarioRefs(feature);
-  const refs = allRefs.filter((entry) => !isQuarantined(entry.tags));
+  // A feature-level @quarantine excludes every scenario; otherwise drop only the
+  // scenario-/Examples-block-level quarantined refs.
+  const refs = isQuarantined(feature.tags)
+    ? []
+    : allRefs.filter((entry) => !isQuarantined(entry.tags));
   // `excluded` (neutral) ONLY when there WERE refs and `@quarantine` removed them
   // all. A Feature with no refs to begin with — a rowless Scenario Outline, or
   // every scenario degraded to an unset ref (ADR-0022) — never executed, so it

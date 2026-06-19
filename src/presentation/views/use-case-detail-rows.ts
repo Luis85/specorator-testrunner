@@ -87,22 +87,34 @@ export const projectFeatureRows = (
     .filter((feature) => useCaseIdFromPath(feature.path) === useCaseId)
     .map((feature) => ({ path: feature.path, label: feature.label }));
 
+/** A feature-level exclusion badge (e.g. `@wip`, `@quarantine`) for the health line. */
+export interface FeatureHealthBadge {
+  /** CSS class the view renders the chip with. */
+  cls: string;
+  /** Chip text (the tag). */
+  text: string;
+  /** Tooltip / aria-label naming the KPI exclusion. */
+  tooltip: string;
+}
+
 /** The muted per-Feature health line (Wave F insight). */
 export interface FeatureHealthLine {
   /** e.g. "3 scenarios" or "3 scenarios (1 @wip, 1 quarantined)". */
   text: string;
-  /** The Feature itself is tagged @wip — render the badge. */
-  wipBadge: boolean;
-  /** Tooltip for the badge, naming the ADR-0017 KPI exclusion. */
-  wipTooltip: string;
+  /**
+   * Feature-level exclusion badges to render after the text (`@wip`, ADR-0017;
+   * `@quarantine`, US-058). A data-driven list so the view just iterates — the
+   * which-badges branching stays here, in a unit-tested pure projection.
+   */
+  badges: FeatureHealthBadge[];
 }
 
 /**
  * Pure projection of a Feature's {@link FeatureHealth} to the muted info line
  * each Feature row shows (Wave F): scenario count, the scenario-level @wip and
- * @quarantine (US-058) counts when any, and whether to render the feature-level
- * @wip badge. The @wip and quarantine counts share one parenthetical so the line
- * stays compact, e.g. "3 scenarios (1 @wip, 1 quarantined)".
+ * @quarantine (US-058) counts when any, plus the feature-level exclusion badges.
+ * The @wip and quarantine counts share one parenthetical so the line stays
+ * compact, e.g. "3 scenarios (1 @wip, 1 quarantined)".
  */
 export const featureHealthLine = (health: FeatureHealth): FeatureHealthLine => {
   const scenarios = `${health.scenarioCount} ${health.scenarioCount === 1 ? "scenario" : "scenarios"}`;
@@ -112,13 +124,24 @@ export const featureHealthLine = (health: FeatureHealth): FeatureHealthLine => {
     segments.push(`${health.quarantineScenarioCount} quarantined`);
   }
   const annotations = segments.length > 0 ? ` (${segments.join(", ")})` : "";
-  return {
-    text: `${scenarios}${annotations}`,
-    wipBadge: health.featureIsWip,
-    // The KPI exclusion is decided by ADR-0017, but the decision id is an
-    // internal reference and stays out of user copy.
-    wipTooltip: "This Feature is tagged @wip and is excluded from the KPI roll-up.",
-  };
+  const badges: FeatureHealthBadge[] = [];
+  // The KPI exclusion is decided by ADR-0017 / US-058, but the decision ids are
+  // internal references and stay out of user copy.
+  if (health.featureIsWip) {
+    badges.push({
+      cls: "e2e-test-hub-wip-badge",
+      text: "@wip",
+      tooltip: "This Feature is tagged @wip and is excluded from the KPI roll-up.",
+    });
+  }
+  if (health.featureIsQuarantined) {
+    badges.push({
+      cls: "e2e-test-hub-quarantine-badge",
+      text: "@quarantine",
+      tooltip: "This Feature is tagged @quarantine and is excluded from the KPI roll-up.",
+    });
+  }
+  return { text: `${scenarios}${annotations}`, badges };
 };
 
 /**

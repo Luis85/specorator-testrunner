@@ -53,9 +53,16 @@ export interface FeatureHealth {
    * Scenarios tagged `@quarantine` (scenario-level, or on a runnable Examples
    * block) — parked flakes excluded from the KPI roll-up (US-058). Counted with
    * the same per-block scope as {@link wipScenarioCount} so the health line and
-   * the roll-up agree.
+   * the roll-up agree. A FEATURE-level `@quarantine` is reported separately via
+   * {@link featureIsQuarantined} (its own badge), not folded in here.
    */
   quarantineScenarioCount: number;
+  /**
+   * The Feature itself is tagged `@quarantine` — the whole Feature is parked, so
+   * every scenario is excluded from the KPI roll-up (US-058), mirroring how
+   * {@link featureIsWip} reports a feature-level `@wip`.
+   */
+  featureIsQuarantined: boolean;
 }
 
 /**
@@ -120,6 +127,7 @@ export const projectFeatureHealth = (feature: FeatureSpecification): FeatureHeal
   wipScenarioCount: feature.scenarios.filter(scenarioHasWip).length,
   featureIsWip: hasWipTag(feature.tags),
   quarantineScenarioCount: feature.scenarios.filter(scenarioHasQuarantine).length,
+  featureIsQuarantined: hasQuarantineTag(feature.tags),
 });
 
 /**

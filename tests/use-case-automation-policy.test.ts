@@ -223,6 +223,33 @@ describe("computeAutomationStatus (ADR-0017 roll-up, history-derived — US-057)
       ).toBe("passing");
     });
 
+    it("a feature-level @quarantine excludes the whole Feature from the roll-up", () => {
+      // The whole Feature is parked: even a failing scenario must not fail the UC,
+      // and a passing sibling carries it to passing.
+      const parked = feature({
+        path: vp("Specifications/features/UC-001-a.feature"),
+        tags: ["@quarantine"],
+        scenarios: [active("Flaky")],
+      });
+      const solid = feature({
+        path: vp("Specifications/features/UC-001-b.feature"),
+        scenarios: [active("Solid")],
+      });
+      expect(
+        computeAutomationStatus(
+          [parked, solid],
+          history({ [refOf(parked, "Flaky")]: "failed", [refOf(solid, "Solid")]: "passed" }),
+        ),
+      ).toBe("passing");
+    });
+
+    it("a lone feature-level @quarantine Feature reads planned (no KPI signal)", () => {
+      const parked = feature({ tags: ["@quarantine"], scenarios: [active("Flaky")] });
+      expect(
+        computeAutomationStatus([parked], history({ [refOf(parked, "Flaky")]: "failed" })),
+      ).toBe("planned");
+    });
+
     it("a rowless Outline is not-run, not excluded (it never executed)", () => {
       // Zero refs from NO Examples rows (not from @quarantine) must stay not-run,
       // so it does not let a passing sibling carry the UC to passing.

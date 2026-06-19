@@ -59,8 +59,18 @@ to particular rows, and the natural fit for parking one flaky pickle of an
 Outline. So each row's reference entry carries `scenario.tags + block.tags`, and
 both the KPI exclusion (`featureRunState`) and the insight count agree on what is
 quarantined (a reviewer caught the earlier draft, which counted block-level
-quarantine but did not exclude it). Feature-level `@quarantine` is not a thing —
-a whole flaky Feature is `@wip`/triage territory, not quarantine.
+quarantine but did not exclude it).
+
+A **feature-level** `@quarantine` parks the whole Feature — equivalent to tagging
+every scenario `@quarantine`, so all its refs are inactive and the Feature reads
+`excluded`. (The first draft treated feature-level quarantine as out of scope,
+but it was advertised in the shared tag picker, so applying it on a Feature was a
+silent no-op — a reviewer caught this; making it effective resolves it.) It is
+surfaced like `featureIsWip`: a separate `featureIsQuarantined` badge, distinct
+from the scenario-level count. `missing-steps` still applies to a feature-level
+`@quarantine` Feature (it stays in `active`), because — unlike `@wip` (unfinished
+work) — a *flaky-but-done* Feature with undefined steps is contradictory and
+worth surfacing.
 
 ### D3 — Plumbing: scenario tags on the reference entry
 
@@ -76,9 +86,13 @@ ignore it.
 
 `FeatureHealth` (feature-insight-service) gains `quarantineScenarioCount`,
 mirroring `wipScenarioCount` (scenario-level tag, including a runnable Examples
-block). The per-Feature health line renders it alongside the `@wip` count, e.g.
-`3 scenarios (1 @wip, 1 quarantined)`. `@quarantine` is seeded into the known-tags
-vocabulary so the Feature Editor's tag picker offers it.
+block), and `featureIsQuarantined`, mirroring `featureIsWip`. The per-Feature
+health line renders the count alongside the `@wip` count, e.g.
+`3 scenarios (1 @wip, 1 quarantined)`, and the detail view renders a
+`@quarantine` badge (tinted with the error colour to distinguish it from the
+`@wip` badge) when the Feature itself is quarantined. `@quarantine` is seeded into
+the known-tags vocabulary so the Feature Editor's tag picker offers it — now
+effective wherever it is applied (scenario, Examples block, or Feature).
 
 This is the "dashboard shows quarantined count" AC at Feature granularity. The
 roll-up tile count + oldest-deadline is a later slice once deadline storage
