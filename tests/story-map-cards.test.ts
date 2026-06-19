@@ -85,6 +85,21 @@ describe("validateCardPlacement", () => {
     expect(validateCardPlacement(map, card({ points: 0 }))).toBeNull();
   });
 
+  it("rejects a ref that is not a canonical UC-NNN id", () => {
+    // Shorthand (un-padded) ids never resolve to a generated note.
+    expect(validateCardPlacement(map, card({ ref: "UC-37" }))).toMatch(/not a valid Use Case id/);
+    // A wikilink-injection payload must not pass as a reference.
+    expect(validateCardPlacement(map, card({ ref: "UC-001]] ![[Other" }))).toMatch(
+      /not a valid Use Case id/,
+    );
+    expect(validateCardPlacement(map, card({ ref: "nope" }))).toMatch(/not a valid Use Case id/);
+  });
+
+  it("accepts canonical UC-NNN refs, including ids past 999", () => {
+    expect(validateCardPlacement(map, card({ ref: "UC-001" }))).toBeNull();
+    expect(validateCardPlacement(map, card({ ref: "UC-1000" }))).toBeNull();
+  });
+
   it("rejects a `|` or newline in any free-text field", () => {
     expect(validateCardPlacement(map, card({ title: "a | b" }))).toMatch(/cannot contain/);
     expect(validateCardPlacement(map, card({ ref: "UC|1" }))).toMatch(/cannot contain/);
