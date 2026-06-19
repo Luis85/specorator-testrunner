@@ -52,6 +52,17 @@ describe("buildBoardScene", () => {
     expect(attrs?.text).toContain("3pts");
   });
 
+  it("falls back to a themed fill for a card with no color", () => {
+    const colorless: StoryMap = {
+      ...map,
+      cards: [{ title: "No color", activity: "Browse", slice: "Walking skeleton", tags: [] }],
+    };
+    const card = buildBoardScene(computeBoardLayout(colorless)).find(
+      (s) => s.class === "sm-board-card" && s.tag === "rect",
+    );
+    expect(card?.attrs.fill).toBe("var(--background-secondary)");
+  });
+
   it("escapes nothing into attributes that aren't strings/numbers", () => {
     for (const spec of scene()) {
       for (const v of Object.values(spec.attrs)) {
