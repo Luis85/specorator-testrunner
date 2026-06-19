@@ -114,6 +114,16 @@ describe("projectFeatureHealth", () => {
     if (partial) expect(projectFeatureHealth(partial).quarantineScenarioCount).toBe(0);
   });
 
+  it("does not count a rowless @quarantine Outline (nothing to exclude) (US-058)", () => {
+    // A scenario-level @quarantine on an Outline with no Examples rows: it never
+    // executes, featureRunState reads it not-run (not excluded), so the count must
+    // not report it as quarantined.
+    const f = feature({
+      scenarios: [{ name: "O", tags: ["@quarantine"], keyword: "Scenario Outline", steps: [] }],
+    });
+    expect(projectFeatureHealth(f).quarantineScenarioCount).toBe(0);
+  });
+
   it("flags a feature-level @quarantine without folding it into the scenario count", () => {
     const f = feature({ tags: ["@quarantine"], scenarios: [scenario("a"), scenario("b")] });
     expect(projectFeatureHealth(f)).toMatchObject({

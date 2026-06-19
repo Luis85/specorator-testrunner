@@ -90,18 +90,24 @@ const scenarioHasWip = (scenario: ScenarioSpecification): boolean =>
 
 /**
  * A scenario FULLY excluded from the KPI by `@quarantine` — the unit the health
- * line counts. A scenario-level tag quarantines every row. For an Outline with no
- * scenario-level tag, it counts ONLY when every runnable Examples block is tagged
- * (so all rows are excluded); a partially-tagged Outline still has rows in the
- * roll-up, and `featureRunState` excludes only the tagged block's rows, so
- * reporting the whole Outline as "quarantined" would contradict the KPI. This is
- * deliberately stricter than {@link scenarioHasWip}, whose count is purely
+ * line counts, kept in lock-step with what `featureRunState` actually excludes.
+ *
+ * - A plain scenario: counted iff it carries a scenario-level tag.
+ * - An Outline: contributes only via runnable Examples rows, so a ROWLESS Outline
+ *   is never counted (it has nothing to exclude and `featureRunState` reads it
+ *   `not-run`, not excluded). A runnable Outline counts only when every row is
+ *   excluded — a scenario-level tag (covers all blocks) or every runnable block
+ *   tagged; a partially-tagged Outline still has rows in the roll-up, so counting
+ *   it would contradict the KPI.
+ *
+ * Deliberately stricter than {@link scenarioHasWip}, whose count is purely
  * informational and never implies a KPI exclusion.
  */
 const scenarioHasQuarantine = (scenario: ScenarioSpecification): boolean => {
-  if (hasQuarantineTag(scenario.tags)) return true;
+  if (!isScenarioOutline(scenario)) return hasQuarantineTag(scenario.tags);
   const runnable = (scenario.examples ?? []).filter((block) => block.rows.length > 0);
-  return runnable.length > 0 && runnable.every((block) => hasQuarantineTag(block.tags));
+  if (runnable.length === 0) return false;
+  return hasQuarantineTag(scenario.tags) || runnable.every((block) => hasQuarantineTag(block.tags));
 };
 
 /**
