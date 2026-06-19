@@ -1,8 +1,10 @@
 import {
   buildStoryMapNote,
   parseStoryMapNote,
+  renderProductParagraph,
   renderStoryMapGridTable,
   replaceGridBlock,
+  replaceProductBlock,
   storyMapFolderName,
 } from "../content/story-map-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
@@ -106,6 +108,22 @@ const STORY_MAP_MUTATE_KEY = "story-map:mutate";
 /** The defined `UC-NNN` refs of a card set (reference-less cards contribute none). */
 const cardRefs = (cards: readonly StoryMapCard[]): string[] =>
   cards.map((c) => c.ref).filter((ref): ref is string => ref !== undefined);
+
+/**
+ * Regenerates BOTH managed body blocks from the authoritative map: the grid
+ * (cards) and the product paragraph (so a reassigned `product` link is refreshed
+ * in the visible body, not just the frontmatter). Hand-written sections are left
+ * untouched. Shared by {@link DefaultStoryMapService.rebuildGrid} and the
+ * card-write path. Pure: no I/O.
+ */
+const refreshManagedBlocks = (
+  body: string,
+  map: StoryMap,
+  noteNames: Map<string, string>,
+): string => {
+  const gridded = replaceGridBlock(body, renderStoryMapGridTable(map, noteNames));
+  return replaceProductBlock(gridded, renderProductParagraph(map.product, noteNames));
+};
 
 /**
  * The reason a card mutation must be rejected (out-of-range index or invalid
@@ -309,14 +327,16 @@ export class DefaultStoryMapService implements StoryMapService {
       const map = found.value;
       const read = await this.fs.readFile(map.path);
       if (!read.ok) return read;
-      const ucNoteNames = await this.resolveUseCaseNoteNames(cardRefs(map.cards));
+      // Resolve BOTH the card Use Cases (grid cells) and the product PRD (body
+      // paragraph) so a reassigned product link is refreshed, not just the grid.
+      const noteNames = await this.resolveNoteNames(map);
       // Normalize CRLF→LF on the raw content BEFORE parsing/slicing: parseNote
       // returns an LF-normalized body, so subtracting its length from a raw CRLF
       // string would slice mid-body and corrupt the note. Normalizing first keeps
       // the frontmatter boundary aligned with the body parseNote returns.
       const normalized = read.value.replace(/\r\n/g, "\n");
       const { body } = parseNote(normalized);
-      const nextBody = replaceGridBlock(body, renderStoryMapGridTable(map, ucNoteNames));
+      const nextBody = refreshManagedBlocks(body, map, noteNames);
       const frontmatter = normalized.slice(0, normalized.length - body.length);
       const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
       if (!written.ok) return written;
@@ -394,7 +414,7 @@ export class DefaultStoryMapService implements StoryMapService {
   private async writeCards(map: StoryMap): Promise<Result<StoryMap>> {
     const read = await this.fs.readFile(map.path);
     if (!read.ok) return read;
-    const ucNoteNames = await this.resolveUseCaseNoteNames(cardRefs(map.cards));
+    const noteNames = await this.resolveNoteNames(map);
     // Normalize CRLF→LF before parsing/slicing (see rebuildGrid): parseNote
     // returns an LF body, so the frontmatter/body boundary must be aligned.
     const normalized = read.value.replace(/\r\n/g, "\n");
@@ -402,7 +422,7 @@ export class DefaultStoryMapService implements StoryMapService {
       cards: map.cards.length > 0 ? map.cards.map(encodeCard) : undefined,
     });
     const { body } = parseNote(withCards);
-    const nextBody = replaceGridBlock(body, renderStoryMapGridTable(map, ucNoteNames));
+    const nextBody = refreshManagedBlocks(body, map, noteNames);
     const frontmatter = withCards.slice(0, withCards.length - body.length);
     const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
     if (!written.ok) return written;

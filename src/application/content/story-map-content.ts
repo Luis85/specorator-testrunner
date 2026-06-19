@@ -34,6 +34,14 @@ export const storyMapFolderName = (id: string, title: string): string => {
 export const GRID_BLOCK_START = "<!-- story-map-grid:start -->";
 export const GRID_BLOCK_END = "<!-- story-map-grid:end -->";
 
+/**
+ * Markers delimiting the managed product paragraph (the visible `Story map for
+ * [[product]]` line), so it can be refreshed from the authoritative `product`
+ * frontmatter when a map is reassigned — without disturbing hand-written prose.
+ */
+export const PRODUCT_BLOCK_START = "<!-- story-map-product:start -->";
+export const PRODUCT_BLOCK_END = "<!-- story-map-product:end -->";
+
 /** A single Use Case cell link: resolved, aliased wikilink so it never dangles. */
 const cellLink = (ref: string, ucNoteNames: Map<string, string>): string => {
   const noteName = ucNoteNames.get(ref);
@@ -158,6 +166,35 @@ const inlineLink = (id: string, noteNames: Map<string, string>): string => {
 };
 
 /**
+ * The body paragraph naming the product a map shapes — a resolved inline link to
+ * the PRD. The single source for both the freshly built note and the rebuild
+ * refresh, so the visible link always tracks the `product` frontmatter. Pure.
+ */
+export const renderProductParagraph = (product: string, noteNames: Map<string, string>): string =>
+  `Story map for ${inlineLink(product, noteNames)} — users, backbone (activities), steps, and release slices.`;
+
+/** Wraps the product paragraph in its managed-block markers. */
+const productBlock = (paragraph: string): string =>
+  `${PRODUCT_BLOCK_START}\n${paragraph}\n${PRODUCT_BLOCK_END}`;
+
+/**
+ * Refreshes the managed product paragraph so the visible product link tracks the
+ * `product` frontmatter (e.g. after a reassignment + rebuild). Replaces the
+ * marked block when present; otherwise upgrades a legacy unmarked `Story map for
+ * …` line in place (wrapping it in markers so later rebuilds stay clean). Leaves
+ * the body untouched when neither is found. Pure: no I/O.
+ */
+export const replaceProductBlock = (body: string, paragraph: string): string => {
+  const block = productBlock(paragraph);
+  const marked = new RegExp(
+    `${escapeRegExp(PRODUCT_BLOCK_START)}[\\s\\S]*?${escapeRegExp(PRODUCT_BLOCK_END)}`,
+  );
+  if (marked.test(body)) return body.replace(marked, block);
+  const legacy = /^Story map for .*$/m;
+  return legacy.test(body) ? body.replace(legacy, block) : body;
+};
+
+/**
  * Replaces the managed grid block in an existing note body, preserving every
  * other (hand-written) section. Appends a fresh block when the markers are
  * absent (e.g. a note created before the markers existed). Pure: no I/O.
@@ -196,7 +233,7 @@ export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>)
   const body = [
     `# ${map.id}: ${map.title}`,
     "",
-    `Story map for ${inlineLink(map.product, noteNames)} — users, backbone (activities), steps, and release slices.`,
+    productBlock(renderProductParagraph(map.product, noteNames)),
     "",
     "> Source of truth is the frontmatter (`users`, `activities`, `steps`,",
     "> `slices`, `cards`). Each card is a `ref | activity | step | slice | status",

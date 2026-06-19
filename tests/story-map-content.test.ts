@@ -4,13 +4,17 @@ import {
   cardAttributeSuffix,
   GRID_BLOCK_END,
   GRID_BLOCK_START,
+  PRODUCT_BLOCK_END,
+  PRODUCT_BLOCK_START,
   renderActivityTable,
   renderLegend,
   renderPointsRollup,
+  renderProductParagraph,
   parseStoryMapNote,
   renderStoryMapGridTable,
   renderUsersLane,
   replaceGridBlock,
+  replaceProductBlock,
   storyMapFolderName,
 } from "../src/application/content/story-map-content";
 import type { StoryMap } from "../src/domain/entities/story-map";
@@ -163,6 +167,46 @@ describe("buildStoryMapNote", () => {
   it("falls back to a bare product link when the PRD note name is unresolved", () => {
     const note = buildStoryMapNote(map, new Map());
     expect(note).toContain("[[PRD-000]]");
+  });
+
+  it("wraps the product paragraph in managed markers so it can be refreshed", () => {
+    const note = buildStoryMapNote(map, new Map());
+    expect(note).toContain(PRODUCT_BLOCK_START);
+    expect(note).toContain(PRODUCT_BLOCK_END);
+  });
+});
+
+describe("replaceProductBlock", () => {
+  const paragraph = renderProductParagraph("PRD-002", new Map([["PRD-002", "PRD-002 New"]]));
+
+  it("replaces the marked product block, leaving other body sections", () => {
+    const body = [
+      "# SM-001: J",
+      "",
+      PRODUCT_BLOCK_START,
+      "Story map for [[PRD-001 Old|PRD-001]] — …",
+      PRODUCT_BLOCK_END,
+      "",
+      "## Notes",
+      "hand-written",
+    ].join("\n");
+    const next = replaceProductBlock(body, paragraph);
+    expect(next).toContain("[[PRD-002 New|PRD-002]]");
+    expect(next).not.toContain("PRD-001");
+    expect(next).toContain("hand-written");
+  });
+
+  it("upgrades a legacy unmarked `Story map for …` line in place", () => {
+    const body = "# SM-001: J\n\nStory map for [[PRD-001]] — old.\n\n## Notes\n";
+    const next = replaceProductBlock(body, paragraph);
+    expect(next).toContain(PRODUCT_BLOCK_START);
+    expect(next).toContain("[[PRD-002 New|PRD-002]]");
+    expect(next).not.toContain("PRD-001");
+  });
+
+  it("leaves the body untouched when no product paragraph is present", () => {
+    const body = "# SM-001: J\n\n## Notes\nhand-written\n";
+    expect(replaceProductBlock(body, paragraph)).toBe(body);
   });
 });
 

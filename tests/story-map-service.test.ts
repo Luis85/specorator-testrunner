@@ -407,6 +407,54 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
     expect(note).not.toContain("(empty)");
   });
 
+  it("refreshes the product paragraph after the map is reassigned to a new PRD", async () => {
+    const { service, fs } = build(
+      { "UC-037": "Use Cases/UC-037 Author a Use Case.md" },
+      { "PRD-002": "PRDs/PRD-002-new/PRD-002-new.md" },
+    );
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    // The user reassigned the map: the frontmatter `product` is now PRD-002, but
+    // the visible body paragraph still links the old PRD-001. Rebuild must
+    // refresh it, or deleting PRD-001 later leaves the body link dangling.
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "product: PRD-002",
+        "activities:",
+        "  - Author spec",
+        "slices:",
+        "  - Walking skeleton",
+        "cards:",
+        "  - UC-037 | Author spec | Walking skeleton",
+        "---",
+        "# SM-001: J",
+        "",
+        "<!-- story-map-product:start -->",
+        "Story map for [[PRD-001 Old|PRD-001]] — old.",
+        "<!-- story-map-product:end -->",
+        "",
+        "## Map",
+        "",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+      ].join("\n"),
+    );
+
+    const rebuilt = await service.rebuildGrid("SM-001");
+    expect(rebuilt.ok).toBe(true);
+
+    const note = fs.files.get(path) ?? "";
+    expect(note).toContain("[[PRD-002-new|PRD-002]]");
+    expect(note).not.toContain("PRD-001");
+    // The grid is still rebuilt in the same pass.
+    expect(note).toContain("[[UC-037 Author a Use Case\\|UC-037]]");
+  });
+
   it("refuses to rebuild a map that does not exist", async () => {
     const { service } = build();
     const result = await service.rebuildGrid("SM-404");
