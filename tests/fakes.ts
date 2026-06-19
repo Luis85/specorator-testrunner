@@ -12,6 +12,7 @@ import type {
   TemplateWriteResult,
   TemplateWriter,
 } from "../src/application/ports/template-writer";
+import type { PrdLookup } from "../src/application/services/use-case-service";
 import { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
 import type { VaultFileSystem } from "../src/application/ports/vault-file-system";
 import type { TestHubSettings } from "../src/domain/settings/settings";
@@ -141,7 +142,7 @@ export class FakeVaultFileSystem implements VaultFileSystem {
  * "exists" (so assignToPrd succeeds); pass a set of known ids to restrict —
  * any id outside the set resolves to null (not found).
  */
-export class FakePrdLookup {
+export class FakePrdLookup implements PrdLookup {
   constructor(private readonly known?: Set<string>) {}
   async findById(id: string): Promise<Result<{ id: string } | null>> {
     if (this.known && !this.known.has(id)) return ok(null);

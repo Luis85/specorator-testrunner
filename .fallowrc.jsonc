@@ -14,7 +14,57 @@
     // Obsidian calls lifecycle/SuggestModal overrides (onChooseItem, getItems,
     // hide, getState, …) itself, so "unused" is structurally unreliable for
     // class members in this plugin. Keep the findings visible, never
-    // verdict-driving.
+    // verdict-driving. The framework/DI false positives are pinned as used
+    // below so genuine findings are not buried under them (signal hygiene).
     "unused-class-members": "warn",
   },
+  // Methods fallow's static graph cannot see a caller for because the call goes
+  // through a framework runtime (Obsidian invokes view/modal overrides) or an
+  // interface/DI seam (the concrete method is reached only through its port
+  // type). All entries are trace-verified used; none are dead code. Scoped by
+  // heritage so the suppression stays narrow — a genuinely-unused member on a
+  // class outside these clauses is still reported.
+  "usedClassMembers": [
+    // Obsidian ItemView surface, overridden by the seven live views via the
+    // shared LiveDashboardView base (live-dashboard-view.ts). Obsidian's
+    // workspace calls these; our code never does.
+    {
+      "extends": "LiveDashboardView",
+      "members": ["getViewType", "getDisplayText", "getIcon", "getState", "onOpen", "onClose"],
+    },
+    // Obsidian TextFileView surface (FeatureEditorView): identity + the
+    // file-backed read/write/clear hooks the editor framework drives.
+    {
+      "extends": "TextFileView",
+      "members": [
+        "getViewType",
+        "getDisplayText",
+        "getIcon",
+        "getViewData",
+        "setViewData",
+        "clear",
+        "canAcceptExtension",
+      ],
+    },
+    // Obsidian FuzzySuggestModal surface (the Run / Generate-feature pickers).
+    {
+      "extends": "FuzzySuggestModal",
+      "members": ["getItems", "getItemText", "onChooseItem"],
+    },
+    // Port methods reached only through their interface type (DI seam), so the
+    // concrete implementation looks callerless to the static graph.
+    { "implements": "Logger", "members": ["debug"] },
+    { "implements": "ChildProcessRunner", "members": ["disposeAll"] },
+    { "implements": "PrdService", "members": ["findById", "withMutationLock"] },
+    { "implements": "PrdLookup", "members": ["findById", "withMutationLock"] },
+    { "implements": "TestExecutionService", "members": ["activeRunStartedAt"] },
+    // NOTE — deliberately NOT suppressed: PostRunCoordinator.{start,whenSettled,
+    // importLastRun,dispose}. It is the one application service without a port
+    // interface, so there is no heritage clause to scope on, and its methods are
+    // reached only through composition-root closures / `Pick<>` slices the static
+    // graph can't follow. They are trace-verified live (start/whenSettled/
+    // importLastRun) plus the documented stop() symmetry alias (dispose), and are
+    // left visible rather than blanket-suppressed by generic names like `start`/
+    // `dispose`, which also occur on GuidedTourService / the render scheduler.
+  ],
 }
