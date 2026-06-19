@@ -84,9 +84,13 @@ ignore it.
 
 ### D4 — Visible signal: quarantined count on the health line
 
-`FeatureHealth` (feature-insight-service) gains `quarantineScenarioCount`,
-mirroring `wipScenarioCount` (scenario-level tag, including a runnable Examples
-block), and `featureIsQuarantined`, mirroring `featureIsWip`. The per-Feature
+`FeatureHealth` (feature-insight-service) gains `quarantineScenarioCount` and
+`featureIsQuarantined` (mirroring `featureIsWip`). Unlike `wipScenarioCount`
+(purely informational, so any tagged block counts), the quarantine count implies
+a KPI exclusion, so it counts a scenario only when it is **fully** excluded — a
+scenario-level tag, or *every* runnable Examples block tagged. A partially-tagged
+Outline still has rows in the roll-up, so counting it would contradict the KPI (a
+reviewer caught this). The per-Feature
 health line renders the count alongside the `@wip` count, e.g.
 `3 scenarios (1 @wip, 1 quarantined)`, and the detail view renders a
 `@quarantine` badge (tinted with the error colour to distinguish it from the

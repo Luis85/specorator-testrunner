@@ -75,6 +75,45 @@ describe("projectFeatureHealth", () => {
     });
   });
 
+  it("counts an Outline quarantined only when ALL runnable Examples blocks are tagged (US-058)", () => {
+    const fully = parseFeature(
+      [
+        "Feature: F",
+        "  Scenario Outline: O",
+        "    Given <x>",
+        "    @quarantine",
+        "    Examples:",
+        "      | x |",
+        "      | 1 |",
+        "",
+      ].join("\n"),
+      vp("Specifications/features/UC-009-full.feature"),
+    );
+    expect(fully).not.toBeNull();
+    if (fully) expect(projectFeatureHealth(fully).quarantineScenarioCount).toBe(1);
+
+    // Mixed: only one of two runnable blocks is tagged, so the Outline still has
+    // rows in the KPI — it must NOT be reported as quarantined.
+    const partial = parseFeature(
+      [
+        "Feature: F",
+        "  Scenario Outline: O",
+        "    Given <x>",
+        "    @quarantine",
+        "    Examples:",
+        "      | x |",
+        "      | 1 |",
+        "    Examples:",
+        "      | x |",
+        "      | 2 |",
+        "",
+      ].join("\n"),
+      vp("Specifications/features/UC-009-partial.feature"),
+    );
+    expect(partial).not.toBeNull();
+    if (partial) expect(projectFeatureHealth(partial).quarantineScenarioCount).toBe(0);
+  });
+
   it("flags a feature-level @quarantine without folding it into the scenario count", () => {
     const f = feature({ tags: ["@quarantine"], scenarios: [scenario("a"), scenario("b")] });
     expect(projectFeatureHealth(f)).toMatchObject({

@@ -88,10 +88,21 @@ const scenarioHasWip = (scenario: ScenarioSpecification): boolean =>
   hasWipTag(scenario.tags) ||
   (scenario.examples ?? []).some((block) => block.rows.length > 0 && hasWipTag(block.tags));
 
-/** Scenario-level `@quarantine`, or `@quarantine` on a runnable Examples block. */
-const scenarioHasQuarantine = (scenario: ScenarioSpecification): boolean =>
-  hasQuarantineTag(scenario.tags) ||
-  (scenario.examples ?? []).some((block) => block.rows.length > 0 && hasQuarantineTag(block.tags));
+/**
+ * A scenario FULLY excluded from the KPI by `@quarantine` — the unit the health
+ * line counts. A scenario-level tag quarantines every row. For an Outline with no
+ * scenario-level tag, it counts ONLY when every runnable Examples block is tagged
+ * (so all rows are excluded); a partially-tagged Outline still has rows in the
+ * roll-up, and `featureRunState` excludes only the tagged block's rows, so
+ * reporting the whole Outline as "quarantined" would contradict the KPI. This is
+ * deliberately stricter than {@link scenarioHasWip}, whose count is purely
+ * informational and never implies a KPI exclusion.
+ */
+const scenarioHasQuarantine = (scenario: ScenarioSpecification): boolean => {
+  if (hasQuarantineTag(scenario.tags)) return true;
+  const runnable = (scenario.examples ?? []).filter((block) => block.rows.length > 0);
+  return runnable.length > 0 && runnable.every((block) => hasQuarantineTag(block.tags));
+};
 
 /**
  * A scenario's EFFECTIVE tags: feature-level tags inherit to every scenario
