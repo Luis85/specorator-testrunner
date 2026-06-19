@@ -18,13 +18,13 @@ commit/PR in the item before closing).
 | Id | Title | Area | Effort |
 | --- | --- | --- | --- |
 | [[TD-007]] | gherkin.ts parser/serializer complexity is suppressed, not solved | gherkin | large |
-| [[TD-010]] | test-execution-service runner complexity — decompose during EPIC-013 US-053/054 | runner | medium |
 | [[TD-011]] | Post-run evidence orchestration + scattered Use Case frontmatter writes | application/evidence | large |
 
 ## Resolved items
 
 | Id | Title | Area | Resolved |
 | --- | --- | --- | --- |
+| [[TD-010]] | test-execution-service runner complexity — execute() suppression dropped | runner | execute() decomposed into prepareRun/finalizeRun (2026-06-19) |
 | [[TD-009]] | pipeline-generation-service.generate() exceeds complexity thresholds | ci | TD-009 decomposition increment (2026-06-16) |
 | [[TD-008]] | Stale cucumber-js comments deferred in fallow-flagged files | quality | TD-008 refactor increment (2026-06-14) |
 | [[TD-001]] | Support escaped pipes (`\|`) in Gherkin table cells | gherkin | pre-V2 Phase 1 increment (2026-06-12) |
