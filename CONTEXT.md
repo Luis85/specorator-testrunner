@@ -64,6 +64,10 @@ _Avoid_: Release, sprint, milestone, swimlane.
 A placement on a **Story Map**, encoded as the parser-safe nine-field string `"ref | activity | step | slice | status | points | tags | color | title"`. The `ref` is an **optional** `UC-NNN` (a reference-less card is a free-text story not yet promoted to a Use Case). Alongside the (activity, step, slice) coordinate it carries map-owned planning attributes — a free-text **title**, a hand-set **planning status** (`planned`/`in-progress`/`done`/`blocked`, distinct from a Use Case's run-derived automation status), **story points**, **tags**, and a **color**. A referenced card renders its title plus a resolved, aliased wikilink `[[<note name>\|UC-NNN]]` so titled notes never dangle. The legacy three-field `"UC-NNN | activity | slice"` form (ADR-0027) still parses.
 _Avoid_: Ticket, cell. (A reference-less card IS a "story" here, per ADR-0028.)
 
+**Story Map Board** _(see ADR-0029)_:
+The interactive visual rendering of a **Story Map** in the main workspace view — a users lane, activity/step columns, and slice rows of card tiles. An editable view over the note frontmatter (the single source of truth); the managed Markdown table is kept in sync. P1 is read-only; later phases add drag, inline editing, and zoom/pan.
+_Avoid_: Canvas, whiteboard, grid view.
+
 **Planning Status** _(accepted — see ADR-0028)_:
 A **Story Map Card**'s hand-set lifecycle state — one of `planned`, `in-progress`, `done`, `blocked`. Deliberately distinct from a Use Case's **automation** status (passing/failing, derived from test runs): a card can be `planned` while its Use Case has no automation. The map owns this axis; it never mirrors the automation roll-up.
 _Avoid_: Automation status, test status, state.

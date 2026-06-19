@@ -1140,3 +1140,53 @@
   flex-wrap: wrap;
   padding: var(--size-2-1, 4px) 0;
 }
+
+/* ---- Story Map board (P1, ADR-0029) ---- */
+.sm-board-container {
+  overflow: auto;
+  padding: var(--size-4-2, 8px);
+}
+
+.sm-board-title {
+  margin: 0 0 var(--size-4-2, 8px);
+}
+
+.sm-board-svg {
+  display: block;
+}
+
+.sm-board-svg text {
+  fill: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.sm-board-users {
+  fill: var(--background-secondary-alt);
+}
+
+.sm-board-activity {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-step {
+  fill: var(--background-primary-alt);
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-slice {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-card {
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-card-title {
+  font-weight: 600;
+}
+
+.sm-board-card-attrs {
+  fill: var(--text-muted);
+}
