@@ -24,6 +24,10 @@ import {
   STORY_MAP_VIEW_TYPE,
   StoryMapExplorerView,
 } from "./presentation/views/story-map-explorer-view";
+import {
+  STORY_MAP_BOARD_VIEW_TYPE,
+  StoryMapBoardView,
+} from "./presentation/views/story-map-board-view";
 import { StoryMapCardManagerModal } from "./presentation/views/story-map-card-manager-modal";
 import { SUITE_VIEW_TYPE, SuiteDashboardView } from "./presentation/views/suite-dashboard-view";
 import { TEST_CONSOLE_VIEW_TYPE, TestConsoleView } from "./presentation/views/test-console-view";
@@ -55,6 +59,7 @@ export interface ViewWiringDeps {
   openCreateSuite: () => void;
   openPrdBuilder: (parentPrdId?: string) => void;
   openStoryMapBuilder: () => void;
+  openStoryMapBoard: (storyMapId: string) => void;
   openWizard: () => void;
   openDocumentation: (documentType?: DashboardDocumentType | "index") => void | Promise<void>;
   generateDocumentation: () => void | Promise<void>;
@@ -157,7 +162,12 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           new StoryMapCardManagerModal(app, map, {
             storyMapService: s.storyMapService,
           }).open(),
+        openStoryMapBoard: (id) => deps.openStoryMapBoard(id),
       }),
+  );
+  plugin.registerView(
+    STORY_MAP_BOARD_VIEW_TYPE,
+    (leaf) => new StoryMapBoardView(leaf, { storyMapService: s.storyMapService, eventBus }),
   );
   plugin.registerView(
     TEST_CONSOLE_VIEW_TYPE,

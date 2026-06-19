@@ -48,6 +48,7 @@ import { StoryMapBuilderModal } from "./presentation/views/story-map-builder-mod
 import { STORY_MAP_VIEW_TYPE } from "./presentation/views/story-map-explorer-view";
 import { TEST_CONSOLE_VIEW_TYPE } from "./presentation/views/test-console-view";
 import { USE_CASE_DETAIL_VIEW_TYPE } from "./presentation/views/use-case-detail-view";
+import { STORY_MAP_BOARD_VIEW_TYPE } from "./presentation/views/story-map-board-view";
 import { openOrNotice } from "./presentation/views/modal-helpers";
 import { DASHBOARD_VIEW_TYPE } from "./presentation/views/dashboard-view";
 import { GUIDED_TOUR_VIEW_TYPE } from "./presentation/views/guided-tour-view";
@@ -194,6 +195,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       openCreateSuite: () => this.openCreateSuite(),
       openPrdBuilder: (parentPrdId) => this.openPrdBuilder(parentPrdId),
       openStoryMapBuilder: () => this.openStoryMapBuilder(),
+      openStoryMapBoard: (storyMapId) => void this.openStoryMapBoard(storyMapId),
       openWizard: () => this.openWizard(),
       openDocumentation: (documentType) => this.openDocumentation(documentType),
       generateDocumentation: () => this.generateDocumentation(),
@@ -350,6 +352,20 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       type: USE_CASE_DETAIL_VIEW_TYPE,
       active: true,
       state: { useCaseId },
+    });
+    void workspace.revealLeaf(leaf);
+  }
+
+  // Opens the read-only Story Map board in the main area. A single board leaf is
+  // reused (re-targeted) per map, mirroring openUseCaseDetail.
+  private async openStoryMapBoard(storyMapId: string): Promise<void> {
+    const { workspace } = this.app;
+    const leaf =
+      workspace.getLeavesOfType(STORY_MAP_BOARD_VIEW_TYPE)[0] ?? workspace.getLeaf("tab");
+    await leaf.setViewState({
+      type: STORY_MAP_BOARD_VIEW_TYPE,
+      active: true,
+      state: { storyMapId },
     });
     void workspace.revealLeaf(leaf);
   }
