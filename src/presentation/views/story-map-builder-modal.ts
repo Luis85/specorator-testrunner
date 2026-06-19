@@ -108,7 +108,9 @@ export class StoryMapBuilderModal extends Modal {
 
     if (this.prds.length === 0) {
       contentEl.createEl("p", {
-        text: "No PRDs found — this map will anchor to the product root (PRD-000).",
+        text:
+          "No product PRD exists yet. A Story Map must anchor to a PRD — create one " +
+          "first, then start the Story Map.",
         cls: "setting-item-description",
       });
       return;
@@ -244,7 +246,18 @@ export class StoryMapBuilderModal extends Modal {
     if (this.state.currentStep === STORY_MAP_STEP_COUNT) {
       const createBtn = buttonContainer.createEl("button", { text: "Create", cls: "mod-cta" });
       createBtn.setAttribute("data-testid", "create-button");
-      createBtn.addEventListener("click", () => void this.create());
+      // No product PRD can resolve in an empty vault, and the service requires one
+      // — disable Create rather than lead the user to a guaranteed failure.
+      if (this.prdsLoaded && this.prds.length === 0) {
+        createBtn.disabled = true;
+        createBtn.setAttribute("aria-label", "Create a product PRD first");
+        buttonContainer.createEl("span", {
+          text: "Create a product PRD first — a Story Map must anchor to one.",
+          cls: "setting-item-description",
+        });
+      } else {
+        createBtn.addEventListener("click", () => void this.create());
+      }
     }
 
     const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
