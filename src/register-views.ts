@@ -24,6 +24,7 @@ import {
   STORY_MAP_VIEW_TYPE,
   StoryMapExplorerView,
 } from "./presentation/views/story-map-explorer-view";
+import { StoryMapCardManagerModal } from "./presentation/views/story-map-card-manager-modal";
 import { SUITE_VIEW_TYPE, SuiteDashboardView } from "./presentation/views/suite-dashboard-view";
 import { TEST_CONSOLE_VIEW_TYPE, TestConsoleView } from "./presentation/views/test-console-view";
 import {
@@ -151,6 +152,10 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         workspace,
         eventBus,
         openStoryMapBuilder: () => deps.openStoryMapBuilder(),
+        openCardManager: (map) =>
+          new StoryMapCardManagerModal(app, map, {
+            storyMapService: s.storyMapService,
+          }).open(),
       }),
   );
   plugin.registerView(

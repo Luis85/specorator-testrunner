@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DefaultStoryMapService } from "../src/application/services/story-map-service";
-import type { NoteResolver } from "../src/application/services/story-map-service";
+import type { PrdGuard } from "../src/application/services/story-map-service";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
@@ -8,12 +8,17 @@ import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
 import { ok, type Result } from "../src/shared/result/result";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
-/** Resolver that maps a fixed id → note path so links resolve in tests. */
-const resolver = (paths: Record<string, string> = {}): NoteResolver => ({
+/**
+ * Resolver that maps a fixed id → note path so links resolve in tests. Includes a
+ * passthrough `withMutationLock` so it also satisfies {@link PrdGuard} when used
+ * as the PRD dependency (tests don't exercise cross-service lock contention).
+ */
+const resolver = (paths: Record<string, string> = {}): PrdGuard => ({
   async findById(id: string): Promise<Result<{ path: VaultPath } | null>> {
     const path = paths[id];
     return ok(path ? { path: unsafeVaultPath(path) } : null);
   },
+  withMutationLock: (operation) => operation(),
 });
 
 const build = (ucPaths?: Record<string, string>, prdPaths?: Record<string, string>) => {
@@ -95,6 +100,36 @@ describe("DefaultStoryMapService.create", () => {
     if (!result.ok) return;
     expect(result.value.users).toEqual(["Author"]);
     expect(result.value.steps).toEqual([{ activity: "Author spec", step: "Draft" }]);
+  });
+
+  it("rejects a non-root product PRD that does not exist", async () => {
+    const { service } = build(); // no PRDs known to the resolver
+    const result = await service.create({
+      title: "Map",
+      product: "PRD-007",
+      activities: ["a"],
+      slices: ["s"],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("PRD-007");
+  });
+
+  it("allows a non-root product PRD that exists", async () => {
+    const { service } = build({}, { "PRD-007": "PRDs/PRD-007-x/PRD-007-x.md" });
+    const result = await service.create({
+      title: "Map",
+      product: "PRD-007",
+      activities: ["a"],
+      slices: ["s"],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("allows the reserved root PRD-000 even when no PRD note exists yet", async () => {
+    const { service } = build(); // PRD-000 not known to the resolver
+    const result = await service.create({ title: "Map", activities: ["a"], slices: ["s"] });
+    expect(result.ok && result.value.product).toBe("PRD-000");
   });
 
   it("rejects a map with no activities or no slices", async () => {
@@ -317,5 +352,181 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
     const { service } = build();
     const result = await service.rebuildGrid("SM-404");
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
+  /** Seeds a hand-edited note with one card and an empty grid block. */
+  const seedNote = (fs: FakeVaultFileSystem, lineEnding = "\n"): string => {
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "product: PRD-000",
+        "activities:",
+        "  - Author spec",
+        "steps:",
+        "  - Author spec | Draft",
+        "slices:",
+        "  - Walking skeleton",
+        "  - Next",
+        "cards:",
+        "  - UC-037 | Author spec | Walking skeleton",
+        "---",
+        "## Map",
+        "",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+        "",
+        "## Notes",
+        "keep me",
+      ].join(lineEnding),
+    );
+    return path;
+  };
+
+  it("adds a card: rewrites the cards frontmatter and the grid block", async () => {
+    const { service, fs } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
+    const path = seedNote(fs);
+
+    const result = await service.addCard("SM-001", {
+      ref: "UC-040",
+      title: "Run the suite",
+      activity: "Author spec",
+      step: "Draft",
+      slice: "Next",
+      points: 5,
+      tags: ["smoke"],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.cards).toHaveLength(2);
+
+    const note = fs.files.get(path) ?? "";
+    // Both cards survive in the frontmatter, the new one fully encoded.
+    expect(note).toContain("UC-037 | Author spec |  | Walking skeleton");
+    expect(note).toContain("UC-040 | Author spec | Draft | Next |  | 5 | smoke |  | Run the suite");
+    // The grid block regenerated with the resolved link; the body is preserved.
+    expect(note).toContain("[[UC-040 Run the suite\\|UC-040]]");
+    expect(note).not.toContain("(empty)");
+    expect(note).toContain("keep me");
+  });
+
+  it("rejects a card whose placement is invalid (slice off the map)", async () => {
+    const { service, fs } = build();
+    seedNote(fs);
+    const result = await service.addCard("SM-001", {
+      title: "Bad",
+      activity: "Author spec",
+      slice: "Later",
+      tags: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("updates a card at an index", async () => {
+    const { service, fs } = build();
+    const path = seedNote(fs);
+    const result = await service.updateCard("SM-001", 0, {
+      title: "Edited story",
+      activity: "Author spec",
+      slice: "Next",
+      tags: [],
+    });
+    expect(result.ok).toBe(true);
+    const note = fs.files.get(path) ?? "";
+    expect(note).toContain("Edited story");
+    expect(note).not.toContain("UC-037");
+  });
+
+  it("removes a card at an index, clearing the cards field when empty", async () => {
+    const { service, fs } = build();
+    const path = seedNote(fs);
+    const result = await service.removeCard("SM-001", 0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.cards).toHaveLength(0);
+    const note = fs.files.get(path) ?? "";
+    // With no cards left the field is dropped entirely.
+    expect(note).not.toContain("cards:");
+  });
+
+  it("rejects an out-of-range index for update and remove", async () => {
+    const { service, fs } = build();
+    seedNote(fs);
+    expect(
+      (
+        await service.updateCard("SM-001", 9, {
+          title: "X",
+          activity: "Author spec",
+          slice: "Next",
+          tags: [],
+        })
+      ).ok,
+    ).toBe(false);
+    expect((await service.removeCard("SM-001", -1)).ok).toBe(false);
+  });
+
+  it("is CRLF-safe: no duplicated frontmatter fence after a card add", async () => {
+    const { service, fs } = build({ "UC-040": "Use Cases/UC-040 Run.md" });
+    const path = seedNote(fs, "\r\n");
+    const result = await service.addCard("SM-001", {
+      ref: "UC-040",
+      title: "Run",
+      activity: "Author spec",
+      step: "Draft",
+      slice: "Next",
+      tags: [],
+    });
+    expect(result.ok).toBe(true);
+    const note = fs.files.get(path) ?? "";
+    expect(note.match(/^---$/gm)?.length).toBe(2);
+    expect(note).toContain("[[UC-040 Run\\|UC-040]]");
+  });
+
+  it("aborts when the map was deleted (re-read under the lock returns null)", async () => {
+    const { service } = build();
+    const result = await service.addCard("SM-404", {
+      title: "X",
+      activity: "a",
+      slice: "s",
+      tags: [],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("serializes concurrent card adds through the mutation queue", async () => {
+    const { service, fs } = build();
+    const path = seedNote(fs);
+    const [a, b] = await Promise.all([
+      service.addCard("SM-001", {
+        title: "First",
+        activity: "Author spec",
+        slice: "Next",
+        tags: [],
+      }),
+      service.addCard("SM-001", {
+        title: "Second",
+        activity: "Author spec",
+        slice: "Next",
+        tags: [],
+      }),
+    ]);
+    expect(a.ok && b.ok).toBe(true);
+    // Both writes landed (the second re-read the first's result under the lock),
+    // so the final note has all three cards — no lost update.
+    const note = fs.files.get(path) ?? "";
+    expect(note).toContain("First");
+    expect(note).toContain("Second");
+    expect(note).toContain("UC-037");
   });
 });

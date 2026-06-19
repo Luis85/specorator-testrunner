@@ -219,17 +219,22 @@ export interface StoryMapGrid {
 
 /**
  * Leaf columns: for each activity in order, one column per declared step of that
- * activity (in `steps` order); an activity with no declared steps gets a single
- * `{ activity, step: undefined }` column.
+ * activity (in `steps` order). An activity also gets a `{ activity, step:
+ * undefined }` no-step column when it has no declared steps, OR when a card hangs
+ * directly under it (no `step`) — so no-step and legacy three-field cards are
+ * never dropped from the rendered grid even after steps are defined.
  */
 const buildGridColumns = (
   activities: readonly string[],
   steps: readonly StoryMapStep[],
+  cards: readonly StoryMapCard[],
 ): StoryMapGridColumn[] =>
   activities.flatMap((activity) => {
     const ownSteps = steps.filter((s) => s.activity === activity);
-    if (ownSteps.length === 0) return [{ activity }];
-    return ownSteps.map((s) => ({ activity, step: s.step }));
+    const columns: StoryMapGridColumn[] = ownSteps.map((s) => ({ activity, step: s.step }));
+    const hasNoStepCard = cards.some((c) => c.activity === activity && c.step === undefined);
+    if (ownSteps.length === 0 || hasNoStepCard) columns.push({ activity });
+    return columns;
   });
 
 /** Whether a card belongs in a given leaf column (a no-step column matches no-step cards). */
@@ -245,7 +250,7 @@ const cardInColumn = (card: StoryMapCard, column: StoryMapGridColumn): boolean =
 export const buildStoryMapGrid = (
   map: Pick<StoryMap, "activities" | "steps" | "slices" | "cards">,
 ): StoryMapGrid => {
-  const columns = buildGridColumns(map.activities, map.steps);
+  const columns = buildGridColumns(map.activities, map.steps, map.cards);
   return {
     columns,
     rows: map.slices.map((slice) => {

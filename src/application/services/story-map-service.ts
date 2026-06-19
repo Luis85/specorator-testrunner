@@ -1,5 +1,6 @@
 import {
   buildStoryMapNote,
+  parseStoryMapNote,
   renderStoryMapGridTable,
   replaceGridBlock,
   storyMapFolderName,
@@ -7,9 +8,6 @@ import {
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import {
-  isStoryMapStatus,
-  parseCard,
-  parseStep,
   type StoryMap,
   type StoryMapCard,
   type StoryMapId,
@@ -20,7 +18,14 @@ import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
-import { parseNote } from "../../shared/utils/frontmatter";
+import { encodeCard } from "../../domain/entities/story-map";
+import {
+  addCardToList,
+  removeCardFromList,
+  updateCardInList,
+  validateCardPlacement,
+} from "./story-map-cards";
+import { parseNote, updateNoteFrontmatter } from "../../shared/utils/frontmatter";
 import { err, ok, type Result } from "../../shared/result/result";
 import { joinVaultPath } from "../../shared/utils/vault-path";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
@@ -57,6 +62,16 @@ export interface NoteResolver {
   findById(id: string): Promise<Result<{ path: VaultPath } | null>>;
 }
 
+/**
+ * The PRD dependency for {@link DefaultStoryMapService.create}: resolves a PRD's
+ * note path (for the product link) AND exposes the PRD mutation lock so map
+ * creation serializes with `PrdService.deletePrd` — a map can never be anchored
+ * to a PRD that a concurrent delete is removing. Satisfied by PrdService.
+ */
+export interface PrdGuard extends NoteResolver {
+  withMutationLock<T>(operation: () => Promise<T>): Promise<T>;
+}
+
 export interface StoryMapService {
   create(request: CreateStoryMapRequest): Promise<Result<StoryMap>>;
   findAll(): Promise<Result<StoryMap[]>>;
@@ -68,6 +83,16 @@ export interface StoryMapService {
    * hand-editing the `cards` list so the rendered table matches the data.
    */
   rebuildGrid(id: StoryMapId): Promise<Result<void>>;
+  /**
+   * Authoring without hand-editing frontmatter: add a rich card to the map,
+   * validating its placement, rewriting the `cards` frontmatter, and
+   * regenerating the managed grid block. Returns the updated map.
+   */
+  addCard(id: StoryMapId, card: StoryMapCard): Promise<Result<StoryMap>>;
+  /** Replaces the card at `index` (out-of-range → VALIDATION_FAILED). */
+  updateCard(id: StoryMapId, index: number, card: StoryMapCard): Promise<Result<StoryMap>>;
+  /** Removes the card at `index` (out-of-range → VALIDATION_FAILED). */
+  removeCard(id: StoryMapId, index: number): Promise<Result<StoryMap>>;
 }
 
 const STORY_MAP_ID_RE = /^SM-(\d{3,})$/;
@@ -118,6 +143,21 @@ const normalizeSteps = (
 const cardRefs = (cards: readonly StoryMapCard[]): string[] =>
   cards.map((c) => c.ref).filter((ref): ref is string => ref !== undefined);
 
+/**
+ * The reason a card mutation must be rejected (out-of-range index or invalid
+ * placement), or null when it may proceed. Pure: keeps {@link mutateCards} thin.
+ */
+const cardMutationError = (
+  map: StoryMap,
+  options: { validate?: (map: StoryMap) => string | null; requireIndex?: number },
+): string | null => {
+  const index = options.requireIndex;
+  if (index !== undefined && (index < 0 || index >= map.cards.length)) {
+    return `Card index ${index} is out of range for ${map.id}.`;
+  }
+  return options.validate?.(map) ?? null;
+};
+
 /** The folder containing a note path, e.g. `Story Maps/SM-001-x/SM-001-x.md` → `Story Maps/SM-001-x`. */
 const parentFolder = (path: VaultPath): VaultPath => {
   const s = String(path);
@@ -134,7 +174,7 @@ export class DefaultStoryMapService implements StoryMapService {
     private readonly eventBus: EventBus,
     private readonly logger: Logger,
     private readonly useCases: NoteResolver,
-    private readonly prds: NoteResolver,
+    private readonly prds: PrdGuard,
   ) {}
 
   async create(request: CreateStoryMapRequest): Promise<Result<StoryMap>> {
@@ -158,54 +198,69 @@ export class DefaultStoryMapService implements StoryMapService {
 
     const settings = await this.settingsService.load();
 
-    // Allocate the id inside the shared mutation key so two concurrent creates
-    // can't read the same id set and both pick the same next id.
-    return this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
-      const existing = await this.findAll();
-      if (!existing.ok) return existing;
+    // Run under the PRD mutation lock (the same one PrdService.deletePrd holds) so
+    // creation serializes with PRD deletion: a map can't anchor to a PRD a
+    // concurrent delete is removing. Inside, serialize on the Story Map key too so
+    // two concurrent creates can't pick the same next id.
+    return this.prds.withMutationLock(() =>
+      this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
+        // The product anchor must exist (except the reserved root PRD-000, which is
+        // never deletable so it cannot dangle). Checked under the PRD lock, so it
+        // can't pass and then be deleted before the write lands.
+        if (product !== DEFAULT_PRODUCT) {
+          const found = await this.prds.findById(product);
+          if (!found.ok) return found;
+          if (!found.value) {
+            return err(appError("VALIDATION_FAILED", `Unknown product PRD: ${product}.`));
+          }
+        }
 
-      const id = this.nextId(existing.value.map((m) => m.id));
-      const folder = storyMapFolderName(id, title);
-      const path = joinVaultPath(settings.paths.storyMapsPath, folder, `${folder}.md`);
+        const existing = await this.findAll();
+        if (!existing.ok) return existing;
 
-      const map: StoryMap = {
-        id,
-        title,
-        status: "draft",
-        product,
-        users,
-        activities,
-        steps,
-        slices,
-        cards: request.cards ?? [],
-        displayOrder: existing.value.length,
-        path,
-      };
+        const id = this.nextId(existing.value.map((m) => m.id));
+        const folder = storyMapFolderName(id, title);
+        const path = joinVaultPath(settings.paths.storyMapsPath, folder, `${folder}.md`);
 
-      const folderPath = joinVaultPath(settings.paths.storyMapsPath, folder);
-      const folderPreexisted = await this.fs.exists(folderPath);
-      const folderResult = await this.fs.createFolder(folderPath);
-      if (!folderResult.ok) return folderResult;
+        const map: StoryMap = {
+          id,
+          title,
+          status: "draft",
+          product,
+          users,
+          activities,
+          steps,
+          slices,
+          cards: request.cards ?? [],
+          displayOrder: existing.value.length,
+          path,
+        };
 
-      const noteNames = await this.resolveNoteNames(map);
-      const createResult = await this.fs.createFile(path, buildStoryMapNote(map, noteNames));
-      if (!createResult.ok) {
-        // Don't leave an orphaned empty folder behind on a note-write failure;
-        // only for the folder this call created.
-        if (!folderPreexisted) await this.fs.deleteFolder(folderPath);
-        return createResult;
-      }
+        const folderPath = joinVaultPath(settings.paths.storyMapsPath, folder);
+        const folderPreexisted = await this.fs.exists(folderPath);
+        const folderResult = await this.fs.createFolder(folderPath);
+        if (!folderResult.ok) return folderResult;
 
-      await this.eventBus.publish(
-        createEvent(
-          "storymap.created",
-          { storyMapId: map.id, title, path: String(map.path), product },
-          { correlationId: map.id },
-        ),
-      );
-      this.logger.info("Story Map created", { id: map.id, path: map.path });
-      return ok(map);
-    });
+        const noteNames = await this.resolveNoteNames(map);
+        const createResult = await this.fs.createFile(path, buildStoryMapNote(map, noteNames));
+        if (!createResult.ok) {
+          // Don't leave an orphaned empty folder behind on a note-write failure;
+          // only for the folder this call created.
+          if (!folderPreexisted) await this.fs.deleteFolder(folderPath);
+          return createResult;
+        }
+
+        await this.eventBus.publish(
+          createEvent(
+            "storymap.created",
+            { storyMapId: map.id, title, path: String(map.path), product },
+            { correlationId: map.id },
+          ),
+        );
+        this.logger.info("Story Map created", { id: map.id, path: map.path });
+        return ok(map);
+      }),
+    );
   }
 
   async findAll(): Promise<Result<StoryMap[]>> {
@@ -221,7 +276,7 @@ export class DefaultStoryMapService implements StoryMapService {
       if (!String(path).endsWith(".md")) continue;
       const read = await this.fs.readFile(path);
       if (!read.ok) continue; // index is best-effort; skip unreadable notes
-      const parsed = this.parse(read.value, path);
+      const parsed = parseStoryMapNote(read.value, path);
       if (parsed) maps.push(parsed);
     }
     maps.sort((a, b) => a.id.localeCompare(b.id));
@@ -293,6 +348,77 @@ export class DefaultStoryMapService implements StoryMapService {
     });
   }
 
+  async addCard(id: StoryMapId, card: StoryMapCard): Promise<Result<StoryMap>> {
+    return this.mutateCards(id, (cards) => addCardToList(cards, card), {
+      validate: (map) => validateCardPlacement(map, card),
+    });
+  }
+
+  async updateCard(id: StoryMapId, index: number, card: StoryMapCard): Promise<Result<StoryMap>> {
+    return this.mutateCards(id, (cards) => updateCardInList(cards, index, card), {
+      validate: (map) => validateCardPlacement(map, card),
+      requireIndex: index,
+    });
+  }
+
+  async removeCard(id: StoryMapId, index: number): Promise<Result<StoryMap>> {
+    return this.mutateCards(id, (cards) => removeCardFromList(cards, index), {
+      requireIndex: index,
+    });
+  }
+
+  /**
+   * The shared card-mutation pipeline: serialize through the SAME mutation key
+   * as create/delete/rebuild (so a concurrent delete cannot interleave and
+   * resurrect the note), re-read the map under the lock (abort if it was
+   * deleted), validate the index/placement, then rewrite ONLY the `cards`
+   * frontmatter and the managed grid block — never the hand-written body.
+   * CRLF-safe exactly like {@link rebuildGrid}.
+   */
+  private mutateCards(
+    id: StoryMapId,
+    transform: (cards: readonly StoryMapCard[]) => StoryMapCard[],
+    options: {
+      validate?: (map: StoryMap) => string | null;
+      requireIndex?: number;
+    },
+  ): Promise<Result<StoryMap>> {
+    return this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
+      const found = await this.findById(id);
+      if (!found.ok) return found;
+      if (!found.value) {
+        return err(appError("VALIDATION_FAILED", `Story Map ${id} was not found.`));
+      }
+      const map = found.value;
+      const reason = cardMutationError(map, options);
+      if (reason !== null) return err(appError("VALIDATION_FAILED", reason));
+      return this.writeCards({ ...map, cards: transform(map.cards) });
+    });
+  }
+
+  /**
+   * Persists the map's new card list: rewrites only the `cards` frontmatter
+   * field and regenerates the managed grid block, leaving every other
+   * frontmatter field and hand-written body section untouched. CRLF-safe.
+   */
+  private async writeCards(map: StoryMap): Promise<Result<StoryMap>> {
+    const read = await this.fs.readFile(map.path);
+    if (!read.ok) return read;
+    const ucNoteNames = await this.resolveUseCaseNoteNames(cardRefs(map.cards));
+    // Normalize CRLF→LF before parsing/slicing (see rebuildGrid): parseNote
+    // returns an LF body, so the frontmatter/body boundary must be aligned.
+    const normalized = read.value.replace(/\r\n/g, "\n");
+    const withCards = updateNoteFrontmatter(normalized, {
+      cards: map.cards.length > 0 ? map.cards.map(encodeCard) : undefined,
+    });
+    const { body } = parseNote(withCards);
+    const nextBody = replaceGridBlock(body, renderStoryMapGridTable(map, ucNoteNames));
+    const frontmatter = withCards.slice(0, withCards.length - body.length);
+    const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
+    if (!written.ok) return written;
+    return ok(map);
+  }
+
   /** Resolves an id to its note basename via the given lookup, or undefined. */
   private async noteNameOf(resolver: NoteResolver, id: string): Promise<string | undefined> {
     const found = await resolver.findById(id);
@@ -331,32 +457,5 @@ export class DefaultStoryMapService implements StoryMapService {
       if (m) max = Math.max(max, Number(m[1]));
     }
     return `SM-${String(max + 1).padStart(3, "0")}`;
-  }
-
-  private parse(content: string, path: VaultPath): StoryMap | null {
-    const { frontmatter: fm } = parseNote(content);
-    if (fm.type !== "story-map" || typeof fm.id !== "string") return null;
-    const asArray = (v: string | string[] | undefined): string[] =>
-      Array.isArray(v) ? v : v && v !== "" ? [v] : [];
-    const cards = asArray(fm.cards)
-      .map(parseCard)
-      .filter((card): card is StoryMapCard => card !== null);
-    const steps = asArray(fm.steps)
-      .map(parseStep)
-      .filter((step): step is StoryMapStep => step !== null);
-    return {
-      id: fm.id,
-      title: typeof fm.title === "string" ? fm.title : fm.id,
-      status: isStoryMapStatus(fm.status) ? fm.status : "draft",
-      product: typeof fm.product === "string" && fm.product !== "" ? fm.product : DEFAULT_PRODUCT,
-      users: asArray(fm.users),
-      activities: asArray(fm.activities),
-      steps,
-      slices: asArray(fm.slices),
-      cards,
-      displayOrder:
-        Number.parseInt(typeof fm.display_order === "string" ? fm.display_order : "0", 10) || 0,
-      path,
-    };
   }
 }

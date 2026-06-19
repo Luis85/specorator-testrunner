@@ -181,6 +181,24 @@ describe("buildStoryMapGrid", () => {
     ]);
   });
 
+  it("keeps a no-step card visible under a stepped activity (adds a no-step column)", () => {
+    const withNoStepCard: typeof map = {
+      ...map,
+      cards: [
+        ...map.cards,
+        // A card hanging directly under the stepped "Author spec" activity.
+        { ref: "UC-050", title: "Direct", activity: "Author spec", slice: "Next", tags: [] },
+      ],
+    };
+    const grid = buildStoryMapGrid(withNoStepCard);
+    // "Author spec" now has a trailing no-step column in addition to its steps.
+    expect(grid.columns).toContainEqual({ activity: "Author spec" });
+    const placed = grid.rows.flatMap((r) =>
+      r.cells.flatMap((c) => c.cards.map((card) => card.ref)),
+    );
+    expect(placed).toContain("UC-050");
+  });
+
   it("places cards at their (activity, step, slice) coordinate in order", () => {
     const grid = buildStoryMapGrid(map);
     const skeleton = grid.rows[0];

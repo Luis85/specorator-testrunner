@@ -1,13 +1,21 @@
-import { buildNote, type FrontmatterValue } from "../../shared/utils/frontmatter";
+import { buildNote, parseNote, type FrontmatterValue } from "../../shared/utils/frontmatter";
 import {
   buildStoryMapGrid,
   CARD_STATUSES,
   encodeCard,
   encodeStep,
+  isStoryMapStatus,
+  parseCard,
+  parseStep,
   type StoryMap,
   type StoryMapCard,
   type StoryMapGridColumn,
+  type StoryMapStep,
 } from "../../domain/entities/story-map";
+import type { VaultPath } from "../../domain/value-objects/identifiers";
+
+/** The product a map anchors to when none is recorded — the reserved root PRD. */
+const STORY_MAP_DEFAULT_PRODUCT = "PRD-000";
 
 /** Kebab-case folder/file name shared by a Story Map's folder and its note. */
 export const storyMapFolderName = (id: string, title: string): string => {
@@ -191,4 +199,37 @@ export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>)
   ].join("\n");
 
   return buildNote(fields, body);
+};
+
+/**
+ * Read model for a Story Map note: the inverse of {@link buildStoryMapNote}.
+ * Returns null when the note is not a `story-map` (so the indexer skips it).
+ * Decodes steps and rich cards, dropping malformed lines. Pure: no I/O.
+ */
+export const parseStoryMapNote = (content: string, path: VaultPath): StoryMap | null => {
+  const { frontmatter: fm } = parseNote(content);
+  if (fm.type !== "story-map" || typeof fm.id !== "string") return null;
+  const asArray = (v: string | string[] | undefined): string[] =>
+    Array.isArray(v) ? v : v && v !== "" ? [v] : [];
+  const cards = asArray(fm.cards)
+    .map(parseCard)
+    .filter((card): card is StoryMapCard => card !== null);
+  const steps = asArray(fm.steps)
+    .map(parseStep)
+    .filter((step): step is StoryMapStep => step !== null);
+  return {
+    id: fm.id,
+    title: typeof fm.title === "string" ? fm.title : fm.id,
+    status: isStoryMapStatus(fm.status) ? fm.status : "draft",
+    product:
+      typeof fm.product === "string" && fm.product !== "" ? fm.product : STORY_MAP_DEFAULT_PRODUCT,
+    users: asArray(fm.users),
+    activities: asArray(fm.activities),
+    steps,
+    slices: asArray(fm.slices),
+    cards,
+    displayOrder:
+      Number.parseInt(typeof fm.display_order === "string" ? fm.display_order : "0", 10) || 0,
+    path,
+  };
 };
