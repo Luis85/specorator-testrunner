@@ -250,6 +250,26 @@ describe("computeAutomationStatus (ADR-0017 roll-up, history-derived — US-057)
       ).toBe("planned");
     });
 
+    it("a non-quarantined rowless Outline keeps the Feature in the roll-up", () => {
+      // A @quarantine scenario removes all refs, but a sibling rowless Outline is
+      // still an active (never-run) scenario, so the Feature is not-run — not
+      // excluded — and a passing sibling can only carry the UC to implemented.
+      const mixed = feature({
+        path: vp("Specifications/features/UC-001-a.feature"),
+        scenarios: [
+          { name: "O", tags: [], keyword: "Scenario Outline", steps: [step] }, // rowless, active
+          quarantined("Q"),
+        ],
+      });
+      const solid = feature({
+        path: vp("Specifications/features/UC-001-b.feature"),
+        scenarios: [active("Solid")],
+      });
+      expect(
+        computeAutomationStatus([mixed, solid], history({ [refOf(solid, "Solid")]: "passed" })),
+      ).toBe("implemented");
+    });
+
     it("a rowless Outline is not-run, not excluded (it never executed)", () => {
       // Zero refs from NO Examples rows (not from @quarantine) must stay not-run,
       // so it does not let a passing sibling carry the UC to passing.

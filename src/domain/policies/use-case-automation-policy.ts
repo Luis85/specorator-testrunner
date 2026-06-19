@@ -1,4 +1,5 @@
-import type { FeatureSpecification } from "../entities/specification";
+import type { FeatureSpecification, ScenarioSpecification } from "../entities/specification";
+import { isScenarioOutline } from "../entities/specification";
 import type { AutomationStatus } from "../entities/use-case";
 import { featureScenarioRefs } from "../value-objects/scenario-reference";
 
@@ -49,12 +50,35 @@ const isWip = (feature: FeatureSpecification): boolean =>
   feature.tags.some((tag) => tag.toLowerCase() === WIP_TAG);
 
 /**
- * A scenario tagged `@quarantine` is excluded from its Feature's run-state
- * roll-up (US-058). Matched case-insensitively, mirroring {@link isWip}, so the
- * KPI exclusion and the dashboard's quarantine count agree.
+ * True when a tag set contains `@quarantine` (case-insensitive, mirroring
+ * {@link isWip}). The low-level predicate behind both the per-row KPI exclusion
+ * and {@link isScenarioFullyQuarantined}. Exported so the dashboard's quarantine
+ * count and badge share the ONE rule and cannot drift from the roll-up.
  */
-const isQuarantined = (tags: string[]): boolean =>
+export const isQuarantined = (tags: string[]): boolean =>
   tags.some((tag) => tag.toLowerCase() === QUARANTINE_TAG);
+
+/**
+ * Whether a scenario is FULLY excluded from the KPI by `@quarantine` — the single
+ * predicate shared by the roll-up's `excluded` decision and the dashboard's
+ * quarantine count, so the two can never disagree (the source of several review
+ * findings when they were computed separately):
+ *
+ * - a plain scenario: its own `@quarantine` tag;
+ * - an Outline: contributes only via runnable Examples rows, so a ROWLESS Outline
+ *   is never fully quarantined (nothing to exclude — it reads `not-run`). A
+ *   runnable Outline qualifies only when every row is excluded — a scenario-level
+ *   tag, or every runnable Examples block tagged. A partially-tagged Outline
+ *   still has active rows, so it does NOT qualify.
+ *
+ * Feature-level `@quarantine` is handled by the caller (it parks every scenario).
+ */
+export const isScenarioFullyQuarantined = (scenario: ScenarioSpecification): boolean => {
+  if (!isScenarioOutline(scenario)) return isQuarantined(scenario.tags);
+  const runnable = (scenario.examples ?? []).filter((block) => block.rows.length > 0);
+  if (runnable.length === 0) return false;
+  return isQuarantined(scenario.tags) || runnable.every((block) => isQuarantined(block.tags));
+};
 
 /**
  * A Feature has "undefined Gherkin steps" (the `missing-steps` row) when it
@@ -88,29 +112,36 @@ type FeatureRunState = "excluded" | "not-run" | "passing" | "failing" | "partial
  * US-056 keeps references collision-free, and this only happens when every
  * scenario degraded to an unset ref — accepted edge, ADR-0022).
  *
- * Scenarios tagged `@quarantine` are dropped first (US-058): a parked flake
- * contributes no pass/fail signal. A **feature-level** `@quarantine` parks the
- * whole Feature — equivalent to tagging every scenario — so none of its refs are
- * active. Either way, a Feature with no active refs but some refs to begin with
- * reads `excluded` — neutral in the roll-up (a passing sibling can still make the
- * UC pass), NOT `not-run` (which would drag a passing UC down to `implemented`).
+ * Quarantine (US-058) is measured at the SCENARIO level so the `excluded`
+ * decision and the dashboard's quarantine count share {@link
+ * isScenarioFullyQuarantined} and cannot drift. A Feature reads `excluded` —
+ * neutral, dropped from the aggregate (a passing sibling can still make the UC
+ * pass), NOT `not-run` (which would drag a passing UC to `implemented`) — only
+ * when it HAS scenarios and EVERY one is fully quarantined (a feature-level tag,
+ * or each scenario individually). A single non-quarantined scenario — even a
+ * rowless Outline that yields no refs — keeps the Feature in the roll-up with at
+ * least a `not-run` signal, rather than being silently dropped. Otherwise the
+ * active (non-quarantined) rows' latest statuses decide the state.
  */
 const featureRunState = (
   feature: FeatureSpecification,
   latestStatusFor: ScenarioStatusLookup,
 ): FeatureRunState => {
-  const allRefs = featureScenarioRefs(feature);
-  // A feature-level @quarantine excludes every scenario; otherwise drop only the
-  // scenario-/Examples-block-level quarantined refs.
-  const refs = isQuarantined(feature.tags)
+  const featureQuarantined = isQuarantined(feature.tags);
+  if (
+    feature.scenarios.length > 0 &&
+    feature.scenarios.every(
+      (scenario) => featureQuarantined || isScenarioFullyQuarantined(scenario),
+    )
+  ) {
+    return "excluded";
+  }
+  // Active refs: a feature-level @quarantine removes them all; otherwise drop the
+  // scenario-/Examples-block-level quarantined rows. Remaining refs (incl. none,
+  // e.g. a non-quarantined rowless Outline) decide the run state below.
+  const refs = featureQuarantined
     ? []
-    : allRefs.filter((entry) => !isQuarantined(entry.tags));
-  // `excluded` (neutral) ONLY when there WERE refs and `@quarantine` removed them
-  // all. A Feature with no refs to begin with — a rowless Scenario Outline, or
-  // every scenario degraded to an unset ref (ADR-0022) — never executed, so it
-  // stays `not-run` below rather than silently letting a passing sibling carry
-  // the UC to `passing`.
-  if (refs.length === 0 && allRefs.length > 0) return "excluded";
+    : featureScenarioRefs(feature).filter((entry) => !isQuarantined(entry.tags));
   let anyRun = false;
   let anyFailed = false;
   let allPassed = refs.length > 0;

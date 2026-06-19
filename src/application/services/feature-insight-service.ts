@@ -12,6 +12,10 @@ import {
   parseTagExpression,
   type TagExpression,
 } from "../../domain/policies/tag-expression";
+import {
+  isQuarantined,
+  isScenarioFullyQuarantined,
+} from "../../domain/policies/use-case-automation-policy";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { err, ok, type Result } from "../../shared/result/result";
 
@@ -72,11 +76,9 @@ export interface FeatureHealth {
 const WIP_TAG = "@wip";
 /** The smoke-suite convention tag, seeded into the known-tags vocabulary. */
 const SMOKE_TAG = "@smoke";
-/** Quarantine convention tag (US-058), matched like `@wip` and seeded too. */
+/** Quarantine convention tag (US-058), seeded into the known-tags vocabulary. */
 const QUARANTINE_TAG = "@quarantine";
 const hasWipTag = (tags: string[]): boolean => tags.some((tag) => tag.toLowerCase() === WIP_TAG);
-const hasQuarantineTag = (tags: string[]): boolean =>
-  tags.some((tag) => tag.toLowerCase() === QUARANTINE_TAG);
 
 /**
  * Scenario-level `@wip`, or `@wip` on a runnable Examples block — the same
@@ -88,27 +90,9 @@ const scenarioHasWip = (scenario: ScenarioSpecification): boolean =>
   hasWipTag(scenario.tags) ||
   (scenario.examples ?? []).some((block) => block.rows.length > 0 && hasWipTag(block.tags));
 
-/**
- * A scenario FULLY excluded from the KPI by `@quarantine` — the unit the health
- * line counts, kept in lock-step with what `featureRunState` actually excludes.
- *
- * - A plain scenario: counted iff it carries a scenario-level tag.
- * - An Outline: contributes only via runnable Examples rows, so a ROWLESS Outline
- *   is never counted (it has nothing to exclude and `featureRunState` reads it
- *   `not-run`, not excluded). A runnable Outline counts only when every row is
- *   excluded — a scenario-level tag (covers all blocks) or every runnable block
- *   tagged; a partially-tagged Outline still has rows in the roll-up, so counting
- *   it would contradict the KPI.
- *
- * Deliberately stricter than {@link scenarioHasWip}, whose count is purely
- * informational and never implies a KPI exclusion.
- */
-const scenarioHasQuarantine = (scenario: ScenarioSpecification): boolean => {
-  if (!isScenarioOutline(scenario)) return hasQuarantineTag(scenario.tags);
-  const runnable = (scenario.examples ?? []).filter((block) => block.rows.length > 0);
-  if (runnable.length === 0) return false;
-  return hasQuarantineTag(scenario.tags) || runnable.every((block) => hasQuarantineTag(block.tags));
-};
+// Quarantine counting reuses `isScenarioFullyQuarantined` from the roll-up policy
+// so the health-line count and the KPI exclusion share ONE rule (they drifted
+// while computed separately, the source of several review findings).
 
 /**
  * A scenario's EFFECTIVE tags: feature-level tags inherit to every scenario
@@ -143,8 +127,8 @@ export const projectFeatureHealth = (feature: FeatureSpecification): FeatureHeal
   scenarioCount: feature.scenarios.length,
   wipScenarioCount: feature.scenarios.filter(scenarioHasWip).length,
   featureIsWip: hasWipTag(feature.tags),
-  quarantineScenarioCount: feature.scenarios.filter(scenarioHasQuarantine).length,
-  featureIsQuarantined: hasQuarantineTag(feature.tags),
+  quarantineScenarioCount: feature.scenarios.filter(isScenarioFullyQuarantined).length,
+  featureIsQuarantined: isQuarantined(feature.tags),
 });
 
 /**
