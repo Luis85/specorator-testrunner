@@ -66,14 +66,17 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async createFile(path: VaultPath, content: string): Promise<Result<void>> {
-    if (this.failOn?.path === path) {
-      return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
-    }
-    this.files.set(path, content);
-    return ok(undefined);
+    return this.putFile(path, content);
   }
 
   async writeFile(path: VaultPath, content: string): Promise<Result<void>> {
+    return this.putFile(path, content);
+  }
+
+  // createFile and writeFile share semantics in the fake: both fail on the
+  // configured path and otherwise store the content. The create-vs-overwrite
+  // distinction the real adapter draws is irrelevant to the unit tests.
+  private putFile(path: VaultPath, content: string): Result<void> {
     if (this.failOn?.path === path) {
       return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
     }
