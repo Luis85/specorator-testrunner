@@ -1,3 +1,4 @@
+import { evidenceRunFolder } from "./evidence-paths";
 import type { ImportedReport, ScenarioResult } from "./report-import-service";
 import type { SettingsService } from "./settings-service";
 import type { UseCaseService } from "./use-case-service";
@@ -284,11 +285,7 @@ export class DefaultEvidenceGenerationService implements EvidenceGenerationServi
 
   /** `Test Evidence/YYYY/MM/<runId>/summary.md` from the run start (ADR-0016). */
   private evidencePath(run: TestRun, root: VaultPath): VaultPath {
-    const started = new Date(run.startedAt);
-    const valid = Number.isNaN(started.getTime()) ? this.now() : started;
-    const year = String(valid.getUTCFullYear());
-    const month = String(valid.getUTCMonth() + 1).padStart(2, "0");
-    return joinVaultPath(root, year, month, run.id, "summary.md");
+    return joinVaultPath(evidenceRunFolder(root, run, this.now), "summary.md");
   }
 
   /** `EV-<runId without RUN- prefix>` (TIS §10.3 id form). */

@@ -12,6 +12,7 @@ import type {
   TemplateWriteResult,
   TemplateWriter,
 } from "../src/application/ports/template-writer";
+import type { PrdLookup } from "../src/application/services/use-case-service";
 import { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
 import type { VaultFileSystem } from "../src/application/ports/vault-file-system";
 import type { TestHubSettings } from "../src/domain/settings/settings";
@@ -65,14 +66,17 @@ export class FakeVaultFileSystem implements VaultFileSystem {
   }
 
   async createFile(path: VaultPath, content: string): Promise<Result<void>> {
-    if (this.failOn?.path === path) {
-      return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
-    }
-    this.files.set(path, content);
-    return ok(undefined);
+    return this.putFile(path, content);
   }
 
   async writeFile(path: VaultPath, content: string): Promise<Result<void>> {
+    return this.putFile(path, content);
+  }
+
+  // createFile and writeFile share semantics in the fake: both fail on the
+  // configured path and otherwise store the content. The create-vs-overwrite
+  // distinction the real adapter draws is irrelevant to the unit tests.
+  private putFile(path: VaultPath, content: string): Result<void> {
     if (this.failOn?.path === path) {
       return { ok: false, error: { code: "INIT_FAILED", message: this.failOn.message } };
     }
@@ -141,7 +145,7 @@ export class FakeVaultFileSystem implements VaultFileSystem {
  * "exists" (so assignToPrd succeeds); pass a set of known ids to restrict —
  * any id outside the set resolves to null (not found).
  */
-export class FakePrdLookup {
+export class FakePrdLookup implements PrdLookup {
   constructor(private readonly known?: Set<string>) {}
   async findById(id: string): Promise<Result<{ id: string } | null>> {
     if (this.known && !this.known.has(id)) return ok(null);
