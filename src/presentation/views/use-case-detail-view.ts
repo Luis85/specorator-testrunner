@@ -6,6 +6,7 @@ import type { TraceabilityService } from "../../application/services/traceabilit
 import type { StepDefinitionService } from "../../application/services/step-definition-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { PrdService } from "../../application/services/prd-service";
+import type { StoryMapService } from "../../application/services/story-map-service";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
@@ -24,8 +25,10 @@ import {
   prdBreadcrumbLabel,
   projectFeatureRows,
   projectUseCaseHeader,
+  storyMapBacklinks,
   validateFeatureOutcome,
   type FeatureRow,
+  type StoryMapBacklink,
 } from "./use-case-detail-rows";
 
 export const USE_CASE_DETAIL_VIEW_TYPE = "e2e-test-hub-use-case-detail";
@@ -61,6 +64,11 @@ const REFRESH_ON: DomainEventType[] = [
   // tree — re-render so the header isn't served from the old root, matching the
   // main dashboard.
   "settings.updated",
+  // The "Referenced by Story Maps" backlink is computed from story maps, so it
+  // re-renders when a map is created, has its cards changed, or is deleted.
+  "storymap.created",
+  "storymap.updated",
+  "storymap.deleted",
 ];
 
 /**
@@ -80,6 +88,9 @@ export interface UseCaseDetailDeps {
   // Resolves the parent PRD's title for the header breadcrumb (Task 16b) and
   // lists PRDs for the Use Case editor's Parent PRD selector (Task 16c).
   prdService: Pick<PrdService, "findById" | "findAll">;
+  // Computes the "Referenced by Story Maps" backlink (maps own the forward
+  // card reference; nothing is stored on the Use Case).
+  storyMapService: Pick<StoryMapService, "findAll">;
   specificationService: Pick<
     SpecificationService,
     "listFeatures" | "validate" | "detectMissingSteps"
@@ -215,7 +226,11 @@ export class UseCaseDetailView extends LiveDashboardView {
       if (prd.ok && prd.value) prdTitleById.set(useCase.prdId, prd.value.title);
     }
 
-    this.renderHeader(container, useCase, prdTitleById);
+    // Computed Story Map backlinks (best-effort: an index failure just hides them).
+    const maps = await this.deps.storyMapService.findAll();
+    const backlinks = maps.ok ? storyMapBacklinks(useCase.id, maps.value) : [];
+
+    this.renderHeader(container, useCase, prdTitleById, backlinks);
     await this.renderFeatures(container, useCase);
   }
 
@@ -223,6 +238,7 @@ export class UseCaseDetailView extends LiveDashboardView {
     container: HTMLElement,
     useCase: UseCase,
     prdTitleById: Map<string, string>,
+    backlinks: StoryMapBacklink[],
   ): void {
     const header = projectUseCaseHeader(useCase);
 
@@ -238,6 +254,7 @@ export class UseCaseDetailView extends LiveDashboardView {
       .addEventListener("click", () => void this.deps.workspace.openView(USE_CASE_VIEW_TYPE));
     this.renderPrdBreadcrumb(headerEl, useCase, prdTitleById);
     headerEl.createEl("h2", { text: `${header.id} — ${header.title}` });
+    this.renderStoryMapBacklinks(headerEl, backlinks);
 
     const meta = headerEl.createDiv({ cls: "e2e-test-hub-uc-detail-meta" });
     const status = meta.createSpan({
@@ -322,6 +339,26 @@ export class UseCaseDetailView extends LiveDashboardView {
         })
         .addEventListener("click", () => void this.deps.workspace.openView(PRD_VIEW_TYPE));
     }
+  }
+
+  /**
+   * The "Referenced by Story Maps" backlink line: a button per map that places
+   * this Use Case, opening the map's note. Renders nothing when no map does.
+   */
+  private renderStoryMapBacklinks(headerEl: HTMLElement, backlinks: StoryMapBacklink[]): void {
+    if (backlinks.length === 0) return;
+    const row = headerEl.createDiv({ cls: "e2e-test-hub-uc-story-map-backlinks" });
+    row.createSpan({ text: "Referenced by Story Maps: " });
+    backlinks.forEach((map, i) => {
+      if (i > 0) row.createSpan({ text: ", " });
+      row
+        .createEl("button", {
+          text: `${map.id}: ${map.title}`,
+          cls: "e2e-test-hub-link-button",
+          attr: { "aria-label": `Open Story Map ${map.id} ${map.title}` },
+        })
+        .addEventListener("click", () => void openOrNotice(this.deps.workspace, map.path));
+    });
   }
 
   private async renderFeatures(container: HTMLElement, useCase: UseCase): Promise<void> {

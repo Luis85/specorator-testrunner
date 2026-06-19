@@ -32,6 +32,33 @@ export const prdBreadcrumbLabel = (
   return parts.join("  ›  ");
 };
 
+/** A Story Map that places this Use Case — a computed backlink (no stored state). */
+export interface StoryMapBacklink {
+  id: string;
+  title: string;
+  path: VaultPath;
+}
+
+/**
+ * The Story Maps that reference `useCaseId` in any of their cards — the inverse
+ * of the map → Use Case card link, computed on the fly (the map owns the
+ * forward reference; nothing is stored on the Use Case). Sorted by id for a
+ * stable render. Pure: no I/O.
+ */
+export const storyMapBacklinks = (
+  useCaseId: string,
+  maps: readonly {
+    id: string;
+    title: string;
+    path: VaultPath;
+    cards: readonly { ref?: string }[];
+  }[],
+): StoryMapBacklink[] =>
+  maps
+    .filter((m) => m.cards.some((c) => c.ref === useCaseId))
+    .map((m) => ({ id: m.id, title: m.title, path: m.path }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
 /** The Use Case header fields the detail view renders, projected for a row. */
 export interface UseCaseHeaderRow {
   id: string;

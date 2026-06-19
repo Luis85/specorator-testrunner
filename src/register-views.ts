@@ -102,6 +102,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         traceability: s.traceabilityService,
         useCaseService: s.useCaseService,
         prdService: s.prdService,
+        storyMapService: s.storyMapService,
         specificationService: s.specificationService,
         stepDefinitionService: s.stepDefinitionService,
         featureInsight: s.featureInsightService,
