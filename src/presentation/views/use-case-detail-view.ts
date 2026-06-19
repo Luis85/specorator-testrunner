@@ -425,11 +425,11 @@ export class UseCaseDetailView extends LiveDashboardView {
     if (!health.ok || !healthEl.isConnected) return;
     const line = featureHealthLine(health.value);
     healthEl.createSpan({ text: line.text });
-    if (line.wipBadge) {
+    for (const badge of line.badges) {
       healthEl.createSpan({
-        cls: "e2e-test-hub-wip-badge",
-        text: "@wip",
-        attr: { title: line.wipTooltip, "aria-label": line.wipTooltip },
+        cls: badge.cls,
+        text: badge.text,
+        attr: { title: badge.tooltip, "aria-label": badge.tooltip },
       });
     }
   }

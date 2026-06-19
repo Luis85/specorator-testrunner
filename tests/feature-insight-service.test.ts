@@ -47,6 +47,8 @@ describe("projectFeatureHealth", () => {
       scenarioCount: 3,
       wipScenarioCount: 2, // @wip matched case-insensitively, like ADR-0017
       featureIsWip: false,
+      quarantineScenarioCount: 0,
+      featureIsQuarantined: false,
     });
   });
 
@@ -57,6 +59,77 @@ describe("projectFeatureHealth", () => {
       scenarioCount: 2,
       wipScenarioCount: 0, // feature-level @wip is the badge, not the (M @wip) count
       featureIsWip: true,
+      quarantineScenarioCount: 0,
+      featureIsQuarantined: false,
+    });
+  });
+
+  it("counts scenario-level @quarantine work, case-insensitively (US-058)", () => {
+    const f = feature({
+      scenarios: [scenario("a"), scenario("b", ["@quarantine"]), scenario("c", ["@QUARANTINE"])],
+    });
+    expect(projectFeatureHealth(f)).toMatchObject({
+      scenarioCount: 3,
+      quarantineScenarioCount: 2,
+      featureIsQuarantined: false,
+    });
+  });
+
+  it("counts an Outline quarantined only when ALL runnable Examples blocks are tagged (US-058)", () => {
+    const fully = parseFeature(
+      [
+        "Feature: F",
+        "  Scenario Outline: O",
+        "    Given <x>",
+        "    @quarantine",
+        "    Examples:",
+        "      | x |",
+        "      | 1 |",
+        "",
+      ].join("\n"),
+      vp("Specifications/features/UC-009-full.feature"),
+    );
+    expect(fully).not.toBeNull();
+    if (fully) expect(projectFeatureHealth(fully).quarantineScenarioCount).toBe(1);
+
+    // Mixed: only one of two runnable blocks is tagged, so the Outline still has
+    // rows in the KPI — it must NOT be reported as quarantined.
+    const partial = parseFeature(
+      [
+        "Feature: F",
+        "  Scenario Outline: O",
+        "    Given <x>",
+        "    @quarantine",
+        "    Examples:",
+        "      | x |",
+        "      | 1 |",
+        "    Examples:",
+        "      | x |",
+        "      | 2 |",
+        "",
+      ].join("\n"),
+      vp("Specifications/features/UC-009-partial.feature"),
+    );
+    expect(partial).not.toBeNull();
+    if (partial) expect(projectFeatureHealth(partial).quarantineScenarioCount).toBe(0);
+  });
+
+  it("does not count a rowless @quarantine Outline (nothing to exclude) (US-058)", () => {
+    // A scenario-level @quarantine on an Outline with no Examples rows: it never
+    // executes, featureRunState reads it not-run (not excluded), so the count must
+    // not report it as quarantined.
+    const f = feature({
+      scenarios: [{ name: "O", tags: ["@quarantine"], keyword: "Scenario Outline", steps: [] }],
+    });
+    expect(projectFeatureHealth(f).quarantineScenarioCount).toBe(0);
+  });
+
+  it("flags a feature-level @quarantine without folding it into the scenario count", () => {
+    const f = feature({ tags: ["@quarantine"], scenarios: [scenario("a"), scenario("b")] });
+    expect(projectFeatureHealth(f)).toMatchObject({
+      scenarioCount: 2,
+      quarantineScenarioCount: 0, // feature-level is the badge, not the (M quarantined) count
+      featureIsQuarantined: true,
     });
   });
 
@@ -228,6 +301,8 @@ describe("DefaultFeatureInsightService.healthFor", () => {
         scenarioCount: 2,
         wipScenarioCount: 1,
         featureIsWip: false,
+        quarantineScenarioCount: 0,
+        featureIsQuarantined: false,
       }),
     );
   });
@@ -273,6 +348,7 @@ Feature: F
     expect(result.value).toEqual([
       "@examples-level",
       "@feature-level",
+      "@quarantine",
       "@scenario-level",
       "@smoke",
       "@wip",
@@ -299,7 +375,7 @@ Feature: F
     const result = await service.listKnownTags();
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toEqual(["@smoke", "@wip"]);
+    if (result.ok) expect(result.value).toEqual(["@quarantine", "@smoke", "@wip"]);
   });
 });
 

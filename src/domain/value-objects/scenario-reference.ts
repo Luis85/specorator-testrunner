@@ -95,6 +95,15 @@ export interface ScenarioRefEntry {
   matchName: string;
   ref: string;
   /**
+   * The tags effective for this specific scenario/row: the scenario's own tags,
+   * plus — for an Outline row — its `Examples:` block's tags (the only way
+   * Gherkin scopes a tag to particular rows). Lets a domain policy decide
+   * per-row exclusions — `@quarantine` (US-058) — without re-parsing the Feature.
+   * Feature-level tags are NOT folded in here; a consumer that wants the full
+   * effective set unions them with the Feature's separately.
+   */
+  tags: string[];
+  /**
    * 1-based feature-file line of an Outline example row (from the parser), when
    * known. Lets a resolver disambiguate filtered same-name rows by line — the
    * report row carries the same line — instead of by position. Absent for plain
@@ -123,6 +132,9 @@ export const featureScenarioRefs = (feature: FeatureSpecification): ScenarioRefE
             scenarioName: scenario.name,
             matchName: expandScenarioName(scenario.name, cells),
             ref: outlineRowRef(path, scenario.name, cells),
+            // A row's effective tags = the scenario's tags + its Examples block's
+            // tags, so a block-scoped `@quarantine` excludes exactly those rows.
+            tags: [...scenario.tags, ...block.tags],
             ...(line !== undefined ? { line } : {}),
           });
         });
@@ -132,6 +144,7 @@ export const featureScenarioRefs = (feature: FeatureSpecification): ScenarioRefE
         scenarioName: scenario.name,
         matchName: scenario.name,
         ref: scenarioRef(path, scenario.name),
+        tags: scenario.tags,
       });
     }
   }

@@ -794,7 +794,8 @@
 
 /* Feature-level @wip badge: the Feature is excluded from the KPI roll-up per
  * ADR-0017 (the tooltip says so). */
-.e2e-test-hub-wip-badge {
+.e2e-test-hub-wip-badge,
+.e2e-test-hub-quarantine-badge {
   margin-left: var(--size-4-1, 4px);
   padding: 0 var(--size-4-1, 4px);
   border-radius: var(--radius-s, 4px);
@@ -802,6 +803,12 @@
   color: var(--text-warning, var(--text-muted));
   font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller, 0.75rem);
+}
+
+/* Quarantine reads as "needs attention" rather than "in progress" — tint it
+ * with the error colour to set it apart from the @wip badge. */
+.e2e-test-hub-quarantine-badge {
+  color: var(--text-error, var(--text-warning, var(--text-muted)));
 }
 
 /* CreateSuiteModal: the debounced "Matches N scenarios" preview under the

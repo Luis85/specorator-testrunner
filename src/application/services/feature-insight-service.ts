@@ -12,6 +12,10 @@ import {
   parseTagExpression,
   type TagExpression,
 } from "../../domain/policies/tag-expression";
+import {
+  isQuarantined,
+  isScenarioFullyQuarantined,
+} from "../../domain/policies/use-case-automation-policy";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { err, ok, type Result } from "../../shared/result/result";
 
@@ -49,6 +53,20 @@ export interface FeatureHealth {
   wipScenarioCount: number;
   /** The Feature itself is tagged `@wip` — excluded from KPIs per ADR-0017. */
   featureIsWip: boolean;
+  /**
+   * Scenarios tagged `@quarantine` (scenario-level, or on a runnable Examples
+   * block) — parked flakes excluded from the KPI roll-up (US-058). Counted with
+   * the same per-block scope as {@link wipScenarioCount} so the health line and
+   * the roll-up agree. A FEATURE-level `@quarantine` is reported separately via
+   * {@link featureIsQuarantined} (its own badge), not folded in here.
+   */
+  quarantineScenarioCount: number;
+  /**
+   * The Feature itself is tagged `@quarantine` — the whole Feature is parked, so
+   * every scenario is excluded from the KPI roll-up (US-058), mirroring how
+   * {@link featureIsWip} reports a feature-level `@wip`.
+   */
+  featureIsQuarantined: boolean;
 }
 
 /**
@@ -58,6 +76,8 @@ export interface FeatureHealth {
 const WIP_TAG = "@wip";
 /** The smoke-suite convention tag, seeded into the known-tags vocabulary. */
 const SMOKE_TAG = "@smoke";
+/** Quarantine convention tag (US-058), seeded into the known-tags vocabulary. */
+const QUARANTINE_TAG = "@quarantine";
 const hasWipTag = (tags: string[]): boolean => tags.some((tag) => tag.toLowerCase() === WIP_TAG);
 
 /**
@@ -69,6 +89,10 @@ const hasWipTag = (tags: string[]): boolean => tags.some((tag) => tag.toLowerCas
 const scenarioHasWip = (scenario: ScenarioSpecification): boolean =>
   hasWipTag(scenario.tags) ||
   (scenario.examples ?? []).some((block) => block.rows.length > 0 && hasWipTag(block.tags));
+
+// Quarantine counting reuses `isScenarioFullyQuarantined` from the roll-up policy
+// so the health-line count and the KPI exclusion share ONE rule (they drifted
+// while computed separately, the source of several review findings).
 
 /**
  * A scenario's EFFECTIVE tags: feature-level tags inherit to every scenario
@@ -103,6 +127,10 @@ export const projectFeatureHealth = (feature: FeatureSpecification): FeatureHeal
   scenarioCount: feature.scenarios.length,
   wipScenarioCount: feature.scenarios.filter(scenarioHasWip).length,
   featureIsWip: hasWipTag(feature.tags),
+  // Wrap so `filter`'s index arg never leaks into `inheritedQuarantine`. The count
+  // is scenario-level only; feature-level @quarantine is the separate badge below.
+  quarantineScenarioCount: feature.scenarios.filter((s) => isScenarioFullyQuarantined(s)).length,
+  featureIsQuarantined: isQuarantined(feature.tags),
 });
 
 /**
@@ -218,7 +246,7 @@ export class DefaultFeatureInsightService implements FeatureInsightService {
     const features = await this.loadValidFeatures();
     if (!features.ok) return err(features.error);
 
-    const tags = new Set<string>([SMOKE_TAG, WIP_TAG]);
+    const tags = new Set<string>([SMOKE_TAG, WIP_TAG, QUARANTINE_TAG]);
     for (const feature of features.value) {
       collectFeatureTags(feature, tags);
     }
