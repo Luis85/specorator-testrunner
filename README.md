@@ -182,7 +182,7 @@ its solution. Open the **PRDs** explorer (ribbon: _Open PRDs_) or the dashboard'
 **PRDs & roadmap** section to navigate the tree, and use **New PRD** to launch the
 builder. See `docs/adr/0026-prd-hierarchy-artifact-model.md` for the model.
 
-**Story Maps** (`Story Maps/`) are an upstream-design overlay *alongside* PRDs,
+**Story Maps** (`Story Maps/`) are an upstream-design overlay _alongside_ PRDs,
 not inside the tree: a vault-local, single-user user-story map (audience →
 backbone activities → steps → release slices) over rich cards that reference Use
 Cases by id. Open the **Story Maps** explorer (ribbon: _Open Story Maps_) and use
