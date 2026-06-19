@@ -125,6 +125,33 @@ describe("featureScenarioRefs", () => {
     expect(entries[0]?.ref).not.toBe(entries[1]?.ref);
   });
 
+  it("carries each scenario's tags, inherited by Outline rows (US-058)", () => {
+    const feature = parseFeature(
+      [
+        "Feature: F",
+        "  @quarantine",
+        "  Scenario: Flaky login",
+        "    Given x",
+        "  @smoke",
+        "  Scenario Outline: Search as <role>",
+        "    Given I am <role>",
+        "    Examples:",
+        "      | role  |",
+        "      | admin |",
+        "      | user  |",
+        "",
+      ].join("\n"),
+      vp("Specifications/features/UC-001-f.feature"),
+    );
+    if (!feature) throw new Error("parse failed");
+    const entries = featureScenarioRefs(feature);
+    expect(entries.map((e) => e.tags)).toEqual([
+      ["@quarantine"],
+      ["@smoke"], // both Outline rows inherit the scenario's tags
+      ["@smoke"],
+    ]);
+  });
+
   it("carries each Outline row's feature-file line (#55)", () => {
     const feature = parseFeature(
       [

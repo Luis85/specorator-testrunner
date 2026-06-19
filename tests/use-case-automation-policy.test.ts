@@ -171,6 +171,58 @@ describe("computeAutomationStatus (ADR-0017 roll-up, history-derived — US-057)
     });
   });
 
+  describe("@quarantine exclusion (scenario granularity, US-058)", () => {
+    const step = { keyword: "Given" as const, text: "x" };
+    const quarantined = (name: string) => ({ name, tags: ["@quarantine"], steps: [step] });
+    const active = (name: string) => ({ name, tags: [] as string[], steps: [step] });
+
+    it("a quarantined failing scenario does not fail its Use Case", () => {
+      const f = feature({ scenarios: [quarantined("Flaky"), active("Solid")] });
+      expect(
+        computeAutomationStatus(
+          [f],
+          history({ [refOf(f, "Flaky")]: "failed", [refOf(f, "Solid")]: "passed" }),
+        ),
+      ).toBe("passing");
+    });
+
+    it("a quarantined scenario is dropped from the all-passed check", () => {
+      // Flaky has no history; without quarantine this Feature would read partial
+      // (implemented). Excluding Flaky leaves only the passing Solid → passing.
+      const f = feature({ scenarios: [quarantined("Flaky"), active("Solid")] });
+      expect(computeAutomationStatus([f], history({ [refOf(f, "Solid")]: "passed" }))).toBe(
+        "passing",
+      );
+    });
+
+    it("a Feature whose every scenario is quarantined contributes no run signal", () => {
+      // not-run → with Features present but none run, the UC reads planned.
+      const f = feature({ scenarios: [quarantined("Flaky")] });
+      expect(computeAutomationStatus([f], history({ [refOf(f, "Flaky")]: "failed" }))).toBe(
+        "planned",
+      );
+    });
+
+    it("matches @quarantine case-insensitively", () => {
+      const f = feature({
+        scenarios: [{ name: "Flaky", tags: ["@QUARANTINE"], steps: [step] }, active("Solid")],
+      });
+      expect(
+        computeAutomationStatus(
+          [f],
+          history({ [refOf(f, "Flaky")]: "failed", [refOf(f, "Solid")]: "passed" }),
+        ),
+      ).toBe("passing");
+    });
+
+    it("does not hide undefined steps: missing-steps still outranks quarantine", () => {
+      const f = feature({ scenarios: [{ name: "Flaky", tags: ["@quarantine"], steps: [] }] });
+      expect(computeAutomationStatus([f], history({ [refOf(f, "Flaky")]: "passed" }))).toBe(
+        "missing-steps",
+      );
+    });
+  });
+
   describe("all-unresolved-Feature edge (ADR-0022)", () => {
     it("treats a Feature whose scenarios have no history as not-run", () => {
       // Every ref unresolved → not-run → with a sibling that passed, implemented.

@@ -88,6 +88,7 @@ describe("featureHealthLine (Wave F)", () => {
     scenarioCount: 3,
     wipScenarioCount: 0,
     featureIsWip: false,
+    quarantineScenarioCount: 0,
     ...over,
   });
 
@@ -100,6 +101,15 @@ describe("featureHealthLine (Wave F)", () => {
   it("appends the @wip count only when scenario-level @wip work exists", () => {
     expect(featureHealthLine(health({ wipScenarioCount: 2 })).text).toBe("3 scenarios (2 @wip)");
     expect(featureHealthLine(health({ wipScenarioCount: 0 })).text).toBe("3 scenarios");
+  });
+
+  it("appends the quarantine count, alone and alongside @wip (US-058)", () => {
+    expect(featureHealthLine(health({ quarantineScenarioCount: 1 })).text).toBe(
+      "3 scenarios (1 quarantined)",
+    );
+    expect(
+      featureHealthLine(health({ wipScenarioCount: 2, quarantineScenarioCount: 1 })).text,
+    ).toBe("3 scenarios (2 @wip, 1 quarantined)");
   });
 
   it("renders the feature-level @wip badge with the KPI exclusion tooltip", () => {

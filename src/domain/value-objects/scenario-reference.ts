@@ -95,6 +95,14 @@ export interface ScenarioRefEntry {
   matchName: string;
   ref: string;
   /**
+   * The scenario's own tags (Outline rows inherit the scenario's tags). Lets a
+   * domain policy decide per-scenario exclusions — `@quarantine` (US-058),
+   * scenario-level insight — without re-parsing the Feature. Feature-level tags
+   * are NOT folded in here; a consumer that wants effective tags unions them
+   * with the Feature's separately.
+   */
+  tags: string[];
+  /**
    * 1-based feature-file line of an Outline example row (from the parser), when
    * known. Lets a resolver disambiguate filtered same-name rows by line — the
    * report row carries the same line — instead of by position. Absent for plain
@@ -123,6 +131,7 @@ export const featureScenarioRefs = (feature: FeatureSpecification): ScenarioRefE
             scenarioName: scenario.name,
             matchName: expandScenarioName(scenario.name, cells),
             ref: outlineRowRef(path, scenario.name, cells),
+            tags: scenario.tags,
             ...(line !== undefined ? { line } : {}),
           });
         });
@@ -132,6 +141,7 @@ export const featureScenarioRefs = (feature: FeatureSpecification): ScenarioRefE
         scenarioName: scenario.name,
         matchName: scenario.name,
         ref: scenarioRef(path, scenario.name),
+        tags: scenario.tags,
       });
     }
   }

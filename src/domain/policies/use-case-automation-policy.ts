@@ -15,10 +15,16 @@ import { featureScenarioRefs } from "../value-objects/scenario-reference";
  *
  * Features tagged `@wip` are excluded so half-built work does not drag the
  * dashboard red (ADR-0017 — exclusion granularity is the Feature, not the
- * scenario). Pure domain logic: no I/O, unit-testable in isolation (BBV §10).
+ * scenario). Individual scenarios tagged `@quarantine` are excluded too (US-058,
+ * UC-028): a consciously-parked flaky scenario keeps running and recording
+ * history, but its flapping must not move the KPI — exclusion granularity here is
+ * the scenario, not the Feature. Pure domain logic: no I/O, unit-testable in
+ * isolation (BBV §10).
  */
 
 const WIP_TAG = "@wip";
+/** A scenario tagged `@quarantine` is a parked flake — excluded from the roll-up. */
+const QUARANTINE_TAG = "@quarantine";
 
 /**
  * Latest recorded scenario results, as a runtime list so the history log
@@ -41,6 +47,14 @@ export type ScenarioStatusLookup = (scenarioRef: string) => ScenarioLatestStatus
 /** A Feature tagged `@wip` is parked work — excluded from the roll-up. */
 const isWip = (feature: FeatureSpecification): boolean =>
   feature.tags.some((tag) => tag.toLowerCase() === WIP_TAG);
+
+/**
+ * A scenario tagged `@quarantine` is excluded from its Feature's run-state
+ * roll-up (US-058). Matched case-insensitively, mirroring {@link isWip}, so the
+ * KPI exclusion and the dashboard's quarantine count agree.
+ */
+const isQuarantined = (tags: string[]): boolean =>
+  tags.some((tag) => tag.toLowerCase() === QUARANTINE_TAG);
 
 /**
  * A Feature has "undefined Gherkin steps" (the `missing-steps` row) when it
@@ -67,12 +81,16 @@ type FeatureRunState = "not-run" | "passing" | "failing" | "partial";
  * A Feature with no resolvable scenario references reads as `not-run` (rare;
  * US-056 keeps references collision-free, and this only happens when every
  * scenario degraded to an unset ref — accepted edge, ADR-0022).
+ *
+ * Scenarios tagged `@quarantine` are dropped first (US-058): a parked flake
+ * contributes no pass/fail signal, so a Feature whose scenarios are ALL
+ * quarantined reads `not-run`, exactly like an empty Feature.
  */
 const featureRunState = (
   feature: FeatureSpecification,
   latestStatusFor: ScenarioStatusLookup,
 ): FeatureRunState => {
-  const refs = featureScenarioRefs(feature);
+  const refs = featureScenarioRefs(feature).filter((entry) => !isQuarantined(entry.tags));
   let anyRun = false;
   let anyFailed = false;
   let allPassed = refs.length > 0;

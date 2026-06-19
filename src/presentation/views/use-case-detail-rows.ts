@@ -89,7 +89,7 @@ export const projectFeatureRows = (
 
 /** The muted per-Feature health line (Wave F insight). */
 export interface FeatureHealthLine {
-  /** e.g. "3 scenarios" or "3 scenarios (1 @wip)". */
+  /** e.g. "3 scenarios" or "3 scenarios (1 @wip, 1 quarantined)". */
   text: string;
   /** The Feature itself is tagged @wip — render the badge. */
   wipBadge: boolean;
@@ -99,14 +99,21 @@ export interface FeatureHealthLine {
 
 /**
  * Pure projection of a Feature's {@link FeatureHealth} to the muted info line
- * each Feature row shows (Wave F): scenario count, the scenario-level @wip
- * count when any, and whether to render the feature-level @wip badge.
+ * each Feature row shows (Wave F): scenario count, the scenario-level @wip and
+ * @quarantine (US-058) counts when any, and whether to render the feature-level
+ * @wip badge. The @wip and quarantine counts share one parenthetical so the line
+ * stays compact, e.g. "3 scenarios (1 @wip, 1 quarantined)".
  */
 export const featureHealthLine = (health: FeatureHealth): FeatureHealthLine => {
   const scenarios = `${health.scenarioCount} ${health.scenarioCount === 1 ? "scenario" : "scenarios"}`;
-  const wip = health.wipScenarioCount > 0 ? ` (${health.wipScenarioCount} @wip)` : "";
+  const segments: string[] = [];
+  if (health.wipScenarioCount > 0) segments.push(`${health.wipScenarioCount} @wip`);
+  if (health.quarantineScenarioCount > 0) {
+    segments.push(`${health.quarantineScenarioCount} quarantined`);
+  }
+  const annotations = segments.length > 0 ? ` (${segments.join(", ")})` : "";
   return {
-    text: `${scenarios}${wip}`,
+    text: `${scenarios}${annotations}`,
     wipBadge: health.featureIsWip,
     // The KPI exclusion is decided by ADR-0017, but the decision id is an
     // internal reference and stays out of user copy.

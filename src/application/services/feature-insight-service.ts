@@ -49,6 +49,13 @@ export interface FeatureHealth {
   wipScenarioCount: number;
   /** The Feature itself is tagged `@wip` — excluded from KPIs per ADR-0017. */
   featureIsWip: boolean;
+  /**
+   * Scenarios tagged `@quarantine` (scenario-level, or on a runnable Examples
+   * block) — parked flakes excluded from the KPI roll-up (US-058). Counted with
+   * the same per-block scope as {@link wipScenarioCount} so the health line and
+   * the roll-up agree.
+   */
+  quarantineScenarioCount: number;
 }
 
 /**
@@ -58,7 +65,11 @@ export interface FeatureHealth {
 const WIP_TAG = "@wip";
 /** The smoke-suite convention tag, seeded into the known-tags vocabulary. */
 const SMOKE_TAG = "@smoke";
+/** Quarantine convention tag (US-058), matched like `@wip` and seeded too. */
+const QUARANTINE_TAG = "@quarantine";
 const hasWipTag = (tags: string[]): boolean => tags.some((tag) => tag.toLowerCase() === WIP_TAG);
+const hasQuarantineTag = (tags: string[]): boolean =>
+  tags.some((tag) => tag.toLowerCase() === QUARANTINE_TAG);
 
 /**
  * Scenario-level `@wip`, or `@wip` on a runnable Examples block — the same
@@ -69,6 +80,11 @@ const hasWipTag = (tags: string[]): boolean => tags.some((tag) => tag.toLowerCas
 const scenarioHasWip = (scenario: ScenarioSpecification): boolean =>
   hasWipTag(scenario.tags) ||
   (scenario.examples ?? []).some((block) => block.rows.length > 0 && hasWipTag(block.tags));
+
+/** Scenario-level `@quarantine`, or `@quarantine` on a runnable Examples block. */
+const scenarioHasQuarantine = (scenario: ScenarioSpecification): boolean =>
+  hasQuarantineTag(scenario.tags) ||
+  (scenario.examples ?? []).some((block) => block.rows.length > 0 && hasQuarantineTag(block.tags));
 
 /**
  * A scenario's EFFECTIVE tags: feature-level tags inherit to every scenario
@@ -103,6 +119,7 @@ export const projectFeatureHealth = (feature: FeatureSpecification): FeatureHeal
   scenarioCount: feature.scenarios.length,
   wipScenarioCount: feature.scenarios.filter(scenarioHasWip).length,
   featureIsWip: hasWipTag(feature.tags),
+  quarantineScenarioCount: feature.scenarios.filter(scenarioHasQuarantine).length,
 });
 
 /**
@@ -218,7 +235,7 @@ export class DefaultFeatureInsightService implements FeatureInsightService {
     const features = await this.loadValidFeatures();
     if (!features.ok) return err(features.error);
 
-    const tags = new Set<string>([SMOKE_TAG, WIP_TAG]);
+    const tags = new Set<string>([SMOKE_TAG, WIP_TAG, QUARANTINE_TAG]);
     for (const feature of features.value) {
       collectFeatureTags(feature, tags);
     }

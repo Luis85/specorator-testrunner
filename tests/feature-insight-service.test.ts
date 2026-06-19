@@ -47,6 +47,7 @@ describe("projectFeatureHealth", () => {
       scenarioCount: 3,
       wipScenarioCount: 2, // @wip matched case-insensitively, like ADR-0017
       featureIsWip: false,
+      quarantineScenarioCount: 0,
     });
   });
 
@@ -57,6 +58,17 @@ describe("projectFeatureHealth", () => {
       scenarioCount: 2,
       wipScenarioCount: 0, // feature-level @wip is the badge, not the (M @wip) count
       featureIsWip: true,
+      quarantineScenarioCount: 0,
+    });
+  });
+
+  it("counts scenario-level @quarantine work, case-insensitively (US-058)", () => {
+    const f = feature({
+      scenarios: [scenario("a"), scenario("b", ["@quarantine"]), scenario("c", ["@QUARANTINE"])],
+    });
+    expect(projectFeatureHealth(f)).toMatchObject({
+      scenarioCount: 3,
+      quarantineScenarioCount: 2,
     });
   });
 
@@ -228,6 +240,7 @@ describe("DefaultFeatureInsightService.healthFor", () => {
         scenarioCount: 2,
         wipScenarioCount: 1,
         featureIsWip: false,
+        quarantineScenarioCount: 0,
       }),
     );
   });
@@ -273,6 +286,7 @@ Feature: F
     expect(result.value).toEqual([
       "@examples-level",
       "@feature-level",
+      "@quarantine",
       "@scenario-level",
       "@smoke",
       "@wip",
@@ -299,7 +313,7 @@ Feature: F
     const result = await service.listKnownTags();
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toEqual(["@smoke", "@wip"]);
+    if (result.ok) expect(result.value).toEqual(["@quarantine", "@smoke", "@wip"]);
   });
 });
 
