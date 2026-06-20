@@ -86,6 +86,12 @@ export const validateCardPlacement = (
   if (cardTextFields(card).some(hasUnsafeChars)) {
     return "Card fields cannot contain the `|` character or line breaks.";
   }
+  // Tags are serialized comma-joined and re-split on commas (encodeCard/parseTags),
+  // so a comma INSIDE one tag would round-trip into two tags after the next save.
+  // Reject it like the field delimiter above (commas stay fine in titles/refs).
+  if (card.tags.some((tag) => tag.includes(","))) {
+    return "A card tag cannot contain a comma (tags are stored comma-separated).";
+  }
   if (card.ref !== undefined && !isValidUseCaseRef(card.ref)) {
     return `Reference "${card.ref}" is not a valid Use Case id (e.g. UC-001).`;
   }

@@ -106,4 +106,11 @@ describe("validateCardPlacement", () => {
     expect(validateCardPlacement(map, card({ color: "blue\nred" }))).toMatch(/cannot contain/);
     expect(validateCardPlacement(map, card({ tags: ["ok", "bad|tag"] }))).toMatch(/cannot contain/);
   });
+
+  it("rejects a comma inside a tag (it would round-trip into two tags) but allows it in a title", () => {
+    expect(validateCardPlacement(map, card({ tags: ["a,b"] }))).toMatch(/comma/);
+    expect(validateCardPlacement(map, card({ tags: ["ok", "needs,split"] }))).toMatch(/comma/);
+    // A comma is fine in the title — only the comma-joined tags field is delimiter-sensitive.
+    expect(validateCardPlacement(map, card({ title: "Filter, sort, page" }))).toBeNull();
+  });
 });

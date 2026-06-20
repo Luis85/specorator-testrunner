@@ -367,12 +367,14 @@ export class DefaultStoryMapService implements StoryMapService {
   }
 
   async rebuildGrid(id: StoryMapId): Promise<Result<void>> {
-    // Serialize through the SAME mutation key as create/delete: a concurrent
+    // Serialize through the SAME locks as create/delete: a concurrent
     // deleteStoryMap must not interleave, or this write could recreate a note
     // the delete just removed (writeFile recreates missing files). The note is
     // re-read inside the lock, so a delete that won the lock leaves findById
-    // returning null here and we abort rather than resurrect it.
-    return this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
+    // returning null here and we abort rather than resurrect it. The PRD lock
+    // (via withProductSafeWrite) also serializes the product re-check + write
+    // against deletePrd so the rebuilt note can't anchor to a deleted PRD.
+    return this.withProductSafeWrite(async () => {
       const found = await this.findById(id);
       if (!found.ok) return found;
       if (!found.value) {
@@ -419,6 +421,21 @@ export class DefaultStoryMapService implements StoryMapService {
     );
   }
 
+  /**
+   * Runs a product-rewriting write under BOTH the PRD mutation lock (OUTER) and
+   * the Story Map mutation key (INNER) — the SAME nesting `create()` uses. The
+   * PRD lock serializes the in-callback `requireResolvableProduct` check + write
+   * against `PrdService.deletePrd` (which holds that lock and refuses to delete a
+   * PRD with linked maps), so a reassigned/rebuilt map can't be written back with
+   * a product anchor that a concurrent delete is removing. The lock order is fixed
+   * (PRD outer, Story Map inner) everywhere both are held, so there is no inversion;
+   * `prds.findById` is lock-free (create calls it inside this same lock), so the
+   * nested `requireResolvableProduct` cannot re-enter the PRD queue.
+   */
+  private withProductSafeWrite<T>(operation: () => Promise<Result<T>>): Promise<Result<T>> {
+    return this.prds.withMutationLock(() => this.noteWrites.run(STORY_MAP_MUTATE_KEY, operation));
+  }
+
   async addCard(id: StoryMapId, card: StoryMapCard): Promise<Result<StoryMap>> {
     return this.mutateCards(id, (cards) => addCardToList(cards, card), {
       validate: (map) => validateCardPlacement(map, card),
@@ -462,7 +479,7 @@ export class DefaultStoryMapService implements StoryMapService {
       expectedCard?: string;
     },
   ): Promise<Result<StoryMap>> {
-    return this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
+    return this.withProductSafeWrite(async () => {
       const found = await this.findById(id);
       if (!found.ok) return found;
       if (!found.value) {
@@ -511,7 +528,7 @@ export class DefaultStoryMapService implements StoryMapService {
     origin?: string,
     expected?: string,
   ): Promise<Result<StoryMap>> {
-    return this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
+    return this.withProductSafeWrite(async () => {
       const found = await this.findById(id);
       if (!found.ok) return found;
       if (!found.value) {
