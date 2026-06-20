@@ -22,6 +22,9 @@ export const BOARD_METRICS = {
   /** The wide `+ activity`/`+ slice`/`+ card` button size. */
   addButtonWidth: 84,
   addButtonHeight: 22,
+  /** One editable user chip in the audience lane. */
+  userChipWidth: 132,
+  userChipGap: 8,
   /** The small square `+`/`×` control size (per-activity add-step). */
   plusSize: 16,
   get minRowHeight(): number {
@@ -129,9 +132,16 @@ export const computeBoardLayout = (map: StoryMap): BoardLayout => {
 
   const lastCol = columns[columns.length - 1];
   const contentWidth = lastCol ? lastCol.x + lastCol.width : M.rowHeaderWidth;
+  // The users lane lays out one chip per user plus a trailing `+ user` button; the
+  // canvas must be at least as wide so a long audience list stays in the viewBox.
+  const usersWidth =
+    M.cellPadding +
+    map.users.length * (M.userChipWidth + M.userChipGap) +
+    M.addButtonWidth +
+    M.colGap;
   // Reserve canvas space (right + bottom) so the `+ activity` and `+ slice`
   // controls the scene draws past the last column/row stay inside the viewBox.
-  const width = contentWidth + M.colGap + M.addButtonWidth;
+  const width = Math.max(contentWidth + M.colGap + M.addButtonWidth, usersWidth);
   const height = y + M.addButtonHeight;
   return { width, height, users: [...map.users], activityGroups, columns, rows, cards };
 };

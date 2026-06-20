@@ -1185,6 +1185,12 @@
   stroke: var(--background-modifier-border);
 }
 
+.sm-board-user {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+  cursor: pointer;
+}
+
 .sm-board-card {
   stroke: var(--background-modifier-border);
 }
@@ -1205,6 +1211,7 @@
 .sm-board-activity-label,
 .sm-board-slice-label,
 .sm-board-step-label,
+.sm-board-user-label,
 .sm-board-remove-label,
 .sm-board-add-card-label,
 .sm-board-status-chip-label {
@@ -1241,7 +1248,8 @@
 /* Add affordances + in-place rename editor (P3b). */
 .sm-board-add-activity,
 .sm-board-add-slice,
-.sm-board-add-step {
+.sm-board-add-step,
+.sm-board-add-user {
   fill: var(--background-secondary);
   stroke: var(--background-modifier-border);
   cursor: pointer;
@@ -1249,7 +1257,8 @@
 
 .sm-board-add-activity-label,
 .sm-board-add-slice-label,
-.sm-board-add-step-label {
+.sm-board-add-step-label,
+.sm-board-add-user-label {
   fill: var(--text-muted);
   pointer-events: none;
 }
@@ -1311,7 +1320,8 @@
    cursor on hover hints that double-click renames them. */
 .sm-board-activity:hover,
 .sm-board-slice:hover,
-.sm-board-step:hover {
+.sm-board-step:hover,
+.sm-board-user:hover {
   cursor: text;
 }
 
@@ -1319,7 +1329,8 @@
 .sm-board-card-group:focus-visible,
 .sm-board-activity:focus-visible,
 .sm-board-slice:focus-visible,
-.sm-board-step:focus-visible {
+.sm-board-step:focus-visible,
+.sm-board-user:focus-visible {
   outline: 2px solid var(--text-accent);
   outline-offset: 1px;
 }

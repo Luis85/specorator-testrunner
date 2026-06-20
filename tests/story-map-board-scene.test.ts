@@ -162,6 +162,27 @@ describe("buildBoardScene", () => {
     expect(hint?.text).toContain("No cards yet");
   });
 
+  it("emits one editable chip per user (× remove + double-click rename) and a + user add", () => {
+    const audience: StoryMap = { ...map, users: ["Designer", "Developer"] };
+    const specs = flatten(buildBoardScene(computeBoardLayout(audience)));
+
+    const chips = specs.filter((s) => s.class === "sm-board-user" && s.tag === "rect");
+    expect(chips).toHaveLength(2);
+    expect(chips[0]?.attrs["data-user-index"]).toBe(0);
+    expect(chips[0]?.attrs["aria-label"]).toBe("User: Designer");
+    expect(chips[1]?.attrs["data-user-index"]).toBe(1);
+    expect(chips[1]?.attrs["aria-label"]).toBe("User: Developer");
+
+    const labels = specs.filter((s) => s.class === "sm-board-user-label").map((s) => s.text);
+    expect(labels).toEqual(["Designer", "Developer"]);
+
+    const removes = specs.filter((s) => s.attrs["data-remove"] === "user" && s.tag === "rect");
+    expect(removes.map((s) => s.attrs["data-user-index"])).toEqual([0, 1]);
+
+    const addUser = specs.find((s) => s.class === "sm-board-add-user" && s.tag === "rect");
+    expect(addUser?.attrs["data-add"]).toBe("user");
+  });
+
   it("keeps every rendered rect inside the canvas bounds (controls don't escape the viewBox)", () => {
     // A two-activity, stepped map exercises the add-activity (right margin),
     // add-slice (bottom margin), and per-activity add-step controls together.

@@ -133,6 +133,37 @@ const cardGroupSpec = (box: BoardLayout["cards"][number]): SvgNodeSpec => {
 /** Card tiles (one `<g>` per card) for every laid-out card. */
 const cardSpecs = (layout: BoardLayout): SvgNodeSpec[] => layout.cards.map(cardGroupSpec);
 
+/**
+ * The users lane: the lane background, then one editable chip per user (double-
+ * click to rename, × to remove) plus a trailing `+ user` control — mirrors the
+ * activity/slice header affordances so the audience is board-editable. Extracted
+ * to keep `buildBoardScene` under the cognitive-complexity gate.
+ */
+const usersLaneSpecs = (layout: BoardLayout): SvgNodeSpec[] => {
+  const specs: SvgNodeSpec[] = [rect("sm-board-users", 0, 0, layout.width, M.laneHeight)];
+  layout.users.forEach((user, i) => {
+    const x = M.cellPadding + i * (M.userChipWidth + M.userChipGap);
+    const chip = rect("sm-board-user", x, 8, M.userChipWidth, 24, {
+      "data-user-index": i,
+      tabindex: 0,
+      role: "button",
+      "aria-label": `User: ${user}`,
+    });
+    chip.children = [tooltip("Double-click to rename")];
+    specs.push(chip);
+    specs.push(text("sm-board-user-label", x + 6, 24, user));
+    specs.push(
+      ...removeButton("sm-board-remove", x + M.userChipWidth - 18, 10, {
+        "data-remove": "user",
+        "data-user-index": i,
+      }),
+    );
+  });
+  const addUserX = M.cellPadding + layout.users.length * (M.userChipWidth + M.userChipGap);
+  specs.push(...addButton("sm-board-add-user", addUserX, 9, "+ user", { "data-add": "user" }));
+  return specs;
+};
+
 /** A `+ card` affordance in every (row × column) cell, tagged with the cell coordinate. */
 const addCardSpecs = (layout: BoardLayout): SvgNodeSpec[] =>
   layout.rows.flatMap((r) =>
@@ -154,13 +185,10 @@ const addCardSpecs = (layout: BoardLayout): SvgNodeSpec[] =>
 export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
   const specs: SvgNodeSpec[] = [];
 
-  // Users lane.
-  specs.push(rect("sm-board-users", 0, 0, layout.width, M.laneHeight));
-  if (layout.users.length > 0) {
-    specs.push(
-      text("sm-board-users-label", 8, M.laneHeight / 2 + 4, `Users: ${layout.users.join(" · ")}`),
-    );
-  }
+  // Users lane: the lane background, then one editable chip per user (double-click
+  // to rename, × to remove) plus a trailing `+ user` control — mirrors the
+  // activity/slice header affordances so the audience is board-editable.
+  specs.push(...usersLaneSpecs(layout));
 
   // Activity group headers.
   layout.activityGroups.forEach((g, i) => {

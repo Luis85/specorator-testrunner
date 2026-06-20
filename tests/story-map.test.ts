@@ -4,6 +4,7 @@ import {
   addCard,
   addSlice,
   addStepTo,
+  addUser,
   buildStoryMapGrid,
   CARD_STATUSES,
   editCardPoints,
@@ -19,9 +20,11 @@ import {
   removeCard,
   removeSlice,
   removeStep,
+  removeUser,
   renameActivity,
   renameSlice,
   renameStep,
+  renameUser,
   reorderActivity,
   reorderCardInCell,
   reorderSlice,
@@ -590,6 +593,49 @@ describe("removeActivity / removeSlice", () => {
     expect(removeSlice(base, 1)?.slices).toEqual(["MVP"]); // Later has no cards
     expect(removeSlice(base, 0)).toBeNull(); // MVP has a card
     expect(removeSlice(base, 9)).toBeNull();
+  });
+});
+
+describe("addUser / renameUser / removeUser", () => {
+  const map = (over: Partial<StoryMap> = {}): StoryMap => ({
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: ["Customer", "Admin"],
+    activities: ["Browse"],
+    steps: [],
+    slices: ["Walking skeleton"],
+    cards: [],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+    ...over,
+  });
+
+  it("appends a uniquely-named placeholder user", () => {
+    expect(addUser(map({ users: [] })).users).toEqual(["New user"]);
+    expect(addUser(map({ users: ["New user"] })).users).toEqual(["New user", "New user 2"]);
+  });
+
+  it("renames a user at an index", () => {
+    expect(renameUser(map(), 0, "Buyer")?.users).toEqual(["Buyer", "Admin"]);
+  });
+
+  it("no-ops (same ref) an unchanged rename", () => {
+    const m = map();
+    expect(renameUser(m, 0, "Customer")).toBe(m);
+  });
+
+  it("rejects a blank, a duplicate, and an out-of-range rename", () => {
+    expect(renameUser(map(), 0, "  ")).toBeNull();
+    expect(renameUser(map(), 0, "Admin")).toBeNull(); // dup of another user
+    expect(renameUser(map(), 9, "Buyer")).toBeNull();
+  });
+
+  it("removes a user at an index and no-ops (same ref) out of range", () => {
+    expect(removeUser(map(), 0).users).toEqual(["Admin"]);
+    const m = map();
+    expect(removeUser(m, 9)).toBe(m);
   });
 });
 

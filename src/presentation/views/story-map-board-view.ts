@@ -7,6 +7,7 @@ import {
   addCard,
   addSlice,
   addStepTo,
+  addUser,
   editCardStatus,
   editCardTitle,
   moveCard,
@@ -15,9 +16,11 @@ import {
   removeCard,
   removeSlice,
   removeStep,
+  removeUser,
   renameActivity,
   renameSlice,
   renameStep,
+  renameUser,
   reorderActivity,
   reorderSlice,
   reorderStep,
@@ -84,6 +87,8 @@ const headerLabelOf = (rect: Element): string => rect.nextElementSibling?.textCo
  */
 // fallow-ignore-next-line complexity
 const renameFromHeader = (model: StoryMap, rect: Element, value: string): StoryMap | null => {
+  const ui = indexAttr(rect, "data-user-index");
+  if (ui !== null) return renameUser(model, ui, value);
   const ai = indexAttr(rect, "data-activity-index");
   if (ai !== null) return renameActivity(model, ai, value);
   const si = indexAttr(rect, "data-slice-index");
@@ -162,6 +167,7 @@ const stepReorderFrom = (
 // fallow-ignore-next-line complexity
 const removeFromButton = (model: StoryMap, el: Element): StoryMap | null => {
   const kind = el.getAttribute("data-remove");
+  if (kind === "user") return removeUser(model, indexAttr(el, "data-user-index") ?? -1);
   if (kind === "activity") return removeActivity(model, indexAttr(el, "data-activity-index") ?? -1);
   if (kind === "slice") return removeSlice(model, indexAttr(el, "data-slice-index") ?? -1);
   if (kind === "card") return removeCard(model, indexAttr(el, "data-card-index") ?? -1);
@@ -184,6 +190,8 @@ const ARROW_DIR: Record<string, "left" | "right" | "up" | "down"> = {
 /** Resolves a focused header element to its removal op (mirrors {@link renameFromHeader}). Pure. */
 // fallow-ignore-next-line complexity
 const removeHeaderOf = (model: StoryMap, el: Element): StoryMap | null => {
+  const ui = indexAttr(el, "data-user-index");
+  if (ui !== null) return removeUser(model, ui);
   const ai = indexAttr(el, "data-activity-index");
   if (ai !== null) return removeActivity(model, ai);
   const si = indexAttr(el, "data-slice-index");
@@ -439,6 +447,7 @@ export class StoryMapBoardView extends LiveDashboardView {
       return;
     }
     if (
+      el.hasAttribute("data-user-index") ||
       el.hasAttribute("data-activity-index") ||
       el.hasAttribute("data-slice-index") ||
       el.getAttribute("data-step") !== null
@@ -537,7 +546,8 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.bindEvent(svg, "rect[data-remove]", "click", (el) => this.onRemove(el));
     this.bindEvent(svg, "rect[data-color-index]", "click", (el) => this.onCycleColor(el));
     this.bindEvent(svg, "rect[data-status-index]", "click", (el) => this.onCycleStatus(el));
-    const headers = "rect.sm-board-activity, rect.sm-board-slice, rect.sm-board-step";
+    const headers =
+      "rect.sm-board-activity, rect.sm-board-slice, rect.sm-board-step, rect.sm-board-user";
     this.bindEvent(svg, headers, "dblclick", (el) => this.onEditHeader(el as SVGElement));
     this.bindEvent(svg, ".sm-board-card-group", "dblclick", (el) =>
       this.onEditCardTitle(el as SVGElement),
@@ -557,6 +567,7 @@ export class StoryMapBoardView extends LiveDashboardView {
   private addByKind(el: Element): StoryMap | null {
     if (this.model === null) return null;
     const kind = el.getAttribute("data-add");
+    if (kind === "user") return addUser(this.model);
     if (kind === "activity") return addActivity(this.model);
     if (kind === "slice") return addSlice(this.model);
     if (kind === "step") {

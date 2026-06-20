@@ -562,6 +562,32 @@ export const addActivity = (map: StoryMap): StoryMap => ({
   activities: [...map.activities, uniqueLabel(map.activities, "New activity")],
 });
 
+/** Appends a placeholder audience user (rename it in place after). Pure. */
+export const addUser = (map: StoryMap): StoryMap => ({
+  ...map,
+  users: [...map.users, uniqueLabel(map.users, "New user")],
+});
+
+/**
+ * Renames the user at `index`. Returns the SAME map when unchanged, or null when
+ * the cleaned name is blank or duplicates another user, or the index is out of
+ * range. Users carry no card references, so nothing else is rewritten. Pure.
+ */
+export const renameUser = (map: StoryMap, index: number, rawName: string): StoryMap | null => {
+  const old = map.users[index];
+  if (old === undefined) return null;
+  const name = cleanLabel(rawName);
+  if (name === old) return map;
+  if (name === "" || map.users.includes(name)) return null;
+  return { ...map, users: map.users.map((u, i) => (i === index ? name : u)) };
+};
+
+/** Removes the user at `index`; no-ops (same ref) out of range. Pure: no I/O. */
+export const removeUser = (map: StoryMap, index: number): StoryMap => {
+  if (map.users[index] === undefined) return map;
+  return { ...map, users: map.users.filter((_, i) => i !== index) };
+};
+
 /** Appends a placeholder release slice. Pure. */
 export const addSlice = (map: StoryMap): StoryMap => ({
   ...map,
