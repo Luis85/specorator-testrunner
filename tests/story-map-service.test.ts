@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DefaultStoryMapService } from "../src/application/services/story-map-service";
 import type { PrdGuard } from "../src/application/services/story-map-service";
+import { moveCard } from "../src/domain/entities/story-map";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
@@ -687,5 +688,80 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     expect(note).toContain("First");
     expect(note).toContain("Second");
     expect(note).toContain("UC-037");
+  });
+});
+
+describe("DefaultStoryMapService.saveMap", () => {
+  it("persists a moved card and echoes the origin on the update event", async () => {
+    const { service, fs, events } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "product: PRD-000",
+        "activities:",
+        "  - Author spec",
+        "  - Run tests",
+        "slices:",
+        "  - Walking skeleton",
+        "cards:",
+        "  - UC-040 | Author spec | Walking skeleton",
+        "---",
+        "# SM-001: J",
+        "",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+      ].join("\n"),
+    );
+
+    const loaded = await service.findById("SM-001");
+    expect(loaded.ok && loaded.value).toBeTruthy();
+    if (!loaded.ok || !loaded.value) return;
+    const moved = moveCard(loaded.value, 0, { activity: "Run tests", slice: "Walking skeleton" });
+
+    const result = await service.saveMap("SM-001", moved, "board-xyz");
+    expect(result.ok).toBe(true);
+
+    const note = fs.files.get(path) ?? "";
+    expect(note).toContain("UC-040 | Run tests |  | Walking skeleton");
+    const updated = events.find((e) => e.type === "storymap.updated");
+    expect(updated?.payload).toMatchObject({ storyMapId: "SM-001", origin: "board-xyz" });
+  });
+
+  it("rejects a model whose card is off the map's axes, leaving the note untouched", async () => {
+    const { service, fs } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "product: PRD-000",
+        "activities:",
+        "  - Author spec",
+        "slices:",
+        "  - Walking skeleton",
+        "cards:",
+        "  - UC-040 | Author spec | Walking skeleton",
+        "---",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+      ].join("\n"),
+    );
+    const loaded = await service.findById("SM-001");
+    if (!loaded.ok || !loaded.value) return;
+    // Move onto a slice that doesn't exist on the map.
+    const bad = { ...loaded.value, cards: [{ ...loaded.value.cards[0], slice: "Ghost" }] };
+    const result = await service.saveMap("SM-001", bad, "board-xyz");
+    expect(result.ok).toBe(false);
+    expect(fs.files.get(path)).toContain("(empty)");
   });
 });

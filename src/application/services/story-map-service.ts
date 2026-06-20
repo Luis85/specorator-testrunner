@@ -98,6 +98,14 @@ export interface StoryMapService {
   updateCard(id: StoryMapId, index: number, card: StoryMapCard): Promise<Result<StoryMap>>;
   /** Removes the card at `index` (out-of-range → VALIDATION_FAILED). */
   removeCard(id: StoryMapId, index: number): Promise<Result<StoryMap>>;
+  /**
+   * Persists an externally-mutated model (the board's working copy): rewrites the
+   * `cards` frontmatter and regenerates the managed blocks under the mutation
+   * lock, after validating every card against the normalized axes and the product
+   * anchor. Publishes `storymap.updated` carrying `origin` so the caller can skip
+   * the reload it caused. Returns the persisted map.
+   */
+  saveMap(id: StoryMapId, model: StoryMap, origin?: string): Promise<Result<StoryMap>>;
 }
 
 const STORY_MAP_ID_RE = /^SM-(\d{3,})$/;
@@ -422,7 +430,7 @@ export class DefaultStoryMapService implements StoryMapService {
    * field and regenerates the managed grid block, leaving every other
    * frontmatter field and hand-written body section untouched. CRLF-safe.
    */
-  private async writeCards(map: StoryMap): Promise<Result<StoryMap>> {
+  private async writeCards(map: StoryMap, origin?: string): Promise<Result<StoryMap>> {
     const read = await this.fs.readFile(map.path);
     if (!read.ok) return read;
     const noteNames = await this.resolveNoteNames(map);
@@ -439,8 +447,29 @@ export class DefaultStoryMapService implements StoryMapService {
     if (!written.ok) return written;
     // Notify live views (the explorer's row counts + captured map go stale
     // otherwise) that this map's cards changed.
-    await this.publishUpdated(map);
+    await this.publishUpdated(map, origin);
     return ok(map);
+  }
+
+  async saveMap(id: StoryMapId, model: StoryMap, origin?: string): Promise<Result<StoryMap>> {
+    return this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
+      const found = await this.findById(id);
+      if (!found.ok) return found;
+      if (!found.value) {
+        return err(appError("VALIDATION_FAILED", `Story Map ${id} was not found.`));
+      }
+      // Persist card placements against the AUTHORITATIVE on-disk axes (the board
+      // only moves cards in P2; it does not change activities/slices/steps), so a
+      // stale board model can't smuggle off-axis structure into the note.
+      const axes = found.value;
+      for (const card of model.cards) {
+        const reason = validateCardPlacement(axes, card);
+        if (reason !== null) return err(appError("VALIDATION_FAILED", reason));
+      }
+      const resolvable = await this.requireResolvableProduct(axes.product);
+      if (!resolvable.ok) return resolvable;
+      return this.writeCards({ ...axes, cards: model.cards }, origin);
+    });
   }
 
   /**
