@@ -3,6 +3,7 @@ import {
   type StoryMap,
   type StoryMapCard,
 } from "../../domain/entities/story-map";
+import { isCardType } from "../../domain/entities/story-map-card";
 
 /**
  * Pure, tested card-mutation + placement-validation helpers for the Story Map
@@ -51,6 +52,32 @@ const isDeclaredStep = (map: Pick<StoryMap, "steps">, activity: string, step: st
   map.steps.some((s) => s.activity === activity && s.step === step);
 
 /**
+ * Validates the card's optional `points`: a set value must be a non-negative
+ * integer (a decimal/non-numeric is rejected, not truncated). Returns an error
+ * string or `null`. Pure.
+ */
+const validatePoints = (points: number | undefined): string | null => {
+  if (points === undefined) return null;
+  if (!Number.isInteger(points)) return "Points must be a whole number.";
+  if (points < 0) return "Points cannot be negative.";
+  return null;
+};
+
+/**
+ * Validates the card's optional `cardType`: a missing type is valid (it defaults
+ * to "task"); a set-but-unknown type is rejected. `cardType` is typed as a valid
+ * {@link import("../../domain/entities/story-map-card").CardType}, but a
+ * hand-edited note can smuggle in an arbitrary string, so guard at runtime and
+ * stringify defensively for the message. Pure.
+ */
+const validateCardType = (cardType: StoryMapCard["cardType"]): string | null => {
+  if (cardType !== undefined && !isCardType(cardType)) {
+    return `Unknown card type: ${String(cardType)}.`;
+  }
+  return null;
+};
+
+/**
  * Validates a card's placement against the map's declared axes, returning an
  * error string or `null` when valid. The single source of truth for both the
  * modal's client-side guard and the service's authoritative check:
@@ -95,11 +122,5 @@ export const validateCardPlacement = (
   if (card.ref !== undefined && !isValidUseCaseRef(card.ref)) {
     return `Reference "${card.ref}" is not a valid Use Case id (e.g. UC-001).`;
   }
-  if (card.points !== undefined && !Number.isInteger(card.points)) {
-    return "Points must be a whole number.";
-  }
-  if (card.points !== undefined && card.points < 0) {
-    return "Points cannot be negative.";
-  }
-  return null;
+  return validatePoints(card.points) ?? validateCardType(card.cardType);
 };

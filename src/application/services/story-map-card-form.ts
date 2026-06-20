@@ -5,6 +5,7 @@ import {
   type StoryMapCard,
 } from "../../domain/entities/story-map";
 import { isCardStatus } from "../../domain/entities/story-map";
+import { isCardType } from "../../domain/entities/story-map-card";
 
 /**
  * Pure form state + projections for the card-editor modal. The modal collects
@@ -33,6 +34,8 @@ export interface CardFormValues {
   /** Comma-separated tags. */
   tags: string;
   color: string;
+  /** Card type (Task/Note/Question/Edge Case/Design); blank/invalid ⇒ "task". */
+  cardType: string;
 }
 
 /** The seed form values when adding a card: defaults to the map's first axes. */
@@ -46,6 +49,7 @@ export const initialCardForm = (map: Pick<StoryMap, "activities" | "slices">): C
   points: "",
   tags: "",
   color: "",
+  cardType: "task",
 });
 
 /** The form values that reproduce an existing card (for the edit flow). */
@@ -59,6 +63,7 @@ export const cardToForm = (card: StoryMapCard): CardFormValues => ({
   points: card.points === undefined ? "" : String(card.points),
   tags: card.tags.join(", "),
   color: card.color ?? "",
+  cardType: card.cardType ?? "task",
 });
 
 /** The step dropdown options for `activity`: its declared steps in order. */
@@ -102,6 +107,8 @@ export const buildCardFromForm = (values: CardFormValues): StoryMapCard => {
   const status = parseStatus(values.status);
   const points = parsePoints(values.points);
   const color = values.color.trim();
+  // A blank or unrecognized type defaults to "task" (the legend's base type).
+  const cardType = isCardType(values.cardType) ? values.cardType : "task";
   return {
     ...(ref !== "" ? { ref } : {}),
     title: values.title.trim(),
@@ -112,5 +119,6 @@ export const buildCardFromForm = (values: CardFormValues): StoryMapCard => {
     ...(points !== undefined ? { points } : {}),
     tags: parseTags(values.tags),
     ...(color !== "" ? { color } : {}),
+    cardType,
   };
 };

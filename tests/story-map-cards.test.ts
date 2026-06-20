@@ -113,4 +113,16 @@ describe("validateCardPlacement", () => {
     // A comma is fine in the title — only the comma-joined tags field is delimiter-sensitive.
     expect(validateCardPlacement(map, card({ title: "Filter, sort, page" }))).toBeNull();
   });
+
+  it("accepts a missing card type (defaults to task) and a known one", () => {
+    expect(validateCardPlacement(map, card())).toBeNull();
+    expect(validateCardPlacement(map, card({ cardType: "note" }))).toBeNull();
+  });
+
+  it("rejects an unknown card type", () => {
+    // Cast through unknown so a hand-edited/bogus value can reach the validator.
+    expect(validateCardPlacement(map, card({ cardType: "bogus" as unknown as never }))).toMatch(
+      /Unknown card type/,
+    );
+  });
 });

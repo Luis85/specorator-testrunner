@@ -1,4 +1,5 @@
 import type { VaultPath } from "../value-objects/identifiers";
+import type { CardType, StoryMapCardId } from "./story-map-card";
 
 /** A Story Map identifier, e.g. "SM-001". */
 export type StoryMapId = string;
@@ -57,6 +58,12 @@ export interface StoryMapCard {
   tags: string[];
   /** Short token or hex color, or undefined. */
   color?: string;
+  /** Assigned when the card is persisted as a note (later task). */
+  id?: StoryMapCardId;
+  /** Drives the legend colour; absent ⇒ treated as "task". */
+  cardType?: CardType;
+  /** Index within its cell (later task). */
+  order?: number;
 }
 
 /**
@@ -482,6 +489,7 @@ export const addCard = (map: StoryMap, target: CardTarget): StoryMap => {
     ...(target.step !== undefined ? { step: target.step } : {}),
     slice: target.slice,
     tags: [],
+    cardType: "task",
   };
   return { ...map, cards: [...map.cards, card] };
 };

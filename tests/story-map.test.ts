@@ -749,6 +749,11 @@ describe("addCard / removeCard", () => {
     expect(twice.cards[twice.cards.length - 1].step).toBeUndefined();
   });
 
+  it("defaults the placeholder card's type to task", () => {
+    const next = addCard(base, { activity: "Browse", slice: "MVP" });
+    expect(next.cards[next.cards.length - 1].cardType).toBe("task");
+  });
+
   it("no-ops (same ref) when the target axis is off the map", () => {
     expect(addCard(base, { activity: "Ghost", slice: "MVP" })).toBe(base);
     expect(addCard(base, { activity: "Browse", slice: "Ghost" })).toBe(base);
