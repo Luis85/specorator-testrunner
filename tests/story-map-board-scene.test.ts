@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildBoardScene } from "../src/presentation/views/story-map-board-scene";
+import { buildBoardScene, type SvgNodeSpec } from "../src/presentation/views/story-map-board-scene";
 import { computeBoardLayout } from "../src/presentation/views/story-map-board-layout";
 import type { StoryMap } from "../src/domain/entities/story-map";
 import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
+
+/** Flattens the scene tree (groups now wrap cards) so a search reaches nested specs. */
+const flatten = (specs: SvgNodeSpec[]): SvgNodeSpec[] =>
+  specs.flatMap((s) => [s, ...(s.children ? flatten(s.children) : [])]);
 
 const map: StoryMap = {
   id: "SM-001",
@@ -33,7 +37,7 @@ describe("buildBoardScene", () => {
   const scene = () => buildBoardScene(computeBoardLayout(map));
 
   it("emits a rect + label for the activity header, the slice row header, and each card", () => {
-    const specs = scene();
+    const specs = flatten(scene());
     const classes = specs.map((s) => s.class);
     expect(classes).toContain("sm-board-activity");
     expect(classes).toContain("sm-board-slice");
@@ -42,12 +46,12 @@ describe("buildBoardScene", () => {
   });
 
   it("renders the card title + a compact attribute suffix and carries its color + cardIndex", () => {
-    const card = scene().find((s) => s.class === "sm-board-card" && s.tag === "rect");
+    const card = flatten(scene()).find((s) => s.class === "sm-board-card" && s.tag === "rect");
     expect(card?.attrs.fill).toBe("#93c5fd");
     expect(card?.attrs["data-card-index"]).toBe(0);
-    const text = scene().find((s) => s.class === "sm-board-card-title");
+    const text = flatten(scene()).find((s) => s.class === "sm-board-card-title");
     expect(text?.text).toContain("Filter");
-    const attrs = scene().find((s) => s.class === "sm-board-card-attrs");
+    const attrs = flatten(scene()).find((s) => s.class === "sm-board-card-attrs");
     expect(attrs?.text).toContain("planned");
     expect(attrs?.text).toContain("3pts");
   });
@@ -57,14 +61,14 @@ describe("buildBoardScene", () => {
       ...map,
       cards: [{ title: "No color", activity: "Browse", slice: "Walking skeleton", tags: [] }],
     };
-    const card = buildBoardScene(computeBoardLayout(colorless)).find(
+    const card = flatten(buildBoardScene(computeBoardLayout(colorless))).find(
       (s) => s.class === "sm-board-card" && s.tag === "rect",
     );
     expect(card?.attrs.fill).toBe("var(--background-secondary)");
   });
 
   it("escapes nothing into attributes that aren't strings/numbers", () => {
-    for (const spec of scene()) {
+    for (const spec of flatten(scene())) {
       for (const v of Object.values(spec.attrs)) {
         expect(["string", "number"]).toContain(typeof v);
       }
@@ -105,7 +109,7 @@ describe("buildBoardScene", () => {
         { title: "C", activity: "Browse", step: "Search", slice: "Walking skeleton", tags: [] },
       ],
     };
-    const specs = buildBoardScene(computeBoardLayout(stepped));
+    const specs = flatten(buildBoardScene(computeBoardLayout(stepped)));
     const removes = specs
       .map((s) => s.attrs["data-remove"])
       .filter((v): v is string => typeof v === "string");
@@ -123,11 +127,26 @@ describe("buildBoardScene", () => {
   });
 
   it("emits a color swatch and a status chip per card, tagged with the card index", () => {
-    const specs = buildBoardScene(computeBoardLayout(map));
+    const specs = flatten(buildBoardScene(computeBoardLayout(map)));
     const swatch = specs.find((s) => s.class === "sm-board-swatch");
     expect(swatch?.attrs["data-color-index"]).toBe(0);
     const chip = specs.find((s) => s.class === "sm-board-status-chip");
     expect(chip?.attrs["data-status-index"]).toBe(0);
+  });
+
+  it("wraps each card in a group with a child rect and tooltip-bearing controls", () => {
+    const specs = buildBoardScene(computeBoardLayout(map));
+    const cardGroup = specs.find(
+      (s) => s.class === "sm-board-card-group" && s.attrs["data-card-index"] === 0,
+    );
+    expect(cardGroup?.tag).toBe("g");
+    const children = cardGroup?.children ?? [];
+    expect(children.some((c) => c.class === "sm-board-card" && c.tag === "rect")).toBe(true);
+    const tooltipText = (cls: string): string | undefined =>
+      children.find((c) => c.class === cls)?.children?.find((t) => t.tag === "title")?.text;
+    expect(tooltipText("sm-board-remove")).toBe("Remove card");
+    expect(tooltipText("sm-board-swatch")).toBe("Cycle color");
+    expect(tooltipText("sm-board-status-chip")).toBe("Cycle status");
   });
 
   it("keeps every rendered rect inside the canvas bounds (controls don't escape the viewBox)", () => {
@@ -142,7 +161,7 @@ describe("buildBoardScene", () => {
       ],
     };
     const layout = computeBoardLayout(stepped);
-    for (const s of buildBoardScene(layout)) {
+    for (const s of flatten(buildBoardScene(layout))) {
       if (s.tag !== "rect") continue;
       const x = Number(s.attrs.x);
       const y = Number(s.attrs.y);

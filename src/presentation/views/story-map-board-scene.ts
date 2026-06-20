@@ -4,11 +4,13 @@ import { BOARD_METRICS } from "./story-map-board-layout";
 
 /** A pure description of one SVG element — rendered to DOM by the view, testable as data. */
 export interface SvgNodeSpec {
-  tag: "rect" | "text" | "line";
+  tag: "rect" | "text" | "line" | "g" | "title";
   class: string;
   attrs: Record<string, string | number>;
-  /** Text content for a `text` node. */
+  /** Text content for a `text` (or `title`) node. */
   text?: string;
+  /** Nested specs (e.g. a `g` group's members, or a control rect's `title` tooltip). */
+  children?: SvgNodeSpec[];
 }
 
 const M = BOARD_METRICS;
@@ -27,6 +29,21 @@ const text = (cls: string, x: number, y: number, value: string): SvgNodeSpec => 
   class: cls,
   attrs: { x, y },
   text: value,
+});
+
+/** A `<g>` group wrapping `children` (used to wrap a card so its controls hover-reveal). */
+const group = (
+  cls: string,
+  attrs: Record<string, string | number>,
+  children: SvgNodeSpec[],
+): SvgNodeSpec => ({ tag: "g", class: cls, attrs, children });
+
+/** A `<title>` tooltip child (shown on hover of its parent control). */
+const tooltip = (label: string): SvgNodeSpec => ({
+  tag: "title",
+  class: "",
+  attrs: {},
+  text: label,
 });
 
 /** A small clickable `+` control: a rect plus its label, sharing the `data-add` attrs. */
@@ -63,49 +80,49 @@ const plusButton = (
   { tag: "text", class: `${cls}-label`, attrs: { x: x + 4, y: y + 12, ...data }, text: "+" },
 ];
 
-/** Card tiles (rect + title + optional attribute suffix + remove `×`) for every laid-out card. */
-const cardSpecs = (layout: BoardLayout): SvgNodeSpec[] => {
-  const specs: SvgNodeSpec[] = [];
-  for (const box of layout.cards) {
-    specs.push(
-      rect("sm-board-card", box.x, box.y, box.width, box.height, {
-        "data-card-index": box.cardIndex,
-        fill: box.card.color ?? "var(--background-secondary)",
-      }),
-    );
-    specs.push(text("sm-board-card-title", box.x + 8, box.y + 20, box.card.title));
-    const suffix = cardAttributeSuffix(box.card).replace(/^ · /, "");
-    if (suffix !== "") specs.push(text("sm-board-card-attrs", box.x + 8, box.y + 40, suffix));
-    specs.push(
-      ...removeButton("sm-board-remove", box.x + box.width - 18, box.y + 4, {
-        "data-remove": "card",
-        "data-card-index": box.cardIndex,
-      }),
-    );
-    // Color swatch (click → cycle palette) at the card's bottom-left.
-    specs.push(
-      rect("sm-board-swatch", box.x + 8, box.y + box.height - 16, 12, 12, {
-        "data-color-index": box.cardIndex,
-        fill: box.card.color ?? "var(--background-modifier-border)",
-      }),
-    );
-    // Status chip (click → cycle status) next to the swatch.
-    specs.push(
-      rect("sm-board-status-chip", box.x + 26, box.y + box.height - 16, 56, 12, {
-        "data-status-index": box.cardIndex,
-      }),
-    );
-    specs.push(
-      text(
-        "sm-board-status-chip-label",
-        box.x + 30,
-        box.y + box.height - 6,
-        box.card.status ?? "—",
-      ),
-    );
-  }
-  return specs;
+/**
+ * One card's `<g class="sm-board-card-group">` wrapping its rect/title/attrs/remove/
+ * swatch/chip children AT THEIR ABSOLUTE COORDINATES (no transform). The group carries
+ * `data-card-index` for drag/edit; the controls reveal on group hover (CSS) and carry
+ * `<title>` tooltips.
+ */
+const cardGroupSpec = (box: BoardLayout["cards"][number]): SvgNodeSpec => {
+  const children: SvgNodeSpec[] = [
+    rect("sm-board-card", box.x, box.y, box.width, box.height, {
+      "data-card-index": box.cardIndex,
+      fill: box.card.color ?? "var(--background-secondary)",
+    }),
+    text("sm-board-card-title", box.x + 8, box.y + 20, box.card.title),
+  ];
+  const suffix = cardAttributeSuffix(box.card).replace(/^ · /, "");
+  if (suffix !== "") children.push(text("sm-board-card-attrs", box.x + 8, box.y + 40, suffix));
+  const remove = removeButton("sm-board-remove", box.x + box.width - 18, box.y + 4, {
+    "data-remove": "card",
+    "data-card-index": box.cardIndex,
+  });
+  remove[0].children = [tooltip("Remove card")];
+  children.push(...remove);
+  // Color swatch (click → cycle palette) at the card's bottom-left.
+  const swatch = rect("sm-board-swatch", box.x + 8, box.y + box.height - 16, 12, 12, {
+    "data-color-index": box.cardIndex,
+    fill: box.card.color ?? "var(--background-modifier-border)",
+  });
+  swatch.children = [tooltip("Cycle color")];
+  children.push(swatch);
+  // Status chip (click → cycle status) next to the swatch.
+  const chip = rect("sm-board-status-chip", box.x + 26, box.y + box.height - 16, 56, 12, {
+    "data-status-index": box.cardIndex,
+  });
+  chip.children = [tooltip("Cycle status")];
+  children.push(chip);
+  children.push(
+    text("sm-board-status-chip-label", box.x + 30, box.y + box.height - 6, box.card.status ?? "—"),
+  );
+  return group("sm-board-card-group", { "data-card-index": box.cardIndex }, children);
 };
+
+/** Card tiles (one `<g>` per card) for every laid-out card. */
+const cardSpecs = (layout: BoardLayout): SvgNodeSpec[] => layout.cards.map(cardGroupSpec);
 
 /** A `+ card` affordance in every (row × column) cell, tagged with the cell coordinate. */
 const addCardSpecs = (layout: BoardLayout): SvgNodeSpec[] =>

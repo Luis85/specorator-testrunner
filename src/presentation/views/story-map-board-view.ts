@@ -26,7 +26,7 @@ import {
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { renderLoadError } from "./modal-helpers";
-import { buildBoardScene } from "./story-map-board-scene";
+import { buildBoardScene, type SvgNodeSpec } from "./story-map-board-scene";
 import {
   type BoardLayout,
   computeBoardLayout,
@@ -392,7 +392,7 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.bindEvent(svg, "rect[data-status-index]", "click", (el) => this.onCycleStatus(el));
     const headers = "rect.sm-board-activity, rect.sm-board-slice, rect.sm-board-step";
     this.bindEvent(svg, headers, "dblclick", (el) => this.onEditHeader(el as SVGElement));
-    this.bindEvent(svg, "rect.sm-board-card", "dblclick", (el) =>
+    this.bindEvent(svg, ".sm-board-card-group", "dblclick", (el) =>
       this.onEditCardTitle(el as SVGElement),
     );
   }
@@ -492,11 +492,17 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.mountInlineEditor(rect, (value) => this.commitRename(rect, value));
   }
 
-  /** Mounts an inline editor over a double-clicked card; commits the new title on Enter/blur. */
+  /**
+   * Mounts an inline editor over a double-clicked card; commits the new title on
+   * Enter/blur. The passed element is the card GROUP (it carries `data-card-index`);
+   * the editor mounts over the child `rect.sm-board-card` tile (still at absolute x/y).
+   */
   private onEditCardTitle(rect: SVGElement): void {
     const index = indexAttr(rect, "data-card-index");
     if (index === null || this.model === null) return;
-    this.mountInlineEditor(rect, (value) => {
+    const tile = rect.querySelector<SVGElement>("rect.sm-board-card");
+    if (tile === null) return;
+    this.mountInlineEditor(tile, (value) => {
       if (this.model === null) return;
       this.applyCardEdit(editCardTitle(this.model, index, value));
     });
@@ -552,12 +558,18 @@ export class StoryMapBoardView extends LiveDashboardView {
         height: layout.height,
       },
     });
-    for (const spec of buildBoardScene(layout)) {
-      const el = svg.createSvg(spec.tag, { cls: spec.class });
-      for (const [k, v] of Object.entries(spec.attrs)) el.setAttribute(k, String(v));
-      if (spec.text !== undefined) el.textContent = spec.text;
-    }
+    for (const spec of buildBoardScene(layout)) this.appendSpec(svg, spec);
     return svg;
+  }
+
+  /** Renders one scene spec (and its children, recursively) as an SVG element under `parent`. */
+  // CRAP is a 0-coverage artifact on this trivial untested view helper (cyclomatic 5).
+  // fallow-ignore-next-line complexity
+  private appendSpec(parent: Element, spec: SvgNodeSpec): void {
+    const el = parent.createSvg(spec.tag, { cls: spec.class });
+    for (const [k, v] of Object.entries(spec.attrs)) el.setAttribute(k, String(v));
+    if (spec.text !== undefined) el.textContent = spec.text;
+    for (const child of spec.children ?? []) this.appendSpec(el, child);
   }
 
   /**
@@ -568,7 +580,7 @@ export class StoryMapBoardView extends LiveDashboardView {
    */
   private wireDnd(svg: SVGSVGElement, layout: BoardLayout): void {
     this.cleanups.push(
-      makeDraggable(this.contentEl, ".sm-board-card", {
+      makeDraggable(this.contentEl, ".sm-board-card-group", {
         onStart: (el) => el.classList.add("is-dragging"),
         onEnd: (el, clientX, clientY) => this.onCardDrop(el, clientX, clientY, svg, layout),
       }),

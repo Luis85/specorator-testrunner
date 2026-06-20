@@ -1281,6 +1281,32 @@
   font-size: 11px;
 }
 
+/* Hover-reveal (UX-1): the per-card controls (remove ×, swatch, status chip) stay
+   hidden until you hover the card group or keyboard-focus a control within it. */
+.sm-board-remove,
+.sm-board-swatch,
+.sm-board-status-chip {
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.sm-board-card-group:hover .sm-board-remove,
+.sm-board-card-group:hover .sm-board-swatch,
+.sm-board-card-group:hover .sm-board-status-chip,
+.sm-board-card-group:focus-within .sm-board-remove,
+.sm-board-card-group:focus-within .sm-board-swatch,
+.sm-board-card-group:focus-within .sm-board-status-chip {
+  opacity: 1;
+}
+
+/* Rename cue (UX-1): the draggable headers carry cursor:grab by default; a text
+   cursor on hover hints that double-click renames them. */
+.sm-board-activity:hover,
+.sm-board-slice:hover,
+.sm-board-step:hover {
+  cursor: text;
+}
+
 /* Per-card color swatch + status chip quick-edit affordances (P4). */
 .sm-board-swatch {
   cursor: pointer;
