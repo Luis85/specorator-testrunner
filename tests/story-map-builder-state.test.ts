@@ -6,6 +6,7 @@ import {
   formatStep,
   initialStoryMapBuilderState,
   pickProductAnchor,
+  removeActivityAt,
   removeLabelAt,
   removeStepAt,
   STORY_MAP_STEP_COUNT,
@@ -58,6 +59,27 @@ describe("addLabel / removeLabelAt", () => {
   it("removes the label at an index (out-of-range is a no-op)", () => {
     expect(removeLabelAt(["a", "b", "c"], 1)).toEqual(["a", "c"]);
     expect(removeLabelAt(["a"], 9)).toEqual(["a"]);
+  });
+});
+
+describe("removeActivityAt", () => {
+  it("removes the activity AND drops the steps that hang under it", () => {
+    const activities = ["Browse", "Buy"];
+    const steps = [
+      { activity: "Browse", step: "Search" },
+      { activity: "Buy", step: "Pay" },
+    ];
+    const next = removeActivityAt(activities, steps, 0);
+    expect(next.activities).toEqual(["Buy"]);
+    expect(next.steps).toEqual([{ activity: "Buy", step: "Pay" }]);
+  });
+
+  it("is a no-op on the steps for an out-of-range index", () => {
+    const steps = [{ activity: "Browse", step: "Search" }];
+    expect(removeActivityAt(["Browse"], steps, 9)).toEqual({
+      activities: ["Browse"],
+      steps,
+    });
   });
 });
 

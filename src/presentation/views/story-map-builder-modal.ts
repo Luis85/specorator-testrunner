@@ -9,6 +9,7 @@ import {
   formatStep,
   initialStoryMapBuilderState,
   pickProductAnchor,
+  removeActivityAt,
   removeLabelAt,
   removeStepAt,
   STORY_MAP_STEP_COUNT,
@@ -140,7 +141,12 @@ export class StoryMapBuilderModal extends Modal {
       const itemContainer = container.createEl("div", { cls: "story-map-item" });
       itemContainer.createEl("span", { text: `${i + 1}. ${items[i]}` });
       itemContainer.createEl("button", { text: "Remove" }).addEventListener("click", () => {
-        this.state = { ...this.state, [field]: removeLabelAt(items, i) };
+        // Removing an activity must also drop its steps (they hang under it by
+        // label); otherwise the review shows orphan steps that create() discards.
+        this.state =
+          field === "activities"
+            ? { ...this.state, ...removeActivityAt(items, this.state.steps, i) }
+            : { ...this.state, [field]: removeLabelAt(items, i) };
         this.render();
       });
     }

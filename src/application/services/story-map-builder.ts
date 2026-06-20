@@ -90,6 +90,24 @@ export const removeLabelAt = (list: readonly string[], index: number): string[] 
   list.filter((_, i) => i !== index);
 
 /**
+ * Removes the activity at `index` from the backbone AND drops every step that
+ * hangs under it. Steps reference an activity by label, so an orphaned step would
+ * be silently discarded by `create()`'s normalization — the wizard must drop it
+ * too, or the created map would differ from what the user reviewed. Pure: no I/O.
+ */
+export const removeActivityAt = (
+  activities: readonly string[],
+  steps: readonly StoryMapStep[],
+  index: number,
+): { activities: string[]; steps: StoryMapStep[] } => {
+  const removed = activities[index];
+  return {
+    activities: activities.filter((_, i) => i !== index),
+    steps: removed === undefined ? [...steps] : steps.filter((s) => s.activity !== removed),
+  };
+};
+
+/**
  * Adds a step for `activity` with label `raw` to the list, ignoring blanks, an
  * activity not on the backbone, and (activity, step) duplicates. Returns a fresh
  * array. Pure: no I/O.
