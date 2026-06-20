@@ -1,17 +1,23 @@
 import { Notice, type WorkspaceLeaf } from "obsidian";
 import type { StoryMapService } from "../../application/services/story-map-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
-import type { StoryMap } from "../../domain/entities/story-map";
+import type { CardTarget, StoryMap } from "../../domain/entities/story-map";
 import {
   addActivity,
+  addCard,
   addSlice,
   addStepTo,
   moveCard,
+  removeActivity,
+  removeCard,
+  removeSlice,
+  removeStep,
   renameActivity,
   renameSlice,
   renameStep,
   reorderActivity,
   reorderSlice,
+  reorderStep,
   storyMapSignature,
 } from "../../domain/entities/story-map";
 import type { EventBus } from "../../shared/event-bus/event-bus";
@@ -22,6 +28,7 @@ import {
   type BoardLayout,
   computeBoardLayout,
   resolveActivityDropIndex,
+  resolveColumnAt,
   resolveDropTarget,
   resolveSliceDropIndex,
 } from "./story-map-board-layout";
@@ -89,6 +96,53 @@ const applyHeaderReorder = (
 ): StoryMap | null => {
   if (from === null || to === null) return null;
   return kind === "activity" ? reorderActivity(model, from, to) : reorderSlice(model, from, to);
+};
+
+/** Builds the add-card target from a clicked `+ card` affordance's cell attrs, or null. */
+const cardTargetOf = (el: Element): CardTarget | null => {
+  const activity = el.getAttribute("data-activity");
+  const slice = el.getAttribute("data-slice");
+  if (activity === null || slice === null) return null;
+  const step = el.getAttribute("data-step");
+  return step !== null ? { activity, slice, step } : { activity, slice };
+};
+
+/**
+ * Resolves a dragged step header (its `data-activity`/`data-step`) dropped over
+ * `drop` to the reordered model, or null when invalid (missing attrs, dropped
+ * off a column, on a no-step column, or over a different activity). Pure.
+ */
+// fallow-ignore-next-line complexity
+const stepReorderFrom = (
+  model: StoryMap,
+  el: Element,
+  drop: { activity: string; step?: string } | null,
+): StoryMap | null => {
+  const fromActivity = el.getAttribute("data-activity");
+  const fromStep = el.getAttribute("data-step");
+  if (fromActivity === null || fromStep === null) return null;
+  if (drop === null) return null;
+  if (drop.step === undefined || drop.activity !== fromActivity) return null;
+  return reorderStep(model, fromActivity, fromStep, drop.step);
+};
+
+/**
+ * Resolves a clicked `×` remove affordance to the removal op result (new map,
+ * same map on a no-op, or null on reject/invalid) by its `data-remove` kind. An
+ * out-of-range index falls through the ops' own guards (e.g. `-1`). Pure.
+ */
+// fallow-ignore-next-line complexity
+const removeFromButton = (model: StoryMap, el: Element): StoryMap | null => {
+  const kind = el.getAttribute("data-remove");
+  if (kind === "activity") return removeActivity(model, indexAttr(el, "data-activity-index") ?? -1);
+  if (kind === "slice") return removeSlice(model, indexAttr(el, "data-slice-index") ?? -1);
+  if (kind === "card") return removeCard(model, indexAttr(el, "data-card-index") ?? -1);
+  if (kind === "step") {
+    const activity = el.getAttribute("data-activity");
+    const step = el.getAttribute("data-step");
+    return activity !== null && step !== null ? removeStep(model, activity, step) : null;
+  }
+  return null;
 };
 
 /**
@@ -286,11 +340,16 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.wireControls(svg);
   }
 
-  /** Wires the `+` add controls and double-click-to-rename on the headers. */
+  /** Wires the `+` add / `×` remove controls and double-click-to-rename on the headers. */
   private wireControls(svg: SVGSVGElement): void {
-    for (const el of Array.from(svg.querySelectorAll("[data-add]"))) {
-      const onClick = (): void =>
-        this.onAdd(el.getAttribute("data-add"), el.getAttribute("data-activity"));
+    // Scope to the rect (not its pointer-events:none label) so each click binds once.
+    for (const el of Array.from(svg.querySelectorAll("rect[data-add]"))) {
+      const onClick = (): void => this.onAdd(el);
+      el.addEventListener("click", onClick);
+      this.cleanups.push(() => el.removeEventListener("click", onClick));
+    }
+    for (const el of Array.from(svg.querySelectorAll("rect[data-remove]"))) {
+      const onClick = (): void => this.onRemove(el);
       el.addEventListener("click", onClick);
       this.cleanups.push(() => el.removeEventListener("click", onClick));
     }
@@ -302,9 +361,9 @@ export class StoryMapBoardView extends LiveDashboardView {
     }
   }
 
-  /** Inserts a placeholder activity/slice/step, repaints, and saves. */
-  private onAdd(kind: string | null, activity: string | null): void {
-    const next = this.addByKind(kind, activity);
+  /** Inserts a placeholder activity/slice/step/card from a clicked `+`, repaints, and saves. */
+  private onAdd(el: Element): void {
+    const next = this.addByKind(el);
     if (next === null || next === this.model) return;
     this.model = next;
     this.paint(this.contentEl);
@@ -312,12 +371,30 @@ export class StoryMapBoardView extends LiveDashboardView {
   }
 
   // fallow-ignore-next-line complexity
-  private addByKind(kind: string | null, activity: string | null): StoryMap | null {
+  private addByKind(el: Element): StoryMap | null {
     if (this.model === null) return null;
+    const kind = el.getAttribute("data-add");
     if (kind === "activity") return addActivity(this.model);
     if (kind === "slice") return addSlice(this.model);
-    if (kind === "step" && activity !== null) return addStepTo(this.model, activity);
+    if (kind === "step") {
+      const activity = el.getAttribute("data-activity");
+      return activity !== null ? addStepTo(this.model, activity) : null;
+    }
+    if (kind === "card") {
+      const target = cardTargetOf(el);
+      return target !== null ? addCard(this.model, target) : null;
+    }
     return null;
+  }
+
+  /** Applies a `×` removal (activity/slice/step/card), repaints, and saves. */
+  private onRemove(el: Element): void {
+    if (this.model === null) return;
+    const next = removeFromButton(this.model, el);
+    if (next === null || next === this.model) return;
+    this.model = next;
+    this.paint(this.contentEl);
+    this.scheduleSave();
   }
 
   /** Mounts an inline editor over a double-clicked header; commits on Enter/blur. */
@@ -421,7 +498,34 @@ export class StoryMapBoardView extends LiveDashboardView {
         onStart: (el) => el.classList.add("is-dragging"),
         onEnd: (el, x, y) => this.onHeaderDrop(el, "slice", x, y, svg, layout),
       }),
+      makeDraggable(this.contentEl, ".sm-board-step", {
+        onStart: (el) => el.classList.add("is-dragging"),
+        onEnd: (el, x, y) => this.onStepDrop(el, x, y, svg, layout),
+      }),
     );
+  }
+
+  /**
+   * Reorders a step when its header is dropped over another step OF THE SAME
+   * activity (steps belong to one activity; cross-activity moves are ignored). A
+   * no-step column header carries no `data-step` and is not reorderable. The
+   * branchy resolution lives in the pure `stepReorderFrom` helper.
+   */
+  private onStepDrop(
+    el: SVGElement,
+    clientX: number,
+    clientY: number,
+    svg: SVGSVGElement,
+    layout: BoardLayout,
+  ): void {
+    el.classList.remove("is-dragging");
+    if (this.model === null) return;
+    const drop = resolveColumnAt(layout, this.toBoardPoint(svg, clientX, clientY).x);
+    const next = stepReorderFrom(this.model, el, drop);
+    if (next === null || next === this.model) return;
+    this.model = next;
+    this.paint(this.contentEl);
+    this.scheduleSave();
   }
 
   /** Reorders an activity or slice when its header is dropped over another. */

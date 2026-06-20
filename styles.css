@@ -1198,7 +1198,9 @@
    handle + double-click-to-rename target) — same rule as the card text above. */
 .sm-board-activity-label,
 .sm-board-slice-label,
-.sm-board-step-label {
+.sm-board-step-label,
+.sm-board-remove-label,
+.sm-board-add-card-label {
   pointer-events: none;
 }
 
@@ -1214,15 +1216,17 @@
   opacity: 0.5;
 }
 
-/* Header drag-reorder affordances (P3). */
+/* Header drag-reorder affordances (P3 activities/slices; P3c steps). */
 .sm-board-activity,
-.sm-board-slice {
+.sm-board-slice,
+.sm-board-step {
   cursor: grab;
   touch-action: none;
 }
 
 .sm-board-activity.is-dragging,
-.sm-board-slice.is-dragging {
+.sm-board-slice.is-dragging,
+.sm-board-step.is-dragging {
   cursor: grabbing;
   opacity: 0.6;
 }
@@ -1248,4 +1252,30 @@
   width: 100%;
   height: 100%;
   font: inherit;
+}
+
+/* Remove (`×`) + add-card affordances (P3c). */
+.sm-board-remove {
+  fill: var(--background-modifier-error);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.sm-board-remove:hover {
+  opacity: 1;
+}
+
+.sm-board-remove-label {
+  fill: var(--text-on-accent);
+  font-size: 12px;
+}
+
+.sm-board-add-card {
+  fill: var(--background-modifier-border);
+  cursor: pointer;
+}
+
+.sm-board-add-card-label {
+  fill: var(--text-muted);
+  font-size: 11px;
 }
