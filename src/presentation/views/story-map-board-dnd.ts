@@ -32,7 +32,12 @@ export const isCardDragData = (data: unknown): data is CardDragData =>
  * Makes an element a draggable card. Returns the cleanup function Pragmatic-DnD
  * hands back (call it on re-render/teardown). The board owns all geometry; this
  * adapter only carries the card index.
+ *
+ * NOTE: Pragmatic-DnD's draggable() requires HTMLElement; SVG <rect> elements
+ * (SVGRectElement) are not HTMLElement, so the board view uses native drag events
+ * instead and calls this only when an HTMLElement drag source is available.
  */
+// fallow-ignore-next-line unused-export
 export const makeCardDraggable = (
   element: HTMLElement,
   cardIndex: number,
@@ -51,7 +56,12 @@ export const makeCardDraggable = (
 /**
  * Makes an element a drop target for cards. `onDrop` fires with the dragged
  * card's index when a card is released over this cell. Returns the cleanup fn.
+ *
+ * NOTE: At P2 the board uses a whole-SVG native drop listener for position-based
+ * cell resolution (resolveDropTarget). This API is available for P3+ when
+ * per-cell Pragmatic-backed drop targets are needed.
  */
+// fallow-ignore-next-line unused-export
 export const makeCellDropTarget = (
   element: Element,
   cell: Omit<CellDropData, "kind">,
