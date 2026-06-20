@@ -440,16 +440,17 @@ export class DefaultStoryMapService implements StoryMapService {
         return err(appError("VALIDATION_FAILED", `Story Map ${id} was not found.`));
       }
 
-      // Delete only the map note; leave any sibling attachments (diagrams, etc.).
-      const folder = parentVaultPath(target.value.path);
-      const deleted = await this.fs.deleteFile(target.value.path);
+      // Delete the map note; the per-card notes under cards/ are generated, not
+      // user attachments, so remove them too — otherwise orphaned card notes linger
+      // and a future map reusing this id/path would silently re-adopt them via
+      // loadCards. Any OTHER sibling attachments (diagrams, etc.) are preserved.
+      const mapNote = target.value;
+      const folder = parentVaultPath(mapNote.path);
+      const deleted = await this.fs.deleteFile(mapNote.path);
       if (!deleted.ok) return deleted;
-
-      let preservedFiles = 0;
-      const listed = await this.fs.listFilesRecursive(folder);
-      if (listed.ok) {
-        preservedFiles = listed.value.filter((p) => p !== target.value?.path).length;
-      }
+      const cleaned = await this.cleanupCardNotes(folder, mapNote.path, this.cardsDirOf(mapNote));
+      if (!cleaned.ok) return cleaned;
+      const preservedFiles = cleaned.value;
 
       await this.eventBus.publish(
         createEvent(
@@ -461,6 +462,34 @@ export class DefaultStoryMapService implements StoryMapService {
       this.logger.info("Story Map deleted", { id, preservedFiles });
       return ok({ preservedFiles });
     });
+  }
+
+  /**
+   * After the map note is deleted, removes the generated per-card notes under
+   * `cards/` and returns the count of OTHER siblings left (user attachments like
+   * diagrams). A missing/unreadable folder reports zero preserved. The card notes
+   * are generated, so deleting them stops a future map that reuses this path from
+   * silently re-adopting them via {@link loadCards}.
+   */
+  private async cleanupCardNotes(
+    folder: VaultPath,
+    mapNotePath: VaultPath,
+    cardsDir: VaultPath,
+  ): Promise<Result<number>> {
+    const cardsPrefix = `${String(cardsDir)}/`;
+    const listed = await this.fs.listFilesRecursive(folder);
+    if (!listed.ok) return ok(0);
+    let preserved = 0;
+    for (const sibling of listed.value) {
+      if (sibling === mapNotePath) continue;
+      if (!String(sibling).startsWith(cardsPrefix)) {
+        preserved++;
+        continue;
+      }
+      const removed = await this.fs.deleteFile(sibling);
+      if (!removed.ok) return removed;
+    }
+    return ok(preserved);
   }
 
   async rebuildGrid(id: StoryMapId): Promise<Result<void>> {
@@ -553,11 +582,23 @@ export class DefaultStoryMapService implements StoryMapService {
     card: StoryMapCard,
     expected?: string,
   ): Promise<Result<StoryMap>> {
-    return this.mutateCards(id, (cards) => updateCardInList(cards, index, card), {
-      validate: (map) => validateCardPlacement(map, card),
-      requireIndex: index,
-      expectedCard: expected,
-    });
+    return this.mutateCards(
+      id,
+      (cards) => {
+        // Update is identity-preserving: keep the on-disk card's id (and cell
+        // order) so a caller passing only editable fields (e.g. the edit modal,
+        // whose form omits them) can't make reconcileCards orphan the original
+        // note — allocating a new SMC id and dropping its hand-written body.
+        const current = cards[index];
+        const merged = current ? { ...card, id: current.id, order: current.order } : card;
+        return updateCardInList(cards, index, merged);
+      },
+      {
+        validate: (map) => validateCardPlacement(map, card),
+        requireIndex: index,
+        expectedCard: expected,
+      },
+    );
   }
 
   async removeCard(id: StoryMapId, index: number, expected?: string): Promise<Result<StoryMap>> {

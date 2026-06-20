@@ -246,6 +246,8 @@ export class StoryMapCardModal extends Modal {
     if (editIndex === undefined) return storyMapService.addCard(map.id, card);
     // Guard the edit against a stale index: pass the card we opened on, so the
     // service rejects if a concurrent change moved a different card to this index.
+    // (The service preserves the original card's id/order, so the form omitting
+    // them can't orphan the note — see StoryMapService.updateCard.)
     const expected = original ? cardSignature(original) : undefined;
     return storyMapService.updateCard(map.id, editIndex, card, expected);
   }

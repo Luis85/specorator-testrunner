@@ -791,6 +791,47 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-002.md")).toBe(false);
   });
 
+  it("updateCard keeps the original card-note id and body when the form omits them", async () => {
+    const { service, fs } = build({ "UC-037": "Use Cases/UC-037 x.md" });
+    seedNote(fs);
+    const cardPath = "Story Maps/SM-001-j/cards/SMC-001.md";
+    // Give the card note a hand-written body the edit must preserve.
+    fs.files.set(cardPath, `${fs.files.get(cardPath) ?? ""}\nHand-written body.\n`);
+
+    // Edit via a form-style card that omits id/order (exactly what the modal builds).
+    const result = await service.updateCard("SM-001", 0, {
+      ref: "UC-037",
+      title: "Renamed",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+      tags: [],
+      cardType: "task",
+    });
+
+    expect(result.ok).toBe(true);
+    // The SAME note id is updated in place — no orphaned note, no new SMC allocated.
+    expect(fs.files.has(cardPath)).toBe(true);
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-002.md")).toBe(false);
+    const note = fs.files.get(cardPath) ?? "";
+    expect(note).toContain("title: Renamed");
+    expect(note).toContain("Hand-written body.");
+  });
+
+  it("deleteStoryMap removes the generated cards/ notes (not counted as preserved)", async () => {
+    const { service, fs } = build();
+    seedNote(fs);
+    const cardPath = "Story Maps/SM-001-j/cards/SMC-001.md";
+    expect(fs.files.has(cardPath)).toBe(true);
+
+    const result = await service.deleteStoryMap("SM-001");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Map note and its generated card notes are gone; nothing left to re-adopt.
+    expect(fs.files.has(cardPath)).toBe(false);
+    expect(fs.files.has("Story Maps/SM-001-j/SM-001-j.md")).toBe(false);
+    expect(result.value.preservedFiles).toBe(0);
+  });
+
   it("rejects a card whose placement is invalid (slice off the map)", async () => {
     const { service, fs } = build();
     seedNote(fs);
