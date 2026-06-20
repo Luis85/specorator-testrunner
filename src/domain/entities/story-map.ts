@@ -96,10 +96,8 @@ export interface StoryMap {
   path: VaultPath;
 }
 
-/** Field delimiter for the parser-safe string encodings (steps and cards). */
+/** Field delimiter for the parser-safe string encoding of steps. */
 const FIELD_DELIMITER = "|";
-/** Tags are comma-separated inside the single tags field. */
-const TAG_DELIMITER = ",";
 
 /** Encodes a step as a single parser-safe string scalar `"activity | step"`. */
 export const encodeStep = (step: StoryMapStep): string =>
@@ -163,117 +161,37 @@ export const normalizeSteps = (
 };
 
 /**
- * A non-negative integer or undefined, parsed from a (possibly empty) field.
- * Uses the FULL numeric value (not `parseInt`), so a hand-edited non-integer
- * like `1.5` is dropped rather than truncated to `1`.
- */
-const parsePoints = (raw: string): number | undefined => {
-  if (raw === "") return undefined;
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= 0 ? n : undefined;
-};
-
-/** Splits the comma-separated tags field into trimmed, non-empty tags. */
-const parseTags = (raw: string): string[] =>
-  raw
-    .split(TAG_DELIMITER)
-    .map((tag) => tag.trim())
-    .filter((tag) => tag !== "");
-
-/**
- * Encodes a rich card as the nine positional, pipe-delimited fields
- * `ref | activity | step | slice | status | points | tags | color | title`.
- * Always emits nine fields (empty fields allowed); `title` is last so it may
- * contain anything except `|`/newline. Parser-safe (ADR-0026/0028 rules).
- */
-export const encodeCard = (card: StoryMapCard): string =>
-  [
-    card.ref ?? "",
-    card.activity,
-    card.step ?? "",
-    card.slice,
-    card.status ?? "",
-    card.points === undefined ? "" : String(card.points),
-    card.tags.join(TAG_DELIMITER),
-    card.color ?? "",
-    card.title,
-  ].join(` ${FIELD_DELIMITER} `);
-
-/** The optional planning attributes of a card (omitted when empty/invalid). */
-const cardPlanningFields = (
-  status: string,
-  points: string,
-  color: string,
-): Pick<StoryMapCard, "status" | "points" | "color"> => {
-  const out: Pick<StoryMapCard, "status" | "points" | "color"> = {};
-  if (isCardStatus(status)) out.status = status;
-  const parsedPoints = parsePoints(points);
-  if (parsedPoints !== undefined) out.points = parsedPoints;
-  if (color !== "") out.color = color;
-  return out;
-};
-
-/**
  * A canonical Use Case id: `UC-` + a zero-padded number (≥ 3 digits, matching
  * `use-case-service`'s `UC-${n.padStart(3, "0")}` generation). The single source
  * of truth for the card-ref format, shared by the application-layer placement
- * validator and the frontmatter parser below — so a hand-edited `cards` entry
- * can't smuggle a non-id ref (shorthand like `UC-37`, or an injection payload
- * like `UC-001]] ![[Other]]`) into the grid renderer, which wraps `ref` in a
- * bare `[[…]]` wikilink.
+ * validator and the card-note parser — so a hand-edited card ref can't smuggle a
+ * non-id ref (shorthand like `UC-37`, or an injection payload like
+ * `UC-001]] ![[Other]]`) into the grid renderer, which wraps `ref` in a bare
+ * `[[…]]` wikilink.
  */
 export const isValidUseCaseRef = (ref: string): boolean => /^UC-\d{3,}$/.test(ref);
 
-/** Builds a rich card from the nine positional fields, validating coordinates. */
-const richCard = (fields: string[]): StoryMapCard | null => {
-  const [ref, activity, step, slice, status, points, tags, color, title] = fields;
-  if (activity === "" || slice === "") return null;
-  // Drop a non-canonical ref: the card becomes reference-less and must stand on
-  // its own title — never fall back to the invalid ref as the title, since it
-  // could itself carry `[[…]]` and render as a link.
-  const validRef = isValidUseCaseRef(ref) ? ref : "";
-  const resolvedTitle = title !== "" ? title : validRef;
-  // A free-text (reference-less) card must carry its own title.
-  if (validRef === "" && resolvedTitle === "") return null;
-  return {
-    ...(validRef !== "" ? { ref: validRef } : {}),
-    title: resolvedTitle,
-    activity,
-    ...(step !== "" ? { step } : {}),
-    slice,
-    tags: parseTags(tags),
-    ...cardPlanningFields(status, points, color),
-  };
-};
-
 /**
- * Parses a card encoding. EXACTLY three fields → ADR-0027 legacy back-compat
- * `(ref, activity, slice)` with title=ref and no step/attributes (so existing
- * minimal notes keep working). Four or more fields → the rich positional form
- * (missing trailing fields padded). Returns null when the activity/slice is
- * empty, or a free-text card has no title.
+ * A stable per-card signature over every persisted field (id + placement +
+ * attributes). The optimistic-concurrency unit for a single card row and the
+ * per-card component of {@link storyMapSignature}. Joined with `|` (the fields
+ * themselves never contain `|` — labels are cleaned via {@link normalizeLabels}/
+ * cleanLabel and tags via comma). Pure: no I/O.
  */
-export const parseCard = (raw: string): StoryMapCard | null => {
-  // Collapse interior whitespace (not just trim) so a card's activity/step/slice
-  // coordinate matches the normalized axis labels — otherwise "Sign  in" would
-  // miss the "Sign in" column and vanish from the grid while still counting.
-  const parts = raw.split(FIELD_DELIMITER).map((part) => part.replace(/\s+/g, " ").trim());
-  if (parts.length === 3) {
-    const [ref, activity, slice] = parts;
-    if (ref === "" || activity === "" || slice === "") return null;
-    // A legacy card's ref is also its title; a non-canonical value is malformed
-    // — drop it rather than render a dangling/injected `[[…]]` link.
-    if (!isValidUseCaseRef(ref)) return null;
-    return { ref, title: ref, activity, slice, tags: [] };
-  }
-  // A rich row has 4..9 fields (missing trailing fields are padded). MORE than
-  // nine means a stray `|` in a field (title/tags/color) — reject rather than
-  // truncate, which would silently drop/shift text on the next rebuild. Service-
-  // authored cards never contain `|`, so an over-delimited row is hand-edit error.
-  if (parts.length < 4 || parts.length > 9) return null;
-  const padded = [...parts, "", "", "", "", "", "", "", "", ""].slice(0, 9);
-  return richCard(padded);
-};
+export const cardSignature = (c: StoryMapCard): string =>
+  [
+    c.id ?? "",
+    c.cardType ?? "task",
+    c.ref ?? "",
+    c.status ?? "",
+    c.points ?? "",
+    c.tags.join(","),
+    c.color ?? "",
+    c.activity,
+    c.step ?? "",
+    c.slice,
+    c.title,
+  ].join("|");
 
 /** A leaf grid column: an activity, optionally narrowed to one of its steps. */
 export interface StoryMapGridColumn {
@@ -704,7 +622,7 @@ export const storyMapSignature = (map: StoryMap): string =>
     map.activities,
     map.steps.map(encodeStep),
     map.slices,
-    map.cards.map(encodeCard),
+    map.cards.map(cardSignature),
   ]);
 
 /**

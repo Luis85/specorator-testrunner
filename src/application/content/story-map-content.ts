@@ -2,12 +2,10 @@ import { buildNote, parseNote, type FrontmatterValue } from "../../shared/utils/
 import {
   buildStoryMapGrid,
   CARD_STATUSES,
-  encodeCard,
   encodeStep,
   isStoryMapStatus,
   normalizeLabels,
   normalizeSteps,
-  parseCard,
   parseStep,
   STORY_MAP_DEFAULT_PRODUCT,
   type StoryMap,
@@ -230,9 +228,10 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 
 /**
  * Serialize a Story Map to a frontmatter+markdown note. Parser-safe forms only:
- * users/activities/slices are block sequences of label strings, steps are
- * `"activity | step"` scalars, and cards are nine-field positional scalars
- * (ADR-0026/0028 parser rules). The body carries a managed grid block.
+ * users/activities/slices are block sequences of label strings and steps are
+ * `"activity | step"` scalars (ADR-0026/0028 parser rules). Cards are NOT in the
+ * frontmatter — they live as their own notes under `cards/` (ADR-0030). The body
+ * carries a managed grid block rendered from the in-memory `cards`.
  */
 export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>): string => {
   const fields: Record<string, FrontmatterValue> = {
@@ -245,7 +244,6 @@ export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>)
     activities: map.activities.length > 0 ? map.activities : undefined,
     steps: map.steps.length > 0 ? map.steps.map(encodeStep) : undefined,
     slices: map.slices.length > 0 ? map.slices : undefined,
-    cards: map.cards.length > 0 ? map.cards.map(encodeCard) : undefined,
     display_order: map.displayOrder,
   };
 
@@ -255,9 +253,8 @@ export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>)
     productBlock(renderProductParagraph(map.product, noteNames)),
     "",
     "> Source of truth is the frontmatter (`users`, `activities`, `steps`,",
-    "> `slices`, `cards`). Each card is a `ref | activity | step | slice | status",
-    "> | points | tags | color | title` scalar; edit the `cards` list, then run",
-    '> "Refresh tables" to regenerate the tables below.',
+    "> `slices`). Cards live as notes under `cards/`; edit a card there or on the",
+    '> board, then run "Refresh tables" to regenerate the tables below.',
     "",
     "## Map",
     "",
@@ -273,16 +270,15 @@ export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>)
 /**
  * Read model for a Story Map note: the inverse of {@link buildStoryMapNote}.
  * Returns null when the note is not a `story-map` (so the indexer skips it).
- * Decodes steps and rich cards, dropping malformed lines. Pure: no I/O.
+ * Decodes the axes (users/activities/steps/slices); `cards` is always `[]` —
+ * the service composes cards from the per-card notes under `cards/` (ADR-0030).
+ * Pure: no I/O.
  */
 export const parseStoryMapNote = (content: string, path: VaultPath): StoryMap | null => {
   const { frontmatter: fm } = parseNote(content);
   if (fm.type !== "story-map" || typeof fm.id !== "string") return null;
   const asArray = (v: string | string[] | undefined): string[] =>
     Array.isArray(v) ? v : v && v !== "" ? [v] : [];
-  const cards = asArray(fm.cards)
-    .map(parseCard)
-    .filter((card): card is StoryMapCard => card !== null);
   // Normalize axes on read (mirrors the create path) so hand-edited frontmatter
   // can't render duplicate activity sub-tables / slice rows or double-count the
   // points roll-up. Steps are filtered against the normalized backbone.
@@ -303,7 +299,7 @@ export const parseStoryMapNote = (content: string, path: VaultPath): StoryMap | 
     activities,
     steps,
     slices: normalizeLabels(asArray(fm.slices)),
-    cards,
+    cards: [],
     displayOrder:
       Number.parseInt(typeof fm.display_order === "string" ? fm.display_order : "0", 10) || 0,
     path,

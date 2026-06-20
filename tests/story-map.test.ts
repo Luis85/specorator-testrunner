@@ -11,7 +11,7 @@ import {
   editCardStatus,
   editCardTitle,
   dropIndexForMove,
-  encodeCard,
+  cardSignature,
   encodeStep,
   isCardStatus,
   recolorCard,
@@ -32,7 +32,6 @@ import {
   reorderStep,
   normalizeLabels,
   normalizeSteps,
-  parseCard,
   parseStep,
   storyMapSignature,
   type StoryMap,
@@ -95,123 +94,37 @@ describe("normalizeLabels / normalizeSteps", () => {
   });
 });
 
-describe("encodeCard / parseCard (rich)", () => {
-  it("collapses interior whitespace in coordinates so a card matches its axis label", () => {
-    const card = parseCard("UC-001 | Sign  in |  | Walking  skeleton |  |  |  |  | T");
-    expect(card?.activity).toBe("Sign in");
-    expect(card?.slice).toBe("Walking skeleton");
+describe("cardSignature", () => {
+  const card: StoryMapCard = {
+    id: "SMC-001",
+    cardType: "task",
+    ref: "UC-013",
+    title: "Configure the SUT",
+    activity: "Configure SUT",
+    step: "Pick a browser",
+    slice: "Walking skeleton",
+    status: "in-progress",
+    points: 3,
+    tags: ["auth", "infra"],
+    color: "blue",
+  };
+
+  it("is stable for the same card and includes the id and placement", () => {
+    expect(cardSignature(card)).toBe(cardSignature({ ...card }));
+    // The id participates, so two otherwise-identical cards with different ids differ.
+    expect(cardSignature(card)).not.toBe(cardSignature({ ...card, id: "SMC-002" }));
+    // Placement participates: a move changes the signature.
+    expect(cardSignature(card)).not.toBe(cardSignature({ ...card, slice: "Next" }));
+    expect(cardSignature(card)).not.toBe(cardSignature({ ...card, activity: "Other" }));
+    expect(cardSignature(card)).not.toBe(cardSignature({ ...card, step: undefined }));
+    // Title and attributes participate too.
+    expect(cardSignature(card)).not.toBe(cardSignature({ ...card, title: "Renamed" }));
   });
 
-  it("round-trips a fully-populated rich card through the 9-field encoding", () => {
-    const card: StoryMapCard = {
-      ref: "UC-013",
-      title: "Configure the SUT",
-      activity: "Configure SUT",
-      step: "Pick a browser",
-      slice: "Walking skeleton",
-      status: "in-progress",
-      points: 3,
-      tags: ["auth", "infra"],
-      color: "blue",
-    };
-    const encoded = encodeCard(card);
-    expect(encoded).toBe(
-      "UC-013 | Configure SUT | Pick a browser | Walking skeleton | in-progress | 3 | auth,infra | blue | Configure the SUT",
-    );
-    expect(parseCard(encoded)).toEqual(card);
-  });
-
-  it("always emits nine fields and round-trips a sparse ref-only card", () => {
-    const card: StoryMapCard = {
-      ref: "UC-001",
-      title: "UC-001",
-      activity: "Author spec",
-      slice: "Next",
-      tags: [],
-    };
-    const encoded = encodeCard(card);
-    expect(encoded.split("|")).toHaveLength(9);
-    expect(parseCard(encoded)).toEqual(card);
-  });
-
-  it("parses a free-text (reference-less) card with no ref", () => {
-    const encoded = encodeCard({
-      title: "Spike: choose a parser",
-      activity: "Author spec",
-      slice: "Later",
-      tags: ["spike"],
-    });
-    const parsed = parseCard(encoded);
-    expect(parsed).toEqual({
-      title: "Spike: choose a parser",
-      activity: "Author spec",
-      slice: "Later",
-      tags: ["spike"],
-    });
-    expect(parsed?.ref).toBeUndefined();
-  });
-
-  it("keeps the LEGACY 3-field encoding parsing (ADR-0027 back-compat)", () => {
-    const parsed = parseCard("UC-013 | Configure SUT | Walking skeleton");
-    expect(parsed).toEqual({
-      ref: "UC-013",
-      title: "UC-013",
-      activity: "Configure SUT",
-      slice: "Walking skeleton",
-      tags: [],
-    });
-  });
-
-  it("falls back to the ref as the title when a rich ref card omits one", () => {
-    const parsed = parseCard("UC-009 | Run tests |  | Next |  |  |  |  | ");
-    expect(parsed?.title).toBe("UC-009");
-  });
-
-  it("drops invalid status, negative/NaN points, and empty tags", () => {
-    const parsed = parseCard("UC-009 | A | s | Sl | nope | -2 | , a , | | T");
-    expect(parsed?.status).toBeUndefined();
-    expect(parsed?.points).toBeUndefined();
-    expect(parsed?.tags).toEqual(["a"]);
-  });
-
-  it("drops a hand-edited fractional points value (1.5) instead of truncating to 1", () => {
-    expect(parseCard("UC-009 | A | s | Sl |  | 1.5 |  |  | T")?.points).toBeUndefined();
-  });
-
-  it("drops a non-canonical rich ref (keeps the card as reference-less)", () => {
-    // Shorthand `UC-37` and an injection payload both fail the UC-id format;
-    // the card survives on its own title with NO ref (so the renderer can't
-    // wrap a dangling/injected `[[…]]` link).
-    const shorthand = parseCard("UC-37 | A | s | Sl |  |  |  |  | Real title");
-    expect(shorthand).toMatchObject({ title: "Real title", activity: "A", slice: "Sl" });
-    expect(shorthand?.ref).toBeUndefined();
-    const injection = parseCard("UC-001]] ![[Other | A | s | Sl |  |  |  |  | T");
-    expect(injection?.ref).toBeUndefined();
-    expect(injection?.title).toBe("T");
-  });
-
-  it("drops a rich card whose only identity is an invalid ref (no title)", () => {
-    // No title to fall back to, and the bad ref must not become the title.
-    expect(parseCard("UC-37 | A | s | Sl |  |  |  |  | ")).toBeNull();
-    expect(parseCard("UC-001]] ![[Other | A | s | Sl |  |  |  |  | ")).toBeNull();
-  });
-
-  it("drops a legacy 3-field card with a non-canonical ref", () => {
-    expect(parseCard("UC-37 | Configure SUT | Walking skeleton")).toBeNull();
-    expect(parseCard("UC-001]] ![[Other | Configure SUT | Walking skeleton")).toBeNull();
-  });
-
-  it("returns null for malformed encodings", () => {
-    // Empty activity / slice.
-    expect(parseCard("UC-013 |  | Walking skeleton")).toBeNull();
-    expect(parseCard("UC-013 | A |  | Sl |  |  |  |  | T".replace("| A |", "|  |"))).toBeNull();
-    // A free-text card with neither ref nor title.
-    expect(parseCard(" | A |  | Sl |  |  |  |  | ")).toBeNull();
-    // Too few fields.
-    expect(parseCard("only-two | x")).toBeNull();
-    expect(parseCard("")).toBeNull();
-    // Too many fields: a stray `|` in a field — reject, don't truncate/shift.
-    expect(parseCard("UC-001 | A | s | Sl |  |  |  |  | Title | extra")).toBeNull();
+  it("defaults a missing id to empty and a missing cardType to task", () => {
+    const minimal: StoryMapCard = { title: "T", activity: "A", slice: "S", tags: [] };
+    // id-less + cardType-less collapses to the same signature as an explicit task with no id.
+    expect(cardSignature(minimal)).toBe(cardSignature({ ...minimal, cardType: "task" }));
   });
 });
 
@@ -502,6 +415,19 @@ describe("storyMapSignature", () => {
     expect(storyMapSignature(base)).not.toBe(
       storyMapSignature({ ...base, slices: ["Walking skeleton", "Next"] }),
     );
+  });
+
+  it("reflects a card's id (cards contribute via cardSignature)", () => {
+    const withId = {
+      ...base,
+      cards: [{ ...base.cards[0], id: "SMC-001" }],
+    };
+    const withOtherId = {
+      ...base,
+      cards: [{ ...base.cards[0], id: "SMC-002" }],
+    };
+    expect(storyMapSignature(withId)).not.toBe(storyMapSignature(withOtherId));
+    expect(storyMapSignature(withId)).not.toBe(storyMapSignature(base));
   });
 
   it("ignores non-structural fields (title/status/displayOrder/path)", () => {

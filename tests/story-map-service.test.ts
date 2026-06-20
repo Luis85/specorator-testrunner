@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { DefaultStoryMapService } from "../src/application/services/story-map-service";
 import type { PrdGuard } from "../src/application/services/story-map-service";
 import {
-  encodeCard,
+  cardSignature,
   moveCard,
   reorderActivity,
   reorderSlice,
   storyMapSignature,
 } from "../src/domain/entities/story-map";
+import { buildCardNote } from "../src/application/content/story-map-card-content";
+import type { StoryMapCardNote } from "../src/domain/entities/story-map-card";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
@@ -48,6 +50,29 @@ const build = (ucPaths?: Record<string, string>, prdPaths: Record<string, string
     resolver(prdPaths),
   );
   return { service, fs, types, events };
+};
+
+/**
+ * Seeds one card-NOTE under a map's `cards/` folder (cards live as their own
+ * notes now, not inline `cards:` frontmatter). `card` carries at least an `id`,
+ * the owning `map`, and a placement; tags default to `[]`.
+ */
+const seedCardNote = (
+  fs: FakeVaultFileSystem,
+  mapFolder: string,
+  card: Partial<StoryMapCardNote> & Pick<StoryMapCardNote, "id" | "map" | "activity" | "slice">,
+): void => {
+  const note: StoryMapCardNote = {
+    cardType: "task",
+    tags: [],
+    order: 0,
+    title: card.id,
+    body: "",
+    path: unsafeVaultPath(`${mapFolder}/cards/${card.id}.md`),
+    step: undefined,
+    ...card,
+  };
+  fs.files.set(`${mapFolder}/cards/${card.id}.md`, buildCardNote(note));
 };
 
 describe("DefaultStoryMapService.create", () => {
@@ -231,7 +256,7 @@ describe("DefaultStoryMapService.create", () => {
 });
 
 describe("DefaultStoryMapService.findAll/parse", () => {
-  it("parses users, steps, rich + legacy cards, dropping malformed lines", async () => {
+  it("parses users + steps and composes cards from the per-card notes under cards/", async () => {
     const { service, fs } = build();
     fs.files.set(
       "Story Maps/SM-001-j/SM-001-j.md",
@@ -251,15 +276,35 @@ describe("DefaultStoryMapService.findAll/parse", () => {
         "  - bad-step",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        '  - "UC-037 | Author spec | Draft | Walking skeleton | planned | 3 | auth | blue | Author a UC"',
-        "  - UC-011 | Author spec | Walking skeleton",
-        "  - bad-line",
         "display_order: 0",
         "---",
         "",
       ].join("\n"),
     );
+    // Cards are their own notes under the map's `cards/` folder.
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-037",
+      title: "Author a UC",
+      activity: "Author spec",
+      step: "Draft",
+      slice: "Walking skeleton",
+      status: "planned",
+      points: 3,
+      tags: ["auth"],
+      color: "blue",
+      order: 0,
+    });
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-002",
+      map: "SM-001",
+      ref: "UC-011",
+      title: "UC-011",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+      order: 1,
+    });
 
     const result = await service.findAll();
     expect(result.ok).toBe(true);
@@ -269,8 +314,25 @@ describe("DefaultStoryMapService.findAll/parse", () => {
     expect(map.users).toEqual(["Test author"]);
     expect(map.activities).toEqual(["Author spec"]);
     expect(map.steps).toEqual([{ activity: "Author spec", step: "Draft" }]);
+    // Sorted by cell then order: the no-step card sorts before the "Draft"-step card.
     expect(map.cards).toEqual([
       {
+        id: "SMC-002",
+        cardType: "task",
+        ref: "UC-011",
+        title: "UC-011",
+        activity: "Author spec",
+        step: undefined,
+        slice: "Walking skeleton",
+        status: undefined,
+        points: undefined,
+        color: undefined,
+        tags: [],
+        order: 1,
+      },
+      {
+        id: "SMC-001",
+        cardType: "task",
         ref: "UC-037",
         title: "Author a UC",
         activity: "Author spec",
@@ -280,14 +342,7 @@ describe("DefaultStoryMapService.findAll/parse", () => {
         points: 3,
         tags: ["auth"],
         color: "blue",
-      },
-      // The legacy 3-field card still parses (ADR-0027 back-compat).
-      {
-        ref: "UC-011",
-        title: "UC-011",
-        activity: "Author spec",
-        slice: "Walking skeleton",
-        tags: [],
+        order: 0,
       },
     ]);
   });
@@ -335,8 +390,8 @@ describe("DefaultStoryMapService.deleteStoryMap", () => {
 describe("DefaultStoryMapService.rebuildGrid", () => {
   it("regenerates the managed grid block with a resolved, pipe-escaped UC link", async () => {
     const { service, fs, types } = build({ "UC-037": "Use Cases/UC-037 Author a Use Case.md" });
-    // A hand-edited note: a card was added to the frontmatter, but the body grid
-    // block is still empty (the user has not rebuilt yet).
+    // A note whose body grid block is still empty (the user has not rebuilt yet),
+    // with the card living as its own note under cards/.
     const path = "Story Maps/SM-001-j/SM-001-j.md";
     fs.files.set(
       path,
@@ -350,8 +405,6 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
         "  - Author spec",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        "  - UC-037 | Author spec | Walking skeleton",
         "---",
         "## Map",
         "",
@@ -363,6 +416,13 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
         "keep me",
       ].join("\n"),
     );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-037",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+    });
 
     const rebuilt = await service.rebuildGrid("SM-001");
     expect(rebuilt.ok).toBe(true);
@@ -393,8 +453,6 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
         "  - Author spec",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        "  - UC-037 | Author spec | Walking skeleton",
         "---",
         "## Map",
         "",
@@ -403,6 +461,13 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
         "<!-- story-map-grid:end -->",
       ].join("\r\n"),
     );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-037",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+    });
 
     const rebuilt = await service.rebuildGrid("SM-001");
     expect(rebuilt.ok).toBe(true);
@@ -435,8 +500,6 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
         "  - Author spec",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        "  - UC-037 | Author spec | Walking skeleton",
         "---",
         "# SM-001: J",
         "",
@@ -451,6 +514,13 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
         "<!-- story-map-grid:end -->",
       ].join("\n"),
     );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-037",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+    });
 
     const rebuilt = await service.rebuildGrid("SM-001");
     expect(rebuilt.ok).toBe(true);
@@ -478,8 +548,6 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
         "  - Author spec",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        "  - UC-037 | Author spec | Walking skeleton",
         "---",
         "## Map",
         "",
@@ -495,10 +563,10 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
     expect(fs.files.get(path)).toContain("(empty)");
   });
 
-  it("refuses to rebuild when a card was hand-edited to an off-map activity", async () => {
-    // The cards row references an activity not on the backbone. buildStoryMapGrid
-    // would drop it from the grid, but it would linger in `cards` and make every
-    // later board save fail; the rebuild must reject it now instead.
+  it("refuses to rebuild when a card-note was hand-edited to an off-map activity", async () => {
+    // The card-note references an activity not on the backbone. buildStoryMapGrid
+    // would drop it from the grid, but it would linger in the composed cards and
+    // make every later board save fail; the rebuild must reject it now instead.
     const { service, fs } = build({ "UC-037": "Use Cases/UC-037 Author a Use Case.md" });
     const path = "Story Maps/SM-001-j/SM-001-j.md";
     fs.files.set(
@@ -513,8 +581,6 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
         "  - Author spec",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        "  - UC-037 | Ghost activity | Walking skeleton",
         "---",
         "## Map",
         "",
@@ -523,6 +589,13 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
         "<!-- story-map-grid:end -->",
       ].join("\n"),
     );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-037",
+      activity: "Ghost activity",
+      slice: "Walking skeleton",
+    });
 
     const result = await service.rebuildGrid("SM-001");
     expect(result.ok).toBe(false);
@@ -538,7 +611,10 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
 });
 
 describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
-  /** Seeds a hand-edited note with one card and an empty grid block. */
+  /**
+   * Seeds a map note (empty grid block) plus one card-NOTE under cards/
+   * (`SMC-001`: UC-037 on Author spec / Walking skeleton).
+   */
   const seedNote = (fs: FakeVaultFileSystem, lineEnding = "\n"): string => {
     const path = "Story Maps/SM-001-j/SM-001-j.md";
     fs.files.set(
@@ -556,8 +632,6 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
         "slices:",
         "  - Walking skeleton",
         "  - Next",
-        "cards:",
-        "  - UC-037 | Author spec | Walking skeleton",
         "---",
         "## Map",
         "",
@@ -569,10 +643,17 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
         "keep me",
       ].join(lineEnding),
     );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-037",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+    });
     return path;
   };
 
-  it("adds a card: rewrites the cards frontmatter and the grid block, emits storymap.updated", async () => {
+  it("adds a card: writes a new card-note, regenerates the grid block, emits storymap.updated", async () => {
     const { service, fs, types } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
     const path = seedNote(fs);
 
@@ -591,10 +672,16 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     // Live views (the explorer) refresh on this event.
     expect(types()).toContain("storymap.updated");
 
+    // The original card-note survives; the new card got its own note (next id).
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-001.md")).toBe(true);
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-002.md")).toBe(true);
+    const newNote = fs.files.get("Story Maps/SM-001-j/cards/SMC-002.md") ?? "";
+    expect(newNote).toContain("ref: UC-040");
+    expect(newNote).toContain("title: Run the suite");
+
     const note = fs.files.get(path) ?? "";
-    // Both cards survive in the frontmatter, the new one fully encoded.
-    expect(note).toContain("UC-037 | Author spec |  | Walking skeleton");
-    expect(note).toContain("UC-040 | Author spec | Draft | Next |  | 5 | smoke |  | Run the suite");
+    // No cards frontmatter on the map note (cards are their own notes now).
+    expect(note).not.toContain("\ncards:");
     // The grid block regenerated with the resolved link; the body is preserved.
     expect(note).toContain("[[UC-040 Run the suite\\|UC-040]]");
     expect(note).not.toContain("(empty)");
@@ -616,9 +703,6 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
         "  - Author spec",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        "  - UC-037 | Author spec | Walking skeleton", // good (index 0)
-        "  - UC-040 | Ghost activity | Walking skeleton", // off-map (index 1)
         "---",
         "## Map",
         "",
@@ -627,6 +711,21 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
         "<!-- story-map-grid:end -->",
       ].join("\n"),
     );
+    // index 0 (sorts first by activity): good. index 1: off-map (Ghost activity).
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-037",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+    });
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-002",
+      map: "SM-001",
+      ref: "UC-040",
+      activity: "Ghost activity",
+      slice: "Walking skeleton",
+    });
 
     // Adding a valid card is rejected while the off-map card still lingers in the list.
     const add = await service.addCard("SM-001", {
@@ -643,6 +742,8 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     if (!removed.ok) return;
     expect(removed.value.cards).toHaveLength(1);
     expect(removed.value.cards[0].activity).toBe("Author spec");
+    // The off-map card-note was deleted by the reconcile.
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-002.md")).toBe(false);
   });
 
   it("rejects a card whose placement is invalid (slice off the map)", async () => {
@@ -691,24 +792,26 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     expect(note).not.toContain("UC-037");
   });
 
-  it("removes a card at an index, clearing the cards field when empty", async () => {
+  it("removes a card at an index, deleting its note and leaving an empty grid", async () => {
     const { service, fs } = build();
     const path = seedNote(fs);
     const result = await service.removeCard("SM-001", 0);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.cards).toHaveLength(0);
+    // The card-note was deleted by the reconcile.
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-001.md")).toBe(false);
     const note = fs.files.get(path) ?? "";
-    // With no cards left the field is dropped entirely.
-    expect(note).not.toContain("cards:");
+    // The map note never carries a cards frontmatter field.
+    expect(note).not.toContain("\ncards:");
   });
 
   it("rejects an indexed remove/update whose expected card no longer matches (stale row)", async () => {
     const { service, fs } = build();
-    const path = seedNote(fs); // seeds one card: UC-037 | Author spec | Walking skeleton
+    seedNote(fs); // seeds one card-note: UC-037 | Author spec | Walking skeleton
     // The caller believed a different card sat at index 0 (e.g. cards were
     // reordered elsewhere while a Cards modal stayed open).
-    const stale = encodeCard({
+    const stale = cardSignature({
       ref: "UC-099",
       title: "Stale",
       activity: "Author spec",
@@ -719,8 +822,8 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     expect(removed.ok).toBe(false);
     if (removed.ok) return;
     expect(removed.error.message).toMatch(/changed elsewhere/);
-    // The real card survives (was not deleted by the stale-index action).
-    expect(fs.files.get(path)).toContain("UC-037");
+    // The real card-note survives (was not deleted by the stale-index action).
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-001.md")).toBe(true);
 
     const updated = await service.updateCard(
       "SM-001",
@@ -821,8 +924,6 @@ describe("DefaultStoryMapService.saveMap", () => {
         "  - Run tests",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        "  - UC-040 | Author spec | Walking skeleton",
         "---",
         "# SM-001: J",
         "",
@@ -831,6 +932,13 @@ describe("DefaultStoryMapService.saveMap", () => {
         "<!-- story-map-grid:end -->",
       ].join("\n"),
     );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-040",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+    });
 
     const loaded = await service.findById("SM-001");
     expect(loaded.ok && loaded.value).toBeTruthy();
@@ -840,8 +948,9 @@ describe("DefaultStoryMapService.saveMap", () => {
     const result = await service.saveMap("SM-001", moved, "board-xyz");
     expect(result.ok).toBe(true);
 
-    const note = fs.files.get(path) ?? "";
-    expect(note).toContain("UC-040 | Run tests |  | Walking skeleton");
+    // The card-note's activity was rewritten by the reconcile (same id, moved cell).
+    const cardNote = fs.files.get("Story Maps/SM-001-j/cards/SMC-001.md") ?? "";
+    expect(cardNote).toContain("activity: Run tests");
     const updated = events.find((e) => e.type === "storymap.updated");
     expect(updated?.payload).toMatchObject({ storyMapId: "SM-001", origin: "board-xyz" });
   });
@@ -863,14 +972,19 @@ describe("DefaultStoryMapService.saveMap", () => {
         "slices:",
         "  - Walking skeleton",
         "  - Next",
-        "cards:",
-        "  - UC-040 | Author spec | Walking skeleton",
         "---",
         "<!-- story-map-grid:start -->",
         "(empty)",
         "<!-- story-map-grid:end -->",
       ].join("\n"),
     );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-040",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+    });
     const loaded = await service.findById("SM-001");
     if (!loaded.ok || !loaded.value) return;
     const reordered = reorderActivity(reorderSlice(loaded.value, 0, 1), 0, 1);
@@ -903,25 +1017,31 @@ describe("DefaultStoryMapService.saveMap", () => {
         "  - Run tests",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        "  - UC-040 | Author spec | Walking skeleton",
         "---",
         "<!-- story-map-grid:start -->",
         "(empty)",
         "<!-- story-map-grid:end -->",
       ].join("\n"),
     );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-040",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+    });
     const loaded = await service.findById("SM-001");
     if (!loaded.ok || !loaded.value) return;
     const baseline = storyMapSignature(loaded.value);
     // Another surface adds a card after the board loaded.
-    await service.addCard("SM-001", {
+    const added = await service.addCard("SM-001", {
       ref: "UC-041",
       title: "Other",
       activity: "Run tests",
       slice: "Walking skeleton",
       tags: [],
     });
+    expect(added.ok).toBe(true);
     const result = await service.saveMap(
       "SM-001",
       reorderSlice(loaded.value, 0, 0),
@@ -929,6 +1049,7 @@ describe("DefaultStoryMapService.saveMap", () => {
       baseline,
     );
     expect(result.ok).toBe(false);
+    // The concurrent add landed (its card-note exists); the stale board save is rejected.
     expect(fs.files.get(path)).toContain("UC-041");
   });
 
@@ -947,14 +1068,19 @@ describe("DefaultStoryMapService.saveMap", () => {
         "  - Author spec",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        "  - UC-040 | Author spec | Walking skeleton",
         "---",
         "<!-- story-map-grid:start -->",
         "(empty)",
         "<!-- story-map-grid:end -->",
       ].join("\n"),
     );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-040",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+    });
     const loaded = await service.findById("SM-001");
     if (!loaded.ok || !loaded.value) return;
     // Move onto a slice that doesn't exist on the map.
@@ -1076,8 +1202,6 @@ describe("DefaultStoryMapService.updateMapMeta", () => {
         "  - Author spec",
         "slices:",
         "  - Walking skeleton",
-        "cards:",
-        "  - UC-037 | Ghost activity | Walking skeleton",
         "---",
         "## Map",
         "",
@@ -1086,6 +1210,13 @@ describe("DefaultStoryMapService.updateMapMeta", () => {
         "<!-- story-map-grid:end -->",
       ].join("\n"),
     );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-037",
+      activity: "Ghost activity",
+      slice: "Walking skeleton",
+    });
 
     const result = await service.updateMapMeta("SM-001", { status: "active" });
     expect(result.ok).toBe(false);

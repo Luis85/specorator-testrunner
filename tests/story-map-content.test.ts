@@ -134,7 +134,7 @@ describe("renderStoryMapGridTable", () => {
 });
 
 describe("buildStoryMapNote", () => {
-  it("serializes parser-safe frontmatter (users, steps, rich cards) and a grid block", () => {
+  it("serializes parser-safe frontmatter (users, steps) and a grid block, with NO cards frontmatter", () => {
     const note = buildStoryMapNote(map, new Map());
     const { frontmatter } = parseNote(note);
 
@@ -145,12 +145,16 @@ describe("buildStoryMapNote", () => {
     expect(frontmatter.activities).toEqual(["Author spec", "Run tests"]);
     expect(frontmatter.steps).toEqual(["Author spec | Draft"]);
     expect(frontmatter.slices).toEqual(["Walking skeleton", "Next"]);
-    expect(frontmatter.cards).toEqual([
-      "UC-037 | Author spec | Draft | Walking skeleton | planned | 3 | auth |  | Author a Use Case",
-      "UC-011 | Run tests |  | Walking skeleton |  |  |  |  | UC-011",
-    ]);
+    // Cards live as their own notes under `cards/` — never in the map frontmatter.
+    expect(frontmatter.cards).toBeUndefined();
+    expect(note).not.toContain("\ncards:");
+    // The body no longer documents the nine-field inline card scalar.
+    expect(note).not.toContain("status\n> | points");
+    expect(note).toContain("Cards live as notes under `cards/`");
+    // The managed grid still renders from the in-memory cards.
     expect(note).toContain(GRID_BLOCK_START);
     expect(note).toContain(GRID_BLOCK_END);
+    expect(note).toContain("Author a Use Case");
   });
 
   it("omits users and steps from frontmatter when empty", () => {
@@ -246,6 +250,26 @@ describe("parseStoryMapNote", () => {
     expect(map?.activities).toEqual(["Author spec"]);
     expect(map?.slices).toEqual(["Walking skeleton"]);
     expect(map?.steps).toEqual([{ activity: "Author spec", step: "Draft" }]);
+  });
+
+  it("returns empty cards — cards are composed from the per-card notes, not the frontmatter", () => {
+    const note = [
+      "---",
+      "id: SM-001",
+      "type: story-map",
+      "title: J",
+      "activities:",
+      "  - Author spec",
+      "slices:",
+      "  - Walking skeleton",
+      // A stale hand-edited inline `cards:` key must NOT leak into the read model.
+      "cards:",
+      "  - UC-037 | Author spec | Walking skeleton",
+      "---",
+      "",
+    ].join("\n");
+    const map = parseStoryMapNote(note, unsafeVaultPath("Story Maps/SM-001/SM-001.md"));
+    expect(map?.cards).toEqual([]);
   });
 });
 

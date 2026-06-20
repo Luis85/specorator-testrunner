@@ -1,7 +1,7 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
 import type { StoryMapService } from "../../application/services/story-map-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
-import { encodeCard, type StoryMap, type StoryMapCard } from "../../domain/entities/story-map";
+import { cardSignature, type StoryMap, type StoryMapCard } from "../../domain/entities/story-map";
 import {
   buildCardFromForm,
   cardToForm,
@@ -246,7 +246,7 @@ export class StoryMapCardModal extends Modal {
     if (editIndex === undefined) return storyMapService.addCard(map.id, card);
     // Guard the edit against a stale index: pass the card we opened on, so the
     // service rejects if a concurrent change moved a different card to this index.
-    const expected = original ? encodeCard(original) : undefined;
+    const expected = original ? cardSignature(original) : undefined;
     return storyMapService.updateCard(map.id, editIndex, card, expected);
   }
 }

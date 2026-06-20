@@ -113,9 +113,10 @@ export const validateCardPlacement = (
   if (cardTextFields(card).some(hasUnsafeChars)) {
     return "Card fields cannot contain the `|` character or line breaks.";
   }
-  // Tags are serialized comma-joined and re-split on commas (encodeCard/parseTags),
-  // so a comma INSIDE one tag would round-trip into two tags after the next save.
-  // Reject it like the field delimiter above (commas stay fine in titles/refs).
+  // Tags are stored as a block sequence in the card note, but `cardSignature`
+  // (the board's stale-row guard) comma-joins them, so a comma INSIDE one tag
+  // would let two distinct tag sets collide. Reject it like the field delimiter
+  // above (commas stay fine in titles/refs).
   if (card.tags.some((tag) => tag.includes(","))) {
     return "A card tag cannot contain a comma (tags are stored comma-separated).";
   }

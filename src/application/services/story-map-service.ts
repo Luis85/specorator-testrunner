@@ -11,7 +11,7 @@ import {
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import {
-  encodeCard,
+  cardSignature,
   encodeStep,
   isStoryMapStatus,
   normalizeLabels,
@@ -24,6 +24,7 @@ import {
   type StoryMapStatus,
   type StoryMapStep,
 } from "../../domain/entities/story-map";
+import { loadCards, reconcileCards } from "./story-map-cards-store";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
@@ -88,22 +89,23 @@ export interface StoryMapService {
   findById(id: StoryMapId): Promise<Result<StoryMap | null>>;
   deleteStoryMap(id: StoryMapId): Promise<Result<DeleteStoryMapResult>>;
   /**
-   * Regenerates the note's managed grid block from its (authoritative) `cards`
-   * frontmatter, resolving each `UC-NNN` to its real note name. Use after
-   * hand-editing the `cards` list so the rendered table matches the data.
+   * Regenerates the note's managed grid block from its (authoritative) cards —
+   * composed from the per-card notes under `cards/` — resolving each `UC-NNN` to
+   * its real note name. Use after hand-editing a card note so the rendered table
+   * matches the data.
    */
   rebuildGrid(id: StoryMapId): Promise<Result<void>>;
   /**
-   * Authoring without hand-editing frontmatter: add a rich card to the map,
-   * validating its placement, rewriting the `cards` frontmatter, and
-   * regenerating the managed grid block. Returns the updated map.
+   * Authoring without hand-editing: add a rich card to the map, validating its
+   * placement, persisting it as its own note under `cards/`, and regenerating the
+   * managed grid block. Returns the updated map.
    */
   addCard(id: StoryMapId, card: StoryMapCard): Promise<Result<StoryMap>>;
   /**
    * Replaces the card at `index` (out-of-range → VALIDATION_FAILED). `expected`
-   * is the encoded card the caller believes is at `index`; when given, the update
-   * is rejected if the on-disk card there has since changed (so a stale row can't
-   * overwrite a different card).
+   * is the {@link cardSignature} of the card the caller believes is at `index`;
+   * when given, the update is rejected if the on-disk card there has since changed
+   * (so a stale row can't overwrite a different card).
    */
   updateCard(
     id: StoryMapId,
@@ -115,9 +117,10 @@ export interface StoryMapService {
   removeCard(id: StoryMapId, index: number, expected?: string): Promise<Result<StoryMap>>;
   /**
    * Persists an externally-mutated model (the board's working copy): rewrites the
-   * full structure (users/activities/steps/slices/cards) frontmatter and
-   * regenerates the managed blocks under the mutation lock, after normalizing and
-   * validating every card against the new axes and the product anchor. Publishes
+   * structure (users/activities/steps/slices) frontmatter, reconciles the cards
+   * into their per-card notes under `cards/`, and regenerates the managed blocks
+   * under the mutation lock, after normalizing and validating every card against
+   * the new axes and the product anchor. Publishes
    * `storymap.updated` carrying `origin` so the caller can skip the reload it
    * caused. `expected` is the {@link storyMapSignature} the board loaded; when
    * given, the save is rejected if the on-disk structure has since changed
@@ -132,7 +135,7 @@ export interface StoryMapService {
   ): Promise<Result<StoryMap>>;
   /**
    * Edits a map's metadata — title, lifecycle status, and/or product anchor —
-   * without touching its structure (users/activities/steps/slices/cards). Each
+   * without touching its structure (users/activities/steps/slices) or cards. Each
    * field is optional; an omitted field is left as-is. The title is collapsed to
    * a single line and must be non-blank; the status must be a valid lifecycle
    * value; the resolved product must resolve to a real PRD (same rule as create),
@@ -222,7 +225,7 @@ const cardMutationError = (
   // on a row whose card has since changed/moved on disk, the stored index now
   // points at a DIFFERENT card — reject rather than edit/delete the wrong one.
   if (options.expectedCard !== undefined && index !== undefined) {
-    if (encodeCard(map.cards[index]) !== options.expectedCard) {
+    if (cardSignature(map.cards[index]) !== options.expectedCard) {
       return "That card changed elsewhere — reopen the cards list and retry.";
     }
   }
@@ -350,6 +353,25 @@ export class DefaultStoryMapService implements StoryMapService {
           return createResult;
         }
 
+        // Persist any initial cards as their own notes under `cards/` (ADR-0030),
+        // then compose them back so the returned map carries their allocated ids.
+        if (cards.length > 0) {
+          const cardsDir = this.cardsDirOf(map);
+          const reconciled = await reconcileCards(
+            this.fs,
+            this.noteWrites,
+            cardsDir,
+            id,
+            cards,
+            [],
+          );
+          if (!reconciled.ok) {
+            if (!folderPreexisted) await this.fs.deleteFolder(folderPath);
+            return reconciled;
+          }
+          map.cards = await loadCards(this.fs, cardsDir, id);
+        }
+
         await this.eventBus.publish(
           createEvent(
             "storymap.created",
@@ -377,7 +399,11 @@ export class DefaultStoryMapService implements StoryMapService {
       const read = await this.fs.readFile(path);
       if (!read.ok) continue; // index is best-effort; skip unreadable notes
       const parsed = parseStoryMapNote(read.value, path);
-      if (parsed) maps.push(parsed);
+      if (!parsed) continue;
+      // Cards live as their own notes under the map's `cards/` folder (ADR-0030):
+      // compose them into the read model (best-effort — a missing folder is []).
+      parsed.cards = await loadCards(this.fs, this.cardsDirOf(parsed), parsed.id);
+      maps.push(parsed);
     }
     maps.sort((a, b) => a.id.localeCompare(b.id));
     return ok(maps);
@@ -527,10 +553,10 @@ export class DefaultStoryMapService implements StoryMapService {
   /**
    * The shared card-mutation pipeline: serialize through the SAME mutation key
    * as create/delete/rebuild (so a concurrent delete cannot interleave and
-   * resurrect the note), re-read the map under the lock (abort if it was
-   * deleted), validate the index/placement, then rewrite ONLY the `cards`
-   * frontmatter and the managed grid block — never the hand-written body.
-   * CRLF-safe exactly like {@link rebuildGrid}.
+   * resurrect the note), re-read the map (with its composed cards) under the
+   * lock (abort if it was deleted), validate the index/placement, reconcile the
+   * per-card notes under `cards/`, then regenerate the managed grid block —
+   * never the hand-written body. CRLF-safe exactly like {@link rebuildGrid}.
    */
   private mutateCards(
     id: StoryMapId,
@@ -562,34 +588,48 @@ export class DefaultStoryMapService implements StoryMapService {
       // resolve here too (see rebuildGrid) — don't persist a dangling product.
       const resolvable = await this.requireResolvableProduct(map.product);
       if (!resolvable.ok) return resolvable;
-      return this.writeCards({ ...map, cards: nextCards });
+      return this.writeCards(map, nextCards);
     });
   }
 
   /**
-   * Persists the map's new card list: rewrites only the `cards` frontmatter
-   * field and regenerates the managed grid block, leaving every other
-   * frontmatter field and hand-written body section untouched. CRLF-safe.
+   * Persists the map's new card list: reconciles the per-card notes under
+   * `cards/` (writing/deleting card notes, preserving bodies) and regenerates
+   * the managed grid block from the new cards, leaving the map note's
+   * frontmatter and hand-written body otherwise untouched. CRLF-safe. Returns
+   * the map with its cards re-composed (so allocated ids are reflected).
    */
-  private async writeCards(map: StoryMap, origin?: string): Promise<Result<StoryMap>> {
+  private async writeCards(
+    map: StoryMap,
+    nextCards: StoryMapCard[],
+    origin?: string,
+  ): Promise<Result<StoryMap>> {
+    const cardsDir = this.cardsDirOf(map);
+    const reconciled = await reconcileCards(
+      this.fs,
+      this.noteWrites,
+      cardsDir,
+      map.id,
+      nextCards,
+      map.cards,
+    );
+    if (!reconciled.ok) return reconciled;
+    const composed = { ...map, cards: await loadCards(this.fs, cardsDir, map.id) };
     const read = await this.fs.readFile(map.path);
     if (!read.ok) return read;
-    const noteNames = await this.resolveNoteNames(map);
+    const noteNames = await this.resolveNoteNames(composed);
     // Normalize CRLF→LF before parsing/slicing (see rebuildGrid): parseNote
     // returns an LF body, so the frontmatter/body boundary must be aligned.
     const normalized = read.value.replace(/\r\n/g, "\n");
-    const withCards = updateNoteFrontmatter(normalized, {
-      cards: map.cards.length > 0 ? map.cards.map(encodeCard) : undefined,
-    });
-    const { body } = parseNote(withCards);
-    const nextBody = refreshManagedBlocks(body, map, noteNames);
-    const frontmatter = withCards.slice(0, withCards.length - body.length);
+    const { body } = parseNote(normalized);
+    const nextBody = refreshManagedBlocks(body, composed, noteNames);
+    const frontmatter = normalized.slice(0, normalized.length - body.length);
     const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
     if (!written.ok) return written;
     // Notify live views (the explorer's row counts + captured map go stale
     // otherwise) that this map's cards changed.
-    await this.publishUpdated(map, origin);
-    return ok(map);
+    await this.publishUpdated(composed, origin);
+    return ok(composed);
   }
 
   async saveMap(
@@ -628,12 +668,24 @@ export class DefaultStoryMapService implements StoryMapService {
       const resolvable = await this.requireResolvableProduct(onDisk.product);
       if (!resolvable.ok) return resolvable;
 
-      // Persist the on-disk identity (id/path/product/displayOrder) with the
-      // board's normalized structure.
-      return this.writeMap(
-        { ...onDisk, users, activities, steps, slices, cards: model.cards },
-        origin,
+      // Reconcile the board's cards into the per-card notes under `cards/`
+      // (ADR-0030) before writing the map note: the map note carries no cards
+      // frontmatter, only the grid rendered from the composed cards.
+      const cardsDir = this.cardsDirOf(onDisk);
+      const reconciled = await reconcileCards(
+        this.fs,
+        this.noteWrites,
+        cardsDir,
+        id,
+        model.cards,
+        onDisk.cards,
       );
+      if (!reconciled.ok) return reconciled;
+      const cards = await loadCards(this.fs, cardsDir, id);
+
+      // Persist the on-disk identity (id/path/product/displayOrder) with the
+      // board's normalized structure and the re-composed cards.
+      return this.writeMap({ ...onDisk, users, activities, steps, slices, cards }, origin);
     });
   }
 
@@ -662,10 +714,11 @@ export class DefaultStoryMapService implements StoryMapService {
   }
 
   /**
-   * Persists the full structure (users/activities/steps/slices/cards) frontmatter
-   * and regenerates the managed blocks, leaving id/product/hand-written body
-   * untouched. CRLF-safe, mirrors {@link writeCards} but for every structural
-   * field. Publishes `storymap.updated` with `origin`.
+   * Persists the structural axes (users/activities/steps/slices) frontmatter and
+   * regenerates the managed blocks (the grid from the composed cards), leaving
+   * id/product/hand-written body untouched. Cards are NOT in the frontmatter —
+   * they live as their own notes (reconciled by the caller). CRLF-safe. Publishes
+   * `storymap.updated` with `origin`.
    */
   private async writeMap(map: StoryMap, origin?: string): Promise<Result<StoryMap>> {
     const read = await this.fs.readFile(map.path);
@@ -677,7 +730,6 @@ export class DefaultStoryMapService implements StoryMapService {
       activities: map.activities.length > 0 ? map.activities : undefined,
       steps: map.steps.length > 0 ? map.steps.map(encodeStep) : undefined,
       slices: map.slices.length > 0 ? map.slices : undefined,
-      cards: map.cards.length > 0 ? map.cards.map(encodeCard) : undefined,
     });
     const { body } = parseNote(updated);
     const nextBody = refreshManagedBlocks(body, map, noteNames);
@@ -770,6 +822,11 @@ export class DefaultStoryMapService implements StoryMapService {
     const productName = await this.noteNameOf(this.prds, map.product);
     if (productName !== undefined) names.set(map.product, productName);
     return names;
+  }
+
+  /** The `cards/` folder for a map: a sibling of the map note (ADR-0030). */
+  private cardsDirOf(map: Pick<StoryMap, "path">): VaultPath {
+    return joinVaultPath(parentVaultPath(map.path), "cards");
   }
 
   private nextId(ids: StoryMapId[]): StoryMapId {
