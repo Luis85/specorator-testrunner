@@ -136,10 +136,25 @@ export class StoryMapBoardView extends LiveDashboardView {
         const payload = event.payload as { storyMapId?: string; origin?: string };
         if (payload.storyMapId !== this.storyMapId) return;
         if (payload.origin === this.origin) return;
-        void this.live.schedule();
+        void this.onExternalUpdate();
       },
     );
     await this.live.open(this.refreshOn);
+  }
+
+  /**
+   * Handles an external `storymap.updated` (another surface changed this map). If
+   * the board has unsaved local edits, flush them FIRST — the flush compares our
+   * now-stale baseline against the externally-changed note and surfaces a conflict
+   * (Notice + reload), rather than reloading immediately and letting the still-armed
+   * debounced save persist the reloaded state, silently dropping the user's drag.
+   */
+  private async onExternalUpdate(): Promise<void> {
+    if (this.dirty || this.saving !== null) {
+      await this.flushSave();
+      return;
+    }
+    await this.live.schedule();
   }
 
   // fallow-ignore-next-line unused-class-member
