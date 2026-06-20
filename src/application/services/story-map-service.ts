@@ -355,11 +355,11 @@ export class DefaultStoryMapService implements StoryMapService {
   }
 
   /** Publishes `storymap.updated` so live views re-render after a write. */
-  private async publishUpdated(map: Pick<StoryMap, "id" | "path">): Promise<void> {
+  private async publishUpdated(map: Pick<StoryMap, "id" | "path">, origin?: string): Promise<void> {
     await this.eventBus.publish(
       createEvent(
         "storymap.updated",
-        { storyMapId: map.id, path: String(map.path) },
+        { storyMapId: map.id, path: String(map.path), ...(origin !== undefined ? { origin } : {}) },
         { correlationId: map.id },
       ),
     );

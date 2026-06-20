@@ -126,7 +126,7 @@ export interface EventPayloads {
 
   // story map
   "storymap.created": { storyMapId: string; title: string; path: string; product: string };
-  "storymap.updated": { storyMapId: string; path: string };
+  "storymap.updated": { storyMapId: string; path: string; origin?: string };
   "storymap.deleted": { storyMapId: string; path: string; preservedFiles: number };
 
   // specification (§5)
