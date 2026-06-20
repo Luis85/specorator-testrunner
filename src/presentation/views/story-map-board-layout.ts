@@ -120,3 +120,38 @@ export const computeBoardLayout = (map: StoryMap): BoardLayout => {
   const width = lastCol ? lastCol.x + lastCol.width : M.rowHeaderWidth;
   return { width, height: y, users: [...map.users], activityGroups, columns, rows, cards };
 };
+
+/** A point in board space (after the caller removes any pan/zoom transform). */
+export interface BoardPoint {
+  x: number;
+  y: number;
+}
+
+/** A resolved drop location: the cell coordinate + insertion index in its stack. */
+export interface DropTarget {
+  activity: string;
+  step?: string;
+  slice: string;
+  indexInCell: number;
+}
+
+/**
+ * Resolves a board-space point to the (column, row) cell under it and the
+ * insertion index within that cell's vertical card stack. Returns null when the
+ * point is outside every column or row (e.g. the users lane / header band).
+ * Pure: no DOM. The caller converts screen→board coordinates first (identity at
+ * P2 scale; pan/zoom math arrives in P5).
+ */
+export const resolveDropTarget = (layout: BoardLayout, point: BoardPoint): DropTarget | null => {
+  const column = layout.columns.find((c) => point.x >= c.x && point.x < c.x + c.width);
+  const row = layout.rows.find((r) => point.y >= r.y && point.y < r.y + r.height);
+  if (column === undefined || row === undefined) return null;
+  const depth = point.y - (row.y + M.cellPadding);
+  const slot = Math.floor(depth / (M.cardHeight + M.cardGap));
+  return {
+    activity: column.activity,
+    ...(column.step !== undefined ? { step: column.step } : {}),
+    slice: row.slice,
+    indexInCell: Math.max(0, slot),
+  };
+};

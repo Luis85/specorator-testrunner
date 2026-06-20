@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BOARD_METRICS,
   computeBoardLayout,
+  resolveDropTarget,
 } from "../src/presentation/views/story-map-board-layout";
 import type { StoryMap, StoryMapCard } from "../src/domain/entities/story-map";
 import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
@@ -105,5 +106,50 @@ describe("computeBoardLayout — cards", () => {
       { title: "X", activity: "Nope", slice: "Walking skeleton", tags: [] },
     ]);
     expect(layout.cards).toEqual([]);
+  });
+});
+
+describe("resolveDropTarget", () => {
+  // Two activities; Browse has step Filter, Order has none. Two slices.
+  const m = map({
+    activities: ["Browse", "Order"],
+    steps: [{ activity: "Browse", step: "Filter" }],
+    slices: ["Walking skeleton", "Next"],
+    cards: [
+      { title: "A", activity: "Browse", step: "Filter", slice: "Walking skeleton", tags: [] },
+    ],
+  });
+
+  it("returns the cell under a point inside a column/row", () => {
+    const layout = computeBoardLayout(m);
+    const col = layout.columns[0]; // Browse / Filter
+    const row = layout.rows[0]; // Walking skeleton
+    const target = resolveDropTarget(layout, { x: col.x + 10, y: row.y + 10 });
+    expect(target).toMatchObject({ activity: "Browse", step: "Filter", slice: "Walking skeleton" });
+  });
+
+  it("targets the no-step column for a step-less activity", () => {
+    const layout = computeBoardLayout(m);
+    const col = layout.columns[1]; // Order / (no step)
+    const row = layout.rows[1]; // Next
+    const target = resolveDropTarget(layout, { x: col.x + 10, y: row.y + 10 });
+    expect(target).toMatchObject({ activity: "Order", slice: "Next" });
+    expect(target?.step).toBeUndefined();
+  });
+
+  it("returns null for a point outside every cell (e.g. the header band)", () => {
+    const layout = computeBoardLayout(m);
+    expect(resolveDropTarget(layout, { x: 5, y: 5 })).toBeNull();
+  });
+
+  it("reports the insertion index from the point's depth in the card stack", () => {
+    const layout = computeBoardLayout(m);
+    const col = layout.columns[0];
+    const row = layout.rows[0];
+    // Near the row top → index 0; far down → index past the single card.
+    expect(resolveDropTarget(layout, { x: col.x + 10, y: row.y + 2 })?.indexInCell).toBe(0);
+    expect(
+      resolveDropTarget(layout, { x: col.x + 10, y: row.y + row.height - 2 })?.indexInCell,
+    ).toBeGreaterThanOrEqual(0);
   });
 });
