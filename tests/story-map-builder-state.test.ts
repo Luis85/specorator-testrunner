@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   addLabel,
   addStep,
+  canCreateStoryMap,
+  DEFAULT_ACTIVITIES,
   DEFAULT_SLICES,
   formatStep,
   initialStoryMapBuilderState,
@@ -29,14 +31,27 @@ describe("storyMapBuilderStepTitle", () => {
 });
 
 describe("initialStoryMapBuilderState", () => {
-  it("starts on step 1 with the default slices and product anchor", () => {
+  it("starts on step 1 with the default slices, default activities, and product anchor", () => {
     const state = initialStoryMapBuilderState();
     expect(state.currentStep).toBe(1);
     expect(state.product).toBe("PRD-000");
     expect(state.slices).toEqual([...DEFAULT_SLICES]);
+    expect(state.activities).toEqual([...DEFAULT_ACTIVITIES]);
     expect(state.users).toEqual([]);
-    expect(state.activities).toEqual([]);
     expect(state.steps).toEqual([]);
+  });
+});
+
+describe("canCreateStoryMap", () => {
+  it("is true once a title is set (activities + slices are pre-filled), false without one", () => {
+    expect(canCreateStoryMap(initialStoryMapBuilderState())).toBe(false); // no title yet
+    expect(canCreateStoryMap({ ...initialStoryMapBuilderState(), title: "Journey" })).toBe(true);
+  });
+
+  it("is false when activities or slices are empty even with a title", () => {
+    const base = { ...initialStoryMapBuilderState(), title: "Journey" };
+    expect(canCreateStoryMap({ ...base, activities: [] })).toBe(false);
+    expect(canCreateStoryMap({ ...base, slices: [] })).toBe(false);
   });
 });
 

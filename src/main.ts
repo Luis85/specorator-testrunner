@@ -390,6 +390,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     new StoryMapBuilderModal(this.app, {
       storyMapService: this.storyMapService,
       prdService: this.prdService,
+      onCreated: (id) => void this.openStoryMapBoard(id),
     }).open();
   }
 

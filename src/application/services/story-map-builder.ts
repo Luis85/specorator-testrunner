@@ -4,6 +4,9 @@ import { STORY_MAP_DEFAULT_PRODUCT, type StoryMapStep } from "../../domain/entit
 /** Sensible starting slices (top band = walking skeleton) the wizard pre-fills. */
 export const DEFAULT_SLICES = ["Walking skeleton", "Next", "Later"] as const;
 
+/** Sensible starting backbone activities the wizard pre-fills (rename in place). */
+export const DEFAULT_ACTIVITIES = ["Plan", "Build", "Verify"] as const;
+
 /**
  * Pure state for the Story Map builder wizard.
  * Steps: 1=title+product, 2=users, 3=activities, 4=steps, 5=slices, 6=review.
@@ -66,11 +69,19 @@ export const initialStoryMapBuilderState = (
   title: "",
   product,
   users: [],
-  activities: [],
+  activities: [...DEFAULT_ACTIVITIES],
   steps: [],
   slices: [...DEFAULT_SLICES],
   errorMessages: {},
 });
+
+/**
+ * Whether the wizard already has the minimum a map needs (a title + at least one
+ * activity + at least one slice) — drives the "Create now" fast path so a user can
+ * create from step 1 without walking every step. Pure: no I/O.
+ */
+export const canCreateStoryMap = (state: StoryMapBuilderState): boolean =>
+  state.title.trim() !== "" && state.activities.length > 0 && state.slices.length > 0;
 
 /** Collapses a raw label: pipes/whitespace → single spaces, trimmed. Pure. */
 const cleanLabel = (raw: string): string => raw.replace(/[\s|]+/g, " ").trim();

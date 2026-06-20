@@ -95,9 +95,10 @@ export class StoryMapExplorerView extends LiveDashboardView {
     const open = row.createEl("button", {
       text: `${map.id}: ${map.title} (${meta})`,
       cls: "e2e-test-hub-link-button",
-      attr: { "aria-label": `Open Story Map ${map.id} ${map.title}` },
+      attr: { "aria-label": `Open the board for ${map.id} ${map.title}` },
     });
-    open.addEventListener("click", () => void openOrNotice(this.deps.workspace, map.path));
+    // The board is the primary working surface — the row's main click opens it.
+    open.addEventListener("click", () => this.deps.openStoryMapBoard(map.id));
 
     row.createEl("span", {
       text: map.status,
@@ -115,11 +116,11 @@ export class StoryMapExplorerView extends LiveDashboardView {
 
     row
       .createEl("button", {
-        text: "Open board",
+        text: "Open note",
         cls: "e2e-test-hub-link-button",
-        attr: { "aria-label": `Open the board for ${map.id}` },
+        attr: { "aria-label": `Open the ${map.id} note` },
       })
-      .addEventListener("click", () => this.deps.openStoryMapBoard(map.id));
+      .addEventListener("click", () => void openOrNotice(this.deps.workspace, map.path));
 
     row
       .createEl("button", {

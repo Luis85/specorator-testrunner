@@ -6,6 +6,7 @@ import type { StoryMapBuilderState } from "../../application/services/story-map-
 import {
   addLabel,
   addStep,
+  canCreateStoryMap,
   formatStep,
   initialStoryMapBuilderState,
   pickProductAnchor,
@@ -27,6 +28,8 @@ export interface StoryMapBuilderDeps {
   storyMapService: StoryMapService;
   /** Used to populate the product (PRD) anchor dropdown. */
   prdService: PrdService;
+  /** Called with the new map's id after a successful create (e.g. to open its board). */
+  onCreated?: (storyMapId: string) => void;
 }
 
 /**
@@ -35,6 +38,14 @@ export interface StoryMapBuilderDeps {
  * added later by editing the note's `cards` frontmatter and rebuilding the grid —
  * the wizard collects the map skeleton (users, backbone, steps, slices).
  */
+/** One-line explanations of each label step's jargon, shown under its title. */
+const LABEL_STEP_DESC = {
+  users: "The audience — the personas who take this journey. Optional.",
+  activities: "The backbone: the high-level activities of the journey, left to right.",
+  slices:
+    "Release bands, top to bottom. The top slice is your thinnest shippable version (the walking skeleton).",
+} as const;
+
 export class StoryMapBuilderModal extends Modal {
   private state: StoryMapBuilderState = initialStoryMapBuilderState();
   private submitting = false;
@@ -57,9 +68,22 @@ export class StoryMapBuilderModal extends Modal {
     this.contentEl.empty();
   }
 
+  // fallow-ignore-next-line complexity
   private async ensurePrdsLoaded(): Promise<void> {
     if (this.prdsLoaded) return;
-    const prds = await this.deps.prdService.findAll();
+    let prds = await this.deps.prdService.findAll();
+    // Auto-seed the reserved root PRD-000 on an empty vault so creating a Story Map
+    // (which must anchor to a PRD) never dead-ends — no detour to build a PRD first.
+    if (prds.ok && prds.value.length === 0) {
+      const seeded = await this.deps.prdService.create({
+        title: "Product",
+        domains: [],
+        vision: "",
+        scopeIn: [],
+        scopeOut: [],
+      });
+      if (seeded.ok) prds = await this.deps.prdService.findAll();
+    }
     if (prds.ok) {
       this.prds = prds.value;
       this.state = { ...this.state, product: pickProductAnchor(prds.value) };
@@ -134,6 +158,7 @@ export class StoryMapBuilderModal extends Modal {
     placeholder: string,
   ): void {
     this.renderError(contentEl, field);
+    contentEl.createEl("p", { text: LABEL_STEP_DESC[field], cls: "setting-item-description" });
     const items = this.state[field];
     const container = contentEl.createEl("div", { cls: "story-map-items" });
 
@@ -172,6 +197,10 @@ export class StoryMapBuilderModal extends Modal {
 
   private renderStepsStep(contentEl: HTMLElement): void {
     this.renderError(contentEl, "steps");
+    contentEl.createEl("p", {
+      text: "Tasks that hang under an activity. Optional — a card can sit directly under an activity.",
+      cls: "setting-item-description",
+    });
     if (this.state.activities.length === 0) {
       contentEl.createEl("p", {
         text: "Add at least one activity first — steps hang under an activity.",
@@ -249,21 +278,19 @@ export class StoryMapBuilderModal extends Modal {
       }
     });
 
+    // Fast path: once the minimum is met (a title — activities/slices are pre-filled
+    // and PRD-000 is auto-seeded), let the user Create from any step rather than
+    // walking all six.
+    if (this.state.currentStep < STORY_MAP_STEP_COUNT && canCreateStoryMap(this.state)) {
+      const fastBtn = buttonContainer.createEl("button", { text: "Create now", cls: "mod-cta" });
+      fastBtn.setAttribute("data-testid", "create-now-button");
+      fastBtn.addEventListener("click", () => void this.create());
+    }
+
     if (this.state.currentStep === STORY_MAP_STEP_COUNT) {
       const createBtn = buttonContainer.createEl("button", { text: "Create", cls: "mod-cta" });
       createBtn.setAttribute("data-testid", "create-button");
-      // No product PRD can resolve in an empty vault, and the service requires one
-      // — disable Create rather than lead the user to a guaranteed failure.
-      if (this.prdsLoaded && this.prds.length === 0) {
-        createBtn.disabled = true;
-        createBtn.setAttribute("aria-label", "Create a product PRD first");
-        buttonContainer.createEl("span", {
-          text: "Create a product PRD first — a Story Map must anchor to one.",
-          cls: "setting-item-description",
-        });
-      } else {
-        createBtn.addEventListener("click", () => void this.create());
-      }
+      createBtn.addEventListener("click", () => void this.create());
     }
 
     const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
@@ -271,6 +298,7 @@ export class StoryMapBuilderModal extends Modal {
     cancelBtn.addEventListener("click", () => this.close());
   }
 
+  // fallow-ignore-next-line complexity
   private async create(): Promise<void> {
     if (this.submitting) return;
     this.submitting = true;
@@ -283,6 +311,8 @@ export class StoryMapBuilderModal extends Modal {
       }
       new Notice(`Created Story Map: ${result.value.id}`);
       this.close();
+      // Jump straight to the new map's board — the primary working surface.
+      this.deps.onCreated?.(result.value.id);
     } catch (err) {
       new Notice(errorText("Error creating Story Map", err));
     } finally {
