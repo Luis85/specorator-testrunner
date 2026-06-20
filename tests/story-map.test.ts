@@ -7,6 +7,7 @@ import {
   isCardStatus,
   isStoryMapStatus,
   moveCard,
+  reorderCardInCell,
   normalizeLabels,
   normalizeSteps,
   parseCard,
@@ -341,5 +342,36 @@ describe("moveCard", () => {
   it("returns the map unchanged for an out-of-range index", () => {
     const map = baseMap();
     expect(moveCard(map, 9, { activity: "Order", slice: "Next" })).toBe(map);
+  });
+});
+
+describe("reorderCardInCell", () => {
+  const map = (): StoryMap => ({
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: [],
+    activities: ["Browse"],
+    steps: [],
+    slices: ["Walking skeleton"],
+    cards: [
+      { title: "A", activity: "Browse", slice: "Walking skeleton", tags: [] },
+      { title: "B", activity: "Browse", slice: "Walking skeleton", tags: [] },
+      { title: "C", activity: "Browse", slice: "Walking skeleton", tags: [] },
+    ],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+  });
+
+  it("moves a card to a new position within its own cell", () => {
+    // Move C (index 2) to the front of the cell.
+    const next = reorderCardInCell(map(), 2, 0);
+    expect(next.cards.map((c) => c.title)).toEqual(["C", "A", "B"]);
+  });
+
+  it("is a no-op for an out-of-range index", () => {
+    const m = map();
+    expect(reorderCardInCell(m, 9, 0)).toBe(m);
   });
 });

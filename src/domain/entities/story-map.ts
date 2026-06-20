@@ -348,6 +348,26 @@ export const moveCard = (
 };
 
 /**
+ * Reorders the card at `cardIndex` to position `indexInCell` among the cards in
+ * its OWN cell (same activity/step/slice). A thin wrapper over {@link moveCard}
+ * with the card's current coordinate. Pure: no I/O.
+ */
+export const reorderCardInCell = (
+  map: StoryMap,
+  cardIndex: number,
+  indexInCell: number,
+): StoryMap => {
+  const card = map.cards[cardIndex];
+  if (card === undefined) return map;
+  return moveCard(
+    map,
+    cardIndex,
+    { activity: card.activity, step: card.step, slice: card.slice },
+    indexInCell,
+  );
+};
+
+/**
  * Leaf columns: for each activity in order, one column per declared step of that
  * activity (in `steps` order). An activity also gets a `{ activity, step:
  * undefined }` no-step column when it has no declared steps, OR when a card hangs
