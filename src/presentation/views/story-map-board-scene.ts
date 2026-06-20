@@ -41,6 +41,53 @@ const addButton = (
   { tag: "text", class: `${cls}-label`, attrs: { x: x + 6, y: y + 15, ...data }, text: label },
 ];
 
+/** A small clickable `×` remove control (rect + label sharing the `data-remove` attrs). */
+const removeButton = (
+  cls: string,
+  x: number,
+  y: number,
+  data: Record<string, string | number>,
+): SvgNodeSpec[] => [
+  rect(cls, x, y, 16, 16, data),
+  { tag: "text", class: `${cls}-label`, attrs: { x: x + 4, y: y + 12, ...data }, text: "×" },
+];
+
+/** Card tiles (rect + title + optional attribute suffix + remove `×`) for every laid-out card. */
+const cardSpecs = (layout: BoardLayout): SvgNodeSpec[] => {
+  const specs: SvgNodeSpec[] = [];
+  for (const box of layout.cards) {
+    specs.push(
+      rect("sm-board-card", box.x, box.y, box.width, box.height, {
+        "data-card-index": box.cardIndex,
+        fill: box.card.color ?? "var(--background-secondary)",
+      }),
+    );
+    specs.push(text("sm-board-card-title", box.x + 8, box.y + 20, box.card.title));
+    const suffix = cardAttributeSuffix(box.card).replace(/^ · /, "");
+    if (suffix !== "") specs.push(text("sm-board-card-attrs", box.x + 8, box.y + 40, suffix));
+    specs.push(
+      ...removeButton("sm-board-remove", box.x + box.width - 18, box.y + 4, {
+        "data-remove": "card",
+        "data-card-index": box.cardIndex,
+      }),
+    );
+  }
+  return specs;
+};
+
+/** A `+ card` affordance in every (row × column) cell, tagged with the cell coordinate. */
+const addCardSpecs = (layout: BoardLayout): SvgNodeSpec[] =>
+  layout.rows.flatMap((r) =>
+    layout.columns.flatMap((c) =>
+      addButton("sm-board-add-card", c.x + 8, r.y + r.height - 24, "+ card", {
+        "data-add": "card",
+        "data-activity": c.activity,
+        ...(c.step !== undefined ? { "data-step": c.step } : {}),
+        "data-slice": r.slice,
+      }),
+    ),
+  );
+
 /**
  * Pure: a {@link BoardLayout} → the flat list of SVG node specs that render it
  * (users lane, activity/step headers, slice rows, card tiles with title +
@@ -72,6 +119,12 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
         g.activity,
       ),
     );
+    specs.push(
+      ...removeButton("sm-board-remove", g.x + g.width - 18, M.laneHeight + 4, {
+        "data-remove": "activity",
+        "data-activity-index": i,
+      }),
+    );
   });
 
   // Step (column) headers — tagged with their activity (+ step when present) so
@@ -91,6 +144,15 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
         c.step ?? "(no step)",
       ),
     );
+    if (c.step !== undefined) {
+      specs.push(
+        ...removeButton("sm-board-remove", c.x + c.width - 18, stepY + 4, {
+          "data-remove": "step",
+          "data-activity": c.activity,
+          "data-step": c.step,
+        }),
+      );
+    }
   }
 
   // Slice row headers.
@@ -99,20 +161,18 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
       rect("sm-board-slice", 0, r.y, M.rowHeaderWidth, r.height, { "data-slice-index": i }),
     );
     specs.push(text("sm-board-slice-label", 8, r.y + 18, r.slice));
-  });
-
-  // Cards.
-  for (const box of layout.cards) {
     specs.push(
-      rect("sm-board-card", box.x, box.y, box.width, box.height, {
-        "data-card-index": box.cardIndex,
-        fill: box.card.color ?? "var(--background-secondary)",
+      ...removeButton("sm-board-remove", M.rowHeaderWidth - 18, r.y + 4, {
+        "data-remove": "slice",
+        "data-slice-index": i,
       }),
     );
-    specs.push(text("sm-board-card-title", box.x + 8, box.y + 20, box.card.title));
-    const suffix = cardAttributeSuffix(box.card).replace(/^ · /, "");
-    if (suffix !== "") specs.push(text("sm-board-card-attrs", box.x + 8, box.y + 40, suffix));
-  }
+  });
+
+  // Card tiles + the per-cell add-card affordances (extracted to keep this builder
+  // under the cognitive-complexity gate).
+  specs.push(...cardSpecs(layout));
+  specs.push(...addCardSpecs(layout));
 
   // Add affordances (+). The view reads `data-add` (+ `data-activity` for steps).
   const lastGroup = layout.activityGroups[layout.activityGroups.length - 1];

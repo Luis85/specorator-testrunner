@@ -175,3 +175,16 @@ export const resolveDropTarget = (layout: BoardLayout, point: BoardPoint): DropT
     indexInCell: Math.max(0, slot),
   };
 };
+
+/**
+ * The leaf column (activity + optional step) under board-x `x`, or null outside
+ * every column. Used to resolve a step-header drag's drop target. Pure.
+ */
+export const resolveColumnAt = (
+  layout: BoardLayout,
+  x: number,
+): { activity: string; step?: string } | null => {
+  const col = layout.columns.find((c) => x >= c.x && x < c.x + c.width);
+  if (col === undefined) return null;
+  return col.step !== undefined ? { activity: col.activity, step: col.step } : { activity: col.activity };
+};

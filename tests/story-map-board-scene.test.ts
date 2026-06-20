@@ -93,4 +93,30 @@ describe("buildBoardScene", () => {
     expect(step?.attrs["data-activity"]).toBe("Browse");
     expect(step?.attrs["data-step"]).toBeUndefined();
   });
+
+  it("emits remove affordances for activity, slice, step, and card", () => {
+    // The shared fixture has no declared step, so a declared-step column (which
+    // alone carries a `data-remove="step"` affordance) only exists when a step is
+    // present; use a stepped map here to exercise all four remove kinds.
+    const stepped: StoryMap = {
+      ...map,
+      steps: [{ activity: "Browse", step: "Search" }],
+      cards: [{ title: "C", activity: "Browse", step: "Search", slice: "Walking skeleton", tags: [] }],
+    };
+    const specs = buildBoardScene(computeBoardLayout(stepped));
+    const removes = specs
+      .map((s) => s.attrs["data-remove"])
+      .filter((v): v is string => typeof v === "string");
+    expect(removes).toContain("activity");
+    expect(removes).toContain("slice");
+    expect(removes).toContain("step");
+    expect(removes).toContain("card");
+  });
+
+  it("emits an add-card affordance tagged with the cell coordinate", () => {
+    const specs = buildBoardScene(computeBoardLayout(map));
+    const addCard = specs.find((s) => s.attrs["data-add"] === "card");
+    expect(addCard?.attrs["data-activity"]).toBe("Browse");
+    expect(addCard?.attrs["data-slice"]).toBe("Walking skeleton");
+  });
 });

@@ -3,6 +3,7 @@ import {
   BOARD_METRICS,
   computeBoardLayout,
   resolveActivityDropIndex,
+  resolveColumnAt,
   resolveDropTarget,
   resolveSliceDropIndex,
 } from "../src/presentation/views/story-map-board-layout";
@@ -179,5 +180,16 @@ describe("resolveActivityDropIndex / resolveSliceDropIndex", () => {
     const layout = computeBoardLayout(m);
     expect(resolveActivityDropIndex(layout, -50)).toBeNull();
     expect(resolveSliceDropIndex(layout, -50)).toBeNull();
+  });
+});
+
+describe("resolveColumnAt", () => {
+  it("returns the column (activity + step) under board-x, or null outside", () => {
+    const layout = computeBoardLayout(map()); // a map with at least one step column
+    const col = layout.columns[0];
+    const hit = resolveColumnAt(layout, col.x + 1);
+    expect(hit?.activity).toBe(col.activity);
+    expect(hit?.step).toBe(col.step);
+    expect(resolveColumnAt(layout, -50)).toBeNull();
   });
 });
