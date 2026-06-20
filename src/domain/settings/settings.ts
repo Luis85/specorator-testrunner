@@ -12,6 +12,7 @@ export interface TestHubPathSettings {
   useCasesPath: VaultPath;
   prdsPath: VaultPath;
   storyMapsPath: VaultPath;
+  personasPath: VaultPath;
   domainsPath: VaultPath;
   specificationsPath: VaultPath;
   featureFilesPath: VaultPath;
@@ -229,6 +230,7 @@ export const DEFAULT_SETTINGS: TestHubSettings = {
     useCasesPath: unsafeVaultPath("Use Cases"),
     prdsPath: unsafeVaultPath("PRDs"),
     storyMapsPath: unsafeVaultPath("Story Maps"),
+    personasPath: unsafeVaultPath("Personas"),
     domainsPath: unsafeVaultPath("Domains"),
     specificationsPath: unsafeVaultPath("Specifications"),
     featureFilesPath: unsafeVaultPath("Specifications/features"),

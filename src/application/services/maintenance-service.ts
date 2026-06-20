@@ -240,6 +240,7 @@ export class DefaultMaintenanceService implements MaintenanceService {
         testHubPath: settings.paths.testHubPath,
         prdsPath: settings.paths.prdsPath,
         storyMapsPath: settings.paths.storyMapsPath,
+        personasPath: settings.paths.personasPath,
         domainsPath: settings.paths.domainsPath,
       };
       const collision = Object.entries(contentPaths).find(([, p]) => pathsOverlap(runnerPath, p));

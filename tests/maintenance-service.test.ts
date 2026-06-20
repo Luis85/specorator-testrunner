@@ -435,6 +435,23 @@ describe("DefaultMaintenanceService.reset (UC-024)", () => {
     expect(vault.files.get("Story Maps/SM-001-x/SM-001-x.md")).toBe("user-authored story map");
   });
 
+  it("refuses to reset when testRunnerPath overlaps Personas content", async () => {
+    const { service, vault, settings } = buildReset();
+    const tampered = {
+      ...DEFAULT_SETTINGS,
+      paths: { ...DEFAULT_SETTINGS.paths, testRunnerPath: vp("Personas") },
+    };
+    expect((await settings.save(tampered)).ok).toBe(true);
+    vault.files.set("Personas/persona-001.md", "user-authored persona");
+
+    const result = await service.reset();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("PATH_UNSAFE");
+    expect(vault.files.get("Personas/persona-001.md")).toBe("user-authored persona");
+  });
+
   it("refuses dot-segment runner paths that normalize onto user content (review)", async () => {
     // `./Use Cases` and `.` pass PathSafetyPolicy and the vault adapter would
     // normalize the leading `./` away before deleting, so the overlap guard must
