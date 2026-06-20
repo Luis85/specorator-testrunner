@@ -1200,7 +1200,8 @@
 .sm-board-slice-label,
 .sm-board-step-label,
 .sm-board-remove-label,
-.sm-board-add-card-label {
+.sm-board-add-card-label,
+.sm-board-status-chip-label {
   pointer-events: none;
 }
 
@@ -1278,4 +1279,20 @@
 .sm-board-add-card-label {
   fill: var(--text-muted);
   font-size: 11px;
+}
+
+/* Per-card color swatch + status chip quick-edit affordances (P4). */
+.sm-board-swatch {
+  cursor: pointer;
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-status-chip {
+  fill: var(--background-secondary);
+  cursor: pointer;
+}
+
+.sm-board-status-chip-label {
+  fill: var(--text-muted);
+  font-size: 10px;
 }

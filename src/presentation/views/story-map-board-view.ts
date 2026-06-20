@@ -7,7 +7,10 @@ import {
   addCard,
   addSlice,
   addStepTo,
+  editCardStatus,
+  editCardTitle,
   moveCard,
+  recolorCard,
   removeActivity,
   removeCard,
   removeSlice,
@@ -143,6 +146,24 @@ const removeFromButton = (model: StoryMap, el: Element): StoryMap | null => {
     return activity !== null && step !== null ? removeStep(model, activity, step) : null;
   }
   return null;
+};
+
+/** The board's quick-cycle color palette (click a swatch to advance; wraps to "" = no color). */
+const CARD_PALETTE = ["#fca5a5", "#fdba74", "#fde047", "#86efac", "#93c5fd", "#c4b5fd"] as const;
+/** The planning-status cycle order; "" clears the status. */
+const STATUS_CYCLE = ["planned", "in-progress", "done", "blocked", ""] as const;
+
+/** The next palette color after `current` ("" / unknown → first; last → "" to clear). Pure. */
+const nextColor = (current: string | undefined): string => {
+  const i = CARD_PALETTE.indexOf((current ?? "") as (typeof CARD_PALETTE)[number]);
+  if (i === -1) return CARD_PALETTE[0];
+  return i + 1 < CARD_PALETTE.length ? CARD_PALETTE[i + 1] : "";
+};
+
+/** The next status after `current` in the cycle order (wraps). Pure. */
+const nextStatus = (current: string | undefined): string => {
+  const i = STATUS_CYCLE.indexOf((current ?? "") as (typeof STATUS_CYCLE)[number]);
+  return STATUS_CYCLE[(i + 1) % STATUS_CYCLE.length];
 };
 
 /**
@@ -340,25 +361,35 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.wireControls(svg);
   }
 
-  /** Wires the `+` add / `×` remove controls and double-click-to-rename on the headers. */
+  /**
+   * Binds `type` on every element matching `selector` to `handler`, registering a
+   * cleanup. Selectors scope to the `rect` (not its pointer-events:none label) so
+   * each click/dblclick binds exactly once.
+   */
+  private bindEvent(
+    svg: SVGSVGElement,
+    selector: string,
+    type: "click" | "dblclick",
+    handler: (el: Element) => void,
+  ): void {
+    for (const el of Array.from(svg.querySelectorAll(selector))) {
+      const fn = (): void => handler(el);
+      el.addEventListener(type, fn);
+      this.cleanups.push(() => el.removeEventListener(type, fn));
+    }
+  }
+
+  /** Wires the add/remove/recolor/status controls + double-click-to-rename (headers and cards). */
   private wireControls(svg: SVGSVGElement): void {
-    // Scope to the rect (not its pointer-events:none label) so each click binds once.
-    for (const el of Array.from(svg.querySelectorAll("rect[data-add]"))) {
-      const onClick = (): void => this.onAdd(el);
-      el.addEventListener("click", onClick);
-      this.cleanups.push(() => el.removeEventListener("click", onClick));
-    }
-    for (const el of Array.from(svg.querySelectorAll("rect[data-remove]"))) {
-      const onClick = (): void => this.onRemove(el);
-      el.addEventListener("click", onClick);
-      this.cleanups.push(() => el.removeEventListener("click", onClick));
-    }
+    this.bindEvent(svg, "rect[data-add]", "click", (el) => this.onAdd(el));
+    this.bindEvent(svg, "rect[data-remove]", "click", (el) => this.onRemove(el));
+    this.bindEvent(svg, "rect[data-color-index]", "click", (el) => this.onCycleColor(el));
+    this.bindEvent(svg, "rect[data-status-index]", "click", (el) => this.onCycleStatus(el));
     const headers = "rect.sm-board-activity, rect.sm-board-slice, rect.sm-board-step";
-    for (const el of Array.from(svg.querySelectorAll(headers))) {
-      const onDbl = (): void => this.onEditHeader(el as SVGElement);
-      el.addEventListener("dblclick", onDbl);
-      this.cleanups.push(() => el.removeEventListener("dblclick", onDbl));
-    }
+    this.bindEvent(svg, headers, "dblclick", (el) => this.onEditHeader(el as SVGElement));
+    this.bindEvent(svg, "rect.sm-board-card", "dblclick", (el) =>
+      this.onEditCardTitle(el as SVGElement),
+    );
   }
 
   /** Inserts a placeholder activity/slice/step/card from a clicked `+`, repaints, and saves. */
@@ -397,9 +428,39 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.scheduleSave();
   }
 
-  /** Mounts an inline editor over a double-clicked header; commits on Enter/blur. */
-  private onEditHeader(rect: SVGElement): void {
+  /** Advances the clicked card's color to the next palette entry and saves. */
+  private onCycleColor(el: Element): void {
     if (this.model === null) return;
+    const index = indexAttr(el, "data-color-index");
+    if (index === null) return;
+    this.applyCardEdit(recolorCard(this.model, index, nextColor(this.model.cards[index]?.color)));
+  }
+
+  /** Advances the clicked card's planning status to the next in the cycle and saves. */
+  private onCycleStatus(el: Element): void {
+    if (this.model === null) return;
+    const index = indexAttr(el, "data-status-index");
+    if (index === null) return;
+    this.applyCardEdit(
+      editCardStatus(this.model, index, nextStatus(this.model.cards[index]?.status)),
+    );
+  }
+
+  /** Commits a card-edit op result: repaints + schedules a save, or ignores a no-op/reject. */
+  private applyCardEdit(next: StoryMap | null): void {
+    if (next === null || next === this.model) return;
+    this.model = next;
+    this.paint(this.contentEl);
+    this.scheduleSave();
+  }
+
+  /**
+   * Mounts an inline `<input>` over `rect` (seeded from its label text), wires the
+   * Enter/blur-commit + Escape-cancel lifecycle, and routes the committed value to
+   * `apply`. Registers the commit handle so onClose/onExternalUpdate/onMapDeleted
+   * can flush or cancel it. Shared by header rename and card-title edit.
+   */
+  private mountInlineEditor(rect: SVGElement, apply: (value: string) => void): void {
     const input = this.mountHeaderInput(rect);
     if (input === null) return;
     let done = false;
@@ -408,7 +469,7 @@ export class StoryMapBoardView extends LiveDashboardView {
       done = true;
       const value = input.value;
       this.clearEditor();
-      if (save) this.commitRename(rect, value);
+      if (save) apply(value);
     };
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") commit(true);
@@ -418,6 +479,22 @@ export class StoryMapBoardView extends LiveDashboardView {
     input.focus();
     input.select();
     this.commitEditor = commit;
+  }
+
+  /** Mounts an inline editor over a double-clicked header; commits the rename on Enter/blur. */
+  private onEditHeader(rect: SVGElement): void {
+    if (this.model === null) return;
+    this.mountInlineEditor(rect, (value) => this.commitRename(rect, value));
+  }
+
+  /** Mounts an inline editor over a double-clicked card; commits the new title on Enter/blur. */
+  private onEditCardTitle(rect: SVGElement): void {
+    const index = indexAttr(rect, "data-card-index");
+    if (index === null || this.model === null) return;
+    this.mountInlineEditor(rect, (value) => {
+      if (this.model === null) return;
+      this.applyCardEdit(editCardTitle(this.model, index, value));
+    });
   }
 
   /** Applies a header rename to the model, repaints, and saves. */
