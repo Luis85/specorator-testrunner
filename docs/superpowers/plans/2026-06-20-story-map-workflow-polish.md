@@ -13,6 +13,21 @@
 
 ---
 
+## Status — COMPLETE (all passes landed gate-green on PR #68)
+
+- **W1** Fast to a working board — `083f91b` (+ seed fix `0110be9`)
+- **W3** Upstream→downstream seam (promote card → Use Case) — `628ffd0`
+- **W2b + W4** Coherence + discoverability (Refresh tables, hint, tooltips, README) — `4b7dd07`
+- **W2c** Map-settings surface (title/status/product) — `47791a9`
+- **W2a** Editable users lane on the board — `6eb9535`
+- **W2d** Edit-details pencil → Card modal; remove standalone Card-manager — `cb8dda2`
+
+Codex P2 review fixes landed alongside: header reorder preview vs persisted order `f8e08c6`; managed-block `$`-token literal replacement `021b642`; settings-modal sends only changed fields `c8cb15b`.
+
+**Product decision for W2d `+ card`:** kept the fast one-click placeholder add; the deep Card modal is reached by a per-card ✎ "Edit details" affordance (points/tags/ref/promote), not by `+ card`.
+
+---
+
 ## Pass W1 — Fast to a working board (onboarding)
 
 - [ ] **Default backbone.** Add `DEFAULT_ACTIVITIES` to `story-map-builder.ts` initial state (mirror `DEFAULT_SLICES`) so Next→Create works out of the box. Test.
