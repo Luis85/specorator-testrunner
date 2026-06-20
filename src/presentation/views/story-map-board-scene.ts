@@ -71,6 +71,27 @@ const cardSpecs = (layout: BoardLayout): SvgNodeSpec[] => {
         "data-card-index": box.cardIndex,
       }),
     );
+    // Color swatch (click → cycle palette) at the card's bottom-left.
+    specs.push(
+      rect("sm-board-swatch", box.x + 8, box.y + box.height - 16, 12, 12, {
+        "data-color-index": box.cardIndex,
+        fill: box.card.color ?? "var(--background-modifier-border)",
+      }),
+    );
+    // Status chip (click → cycle status) next to the swatch.
+    specs.push(
+      rect("sm-board-status-chip", box.x + 26, box.y + box.height - 16, 56, 12, {
+        "data-status-index": box.cardIndex,
+      }),
+    );
+    specs.push(
+      text(
+        "sm-board-status-chip-label",
+        box.x + 30,
+        box.y + box.height - 6,
+        box.card.status ?? "—",
+      ),
+    );
   }
   return specs;
 };

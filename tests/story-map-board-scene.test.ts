@@ -121,4 +121,12 @@ describe("buildBoardScene", () => {
     expect(addCard?.attrs["data-activity"]).toBe("Browse");
     expect(addCard?.attrs["data-slice"]).toBe("Walking skeleton");
   });
+
+  it("emits a color swatch and a status chip per card, tagged with the card index", () => {
+    const specs = buildBoardScene(computeBoardLayout(map));
+    const swatch = specs.find((s) => s.class === "sm-board-swatch");
+    expect(swatch?.attrs["data-color-index"]).toBe(0);
+    const chip = specs.find((s) => s.class === "sm-board-status-chip");
+    expect(chip?.attrs["data-status-index"]).toBe(0);
+  });
 });
