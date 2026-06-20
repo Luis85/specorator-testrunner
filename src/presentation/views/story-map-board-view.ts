@@ -215,7 +215,9 @@ export class StoryMapBoardView extends LiveDashboardView {
   // fallow-ignore-next-line unused-class-member
   async onClose(): Promise<void> {
     this.isOpen = false;
-    void this.flushSave();
+    // Await the pending debounced save so closing the leaf durably persists (or
+    // reports) the last board edit; Obsidian waits on the promise onClose returns.
+    await this.flushSave();
     this.teardownDnd();
     this.unsubscribeUpdated?.();
     this.unsubscribeUpdated = null;
@@ -533,7 +535,10 @@ export class StoryMapBoardView extends LiveDashboardView {
       if (id !== this.storyMapId) return;
       if (error !== null) {
         new Notice(`Could not save the board: ${error}`);
-        await this.live.schedule(); // revert the optimistic edits to the last-saved state
+        // Revert the optimistic edits to the last-saved state — but not while
+        // closing (onClose awaits this flush), where a repaint is pointless and
+        // would re-render a view about to be torn down.
+        if (this.isOpen) await this.live.schedule();
         return;
       }
       // Advance the baseline to what we just wrote so the next iteration (a drop
