@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addActivity,
+  addCard,
   addSlice,
   addStepTo,
   buildStoryMapGrid,
@@ -10,12 +11,17 @@ import {
   isCardStatus,
   isStoryMapStatus,
   moveCard,
+  removeActivity,
+  removeCard,
+  removeSlice,
+  removeStep,
   renameActivity,
   renameSlice,
   renameStep,
   reorderActivity,
   reorderCardInCell,
   reorderSlice,
+  reorderStep,
   normalizeLabels,
   normalizeSteps,
   parseCard,
@@ -543,5 +549,126 @@ describe("renameActivity / renameSlice / renameStep", () => {
     expect(renameActivity(m, 0, "Browse")).toBe(m); // unchanged → same reference
     expect(renameSlice(map(), 0, "Next")).toBeNull();
     expect(renameStep(map(), "Browse", "Filter", "Filter")).toEqual(map()); // unchanged
+  });
+});
+
+describe("removeActivity / removeSlice", () => {
+  const base: StoryMap = {
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: [],
+    activities: ["Browse", "Buy"],
+    steps: [{ activity: "Browse", step: "Search" }],
+    slices: ["MVP", "Later"],
+    cards: [{ title: "C", activity: "Buy", slice: "MVP", tags: [] }],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+  };
+
+  it("removes an activity with no cards, dropping its steps", () => {
+    const next = removeActivity(base, 0); // Browse has steps but no cards
+    expect(next).not.toBeNull();
+    expect(next?.activities).toEqual(["Buy"]);
+    expect(next?.steps).toEqual([]);
+  });
+
+  it("rejects (null) removing an activity that has cards", () => {
+    expect(removeActivity(base, 1)).toBeNull(); // Buy has a card
+  });
+
+  it("rejects an out-of-range activity index", () => {
+    expect(removeActivity(base, 9)).toBeNull();
+  });
+
+  it("removes an unreferenced slice and rejects a referenced one", () => {
+    expect(removeSlice(base, 1)?.slices).toEqual(["MVP"]); // Later has no cards
+    expect(removeSlice(base, 0)).toBeNull(); // MVP has a card
+    expect(removeSlice(base, 9)).toBeNull();
+  });
+});
+
+describe("removeStep / reorderStep", () => {
+  const base: StoryMap = {
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: [],
+    activities: ["Browse"],
+    steps: [
+      { activity: "Browse", step: "Search" },
+      { activity: "Browse", step: "Filter" },
+    ],
+    slices: ["MVP"],
+    cards: [{ title: "C", activity: "Browse", step: "Search", slice: "MVP", tags: [] }],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+  };
+
+  it("removes a step and degrades its cards to no-step", () => {
+    const next = removeStep(base, "Browse", "Search");
+    expect(next?.steps).toEqual([{ activity: "Browse", step: "Filter" }]);
+    expect(next?.cards[0].step).toBeUndefined(); // card now hangs under the activity
+  });
+
+  it("returns null when the step does not exist", () => {
+    expect(removeStep(base, "Browse", "Nope")).toBeNull();
+  });
+
+  it("reorders a step within its activity by label", () => {
+    const next = reorderStep(base, "Browse", "Filter", "Search"); // Filter before Search
+    expect(next?.steps.map((s) => s.step)).toEqual(["Filter", "Search"]);
+  });
+
+  it("no-ops (same ref) when from===to and null on an unknown step", () => {
+    expect(reorderStep(base, "Browse", "Search", "Search")).toBe(base);
+    expect(reorderStep(base, "Browse", "Search", "Ghost")).toBeNull();
+  });
+});
+
+describe("addCard / removeCard", () => {
+  const base: StoryMap = {
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: [],
+    activities: ["Browse"],
+    steps: [{ activity: "Browse", step: "Search" }],
+    slices: ["MVP"],
+    cards: [{ title: "Existing", activity: "Browse", slice: "MVP", tags: [] }],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+  };
+
+  it("appends a placeholder card in the target cell (with step)", () => {
+    const next = addCard(base, { activity: "Browse", step: "Search", slice: "MVP" });
+    const added = next.cards[next.cards.length - 1];
+    expect(added).toMatchObject({
+      title: "New card",
+      activity: "Browse",
+      step: "Search",
+      slice: "MVP",
+    });
+    expect(added.tags).toEqual([]);
+  });
+
+  it("appends a no-step placeholder and uniquifies the title", () => {
+    const once = addCard(base, { activity: "Browse", slice: "MVP" });
+    const twice = addCard(once, { activity: "Browse", slice: "MVP" });
+    expect(twice.cards[twice.cards.length - 1].title).toBe("New card 2");
+    expect(twice.cards[twice.cards.length - 1].step).toBeUndefined();
+  });
+
+  it("no-ops (same ref) when the target axis is off the map", () => {
+    expect(addCard(base, { activity: "Ghost", slice: "MVP" })).toBe(base);
+    expect(addCard(base, { activity: "Browse", slice: "Ghost" })).toBe(base);
+  });
+
+  it("removes the card at an index and no-ops out of range", () => {
+    expect(removeCard(base, 0).cards).toEqual([]);
+    expect(removeCard(base, 9)).toBe(base);
   });
 });

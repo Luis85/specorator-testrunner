@@ -380,6 +380,99 @@ export const reorderSlice = (map: StoryMap, from: number, to: number): StoryMap 
   return next === map.slices ? map : { ...map, slices: [...next] };
 };
 
+/**
+ * Removes the activity at `index` and its steps. REJECTS (returns null) when any
+ * card references it — the product-owner policy is "reject if cards" so a card is
+ * never silently orphaned. Null also on an out-of-range index. Pure: no I/O.
+ */
+export const removeActivity = (map: StoryMap, index: number): StoryMap | null => {
+  const activity = map.activities[index];
+  if (activity === undefined) return null;
+  if (map.cards.some((c) => c.activity === activity)) return null;
+  return {
+    ...map,
+    activities: map.activities.filter((_, i) => i !== index),
+    steps: map.steps.filter((s) => s.activity !== activity),
+  };
+};
+
+/** Removes the slice at `index`. Rejects when a card references it. Same contract as {@link removeActivity}. */
+export const removeSlice = (map: StoryMap, index: number): StoryMap | null => {
+  const slice = map.slices[index];
+  if (slice === undefined) return null;
+  if (map.cards.some((c) => c.slice === slice)) return null;
+  return { ...map, slices: map.slices.filter((_, i) => i !== index) };
+};
+
+/**
+ * Removes step `step` under `activity`; its cards DEGRADE to no-step (the `step`
+ * key is dropped so they hang directly under the activity). Returns null when the
+ * step does not exist. Steps degrade rather than reject (product-owner policy).
+ * Pure: no I/O.
+ */
+export const removeStep = (map: StoryMap, activity: string, step: string): StoryMap | null => {
+  const exists = map.steps.some((s) => s.activity === activity && s.step === step);
+  if (!exists) return null;
+  return {
+    ...map,
+    steps: map.steps.filter((s) => !(s.activity === activity && s.step === step)),
+    cards: map.cards.map((c) => {
+      if (c.activity !== activity || c.step !== step) return c;
+      const { step: _drop, ...noStep } = c;
+      return noStep;
+    }),
+  };
+};
+
+/**
+ * Reorders step `fromStep` to `toStep`'s position among `activity`'s own steps
+ * (by label — the view drags one step header onto another of the same activity).
+ * Returns the SAME map on a no-op, or null when either label is not a step of
+ * `activity`. Other activities' step entries keep their slots. Pure: no I/O.
+ */
+export const reorderStep = (
+  map: StoryMap,
+  activity: string,
+  fromStep: string,
+  toStep: string,
+): StoryMap | null => {
+  const own = map.steps.filter((s) => s.activity === activity);
+  const from = own.findIndex((s) => s.step === fromStep);
+  const to = own.findIndex((s) => s.step === toStep);
+  if (from === -1 || to === -1) return null;
+  const moved = moveInArray(own, from, to);
+  if (moved === own) return map;
+  let k = 0;
+  const steps = map.steps.map((s) => (s.activity === activity ? moved[k++] : s));
+  return { ...map, steps };
+};
+
+/**
+ * Appends a placeholder free-text card ("New card", uniquified by title) in the
+ * `target` cell, to be renamed in place (P4). No-ops (same map ref) when the
+ * target activity/slice is not on the map. Pure: no I/O.
+ */
+export const addCard = (map: StoryMap, target: CardTarget): StoryMap => {
+  if (!map.activities.includes(target.activity) || !map.slices.includes(target.slice)) return map;
+  const card: StoryMapCard = {
+    title: uniqueLabel(
+      map.cards.map((c) => c.title),
+      "New card",
+    ),
+    activity: target.activity,
+    ...(target.step !== undefined ? { step: target.step } : {}),
+    slice: target.slice,
+    tags: [],
+  };
+  return { ...map, cards: [...map.cards, card] };
+};
+
+/** Removes the card at `index`; no-ops (same ref) out of range. Pure: no I/O. */
+export const removeCard = (map: StoryMap, index: number): StoryMap => {
+  if (map.cards[index] === undefined) return map;
+  return { ...map, cards: map.cards.filter((_, i) => i !== index) };
+};
+
 /** A label not already in `existing`: `base`, else `base 2`, `base 3`, … Pure. */
 const uniqueLabel = (existing: readonly string[], base: string): string => {
   if (!existing.includes(base)) return base;
