@@ -33,6 +33,7 @@ import {
   type DropCellIndicator,
   dropIndicator,
   headerDropIndicator,
+  neighborCell,
   resolveActivityDropIndex,
   resolveColumnAt,
   resolveDropTarget,
@@ -149,6 +150,26 @@ const removeFromButton = (model: StoryMap, el: Element): StoryMap | null => {
     return activity !== null && step !== null ? removeStep(model, activity, step) : null;
   }
   return null;
+};
+
+/** Maps an arrow key to the cell direction a focused card moves. */
+const ARROW_DIR: Record<string, "left" | "right" | "up" | "down"> = {
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
+};
+
+/** Resolves a focused header element to its removal op (mirrors {@link renameFromHeader}). Pure. */
+// fallow-ignore-next-line complexity
+const removeHeaderOf = (model: StoryMap, el: Element): StoryMap | null => {
+  const ai = indexAttr(el, "data-activity-index");
+  if (ai !== null) return removeActivity(model, ai);
+  const si = indexAttr(el, "data-slice-index");
+  if (si !== null) return removeSlice(model, si);
+  const activity = el.getAttribute("data-activity");
+  const step = el.getAttribute("data-step");
+  return activity !== null && step !== null ? removeStep(model, activity, step) : null;
 };
 
 /** The board's quick-cycle color palette (click a swatch to advance; wraps to "" = no color). */
@@ -374,6 +395,99 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.overlay = svg.createSvg("g", { cls: "sm-board-overlay" });
     this.wireDnd(svg, layout);
     this.wireControls(svg);
+    this.wireKeyboard(svg, layout);
+  }
+
+  /** Binds keyboard operation of the focused card/header (a11y). Cleaned up on teardown. */
+  private wireKeyboard(svg: SVGSVGElement, layout: BoardLayout): void {
+    const onKey = (e: Event): void => this.onKeyDown(e as KeyboardEvent, layout);
+    svg.addEventListener("keydown", onKey);
+    this.cleanups.push(() => svg.removeEventListener("keydown", onKey));
+  }
+
+  /** Routes a keydown from a focused card/header to its keyboard action. */
+  // fallow-ignore-next-line complexity
+  private onKeyDown(e: KeyboardEvent, layout: BoardLayout): void {
+    if (this.model === null) return;
+    const el = e.target as Element;
+    const cardIndex = indexAttr(el, "data-card-index");
+    if (cardIndex !== null) {
+      this.onCardKey(e, el as SVGElement, cardIndex, layout);
+      return;
+    }
+    if (
+      el.hasAttribute("data-activity-index") ||
+      el.hasAttribute("data-slice-index") ||
+      el.getAttribute("data-step") !== null
+    ) {
+      this.onHeaderKey(e, el as SVGElement);
+    }
+  }
+
+  /** Card keyboard ops: Enter/F2 rename · Delete remove · c/s cycle color/status · arrows move. */
+  // fallow-ignore-next-line complexity
+  private onCardKey(
+    e: KeyboardEvent,
+    el: SVGElement,
+    cardIndex: number,
+    layout: BoardLayout,
+  ): void {
+    if (this.model === null) return;
+    const dir = ARROW_DIR[e.key];
+    if (dir !== undefined) {
+      e.preventDefault();
+      const target = neighborCell(layout, cardIndex, dir);
+      if (target !== null) this.applyCardEdit(moveCard(this.model, cardIndex, target));
+      return;
+    }
+    if (e.key === "Enter" || e.key === "F2") {
+      this.editFromKey(e, () => this.onEditCardTitle(el));
+      return;
+    }
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      this.applyCardEdit(removeCard(this.model, cardIndex));
+      return;
+    }
+    if (e.key === "c") {
+      e.preventDefault();
+      const next = recolorCard(
+        this.model,
+        cardIndex,
+        nextColor(this.model.cards[cardIndex]?.color),
+      );
+      this.applyCardEdit(next);
+      return;
+    }
+    if (e.key === "s") {
+      e.preventDefault();
+      const next = editCardStatus(
+        this.model,
+        cardIndex,
+        nextStatus(this.model.cards[cardIndex]?.status),
+      );
+      this.applyCardEdit(next);
+    }
+  }
+
+  /** Header keyboard ops: Enter/F2 rename · Delete remove. */
+  // fallow-ignore-next-line complexity
+  private onHeaderKey(e: KeyboardEvent, el: SVGElement): void {
+    if (this.model === null) return;
+    if (e.key === "Enter" || e.key === "F2") {
+      this.editFromKey(e, () => this.onEditHeader(el));
+      return;
+    }
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      this.applyCardEdit(removeHeaderOf(this.model, el));
+    }
+  }
+
+  /** Prevents the key's default then runs an inline-edit opener. */
+  private editFromKey(e: KeyboardEvent, open: () => void): void {
+    e.preventDefault();
+    open();
   }
 
   /**

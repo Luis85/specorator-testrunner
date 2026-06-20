@@ -1307,6 +1307,15 @@
   cursor: text;
 }
 
+/* Keyboard focus rings (UX-4): cards + headers are tabbable and operable. */
+.sm-board-card-group:focus-visible,
+.sm-board-activity:focus-visible,
+.sm-board-slice:focus-visible,
+.sm-board-step:focus-visible {
+  outline: 2px solid var(--text-accent);
+  outline-offset: 1px;
+}
+
 /* Hover elevation + empty state (UX-3). */
 .sm-board-card {
   transition: filter 0.12s ease;

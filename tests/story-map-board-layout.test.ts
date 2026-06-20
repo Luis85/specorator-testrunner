@@ -4,6 +4,7 @@ import {
   computeBoardLayout,
   dropIndicator,
   headerDropIndicator,
+  neighborCell,
   resolveActivityDropIndex,
   resolveColumnAt,
   resolveDropTarget,
@@ -199,6 +200,44 @@ describe("resolveColumnAt", () => {
     expect(hit?.activity).toBe(col.activity);
     expect(hit?.step).toBe(col.step);
     expect(resolveColumnAt(layout, -50)).toBeNull();
+  });
+});
+
+describe("neighborCell", () => {
+  // Two leaf columns (Browse, Order — no steps) × two slices; one card top-left.
+  const layout = computeBoardLayout(
+    map({
+      activities: ["Browse", "Order"],
+      steps: [],
+      slices: ["Walking skeleton", "Next"],
+      cards: [{ title: "A", activity: "Browse", slice: "Walking skeleton", tags: [] }],
+    }),
+  );
+
+  it("right → the next column's activity, same slice", () => {
+    expect(neighborCell(layout, 0, "right")).toEqual({
+      activity: "Order",
+      slice: "Walking skeleton",
+    });
+  });
+
+  it("down → same column, the next slice", () => {
+    expect(neighborCell(layout, 0, "down")).toEqual({
+      activity: "Browse",
+      slice: "Next",
+    });
+  });
+
+  it("left from the first column → null (edge)", () => {
+    expect(neighborCell(layout, 0, "left")).toBeNull();
+  });
+
+  it("up from the first row → null (edge)", () => {
+    expect(neighborCell(layout, 0, "up")).toBeNull();
+  });
+
+  it("an unknown cardIndex → null", () => {
+    expect(neighborCell(layout, 99, "right")).toBeNull();
   });
 });
 

@@ -1,5 +1,6 @@
 import {
   buildStoryMapGrid,
+  type CardTarget,
   type StoryMap,
   type StoryMapCard,
 } from "../../domain/entities/story-map";
@@ -203,6 +204,36 @@ export const resolveColumnAt = (
   return col.step !== undefined
     ? { activity: col.activity, step: col.step }
     : { activity: col.activity };
+};
+
+/**
+ * The drop coordinate of the cell adjacent to the card at `cardIndex` in `dir`
+ * (left/right move across leaf columns; up/down across slice rows), or null at an
+ * edge or when the card is not laid out. Lets the keyboard move a card cell-to-cell
+ * via `moveCard`. Pure.
+ */
+export const neighborCell = (
+  layout: BoardLayout,
+  cardIndex: number,
+  dir: "left" | "right" | "up" | "down",
+): CardTarget | null => {
+  const box = layout.cards.find((b) => b.cardIndex === cardIndex);
+  if (box === undefined) return null;
+  const colIndex = layout.columns.findIndex(
+    (c) => c.activity === box.card.activity && c.step === box.card.step,
+  );
+  const rowIndex = layout.rows.findIndex((r) => r.slice === box.card.slice);
+  if (colIndex === -1 || rowIndex === -1) return null;
+  const colDelta = dir === "left" ? -1 : dir === "right" ? 1 : 0;
+  const rowDelta = dir === "up" ? -1 : dir === "down" ? 1 : 0;
+  const col = layout.columns[colIndex + colDelta];
+  const row = layout.rows[rowIndex + rowDelta];
+  if (col === undefined || row === undefined) return null;
+  return {
+    activity: col.activity,
+    ...(col.step !== undefined ? { step: col.step } : {}),
+    slice: row.slice,
+  };
 };
 
 /** A drag-time card drop overlay: the target cell rect + the stack insertion line. */

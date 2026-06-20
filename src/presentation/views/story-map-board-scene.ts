@@ -118,7 +118,16 @@ const cardGroupSpec = (box: BoardLayout["cards"][number]): SvgNodeSpec => {
   children.push(
     text("sm-board-status-chip-label", box.x + 30, box.y + box.height - 6, box.card.status ?? "—"),
   );
-  return group("sm-board-card-group", { "data-card-index": box.cardIndex }, children);
+  return group(
+    "sm-board-card-group",
+    {
+      "data-card-index": box.cardIndex,
+      tabindex: 0,
+      role: "group",
+      "aria-label": `Card: ${box.card.title}`,
+    },
+    children,
+  );
 };
 
 /** Card tiles (one `<g>` per card) for every laid-out card. */
@@ -158,6 +167,9 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
     specs.push(
       rect("sm-board-activity", g.x, M.laneHeight, g.width, M.activityHeaderHeight, {
         "data-activity-index": i,
+        tabindex: 0,
+        role: "button",
+        "aria-label": `Activity: ${g.activity}`,
       }),
     );
     specs.push(
@@ -180,10 +192,11 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
   // the view can resolve which one a rename/edit targets.
   const stepY = M.laneHeight + M.activityHeaderHeight;
   for (const c of layout.columns) {
+    const base = { tabindex: 0, role: "button", "aria-label": `Step: ${c.step ?? "(no step)"}` };
     const attrs: Record<string, string | number> =
       c.step !== undefined
-        ? { "data-activity": c.activity, "data-step": c.step }
-        : { "data-activity": c.activity };
+        ? { ...base, "data-activity": c.activity, "data-step": c.step }
+        : { ...base, "data-activity": c.activity };
     specs.push(rect("sm-board-step", c.x, stepY, c.width, M.stepHeaderHeight, attrs));
     specs.push(
       text(
@@ -207,7 +220,12 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
   // Slice row headers.
   layout.rows.forEach((r, i) => {
     specs.push(
-      rect("sm-board-slice", 0, r.y, M.rowHeaderWidth, r.height, { "data-slice-index": i }),
+      rect("sm-board-slice", 0, r.y, M.rowHeaderWidth, r.height, {
+        "data-slice-index": i,
+        tabindex: 0,
+        role: "button",
+        "aria-label": `Slice: ${r.slice}`,
+      }),
     );
     specs.push(text("sm-board-slice-label", 8, r.y + 18, r.slice));
     specs.push(
