@@ -6,6 +6,7 @@ import {
   encodeStep,
   isCardStatus,
   isStoryMapStatus,
+  moveCard,
   normalizeLabels,
   normalizeSteps,
   parseCard,
@@ -13,6 +14,7 @@ import {
   type StoryMap,
   type StoryMapCard,
 } from "../src/domain/entities/story-map";
+import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
 
 describe("isStoryMapStatus", () => {
   it("accepts the known statuses and rejects everything else", () => {
@@ -280,5 +282,64 @@ describe("buildStoryMapGrid", () => {
       r.cells.flatMap((c) => c.cards.map((card) => card.ref)),
     );
     expect(placed).not.toContain("UC-099");
+  });
+});
+
+describe("moveCard", () => {
+  const baseMap = (): StoryMap => ({
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: [],
+    activities: ["Browse", "Order"],
+    steps: [{ activity: "Browse", step: "Filter" }],
+    slices: ["Walking skeleton", "Next"],
+    cards: [
+      { title: "A", activity: "Browse", step: "Filter", slice: "Walking skeleton", tags: [] },
+      { title: "B", activity: "Browse", step: "Filter", slice: "Walking skeleton", tags: [] },
+      { title: "C", activity: "Order", slice: "Next", tags: [] },
+    ],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+  });
+
+  it("moves a card to a new (activity, slice) cell, dropping the step when none given", () => {
+    const next = moveCard(baseMap(), 0, { activity: "Order", slice: "Next" });
+    expect(next.cards[2]).toMatchObject({ title: "A", activity: "Order", slice: "Next" });
+    expect(next.cards[2].step).toBeUndefined();
+    // Source array is untouched.
+    expect(baseMap().cards[0].activity).toBe("Browse");
+  });
+
+  it("places the moved card at indexInCell among the destination cell's cards", () => {
+    // Move C (index 2) into Browse/Filter/Walking skeleton at position 1 (between A and B).
+    const next = moveCard(
+      baseMap(),
+      2,
+      { activity: "Browse", step: "Filter", slice: "Walking skeleton" },
+      1,
+    );
+    const cell = next.cards.filter(
+      (c) => c.activity === "Browse" && c.step === "Filter" && c.slice === "Walking skeleton",
+    );
+    expect(cell.map((c) => c.title)).toEqual(["A", "C", "B"]);
+  });
+
+  it("appends to the destination cell when indexInCell is omitted", () => {
+    const next = moveCard(baseMap(), 2, {
+      activity: "Browse",
+      step: "Filter",
+      slice: "Walking skeleton",
+    });
+    const cell = next.cards.filter(
+      (c) => c.activity === "Browse" && c.step === "Filter" && c.slice === "Walking skeleton",
+    );
+    expect(cell.map((c) => c.title)).toEqual(["A", "B", "C"]);
+  });
+
+  it("returns the map unchanged for an out-of-range index", () => {
+    const map = baseMap();
+    expect(moveCard(map, 9, { activity: "Order", slice: "Next" })).toBe(map);
   });
 });

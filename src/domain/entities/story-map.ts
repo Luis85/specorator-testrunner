@@ -290,6 +290,63 @@ export interface StoryMapGrid {
   rows: StoryMapGridRow[];
 }
 
+/** A destination cell for a card move: the (activity, optional step, slice). */
+export interface CardTarget {
+  activity: string;
+  step?: string;
+  slice: string;
+}
+
+/** Re-coordinates a card to `target`, dropping `step` when the target has none. */
+const withCell = (card: StoryMapCard, target: CardTarget): StoryMapCard => {
+  const rebased = { ...card, activity: target.activity, slice: target.slice };
+  if (target.step === undefined) {
+    // Omit the key entirely (not `step: undefined`) so it matches no-step cards.
+    const { step: _step, ...noStep } = rebased;
+    return noStep;
+  }
+  return { ...rebased, step: target.step };
+};
+
+/** The indices in `cards` of the cards already in `target`'s cell (in order). */
+const cellIndices = (cards: readonly StoryMapCard[], target: CardTarget): number[] =>
+  cards.reduce<number[]>((acc, c, i) => {
+    const sameStep = (c.step ?? undefined) === (target.step ?? undefined);
+    if (c.activity === target.activity && sameStep && c.slice === target.slice) acc.push(i);
+    return acc;
+  }, []);
+
+/**
+ * Moves the card at `cardIndex` into `target`'s (activity, step, slice) cell,
+ * placing it at `indexInCell` among that cell's existing cards (clamped; default
+ * = end of the cell). Returns a NEW StoryMap with `cards` reordered so the
+ * rendered grid (which preserves `cards` order within a cell) reflects the drop.
+ * An out-of-range `cardIndex` returns the same map reference. Pure: no I/O.
+ */
+export const moveCard = (
+  map: StoryMap,
+  cardIndex: number,
+  target: CardTarget,
+  indexInCell?: number,
+): StoryMap => {
+  const card = map.cards[cardIndex];
+  if (card === undefined) return map;
+  const moved = withCell(card, target);
+  const rest = map.cards.filter((_, i) => i !== cardIndex);
+  const positions = cellIndices(rest, target);
+  const clamped =
+    indexInCell === undefined
+      ? positions.length
+      : Math.max(0, Math.min(indexInCell, positions.length));
+  const insertAt =
+    clamped < positions.length
+      ? positions[clamped]
+      : positions.length > 0
+        ? positions[positions.length - 1] + 1
+        : rest.length;
+  return { ...map, cards: [...rest.slice(0, insertAt), moved, ...rest.slice(insertAt)] };
+};
+
 /**
  * Leaf columns: for each activity in order, one column per declared step of that
  * activity (in `steps` order). An activity also gets a `{ activity, step:
