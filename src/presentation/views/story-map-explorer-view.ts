@@ -18,8 +18,6 @@ export interface StoryMapExplorerDeps {
   eventBus: EventBus;
   /** Opens the Story Map Builder. */
   openStoryMapBuilder: () => void;
-  /** Opens the card manager for a given map (add/edit/remove cards). */
-  openCardManager: (map: StoryMap) => void;
   /** Opens the map-settings modal (edit title/status/product). */
   openMapSettings: (map: StoryMap) => void;
   /** Opens the read-only board for a given map in the main workspace view. */
@@ -107,14 +105,6 @@ export class StoryMapExplorerView extends LiveDashboardView {
       cls: "e2e-test-hub-story-map-status",
       attr: { "data-status": map.status, title: `Map status: ${map.status}` },
     });
-
-    row
-      .createEl("button", {
-        text: "Cards",
-        cls: "e2e-test-hub-link-button",
-        attr: { "aria-label": `Manage cards for ${map.id}` },
-      })
-      .addEventListener("click", () => this.deps.openCardManager(map));
 
     row
       .createEl("button", {

@@ -149,6 +149,18 @@ describe("buildBoardScene", () => {
     expect(tooltipText("sm-board-status-chip")).toBe("Cycle status");
   });
 
+  it("emits an edit-details control per card, tagged with the card index + a tooltip", () => {
+    const specs = buildBoardScene(computeBoardLayout(map));
+    const cardGroup = specs.find(
+      (s) => s.class === "sm-board-card-group" && s.attrs["data-card-index"] === 0,
+    );
+    const children = cardGroup?.children ?? [];
+    const edit = children.find((c) => c.class === "sm-board-edit" && c.tag === "rect");
+    expect(edit?.attrs["data-edit"]).toBe("card");
+    expect(edit?.attrs["data-card-index"]).toBe(0);
+    expect(edit?.children?.find((t) => t.tag === "title")?.text).toBe("Edit details");
+  });
+
   it("renders an empty-state hint only when the map has no cards", () => {
     const withCard = flatten(buildBoardScene(computeBoardLayout(map))).find(
       (s) => s.class === "sm-board-empty",

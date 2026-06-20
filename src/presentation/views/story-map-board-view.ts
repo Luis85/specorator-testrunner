@@ -1,5 +1,6 @@
 import { Notice, type WorkspaceLeaf } from "obsidian";
 import type { StoryMapService } from "../../application/services/story-map-service";
+import type { UseCaseService } from "../../application/services/use-case-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { CardTarget, StoryMap } from "../../domain/entities/story-map";
 import {
@@ -30,6 +31,7 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { renderLoadError } from "./modal-helpers";
 import { buildBoardScene, type SvgNodeSpec } from "./story-map-board-scene";
+import { StoryMapCardModal } from "./story-map-card-modal";
 import {
   type BoardLayout,
   computeBoardLayout,
@@ -53,7 +55,9 @@ const REFRESH_ON: DomainEventType[] = [];
 const SAVE_DEBOUNCE_MS = 300;
 
 export interface StoryMapBoardDeps {
-  storyMapService: Pick<StoryMapService, "findById" | "saveMap">;
+  storyMapService: Pick<StoryMapService, "findById" | "saveMap" | "addCard" | "updateCard">;
+  /** Passed to the Card modal for the reference picker + Promote-to-Use-Case. */
+  useCaseService: Pick<UseCaseService, "create" | "assignToPrd" | "findAll">;
   eventBus: EventBus;
 }
 
@@ -417,7 +421,7 @@ export class StoryMapBoardView extends LiveDashboardView {
     container.createEl("h2", { text: this.model.title, cls: "sm-board-title" });
     container.createEl("p", {
       cls: "sm-board-hint",
-      text: "Hover a cell for + card · hover a card to edit, color, set status, or remove · double-click any header or card to rename · drag to move and reorder.",
+      text: "Hover a cell for + card · ✎ a card for full details (points, tags, reference, promote to Use Case) · hover a card to color, set status, or remove · double-click any header or card to rename · drag to move and reorder.",
     });
     const layout = computeBoardLayout(this.model);
     const svg = this.renderSvg(container, layout);
@@ -546,6 +550,7 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.bindEvent(svg, "rect[data-remove]", "click", (el) => this.onRemove(el));
     this.bindEvent(svg, "rect[data-color-index]", "click", (el) => this.onCycleColor(el));
     this.bindEvent(svg, "rect[data-status-index]", "click", (el) => this.onCycleStatus(el));
+    this.bindEvent(svg, "rect[data-edit]", "click", (el) => this.onEditCardDetails(el));
     const headers =
       "rect.sm-board-activity, rect.sm-board-slice, rect.sm-board-step, rect.sm-board-user";
     this.bindEvent(svg, headers, "dblclick", (el) => this.onEditHeader(el as SVGElement));
@@ -664,6 +669,34 @@ export class StoryMapBoardView extends LiveDashboardView {
       if (this.model === null) return;
       this.applyCardEdit(editCardTitle(this.model, index, value));
     });
+  }
+
+  /** Opens the deep Card modal for the clicked card's `data-card-index`. */
+  private onEditCardDetails(el: Element): void {
+    const index = indexAttr(el, "data-card-index");
+    if (index !== null) void this.openCardEditor(index);
+  }
+
+  /**
+   * Opens {@link StoryMapCardModal} in edit mode for the card at `index` (points,
+   * tags, reference, status, color, coordinate, Promote to Use Case). Flushes any
+   * pending board save FIRST so the on-disk card list matches our in-memory model
+   * — otherwise the modal's `updateCard` index/`expected` guard would target a
+   * different on-disk card. The modal's write publishes `storymap.updated` (no
+   * origin), which the board's `onExternalUpdate` reloads — so no explicit refresh.
+   */
+  private async openCardEditor(index: number): Promise<void> {
+    await this.flushSave();
+    if (this.model === null) return;
+    const card = this.model.cards[index];
+    if (card === undefined) return;
+    new StoryMapCardModal(this.app, {
+      storyMapService: this.deps.storyMapService,
+      useCaseService: this.deps.useCaseService,
+      map: this.model,
+      editIndex: index,
+      card,
+    }).open();
   }
 
   /** Applies a header rename to the model, repaints, and saves. */

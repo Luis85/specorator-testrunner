@@ -1286,6 +1286,17 @@
   font-size: 12px;
 }
 
+.sm-board-edit {
+  fill: var(--background-modifier-border);
+  cursor: pointer;
+}
+
+.sm-board-edit-label {
+  fill: var(--text-muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
 .sm-board-add-card {
   fill: var(--background-modifier-border);
   cursor: pointer;
@@ -1301,6 +1312,7 @@
    Scoped to card-group descendants so the HEADER `×` controls (loose siblings,
    not inside a card group) keep their faint-default + hover-full behavior. */
 .sm-board-card-group .sm-board-remove,
+.sm-board-card-group .sm-board-edit,
 .sm-board-card-group .sm-board-swatch,
 .sm-board-card-group .sm-board-status-chip {
   opacity: 0;
@@ -1308,9 +1320,11 @@
 }
 
 .sm-board-card-group:hover .sm-board-remove,
+.sm-board-card-group:hover .sm-board-edit,
 .sm-board-card-group:hover .sm-board-swatch,
 .sm-board-card-group:hover .sm-board-status-chip,
 .sm-board-card-group:focus-within .sm-board-remove,
+.sm-board-card-group:focus-within .sm-board-edit,
 .sm-board-card-group:focus-within .sm-board-swatch,
 .sm-board-card-group:focus-within .sm-board-status-chip {
   opacity: 1;

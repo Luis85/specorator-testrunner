@@ -69,6 +69,17 @@ const removeButton = (
   { tag: "text", class: `${cls}-label`, attrs: { x: x + 4, y: y + 12, ...data }, text: "×" },
 ];
 
+/** A small clickable `✎` edit control (rect + label sharing the `data-edit` attrs). */
+const editButton = (
+  cls: string,
+  x: number,
+  y: number,
+  data: Record<string, string | number>,
+): SvgNodeSpec[] => [
+  rect(cls, x, y, 16, 16, data),
+  { tag: "text", class: `${cls}-label`, attrs: { x: x + 3, y: y + 12, ...data }, text: "✎" },
+];
+
 /** A small clickable `+` control (16×16 rect + label sharing the `data-add` attrs). */
 const plusButton = (
   cls: string,
@@ -102,6 +113,12 @@ const cardGroupSpec = (box: BoardLayout["cards"][number]): SvgNodeSpec => {
   });
   remove[0].children = [tooltip("Remove card")];
   children.push(...remove);
+  const edit = editButton("sm-board-edit", box.x + box.width - 36, box.y + 4, {
+    "data-edit": "card",
+    "data-card-index": box.cardIndex,
+  });
+  edit[0].children = [tooltip("Edit details")];
+  children.push(...edit);
   // Color swatch (click → cycle palette) at the card's bottom-left.
   const swatch = rect("sm-board-swatch", box.x + 8, box.y + box.height - 16, 12, 12, {
     "data-color-index": box.cardIndex,
