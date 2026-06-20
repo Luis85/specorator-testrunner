@@ -28,10 +28,21 @@ accessibility, Obsidian CSS theming, native inline text editing) while allowing
 vector zoom/pan. Card/column/slice geometry and all edit operations live in
 **pure, unit-tested modules** behind a thin `ItemView`.
 
-Later phases add the plugin's **first runtime dependencies** — `panzoom` (MIT,
-zoom/pan) and `@atlaskit/pragmatic-drag-and-drop` (Apache-2.0, drag) — recorded
-here; both are small, permissive, and version-pinned. P1 (read-only board) adds
-no dependency.
+Phased work adds the plugin's **first runtime dependencies**, recorded here;
+each is small, permissive, and version-pinned. P1 (read-only board) added none.
+
+**P2 spike outcome (drag library).** The design first chose
+`@atlaskit/pragmatic-drag-and-drop` (Apache-2.0). The P2 spike retired that
+choice: Pragmatic-DnD — like native HTML5 drag-and-drop — requires an
+`HTMLElement`, but the board renders cards as SVG `<rect>`s (`SVGRectElement`),
+so neither can attach to them. P2 therefore adopts **`interact.js`** (MIT), a
+**pointer-event** library that works on SVG and, being pointer-based, is also
+robust over the CSS-transformed (zoomed) surface P5 introduces — so it doubles
+as the drag substrate for later phases. It is the spec's named fallback. The
+drag library is isolated behind a one-function adapter
+(`story-map-board-dnd.ts`), the sole importer, so it stays swappable.
+
+**P5** will add `panzoom` (MIT) for zoom/pan.
 
 ## Considered alternatives
 - **Keep the table-only model (ADR-0028).** Rejected by the product owner: the
@@ -45,5 +56,6 @@ no dependency.
 - The board supersedes the table as the primary authoring surface; the table is
   a kept, always-in-sync secondary rendering.
 - All board logic is pure and tested; the `ItemView` stays thin (complexity gate).
-- The plugin gains two small runtime dependencies in later phases (not P1).
+- The plugin gains its first runtime dependency in P2 (`interact.js`) and a second
+  in P5 (`panzoom`); both sit behind thin, swappable adapters.
 - Zoom/pan and focus are ephemeral view state, never written to the note.

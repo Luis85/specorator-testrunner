@@ -1,83 +1,47 @@
-import {
-  draggable,
-  dropTargetForElements,
-} from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import interact from "interactjs";
 
 /**
- * The data a dragged card carries: its stable index in `map.cards`. Kept tiny so
- * the drop handler resolves everything else from the board layout (§4).
+ * Pointer-drag callbacks for the board's cards. Coordinates are screen-space
+ * (`clientX`/`clientY`); the board converts them to board space and resolves the
+ * drop cell via its pure layout hit-test. Kept tiny so all geometry stays out of
+ * this adapter.
  */
-export interface CardDragData {
-  /** Discriminator so a drop target can recognise our payload. */
-  kind: "story-map-card";
-  cardIndex: number;
+export interface CardDragCallbacks {
+  /** A drag began on this card element. */
+  onStart: (element: SVGElement) => void;
+  /** The drag ended at the given screen point. */
+  onEnd: (element: SVGElement, clientX: number, clientY: number) => void;
 }
 
-/** A cell that can receive a card: its (activity, step, slice) coordinate. */
-export interface CellDropData {
-  kind: "story-map-cell";
-  activity: string;
-  step?: string;
-  slice: string;
+/** The fields we read off an interact.js drag event (it types the event loosely). */
+interface DragEventLike {
+  target: SVGElement;
+  client: { x: number; y: number };
 }
 
-/** Type guard for the dragged-card payload. */
-export const isCardDragData = (data: unknown): data is CardDragData =>
-  typeof data === "object" &&
-  data !== null &&
-  (data as Record<string, unknown>).kind === "story-map-card" &&
-  typeof (data as Record<string, unknown>).cardIndex === "number";
-
 /**
- * Makes an element a draggable card. Returns the cleanup function Pragmatic-DnD
- * hands back (call it on re-render/teardown). The board owns all geometry; this
- * adapter only carries the card index.
+ * Makes every `.sm-board-card` inside `root` draggable with interact.js — a
+ * pointer-event library, so it works on SVG elements. (The board renders cards
+ * as SVG `<rect>`s; both native HTML5 drag-and-drop and `@atlaskit/pragmatic-
+ * drag-and-drop` require an `HTMLElement` and cannot attach to them — see the
+ * ADR-0029 spike note.)
  *
- * NOTE: Pragmatic-DnD's draggable() requires HTMLElement; SVG <rect> elements
- * (SVGRectElement) are not HTMLElement, so the board view uses native drag events
- * instead and calls this only when an HTMLElement drag source is available.
+ * This is the SOLE importer of interact.js, so the drag library stays a thin,
+ * swappable adapter. The board owns all geometry/hit-testing; this only relays
+ * pointer start/end. Returns a cleanup function that detaches the interactable.
  */
-// fallow-ignore-next-line unused-export
-export const makeCardDraggable = (
-  element: HTMLElement,
-  cardIndex: number,
-  onDragStateChange: (dragging: boolean) => void,
-): (() => void) =>
-  draggable({
-    element,
-    getInitialData: (): Record<string, unknown> => ({
-      kind: "story-map-card" as const,
-      cardIndex,
-    }),
-    onDragStart: () => onDragStateChange(true),
-    onDrop: () => onDragStateChange(false),
-  });
-
-/**
- * Makes an element a drop target for cards. `onDrop` fires with the dragged
- * card's index when a card is released over this cell. Returns the cleanup fn.
- *
- * NOTE: At P2 the board uses a whole-SVG native drop listener for position-based
- * cell resolution (resolveDropTarget). This API is available for P3+ when
- * per-cell Pragmatic-backed drop targets are needed.
- */
-// fallow-ignore-next-line unused-export
-export const makeCellDropTarget = (
-  element: Element,
-  cell: Omit<CellDropData, "kind">,
-  onDrop: (cardIndex: number) => void,
-  onDragStateChange: (over: boolean) => void,
-): (() => void) =>
-  dropTargetForElements({
-    element,
-    getData: (): Record<string, unknown> => ({
-      kind: "story-map-cell" as const,
-      ...cell,
-    }),
-    onDragEnter: () => onDragStateChange(true),
-    onDragLeave: () => onDragStateChange(false),
-    onDrop: ({ source }) => {
-      onDragStateChange(false);
-      if (isCardDragData(source.data)) onDrop(source.data.cardIndex);
+export const makeCardsDraggable = (
+  root: HTMLElement,
+  callbacks: CardDragCallbacks,
+): (() => void) => {
+  // interact.js types its listener event loosely; annotate just the fields we
+  // read (the dragged element + the screen-space pointer point) so the access is
+  // type-checked rather than `any`.
+  const interactable = interact(".sm-board-card", { context: root }).draggable({
+    listeners: {
+      start: (event: DragEventLike) => callbacks.onStart(event.target),
+      end: (event: DragEventLike) => callbacks.onEnd(event.target, event.client.x, event.client.y),
     },
   });
+  return () => interactable.unset();
+};

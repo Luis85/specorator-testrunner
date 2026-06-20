@@ -44,6 +44,6 @@
     "vitest": "^4.1.8"
   },
   "dependencies": {
-    "@atlaskit/pragmatic-drag-and-drop": "^2.0.1"
+    "interactjs": "^1.10.27"
   }
 }

@@ -8,7 +8,7 @@ import { LiveDashboardView } from "./live-dashboard-view";
 import { renderLoadError } from "./modal-helpers";
 import { buildBoardScene } from "./story-map-board-scene";
 import { type BoardLayout, computeBoardLayout, resolveDropTarget } from "./story-map-board-layout";
-import { isCardDragData } from "./story-map-board-dnd";
+import { makeCardsDraggable } from "./story-map-board-dnd";
 
 export const STORY_MAP_BOARD_VIEW_TYPE = "e2e-test-hub-story-map-board";
 
@@ -36,11 +36,9 @@ export class StoryMapBoardView extends LiveDashboardView {
   private isOpen = false;
   private model: StoryMap | null = null;
   private readonly origin = `board-${Math.random().toString(36).slice(2)}`;
-  private saveTimer: ReturnType<typeof setTimeout> | null = null;
-  private cleanups: Array<() => void> = [];
+  private saveTimer: number | null = null;
+  private cleanups: (() => void)[] = [];
   private unsubscribeUpdated: (() => void) | null = null;
-  /** Index of the card currently being dragged; null when idle. */
-  private draggingCardIndex: number | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -102,7 +100,7 @@ export class StoryMapBoardView extends LiveDashboardView {
   // fallow-ignore-next-line unused-class-member
   async onClose(): Promise<void> {
     this.isOpen = false;
-    this.flushSave();
+    void this.flushSave();
     this.teardownDnd();
     this.unsubscribeUpdated?.();
     this.unsubscribeUpdated = null;
@@ -141,6 +139,9 @@ export class StoryMapBoardView extends LiveDashboardView {
   /** Renders the current working model + wires drag/drop. Re-callable after a move. */
   private paint(container: HTMLElement): void {
     if (this.model === null) return;
+    // Detach prior drag wiring before re-rendering (an optimistic repaint after a
+    // drop calls paint directly, without going through render's teardown).
+    this.teardownDnd();
     container.empty();
     container.createEl("h2", { text: this.model.title, cls: "sm-board-title" });
     const layout = computeBoardLayout(this.model);
@@ -167,78 +168,54 @@ export class StoryMapBoardView extends LiveDashboardView {
   }
 
   /**
-   * Makes each card-rect natively draggable and wires the SVG as the drop
-   * surface. Uses native HTML5 drag events because SVG <rect> elements are
-   * SVGRectElement (not HTMLElement), so Pragmatic-DnD's draggable() cannot
-   * attach to them directly. isCardDragData from the DnD adapter validates the
-   * drag payload carried via dataTransfer. All listeners stored in cleanups[].
+   * Makes each card draggable via interact.js (pointer-based, so it works on the
+   * SVG `<rect>` cards — see ADR-0029 / story-map-board-dnd). On drop, the pointer
+   * position resolves the target cell through the pure hit-test. The interactable
+   * is detached on the next teardown (paint/close).
    */
   private wireDnd(svg: SVGSVGElement, layout: BoardLayout): void {
-    for (const rect of Array.from(svg.querySelectorAll("rect.sm-board-card"))) {
-      this.wireCardDrag(rect);
-    }
-    this.wireSvgDrop(svg, layout);
+    this.cleanups.push(
+      makeCardsDraggable(this.contentEl, {
+        onStart: (el) => el.classList.add("is-dragging"),
+        onEnd: (el, clientX, clientY) => this.onCardDrop(el, clientX, clientY, svg, layout),
+      }),
+    );
   }
 
-  /** Attaches native drag-source listeners to one card rect. */
-  private wireCardDrag(rect: Element): void {
-    const index = Number(rect.getAttribute("data-card-index"));
-    if (Number.isNaN(index)) return;
-    rect.setAttribute("draggable", "true");
-    const onStart = (ev: Event) => {
-      const dragData = { kind: "story-map-card" as const, cardIndex: index };
-      (ev as DragEvent).dataTransfer?.setData("application/json", JSON.stringify(dragData));
-      this.draggingCardIndex = index;
-      rect.classList.add("is-dragging");
-    };
-    const onEnd = () => {
-      this.draggingCardIndex = null;
-      rect.classList.remove("is-dragging");
-    };
-    rect.addEventListener("dragstart", onStart);
-    rect.addEventListener("dragend", onEnd);
-    this.cleanups.push(() => {
-      rect.removeEventListener("dragstart", onStart);
-      rect.removeEventListener("dragend", onEnd);
-    });
-  }
-
-  /** Attaches native drop-surface listeners to the whole SVG element. */
-  private wireSvgDrop(svg: SVGSVGElement, layout: BoardLayout): void {
-    const onDragOver = (ev: Event) => ev.preventDefault();
-    const onDrop = (ev: Event) => this.onSvgDrop(ev as DragEvent, svg, layout);
-    svg.addEventListener("dragover", onDragOver);
-    svg.addEventListener("drop", onDrop);
-    this.cleanups.push(() => {
-      svg.removeEventListener("dragover", onDragOver);
-      svg.removeEventListener("drop", onDrop);
-    });
-  }
-
-  /**
-   * Parses the drag payload (via isCardDragData from the DnD adapter), resolves
-   * the drop cell from the pointer position, and returns the next model state.
-   * Returns null when the drop is invalid (wrong payload, outside cells, no-op).
-   */
-  // fallow-ignore-next-line complexity
-  private buildMove(ev: DragEvent, svg: SVGSVGElement, layout: BoardLayout): StoryMap | null {
-    if (this.model === null) return null;
-    const raw = ev.dataTransfer?.getData("application/json");
-    const parsed: unknown = raw ? (JSON.parse(raw) as unknown) : null;
-    if (!isCardDragData(parsed)) return null;
-    const point = this.toBoardPoint(svg, ev.clientX, ev.clientY);
-    const target = resolveDropTarget(layout, point);
-    if (target === null) return null;
-    return moveCard(this.model, parsed.cardIndex, target, target.indexInCell);
-  }
-
-  /** Applies the move optimistically and schedules a save. */
-  private onSvgDrop(ev: DragEvent, svg: SVGSVGElement, layout: BoardLayout): void {
-    const next = this.buildMove(ev, svg, layout);
+  /** Applies the dropped card's move optimistically and schedules a save. */
+  private onCardDrop(
+    el: SVGElement,
+    clientX: number,
+    clientY: number,
+    svg: SVGSVGElement,
+    layout: BoardLayout,
+  ): void {
+    el.classList.remove("is-dragging");
+    const next = this.buildMove(el, clientX, clientY, svg, layout);
     if (next === null || next === this.model) return;
     this.model = next;
     this.paint(this.contentEl);
     this.scheduleSave();
+  }
+
+  /**
+   * Resolves the dropped card + pointer position to the next model state via the
+   * pure `resolveDropTarget` + `moveCard`. Returns null when the drop is invalid
+   * (no card index, or released outside every cell).
+   */
+  private buildMove(
+    el: SVGElement,
+    clientX: number,
+    clientY: number,
+    svg: SVGSVGElement,
+    layout: BoardLayout,
+  ): StoryMap | null {
+    if (this.model === null) return null;
+    const cardIndex = Number(el.getAttribute("data-card-index"));
+    if (Number.isNaN(cardIndex)) return null;
+    const target = resolveDropTarget(layout, this.toBoardPoint(svg, clientX, clientY));
+    if (target === null) return null;
+    return moveCard(this.model, cardIndex, target, target.indexInCell);
   }
 
   /** Screen → board coordinates using the SVG's CTM (identity-ish at P2). */
@@ -257,14 +234,14 @@ export class StoryMapBoardView extends LiveDashboardView {
   }
 
   private scheduleSave(): void {
-    if (this.saveTimer !== null) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => void this.flushSave(), SAVE_DEBOUNCE_MS);
+    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => void this.flushSave(), SAVE_DEBOUNCE_MS);
   }
 
   // fallow-ignore-next-line complexity
   private async flushSave(): Promise<void> {
     if (this.saveTimer !== null) {
-      clearTimeout(this.saveTimer);
+      window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
     if (this.model === null || this.storyMapId === null) return;
