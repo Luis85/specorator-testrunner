@@ -695,6 +695,13 @@ export class DefaultStoryMapService implements StoryMapService {
    * CRLF-safe, mirrors {@link writeMap}. Publishes `storymap.updated`.
    */
   private async writeMeta(map: StoryMap, titleChanged: boolean): Promise<Result<StoryMap>> {
+    // Mirror the rebuild/board/card writes: never regenerate the managed grid from
+    // an off-map card. A hand-edited card that still parses but points at an unknown
+    // activity/step/slice would be dropped from the visible grid yet left in the
+    // `cards` frontmatter, so the next board edit keeps failing on the now-hidden
+    // bad card. Reject the metadata save before refreshing the managed blocks.
+    const cardReason = invalidCardReason(map, map.cards);
+    if (cardReason !== null) return err(appError("VALIDATION_FAILED", cardReason));
     const read = await this.fs.readFile(map.path);
     if (!read.ok) return read;
     const noteNames = await this.resolveNoteNames(map);

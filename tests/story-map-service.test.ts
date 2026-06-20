@@ -1055,4 +1055,44 @@ describe("DefaultStoryMapService.updateMapMeta", () => {
     if (result.ok) return;
     expect(result.error.message).toContain("not found");
   });
+
+  it("refuses a metadata save when a card was hand-edited to an off-map activity", async () => {
+    // Same guard as rebuild/board/card writes: a card pointing at an unknown
+    // activity would be dropped from the regenerated grid but linger in frontmatter,
+    // so a Settings save (title/status/product) must reject it instead of refreshing
+    // the managed blocks around the hidden bad card.
+    const { service, fs } = build({ "UC-037": "Use Cases/UC-037 Author a Use Case.md" });
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "status: draft",
+        "product: PRD-000",
+        "activities:",
+        "  - Author spec",
+        "slices:",
+        "  - Walking skeleton",
+        "cards:",
+        "  - UC-037 | Ghost activity | Walking skeleton",
+        "---",
+        "## Map",
+        "",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+      ].join("\n"),
+    );
+
+    const result = await service.updateMapMeta("SM-001", { status: "active" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+    // The note is left untouched — the status change isn't written around the bad card.
+    expect(fs.files.get(path)).toContain("status: draft");
+    expect(fs.files.get(path)).toContain("(empty)");
+  });
 });
