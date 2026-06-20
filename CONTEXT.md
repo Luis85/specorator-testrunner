@@ -65,7 +65,7 @@ A placement on a **Story Map**, encoded as the parser-safe nine-field string `"r
 _Avoid_: Ticket, cell. (A reference-less card IS a "story" here, per ADR-0028.)
 
 **Story Map Board** _(see ADR-0029)_:
-The interactive visual rendering of a **Story Map** in the main workspace view — a users lane, activity/step columns, and slice rows of card tiles. An editable view over the note frontmatter (the single source of truth); the managed Markdown table is kept in sync. P1 is read-only; later phases add drag, inline editing, and zoom/pan.
+The interactive visual rendering of a **Story Map** in the main workspace view — a users lane, activity/step columns, and slice rows of card tiles. An editable view over the note frontmatter (the single source of truth); the managed Markdown table is kept in sync. P1 shipped the read-only board; P2 adds drag-and-drop — a card can be dragged to another (activity, step, slice) cell, persisted to the `cards` frontmatter via a debounced save (interact.js, pointer-based, behind a swappable adapter). Later phases add structure edits, inline editing, and zoom/pan.
 _Avoid_: Canvas, whiteboard, grid view.
 
 **Planning Status** _(accepted — see ADR-0028)_:

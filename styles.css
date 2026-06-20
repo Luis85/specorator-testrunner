@@ -1190,3 +1190,15 @@
 .sm-board-card-attrs {
   fill: var(--text-muted);
 }
+
+/* Drag affordances (P2). interact.js is pointer-based, so suppress touch
+   panning on a card while it is the drag handle. */
+.sm-board-card {
+  cursor: grab;
+  touch-action: none;
+}
+
+.sm-board-card.is-dragging {
+  cursor: grabbing;
+  opacity: 0.5;
+}
