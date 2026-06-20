@@ -85,6 +85,27 @@ every command, but each one is also reachable through a view:
   inline), plus **Validate environment**, **Repair installation**, **Generate CI
   workflow**, and **Check CI readiness** with inline result checklists.
 
+## Using Story Maps
+
+Story Maps are an upstream-design overlay alongside PRDs (see _Vault layout_).
+The fast path from a blank map to a working board:
+
+- **Create a map** with **New Story Map** (ribbon **Open Story Maps** →
+  **New Story Map**). Creation auto-seeds the reserved root **PRD-000** if no PRD
+  resolves yet, so it completes from a fresh vault.
+- **The board opens** for the new map — the board is the primary working surface
+  (the explorer row's title click reopens it).
+- **Add cards** with the per-cell **+ card** affordance (revealed on cell hover);
+  hover an existing card to edit its attributes, cycle its color, set its
+  planning status, or remove it.
+- **Arrange** by dragging cards and headers to move and reorder, and
+  **double-click any header or card** to rename it inline.
+- **Promote a card to a Use Case** from the card editor: it creates the UC,
+  anchors it to the map's product, and sets the card's reference in one step.
+- **The managed Markdown tables stay in sync** with the note's frontmatter; after
+  hand-editing the `cards`/`product` frontmatter, run **Refresh tables** on the
+  explorer row to regenerate them.
+
 ## Vision
 
 Enable teams to transform requirements into executable specifications and

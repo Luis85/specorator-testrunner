@@ -386,6 +386,10 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.teardownDnd();
     container.empty();
     container.createEl("h2", { text: this.model.title, cls: "sm-board-title" });
+    container.createEl("p", {
+      cls: "sm-board-hint",
+      text: "Hover a cell for + card · hover a card to edit, color, set status, or remove · double-click any header or card to rename · drag to move and reorder.",
+    });
     const layout = computeBoardLayout(this.model);
     const svg = this.renderSvg(container, layout);
     // The overlay is created last so it paints on top of the scene; the view

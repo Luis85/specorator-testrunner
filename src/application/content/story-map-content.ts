@@ -238,7 +238,7 @@ export const buildStoryMapNote = (map: StoryMap, noteNames: Map<string, string>)
     "> Source of truth is the frontmatter (`users`, `activities`, `steps`,",
     "> `slices`, `cards`). Each card is a `ref | activity | step | slice | status",
     "> | points | tags | color | title` scalar; edit the `cards` list, then run",
-    '> "Rebuild grid" to regenerate the tables below.',
+    '> "Refresh tables" to regenerate the tables below.',
     "",
     "## Map",
     "",

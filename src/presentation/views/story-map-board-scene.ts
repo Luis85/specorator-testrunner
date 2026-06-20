@@ -164,14 +164,21 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
 
   // Activity group headers.
   layout.activityGroups.forEach((g, i) => {
-    specs.push(
-      rect("sm-board-activity", g.x, M.laneHeight, g.width, M.activityHeaderHeight, {
+    const activityRect = rect(
+      "sm-board-activity",
+      g.x,
+      M.laneHeight,
+      g.width,
+      M.activityHeaderHeight,
+      {
         "data-activity-index": i,
         tabindex: 0,
         role: "button",
         "aria-label": `Activity: ${g.activity}`,
-      }),
+      },
     );
+    activityRect.children = [tooltip("Double-click to rename")];
+    specs.push(activityRect);
     specs.push(
       text(
         "sm-board-activity-label",
@@ -197,7 +204,9 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
       c.step !== undefined
         ? { ...base, "data-activity": c.activity, "data-step": c.step }
         : { ...base, "data-activity": c.activity };
-    specs.push(rect("sm-board-step", c.x, stepY, c.width, M.stepHeaderHeight, attrs));
+    const stepRect = rect("sm-board-step", c.x, stepY, c.width, M.stepHeaderHeight, attrs);
+    stepRect.children = [tooltip("Double-click to rename")];
+    specs.push(stepRect);
     specs.push(
       text(
         "sm-board-step-label",
@@ -219,14 +228,14 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
 
   // Slice row headers.
   layout.rows.forEach((r, i) => {
-    specs.push(
-      rect("sm-board-slice", 0, r.y, M.rowHeaderWidth, r.height, {
-        "data-slice-index": i,
-        tabindex: 0,
-        role: "button",
-        "aria-label": `Slice: ${r.slice}`,
-      }),
-    );
+    const sliceRect = rect("sm-board-slice", 0, r.y, M.rowHeaderWidth, r.height, {
+      "data-slice-index": i,
+      tabindex: 0,
+      role: "button",
+      "aria-label": `Slice: ${r.slice}`,
+    });
+    sliceRect.children = [tooltip("Double-click to rename")];
+    specs.push(sliceRect);
     specs.push(text("sm-board-slice-label", 8, r.y + 18, r.slice));
     specs.push(
       ...removeButton("sm-board-remove", M.rowHeaderWidth - 18, r.y + 4, {

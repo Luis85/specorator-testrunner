@@ -27,7 +27,7 @@ export interface StoryMapExplorerDeps {
 /**
  * Live "Story Maps" panel: the flat list of Story Maps (PRD-sibling overlays),
  * each showing its product anchor and backbone/slice/card counts, with open,
- * rebuild-grid, and delete actions. Mirrors the PRDs explorer (LiveDashboardView).
+ * refresh-tables, and delete actions. Mirrors the PRDs explorer (LiveDashboardView).
  */
 export class StoryMapExplorerView extends LiveDashboardView {
   constructor(
@@ -103,7 +103,7 @@ export class StoryMapExplorerView extends LiveDashboardView {
     row.createEl("span", {
       text: map.status,
       cls: "e2e-test-hub-story-map-status",
-      attr: { "data-status": map.status },
+      attr: { "data-status": map.status, title: `Map status: ${map.status}` },
     });
 
     row
@@ -124,9 +124,12 @@ export class StoryMapExplorerView extends LiveDashboardView {
 
     row
       .createEl("button", {
-        text: "Rebuild grid",
+        text: "Refresh tables",
         cls: "e2e-test-hub-link-button",
-        attr: { "aria-label": `Rebuild the grid for ${map.id}` },
+        attr: {
+          "aria-label": `Refresh the Markdown tables for ${map.id}`,
+          title: "Regenerate the managed Markdown tables from this note's frontmatter",
+        },
       })
       .addEventListener("click", () => void this.rebuildGrid(map));
 
@@ -143,8 +146,8 @@ export class StoryMapExplorerView extends LiveDashboardView {
     const result = await this.deps.storyMapService.rebuildGrid(map.id);
     new Notice(
       result.ok
-        ? `Rebuilt the grid for ${map.id}.`
-        : `Could not rebuild ${map.id}: ${result.error.message}`,
+        ? `Refreshed the tables for ${map.id}.`
+        : `Could not refresh ${map.id}: ${result.error.message}`,
     );
   }
 

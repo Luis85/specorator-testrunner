@@ -183,7 +183,9 @@ export class StoryMapCardModal extends Modal {
 
   private renderStatus(contentEl: HTMLElement): void {
     new Setting(contentEl).setName("Planning status").addDropdown((dropdown) => {
-      dropdown.addOption(NO_STATUS_OPTION, "(None)");
+      // Lowercase "(none)" matches the board status-chip + lowercase option styling.
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
+      dropdown.addOption(NO_STATUS_OPTION, "(none)");
       for (const status of statusOptions()) dropdown.addOption(status, status);
       dropdown.setValue(this.values.status);
       dropdown.onChange((value) => (this.values = { ...this.values, status: value }));

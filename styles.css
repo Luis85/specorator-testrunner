@@ -1151,6 +1151,12 @@
   margin: 0 0 var(--size-4-2, 8px);
 }
 
+.sm-board-hint {
+  margin: 0 0 var(--size-4-2, 8px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
 .sm-board-svg {
   display: block;
 }
