@@ -62,3 +62,9 @@ drag library is isolated behind a one-function adapter
 - P3 widens `saveMap` to persist the whole structure (not just cards) under a
   whole-map signature baseline (optimistic concurrency), so the board can reorder
   activities/slices; the note frontmatter stays the single source of truth.
+- P3c adds the structural-edit ops (all pure, in `story-map.ts`): `removeActivity`/
+  `removeSlice`/`removeStep`, `reorderStep`, `addCard`/`removeCard`. **Removal
+  policy** (product-owner): activity/slice removal is **rejected** when any card
+  references it (a card is never silently orphaned); step removal is allowed and
+  its cards **degrade** to no-step (drop the `step` key, hanging under the
+  activity). New cards are `"New card"` placeholders, renamed in place.
