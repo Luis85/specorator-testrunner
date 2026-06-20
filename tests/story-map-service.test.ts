@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { DefaultStoryMapService } from "../src/application/services/story-map-service";
 import type { PrdGuard } from "../src/application/services/story-map-service";
-import { encodeCard, moveCard } from "../src/domain/entities/story-map";
+import {
+  moveCard,
+  reorderActivity,
+  reorderSlice,
+  storyMapSignature,
+} from "../src/domain/entities/story-map";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
@@ -733,7 +738,45 @@ describe("DefaultStoryMapService.saveMap", () => {
     expect(updated?.payload).toMatchObject({ storyMapId: "SM-001", origin: "board-xyz" });
   });
 
-  it("rejects a stale board save whose baseline no longer matches the on-disk cards", async () => {
+  it("persists a reordered backbone and slices (full structure), not just cards", async () => {
+    const { service, fs } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "product: PRD-000",
+        "activities:",
+        "  - Author spec",
+        "  - Run tests",
+        "slices:",
+        "  - Walking skeleton",
+        "  - Next",
+        "cards:",
+        "  - UC-040 | Author spec | Walking skeleton",
+        "---",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+      ].join("\n"),
+    );
+    const loaded = await service.findById("SM-001");
+    if (!loaded.ok || !loaded.value) return;
+    const reordered = reorderActivity(reorderSlice(loaded.value, 0, 1), 0, 1);
+
+    const result = await service.saveMap("SM-001", reordered, "board-xyz");
+    expect(result.ok).toBe(true);
+
+    const reread = await service.findById("SM-001");
+    if (!reread.ok || !reread.value) return;
+    expect(reread.value.activities).toEqual(["Run tests", "Author spec"]);
+    expect(reread.value.slices).toEqual(["Next", "Walking skeleton"]);
+  });
+
+  it("rejects a stale board save whose signature no longer matches the on-disk map", async () => {
     const { service, fs } = build({
       "UC-040": "Use Cases/UC-040 Run the suite.md",
       "UC-041": "Use Cases/UC-041 Other.md",
@@ -760,29 +803,24 @@ describe("DefaultStoryMapService.saveMap", () => {
         "<!-- story-map-grid:end -->",
       ].join("\n"),
     );
-
     const loaded = await service.findById("SM-001");
     if (!loaded.ok || !loaded.value) return;
-    // The board's baseline = the single card it loaded.
-    const baseline = loaded.value.cards.map(encodeCard);
-
-    // Another surface adds a card AFTER the board loaded (on-disk now has two).
-    const added = await service.addCard("SM-001", {
+    const baseline = storyMapSignature(loaded.value);
+    // Another surface adds a card after the board loaded.
+    await service.addCard("SM-001", {
       ref: "UC-041",
       title: "Other",
       activity: "Run tests",
       slice: "Walking skeleton",
       tags: [],
     });
-    expect(added.ok).toBe(true);
-
-    // The board now drag-saves its stale single-card model with the old baseline.
-    const moved = moveCard(loaded.value, 0, { activity: "Run tests", slice: "Walking skeleton" });
-    const result = await service.saveMap("SM-001", moved, "board-xyz", baseline);
+    const result = await service.saveMap(
+      "SM-001",
+      reorderSlice(loaded.value, 0, 0),
+      "board-xyz",
+      baseline,
+    );
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.message).toMatch(/changed elsewhere/);
-    // The card another surface added survives (not overwritten by the stale board).
     expect(fs.files.get(path)).toContain("UC-041");
   });
 

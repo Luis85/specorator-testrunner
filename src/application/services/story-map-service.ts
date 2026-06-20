@@ -11,9 +11,11 @@ import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import {
   encodeCard,
+  encodeStep,
   normalizeLabels,
   normalizeSteps,
   STORY_MAP_DEFAULT_PRODUCT,
+  storyMapSignature,
   type StoryMap,
   type StoryMapCard,
   type StoryMapId,
@@ -100,19 +102,20 @@ export interface StoryMapService {
   removeCard(id: StoryMapId, index: number): Promise<Result<StoryMap>>;
   /**
    * Persists an externally-mutated model (the board's working copy): rewrites the
-   * `cards` frontmatter and regenerates the managed blocks under the mutation
-   * lock, after validating every card against the normalized axes and the product
-   * anchor. Publishes `storymap.updated` carrying `origin` so the caller can skip
-   * the reload it caused. `expectedCards` is the encoded card list the board
-   * loaded; when given, the save is rejected if the on-disk cards have since
-   * changed (optimistic concurrency), so a stale board can't overwrite edits
-   * another surface made. Returns the persisted map.
+   * full structure (users/activities/steps/slices/cards) frontmatter and
+   * regenerates the managed blocks under the mutation lock, after normalizing and
+   * validating every card against the new axes and the product anchor. Publishes
+   * `storymap.updated` carrying `origin` so the caller can skip the reload it
+   * caused. `expected` is the {@link storyMapSignature} the board loaded; when
+   * given, the save is rejected if the on-disk structure has since changed
+   * (optimistic concurrency), so a stale board can't overwrite edits another
+   * surface made. Returns the persisted map.
    */
   saveMap(
     id: StoryMapId,
     model: StoryMap,
     origin?: string,
-    expectedCards?: string[],
+    expected?: string,
   ): Promise<Result<StoryMap>>;
 }
 
@@ -122,20 +125,16 @@ const STORY_MAP_ID_RE = /^SM-(\d{3,})$/;
 const STORY_MAP_MUTATE_KEY = "story-map:mutate";
 
 /**
- * The error when a board's save baseline no longer matches the on-disk cards
- * (another surface changed them since the board loaded), or null when the save
- * may proceed. `expectedCards` is the encoded card list the board loaded; an
- * undefined baseline opts out of the check (non-board callers). Pure.
+ * The error when a board's save baseline no longer matches the on-disk map's
+ * structure (another surface changed it since the board loaded), or null when the
+ * save may proceed. `expected` is the {@link storyMapSignature} the board loaded;
+ * undefined opts out (non-board callers). Pure.
  */
-const staleCardsError = (
-  current: readonly StoryMapCard[],
-  expectedCards: readonly string[] | undefined,
-): string | null => {
-  if (expectedCards === undefined) return null;
-  const encoded = current.map(encodeCard);
-  const matches =
-    encoded.length === expectedCards.length && encoded.every((c, i) => c === expectedCards[i]);
-  return matches ? null : "The Story Map changed elsewhere — reload the board and retry.";
+const staleSignatureError = (current: StoryMap, expected: string | undefined): string | null => {
+  if (expected === undefined) return null;
+  return storyMapSignature(current) === expected
+    ? null
+    : "The Story Map changed elsewhere — reload the board and retry.";
 };
 
 /** The defined `UC-NNN` refs of a card set (reference-less cards contribute none). */
@@ -480,7 +479,7 @@ export class DefaultStoryMapService implements StoryMapService {
     id: StoryMapId,
     model: StoryMap,
     origin?: string,
-    expectedCards?: string[],
+    expected?: string,
   ): Promise<Result<StoryMap>> {
     return this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
       const found = await this.findById(id);
@@ -488,23 +487,66 @@ export class DefaultStoryMapService implements StoryMapService {
       if (!found.value) {
         return err(appError("VALIDATION_FAILED", `Story Map ${id} was not found.`));
       }
-      // Persist card placements against the AUTHORITATIVE on-disk axes (the board
-      // only moves cards in P2; it does not change activities/slices/steps), so a
-      // stale board model can't smuggle off-axis structure into the note.
-      const axes = found.value;
-      // Optimistic concurrency: if the on-disk cards changed since the board
-      // loaded (another surface added/edited them), reject rather than overwrite
-      // the whole list with the board's stale copy and delete those edits.
-      const stale = staleCardsError(axes.cards, expectedCards);
+      const onDisk = found.value;
+      // Optimistic concurrency: reject if the on-disk structure changed since the
+      // board loaded, rather than overwrite those edits with the board's stale copy.
+      const stale = staleSignatureError(onDisk, expected);
       if (stale !== null) return err(appError("VALIDATION_FAILED", stale));
+
+      // Normalize the board's structure exactly like create(), so a board (or
+      // hand) edit can't persist duplicate/blank axes, then validate every card
+      // against the NEW axes (the board may have reordered them).
+      const activities = normalizeLabels(model.activities);
+      if (activities.length === 0) {
+        return err(appError("VALIDATION_FAILED", "A Story Map needs at least one activity."));
+      }
+      const slices = normalizeLabels(model.slices);
+      if (slices.length === 0) {
+        return err(appError("VALIDATION_FAILED", "A Story Map needs at least one release slice."));
+      }
+      const users = normalizeLabels(model.users);
+      const steps = normalizeSteps(model.steps, activities);
       for (const card of model.cards) {
-        const reason = validateCardPlacement(axes, card);
+        const reason = validateCardPlacement({ activities, slices, steps }, card);
         if (reason !== null) return err(appError("VALIDATION_FAILED", reason));
       }
-      const resolvable = await this.requireResolvableProduct(axes.product);
+      const resolvable = await this.requireResolvableProduct(onDisk.product);
       if (!resolvable.ok) return resolvable;
-      return this.writeCards({ ...axes, cards: model.cards }, origin);
+
+      // Persist the on-disk identity (id/path/product/displayOrder) with the
+      // board's normalized structure.
+      return this.writeMap(
+        { ...onDisk, users, activities, steps, slices, cards: model.cards },
+        origin,
+      );
     });
+  }
+
+  /**
+   * Persists the full structure (users/activities/steps/slices/cards) frontmatter
+   * and regenerates the managed blocks, leaving id/product/hand-written body
+   * untouched. CRLF-safe, mirrors {@link writeCards} but for every structural
+   * field. Publishes `storymap.updated` with `origin`.
+   */
+  private async writeMap(map: StoryMap, origin?: string): Promise<Result<StoryMap>> {
+    const read = await this.fs.readFile(map.path);
+    if (!read.ok) return read;
+    const noteNames = await this.resolveNoteNames(map);
+    const normalized = read.value.replace(/\r\n/g, "\n");
+    const updated = updateNoteFrontmatter(normalized, {
+      users: map.users.length > 0 ? map.users : undefined,
+      activities: map.activities.length > 0 ? map.activities : undefined,
+      steps: map.steps.length > 0 ? map.steps.map(encodeStep) : undefined,
+      slices: map.slices.length > 0 ? map.slices : undefined,
+      cards: map.cards.length > 0 ? map.cards.map(encodeCard) : undefined,
+    });
+    const { body } = parseNote(updated);
+    const nextBody = refreshManagedBlocks(body, map, noteNames);
+    const frontmatter = updated.slice(0, updated.length - body.length);
+    const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
+    if (!written.ok) return written;
+    await this.publishUpdated(map, origin);
+    return ok(map);
   }
 
   /**

@@ -2,7 +2,7 @@ import { Notice, type WorkspaceLeaf } from "obsidian";
 import type { StoryMapService } from "../../application/services/story-map-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { StoryMap } from "../../domain/entities/story-map";
-import { encodeCard, moveCard } from "../../domain/entities/story-map";
+import { moveCard, storyMapSignature } from "../../domain/entities/story-map";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { renderLoadError } from "./modal-helpers";
@@ -47,10 +47,10 @@ export class StoryMapBoardView extends LiveDashboardView {
   private storyMapId: string | null = null;
   private isOpen = false;
   private model: StoryMap | null = null;
-  /** The encoded card list as loaded — the optimistic-concurrency baseline for saves. */
-  private baselineCards: string[] = [];
+  /** The map signature as loaded — the optimistic-concurrency baseline for saves. */
+  private baselineCards = "";
   /** The map id + model + baseline a pending save was scheduled for (bound, not live). */
-  private pendingSave: { id: string; model: StoryMap; expected: string[] } | null = null;
+  private pendingSave: { id: string; model: StoryMap; expected: string } | null = null;
   private readonly origin = `board-${Math.random().toString(36).slice(2)}`;
   private saveTimer: number | null = null;
   private cleanups: (() => void)[] = [];
@@ -95,7 +95,7 @@ export class StoryMapBoardView extends LiveDashboardView {
       await this.flushSave();
       this.storyMapId = next;
       this.model = null;
-      this.baselineCards = [];
+      this.baselineCards = "";
       if (this.isOpen) await this.live.schedule();
     }
     await super.setState(state, result);
@@ -154,7 +154,7 @@ export class StoryMapBoardView extends LiveDashboardView {
       return;
     }
     this.model = found.value;
-    this.baselineCards = found.value.cards.map(encodeCard);
+    this.baselineCards = storyMapSignature(found.value);
     this.paint(container);
   }
 
@@ -281,7 +281,7 @@ export class StoryMapBoardView extends LiveDashboardView {
       // Advance the baseline to what we just wrote, so the next move's save
       // compares against it (and isn't a false stale-conflict) — unless the leaf
       // has since retargeted to another map.
-      if (pending.id === this.storyMapId) this.baselineCards = pending.model.cards.map(encodeCard);
+      if (pending.id === this.storyMapId) this.baselineCards = storyMapSignature(pending.model);
       return;
     }
     new Notice(`Could not save the board: ${result.error.message}`);
