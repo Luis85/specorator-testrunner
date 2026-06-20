@@ -16,6 +16,13 @@ export const BOARD_METRICS = {
   cardHeight: 56,
   cardGap: 8,
   cellPadding: 8,
+  /** Reserved band at the bottom of every row for the per-cell `+ card` control. */
+  cellFooter: 26,
+  /** The wide `+ activity`/`+ slice`/`+ card` button size. */
+  addButtonWidth: 84,
+  addButtonHeight: 22,
+  /** The small square `+`/`×` control size (per-activity add-step). */
+  plusSize: 16,
   get minRowHeight(): number {
     return this.cardHeight + 2 * this.cellPadding;
   },
@@ -97,7 +104,10 @@ export const computeBoardLayout = (map: StoryMap): BoardLayout => {
   let y = headerBottom;
   for (const gridRow of grid.rows) {
     const maxCards = Math.max(0, ...gridRow.cells.map((cell) => cell.cards.length));
-    const height = Math.max(M.minRowHeight, maxCards * (M.cardHeight + M.cardGap) + M.cardGap);
+    const stack = Math.max(M.minRowHeight, maxCards * (M.cardHeight + M.cardGap) + M.cardGap);
+    // Reserve a footer below the card stack so the per-cell `+ card` control sits
+    // in empty space (cards are laid from the top) and never overlaps a card.
+    const height = stack + M.cellFooter;
     rows.push({ slice: gridRow.slice, y, height });
 
     gridRow.cells.forEach((cell, colIdx) => {
@@ -117,8 +127,12 @@ export const computeBoardLayout = (map: StoryMap): BoardLayout => {
   }
 
   const lastCol = columns[columns.length - 1];
-  const width = lastCol ? lastCol.x + lastCol.width : M.rowHeaderWidth;
-  return { width, height: y, users: [...map.users], activityGroups, columns, rows, cards };
+  const contentWidth = lastCol ? lastCol.x + lastCol.width : M.rowHeaderWidth;
+  // Reserve canvas space (right + bottom) so the `+ activity` and `+ slice`
+  // controls the scene draws past the last column/row stay inside the viewBox.
+  const width = contentWidth + M.colGap + M.addButtonWidth;
+  const height = y + M.addButtonHeight;
+  return { width, height, users: [...map.users], activityGroups, columns, rows, cards };
 };
 
 /** A point in board space (after the caller removes any pan/zoom transform). */

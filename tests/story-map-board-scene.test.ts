@@ -129,4 +129,29 @@ describe("buildBoardScene", () => {
     const chip = specs.find((s) => s.class === "sm-board-status-chip");
     expect(chip?.attrs["data-status-index"]).toBe(0);
   });
+
+  it("keeps every rendered rect inside the canvas bounds (controls don't escape the viewBox)", () => {
+    // A two-activity, stepped map exercises the add-activity (right margin),
+    // add-slice (bottom margin), and per-activity add-step controls together.
+    const stepped: StoryMap = {
+      ...map,
+      activities: ["Browse", "Order"],
+      steps: [{ activity: "Browse", step: "Search" }],
+      cards: [
+        { title: "C", activity: "Browse", step: "Search", slice: "Walking skeleton", tags: [] },
+      ],
+    };
+    const layout = computeBoardLayout(stepped);
+    for (const s of buildBoardScene(layout)) {
+      if (s.tag !== "rect") continue;
+      const x = Number(s.attrs.x);
+      const y = Number(s.attrs.y);
+      const w = Number(s.attrs.width);
+      const h = Number(s.attrs.height);
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(x + w).toBeLessThanOrEqual(layout.width);
+      expect(y + h).toBeLessThanOrEqual(layout.height);
+    }
+  });
 });

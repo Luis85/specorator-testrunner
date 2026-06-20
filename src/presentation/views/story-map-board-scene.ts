@@ -52,6 +52,17 @@ const removeButton = (
   { tag: "text", class: `${cls}-label`, attrs: { x: x + 4, y: y + 12, ...data }, text: "×" },
 ];
 
+/** A small clickable `+` control (16×16 rect + label sharing the `data-add` attrs). */
+const plusButton = (
+  cls: string,
+  x: number,
+  y: number,
+  data: Record<string, string | number>,
+): SvgNodeSpec[] => [
+  rect(cls, x, y, M.plusSize, M.plusSize, data),
+  { tag: "text", class: `${cls}-label`, attrs: { x: x + 4, y: y + 12, ...data }, text: "+" },
+];
+
 /** Card tiles (rect + title + optional attribute suffix + remove `×`) for every laid-out card. */
 const cardSpecs = (layout: BoardLayout): SvgNodeSpec[] => {
   const specs: SvgNodeSpec[] = [];
@@ -204,10 +215,12 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
     }),
   );
 
-  const stepBandY = M.laneHeight + M.activityHeaderHeight;
+  // Per-activity add-step `+` — a narrow control INSIDE the activity header, just
+  // left of that header's remove `×` (`g.x + g.width - 18`), so it never overflows
+  // the group into the next header (which would steal its drag/rename clicks).
   for (const g of layout.activityGroups) {
     specs.push(
-      ...addButton("sm-board-add-step", g.x + g.width - 28, stepBandY, "+", {
+      ...plusButton("sm-board-add-step", g.x + g.width - 38, M.laneHeight + 4, {
         "data-add": "step",
         "data-activity": g.activity,
       }),
@@ -215,9 +228,8 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
   }
 
   const lastRow = layout.rows[layout.rows.length - 1];
-  const addSliceY = lastRow
-    ? lastRow.y + lastRow.height + M.rowGap
-    : stepBandY + M.stepHeaderHeight;
+  const headerBottom = M.laneHeight + M.activityHeaderHeight + M.stepHeaderHeight;
+  const addSliceY = lastRow ? lastRow.y + lastRow.height + M.rowGap : headerBottom;
   specs.push(...addButton("sm-board-add-slice", 0, addSliceY, "+ slice", { "data-add": "slice" }));
 
   return specs;

@@ -64,14 +64,20 @@ describe("computeBoardLayout — columns & rows", () => {
       BOARD_METRICS.activityHeaderHeight +
       BOARD_METRICS.stepHeaderHeight;
     expect(layout.rows[0].y).toBe(headerBottom);
-    expect(layout.rows[0].height).toBe(BOARD_METRICS.minRowHeight);
+    // A card-less row is the card-area minimum plus the reserved `+ card` footer.
+    expect(layout.rows[0].height).toBe(BOARD_METRICS.minRowHeight + BOARD_METRICS.cellFooter);
   });
 
   it("exposes the users lane and overall canvas size", () => {
     const layout = computeBoardLayout(map());
     expect(layout.users).toEqual(["Customer", "Admin"]);
+    // Content width (header + 2 columns + gap) plus the reserved `+ activity` margin.
     expect(layout.width).toBe(
-      BOARD_METRICS.rowHeaderWidth + 2 * BOARD_METRICS.colWidth + 1 * BOARD_METRICS.colGap,
+      BOARD_METRICS.rowHeaderWidth +
+        2 * BOARD_METRICS.colWidth +
+        1 * BOARD_METRICS.colGap +
+        BOARD_METRICS.colGap +
+        BOARD_METRICS.addButtonWidth,
     );
     expect(layout.height).toBeGreaterThan(0);
   });
