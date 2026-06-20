@@ -50,6 +50,13 @@ describe("card note content", () => {
     const frac = buildCardNote(card).replace("points: 3", "points: 2.5");
     expect(parseCardNote(frac, card.path)?.points).toBeUndefined();
   });
+  it("parses a tagless card as empty tags, not [undefined]", () => {
+    // buildCardNote omits the tags field when empty, so parseNote leaves it
+    // undefined; the parser must coerce that to [] rather than a bogus tag.
+    const note = buildCardNote({ ...card, tags: [] });
+    expect(note).not.toContain("tags:");
+    expect(parseCardNote(note, card.path)?.tags).toEqual([]);
+  });
   it("names the file by stable id", () => {
     expect(cardFileName("SMC-001")).toBe("SMC-001.md");
   });

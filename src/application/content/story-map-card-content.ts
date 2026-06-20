@@ -37,7 +37,8 @@ export const parseCardNote = (content: string, path: VaultPath): StoryMapCardNot
   const { frontmatter: fm, body } = parseNote(content);
   if (fm.type !== "story-map-card" || typeof fm.id !== "string") return null;
   const str = (v: unknown): string => (typeof v === "string" ? v : "");
-  const arr = (v: string | string[]): string[] => (Array.isArray(v) ? v : v !== "" ? [v] : []);
+  const arr = (v: string | string[] | undefined): string[] =>
+    Array.isArray(v) ? v : typeof v === "string" && v !== "" ? [v] : [];
   const step = typeof fm.step === "string" && fm.step !== "" ? fm.step : undefined;
   return {
     id: fm.id,
