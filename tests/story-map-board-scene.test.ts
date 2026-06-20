@@ -78,4 +78,19 @@ describe("buildBoardScene", () => {
     expect(activity?.attrs["data-activity-index"]).toBe(0);
     expect(slice?.attrs["data-slice-index"]).toBe(0);
   });
+
+  it("emits add-affordances for activity, slice, and step, and tags step headers", () => {
+    const specs = buildBoardScene(computeBoardLayout(map));
+    const adds = specs
+      .map((s) => s.attrs["data-add"])
+      .filter((v): v is string => typeof v === "string");
+    expect(adds).toContain("activity");
+    expect(adds).toContain("slice");
+    expect(adds).toContain("step"); // one per activity
+    // "Browse" has no steps → its single column is the no-step column: it carries
+    // the activity but no step attr.
+    const step = specs.find((s) => s.class === "sm-board-step");
+    expect(step?.attrs["data-activity"]).toBe("Browse");
+    expect(step?.attrs["data-step"]).toBeUndefined();
+  });
 });

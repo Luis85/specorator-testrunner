@@ -29,6 +29,18 @@ const text = (cls: string, x: number, y: number, value: string): SvgNodeSpec => 
   text: value,
 });
 
+/** A small clickable `+` control: a rect plus its label, sharing the `data-add` attrs. */
+const addButton = (
+  cls: string,
+  x: number,
+  y: number,
+  label: string,
+  data: Record<string, string | number>,
+): SvgNodeSpec[] => [
+  rect(cls, x, y, 84, 22, data),
+  { tag: "text", class: `${cls}-label`, attrs: { x: x + 6, y: y + 15, ...data }, text: label },
+];
+
 /**
  * Pure: a {@link BoardLayout} → the flat list of SVG node specs that render it
  * (users lane, activity/step headers, slice rows, card tiles with title +
@@ -62,10 +74,15 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
     );
   });
 
-  // Step (column) headers.
+  // Step (column) headers — tagged with their activity (+ step when present) so
+  // the view can resolve which one a rename/edit targets.
   const stepY = M.laneHeight + M.activityHeaderHeight;
   for (const c of layout.columns) {
-    specs.push(rect("sm-board-step", c.x, stepY, c.width, M.stepHeaderHeight));
+    const attrs: Record<string, string | number> =
+      c.step !== undefined
+        ? { "data-activity": c.activity, "data-step": c.step }
+        : { "data-activity": c.activity };
+    specs.push(rect("sm-board-step", c.x, stepY, c.width, M.stepHeaderHeight, attrs));
     specs.push(
       text(
         "sm-board-step-label",
@@ -96,6 +113,31 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
     const suffix = cardAttributeSuffix(box.card).replace(/^ · /, "");
     if (suffix !== "") specs.push(text("sm-board-card-attrs", box.x + 8, box.y + 40, suffix));
   }
+
+  // Add affordances (+). The view reads `data-add` (+ `data-activity` for steps).
+  const lastGroup = layout.activityGroups[layout.activityGroups.length - 1];
+  const addActivityX = lastGroup ? lastGroup.x + lastGroup.width + M.colGap : M.rowHeaderWidth;
+  specs.push(
+    ...addButton("sm-board-add-activity", addActivityX, M.laneHeight, "+ activity", {
+      "data-add": "activity",
+    }),
+  );
+
+  const stepBandY = M.laneHeight + M.activityHeaderHeight;
+  for (const g of layout.activityGroups) {
+    specs.push(
+      ...addButton("sm-board-add-step", g.x + g.width - 28, stepBandY, "+", {
+        "data-add": "step",
+        "data-activity": g.activity,
+      }),
+    );
+  }
+
+  const lastRow = layout.rows[layout.rows.length - 1];
+  const addSliceY = lastRow
+    ? lastRow.y + lastRow.height + M.rowGap
+    : stepBandY + M.stepHeaderHeight;
+  specs.push(...addButton("sm-board-add-slice", 0, addSliceY, "+ slice", { "data-add": "slice" }));
 
   return specs;
 };
