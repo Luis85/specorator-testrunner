@@ -3,7 +3,13 @@ import type { StoryMapService } from "../../application/services/story-map-servi
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { StoryMap } from "../../domain/entities/story-map";
 import {
+  addActivity,
+  addSlice,
+  addStep,
   moveCard,
+  renameActivity,
+  renameSlice,
+  renameStep,
   reorderActivity,
   reorderSlice,
   storyMapSignature,
@@ -50,6 +56,30 @@ const indexAttr = (el: Element, name: string): number | null => {
   return Number.isNaN(index) ? null : index;
 };
 
+/** A string attribute, or "" when absent (for SVG attrs that are always present). */
+const attrOf = (el: Element, name: string): string => el.getAttribute(name) ?? "";
+
+/** A header rect's current label, read from its adjacent `<text>` sibling. */
+const headerLabelOf = (rect: Element): string => rect.nextElementSibling?.textContent ?? "";
+
+/**
+ * Resolves a double-clicked header rect to the matching rename op (by its data
+ * attrs): activity-index → renameActivity, slice-index → renameSlice, else
+ * (activity + step) → renameStep. Returns the new map, the same map (no-op), or
+ * null (invalid/rejected). Pure.
+ */
+// fallow-ignore-next-line complexity
+const renameFromHeader = (model: StoryMap, rect: Element, value: string): StoryMap | null => {
+  const ai = indexAttr(rect, "data-activity-index");
+  if (ai !== null) return renameActivity(model, ai, value);
+  const si = indexAttr(rect, "data-slice-index");
+  if (si !== null) return renameSlice(model, si, value);
+  const activity = rect.getAttribute("data-activity");
+  const step = rect.getAttribute("data-step");
+  if (activity === null || step === null) return null;
+  return renameStep(model, activity, step, value);
+};
+
 /** Applies an activity/slice header reorder, or null when either index is missing. */
 const applyHeaderReorder = (
   model: StoryMap,
@@ -82,6 +112,8 @@ export class StoryMapBoardView extends LiveDashboardView {
   private cleanups: (() => void)[] = [];
   private unsubscribeUpdated: (() => void) | null = null;
   private unsubscribeDeleted: (() => void) | null = null;
+  /** The open in-place rename editor's `<foreignObject>`, or null when none. */
+  private editor: Element | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -233,6 +265,102 @@ export class StoryMapBoardView extends LiveDashboardView {
     const layout = computeBoardLayout(this.model);
     const svg = this.renderSvg(container, layout);
     this.wireDnd(svg, layout);
+    this.wireControls(svg);
+  }
+
+  /** Wires the `+` add controls and double-click-to-rename on the headers. */
+  private wireControls(svg: SVGSVGElement): void {
+    for (const el of Array.from(svg.querySelectorAll("[data-add]"))) {
+      const onClick = (): void =>
+        this.onAdd(el.getAttribute("data-add"), el.getAttribute("data-activity"));
+      el.addEventListener("click", onClick);
+      this.cleanups.push(() => el.removeEventListener("click", onClick));
+    }
+    const headers = "rect.sm-board-activity, rect.sm-board-slice, rect.sm-board-step";
+    for (const el of Array.from(svg.querySelectorAll(headers))) {
+      const onDbl = (): void => this.onEditHeader(el as SVGElement);
+      el.addEventListener("dblclick", onDbl);
+      this.cleanups.push(() => el.removeEventListener("dblclick", onDbl));
+    }
+  }
+
+  /** Inserts a placeholder activity/slice/step, repaints, and saves. */
+  private onAdd(kind: string | null, activity: string | null): void {
+    const next = this.addByKind(kind, activity);
+    if (next === null || next === this.model) return;
+    this.model = next;
+    this.paint(this.contentEl);
+    this.scheduleSave();
+  }
+
+  // fallow-ignore-next-line complexity
+  private addByKind(kind: string | null, activity: string | null): StoryMap | null {
+    if (this.model === null) return null;
+    if (kind === "activity") return addActivity(this.model);
+    if (kind === "slice") return addSlice(this.model);
+    if (kind === "step" && activity !== null) return addStep(this.model, activity);
+    return null;
+  }
+
+  /** Mounts an inline editor over a double-clicked header; commits on Enter/blur. */
+  private onEditHeader(rect: SVGElement): void {
+    if (this.model === null) return;
+    const input = this.mountHeaderInput(rect);
+    if (input === null) return;
+    let done = false;
+    const commit = (save: boolean): void => {
+      if (done) return;
+      done = true;
+      const value = input.value;
+      this.clearEditor();
+      if (save) this.commitRename(rect, value);
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") commit(true);
+      else if (e.key === "Escape") commit(false);
+    });
+    input.addEventListener("blur", () => commit(true));
+    input.focus();
+    input.select();
+  }
+
+  /** Applies a header rename to the model, repaints, and saves. */
+  private commitRename(rect: SVGElement, value: string): void {
+    if (this.model === null) return;
+    const next = renameFromHeader(this.model, rect, value);
+    if (next === null || next === this.model) return;
+    this.model = next;
+    this.paint(this.contentEl);
+    this.scheduleSave();
+  }
+
+  /**
+   * Mounts an `<input>` (in a `<foreignObject>`) over the header rect, seeded with
+   * its current label, and returns it (or null if the SVG isn't available).
+   */
+  private mountHeaderInput(rect: SVGElement): HTMLInputElement | null {
+    const svg = rect.ownerSVGElement;
+    if (svg === null) return null;
+    this.clearEditor();
+    const fo = svg.createSvg("foreignObject", {
+      attr: {
+        x: attrOf(rect, "x"),
+        y: attrOf(rect, "y"),
+        width: attrOf(rect, "width"),
+        height: attrOf(rect, "height"),
+        class: "sm-board-edit-fo",
+      },
+    });
+    this.editor = fo;
+    const input = fo.createEl("input", { cls: "sm-board-edit-input" });
+    input.value = headerLabelOf(rect);
+    return input;
+  }
+
+  /** Removes any open inline editor. */
+  private clearEditor(): void {
+    this.editor?.remove();
+    this.editor = null;
   }
 
   /** Builds the `<svg>` from the scene specs and returns it. */
@@ -425,6 +553,7 @@ export class StoryMapBoardView extends LiveDashboardView {
   }
 
   private teardownDnd(): void {
+    this.clearEditor();
     for (const cleanup of this.cleanups) cleanup();
     this.cleanups = [];
   }
