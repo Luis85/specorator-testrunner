@@ -380,6 +380,36 @@ export const reorderSlice = (map: StoryMap, from: number, to: number): StoryMap 
   return next === map.slices ? map : { ...map, slices: [...next] };
 };
 
+/** A label not already in `existing`: `base`, else `base 2`, `base 3`, … Pure. */
+const uniqueLabel = (existing: readonly string[], base: string): string => {
+  if (!existing.includes(base)) return base;
+  let n = 2;
+  while (existing.includes(`${base} ${n}`)) n += 1;
+  return `${base} ${n}`;
+};
+
+/** Appends a placeholder activity (rename it in place after). Pure. */
+export const addActivity = (map: StoryMap): StoryMap => ({
+  ...map,
+  activities: [...map.activities, uniqueLabel(map.activities, "New activity")],
+});
+
+/** Appends a placeholder release slice. Pure. */
+export const addSlice = (map: StoryMap): StoryMap => ({
+  ...map,
+  slices: [...map.slices, uniqueLabel(map.slices, "New slice")],
+});
+
+/**
+ * Appends a placeholder step under `activity` (unique among that activity's
+ * steps), or null when the activity is not on the backbone. Pure.
+ */
+export const addStep = (map: StoryMap, activity: string): StoryMap | null => {
+  if (!map.activities.includes(activity)) return null;
+  const own = map.steps.filter((s) => s.activity === activity).map((s) => s.step);
+  return { ...map, steps: [...map.steps, { activity, step: uniqueLabel(own, "New step") }] };
+};
+
 /**
  * A stable signature of a map's STRUCTURAL fields (users, activities, steps,
  * slices, cards) — the optimistic-concurrency baseline a board carries so a save

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  addActivity,
+  addSlice,
+  addStep,
   buildStoryMapGrid,
   CARD_STATUSES,
   encodeCard,
@@ -452,5 +455,44 @@ describe("storyMapSignature", () => {
     expect(storyMapSignature(base)).toBe(
       storyMapSignature({ ...base, title: "Renamed", status: "active", displayOrder: 9 }),
     );
+  });
+});
+
+describe("addActivity / addSlice / addStep", () => {
+  const map = (over: Partial<StoryMap> = {}): StoryMap => ({
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: [],
+    activities: ["Browse"],
+    steps: [{ activity: "Browse", step: "Filter" }],
+    slices: ["Walking skeleton"],
+    cards: [],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+    ...over,
+  });
+
+  it("appends a uniquely-named placeholder activity / slice", () => {
+    expect(addActivity(map()).activities).toEqual(["Browse", "New activity"]);
+    expect(addActivity(map({ activities: ["Browse", "New activity"] })).activities).toEqual([
+      "Browse",
+      "New activity",
+      "New activity 2",
+    ]);
+    expect(addSlice(map()).slices).toEqual(["Walking skeleton", "New slice"]);
+  });
+
+  it("appends a uniquely-named placeholder step under an existing activity", () => {
+    const next = addStep(map(), "Browse");
+    expect(next?.steps).toEqual([
+      { activity: "Browse", step: "Filter" },
+      { activity: "Browse", step: "New step" },
+    ]);
+  });
+
+  it("returns null when adding a step to an unknown activity", () => {
+    expect(addStep(map(), "Nope")).toBeNull();
   });
 });
