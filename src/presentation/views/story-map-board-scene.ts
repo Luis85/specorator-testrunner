@@ -46,8 +46,12 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
   }
 
   // Activity group headers.
-  for (const g of layout.activityGroups) {
-    specs.push(rect("sm-board-activity", g.x, M.laneHeight, g.width, M.activityHeaderHeight));
+  layout.activityGroups.forEach((g, i) => {
+    specs.push(
+      rect("sm-board-activity", g.x, M.laneHeight, g.width, M.activityHeaderHeight, {
+        "data-activity-index": i,
+      }),
+    );
     specs.push(
       text(
         "sm-board-activity-label",
@@ -56,7 +60,7 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
         g.activity,
       ),
     );
-  }
+  });
 
   // Step (column) headers.
   const stepY = M.laneHeight + M.activityHeaderHeight;
@@ -73,10 +77,12 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
   }
 
   // Slice row headers.
-  for (const r of layout.rows) {
-    specs.push(rect("sm-board-slice", 0, r.y, M.rowHeaderWidth, r.height));
+  layout.rows.forEach((r, i) => {
+    specs.push(
+      rect("sm-board-slice", 0, r.y, M.rowHeaderWidth, r.height, { "data-slice-index": i }),
+    );
     specs.push(text("sm-board-slice-label", 8, r.y + 18, r.slice));
-  }
+  });
 
   // Cards.
   for (const box of layout.cards) {

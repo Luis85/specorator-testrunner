@@ -70,4 +70,12 @@ describe("buildBoardScene", () => {
       }
     }
   });
+
+  it("tags activity and slice headers with their index for drag-reorder", () => {
+    const specs = buildBoardScene(computeBoardLayout(map));
+    const activity = specs.find((s) => s.class === "sm-board-activity");
+    const slice = specs.find((s) => s.class === "sm-board-slice");
+    expect(activity?.attrs["data-activity-index"]).toBe(0);
+    expect(slice?.attrs["data-slice-index"]).toBe(0);
+  });
 });
