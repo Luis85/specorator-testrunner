@@ -1194,6 +1194,13 @@
   pointer-events: none;
 }
 
+/* Header labels must pass pointer hits through to their draggable header rect
+   (the drag handle) — same rule as the card text above. */
+.sm-board-activity-label,
+.sm-board-slice-label {
+  pointer-events: none;
+}
+
 /* Drag affordances (P2). interact.js is pointer-based, so suppress touch
    panning on a card while it is the drag handle. */
 .sm-board-card {

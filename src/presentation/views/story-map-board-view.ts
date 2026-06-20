@@ -358,17 +358,29 @@ export class StoryMapBoardView extends LiveDashboardView {
       this.dirty = false;
       const id = this.storyMapId;
       const model = this.model;
-      const result = await this.deps.storyMapService.saveMap(id, model, this.origin, this.baseline);
+      // Treat an unexpected throw like a failed Result (the service is Result-based,
+      // but never lose an edit silently to an unhandled rejection).
+      const error = await this.trySave(id, model);
       // Ignore the outcome if the leaf retargeted to another map mid-save.
       if (id !== this.storyMapId) return;
-      if (!result.ok) {
-        new Notice(`Could not save the board: ${result.error.message}`);
+      if (error !== null) {
+        new Notice(`Could not save the board: ${error}`);
         await this.live.schedule(); // revert the optimistic edits to the last-saved state
         return;
       }
       // Advance the baseline to what we just wrote so the next iteration (a drop
       // that arrived during this save) compares against it, not the stale value.
       this.baseline = storyMapSignature(model);
+    }
+  }
+
+  /** Persists one save; returns an error message, or null on success. Never throws. */
+  private async trySave(id: string, model: StoryMap): Promise<string | null> {
+    try {
+      const result = await this.deps.storyMapService.saveMap(id, model, this.origin, this.baseline);
+      return result.ok ? null : result.error.message;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
     }
   }
 
