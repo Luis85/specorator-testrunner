@@ -1205,3 +1205,16 @@
   cursor: grabbing;
   opacity: 0.5;
 }
+
+/* Header drag-reorder affordances (P3). */
+.sm-board-activity,
+.sm-board-slice {
+  cursor: grab;
+  touch-action: none;
+}
+
+.sm-board-activity.is-dragging,
+.sm-board-slice.is-dragging {
+  cursor: grabbing;
+  opacity: 0.6;
+}

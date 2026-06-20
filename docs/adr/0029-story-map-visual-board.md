@@ -59,3 +59,6 @@ drag library is isolated behind a one-function adapter
 - The plugin gains its first runtime dependency in P2 (`interact.js`) and a second
   in P5 (`panzoom`); both sit behind thin, swappable adapters.
 - Zoom/pan and focus are ephemeral view state, never written to the note.
+- P3 widens `saveMap` to persist the whole structure (not just cards) under a
+  whole-map signature baseline (optimistic concurrency), so the board can reorder
+  activities/slices; the note frontmatter stays the single source of truth.
