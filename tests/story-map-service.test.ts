@@ -212,6 +212,32 @@ describe("DefaultStoryMapService.create", () => {
     expect(result.ok && result.value.cards).toHaveLength(1);
   });
 
+  it("rolls back the created note (preserving pre-existing files) when an initial card write fails", async () => {
+    const { service, fs } = build();
+    // A prior map left an attachment in the folder this create reuses (the id/path
+    // freed by a delete that preserved attachments).
+    const folder = "Story Maps/SM-001-map";
+    await fs.createFolder(unsafeVaultPath(folder));
+    fs.files.set(`${folder}/diagram.png`, "binary");
+    // Make the initial card-note write fail after the map note is written.
+    fs.failOn = { path: `${folder}/cards/SMC-001.md`, message: "disk full" };
+
+    const result = await service.create({
+      title: "Map",
+      activities: ["Author spec"],
+      slices: ["Walking skeleton"],
+      cards: [
+        { id: "SMC-001", title: "X", activity: "Author spec", slice: "Walking skeleton", tags: [] },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    // The just-created map note is gone (no phantom map), but the pre-existing
+    // attachment in the reused folder survives.
+    expect(fs.files.has(`${folder}/SM-001-map.md`)).toBe(false);
+    expect(fs.files.has(`${folder}/diagram.png`)).toBe(true);
+  });
+
   it("collapses a multi-line title into a single parser-safe line", async () => {
     const { service, fs } = build();
     const result = await service.create({
@@ -830,6 +856,26 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     expect(fs.files.has(cardPath)).toBe(false);
     expect(fs.files.has("Story Maps/SM-001-j/SM-001-j.md")).toBe(false);
     expect(result.value.preservedFiles).toBe(0);
+  });
+
+  it("deleteStoryMap fails closed when the cards/ cleanup listing hits an I/O error", async () => {
+    const { service, fs } = build();
+    seedNote(fs);
+    // Fail the cleanup listing of the map folder ONLY (findById scans "Story Maps").
+    const realList = fs.listFilesRecursive.bind(fs);
+    fs.listFilesRecursive = async (path) => {
+      if (path === "Story Maps/SM-001-j") {
+        return { ok: false, error: { code: "INIT_FAILED", message: "EIO: i/o error" } };
+      }
+      return realList(path);
+    };
+
+    const result = await service.deleteStoryMap("SM-001");
+    // A real I/O error must NOT be reported as a successful delete: that would
+    // leave the generated card notes for a future map to re-adopt.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("EIO");
   });
 
   it("rejects a card whose placement is invalid (slice off the map)", async () => {

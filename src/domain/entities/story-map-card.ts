@@ -38,9 +38,11 @@ export interface StoryMapCardNote {
   path: VaultPath;
 }
 
-export const nextStoryMapCardId = (existing: Pick<StoryMapCardNote, "id">[]): StoryMapCardId => {
+export const nextStoryMapCardId = (
+  existing: readonly { id?: StoryMapCardId }[],
+): StoryMapCardId => {
   const max = existing.reduce((hi, c) => {
-    const m = STORY_MAP_CARD_ID_RE.exec(c.id);
+    const m = c.id ? STORY_MAP_CARD_ID_RE.exec(c.id) : null;
     return m ? Math.max(hi, Number.parseInt(m[1], 10)) : hi;
   }, 0);
   return `SMC-${String(max + 1).padStart(3, "0")}`;

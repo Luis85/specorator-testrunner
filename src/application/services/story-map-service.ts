@@ -380,7 +380,7 @@ export class DefaultStoryMapService implements StoryMapService {
             [],
           );
           if (!reconciled.ok) {
-            if (!folderPreexisted) await this.fs.deleteFolder(folderPath);
+            await this.rollbackFailedCreate(path, folderPath, cardsDir, folderPreexisted);
             return reconciled;
           }
           map.cards = await loadCards(this.fs, cardsDir, id);
@@ -478,7 +478,14 @@ export class DefaultStoryMapService implements StoryMapService {
   ): Promise<Result<number>> {
     const cardsPrefix = `${String(cardsDir)}/`;
     const listed = await this.fs.listFilesRecursive(folder);
-    if (!listed.ok) return ok(0);
+    if (!listed.ok) {
+      // A missing folder means nothing to clean (report zero preserved); a real
+      // I/O error must fail CLOSED — reporting success here would leave generated
+      // card notes behind for a future map reusing this id/path to re-adopt.
+      const msg = listed.error.message.toLowerCase();
+      if (msg.includes("enoent") || msg.includes("not found")) return ok(0);
+      return listed;
+    }
     let preserved = 0;
     for (const sibling of listed.value) {
       if (sibling === mapNotePath) continue;
@@ -490,6 +497,28 @@ export class DefaultStoryMapService implements StoryMapService {
       if (!removed.ok) return removed;
     }
     return ok(preserved);
+  }
+
+  /**
+   * Undoes a partially-created map after an initial-card write fails: the map note
+   * was already written, so leaving it would index a Story Map the caller was told
+   * failed to create. When THIS call created the map folder, dropping the folder
+   * removes the note and any partial card notes at once; otherwise (a pre-existing
+   * folder, e.g. attachments left by a prior map that reused this path) remove just
+   * the note and the cards/ folder this call created, preserving the rest.
+   */
+  private async rollbackFailedCreate(
+    notePath: VaultPath,
+    folderPath: VaultPath,
+    cardsDir: VaultPath,
+    folderPreexisted: boolean,
+  ): Promise<void> {
+    if (!folderPreexisted) {
+      await this.fs.deleteFolder(folderPath);
+      return;
+    }
+    await this.fs.deleteFile(notePath);
+    if (await this.fs.exists(cardsDir)) await this.fs.deleteFolder(cardsDir);
   }
 
   async rebuildGrid(id: StoryMapId): Promise<Result<void>> {

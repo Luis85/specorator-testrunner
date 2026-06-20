@@ -1,4 +1,5 @@
 import type { VaultPath } from "../value-objects/identifiers";
+import { nextStoryMapCardId } from "./story-map-card";
 import type { CardType, StoryMapCardId } from "./story-map-card";
 
 /** A Story Map identifier, e.g. "SM-001". */
@@ -405,10 +406,19 @@ export const reorderStep = (
  * Appends a placeholder free-text card ("New card", uniquified by title) in the
  * `target` cell, to be renamed in place (P4). No-ops (same map ref) when the
  * target activity/slice is not on the map. Pure: no I/O.
+ *
+ * The card is given its `SMC-NNN` id here (client-side) rather than letting the
+ * service allocate it on save: the board never reloads its own save (it ignores
+ * its origin-tagged `storymap.updated`), so an id assigned only on disk would
+ * leave the board's model id-less, and the next save's {@link storyMapSignature}
+ * baseline would no longer match the now-id'd on-disk card — a false stale
+ * conflict that drops the edit. A stale board can't collide ids: its optimistic
+ * baseline would already mismatch and force a reload first.
  */
 export const addCard = (map: StoryMap, target: CardTarget): StoryMap => {
   if (!map.activities.includes(target.activity) || !map.slices.includes(target.slice)) return map;
   const card: StoryMapCard = {
+    id: nextStoryMapCardId(map.cards),
     title: uniqueLabel(
       map.cards.map((c) => c.title),
       "New card",

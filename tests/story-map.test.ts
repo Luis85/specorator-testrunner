@@ -717,6 +717,15 @@ describe("addCard / removeCard", () => {
     expect(next.cards[next.cards.length - 1].cardType).toBe("task");
   });
 
+  it("allocates a client-side SMC id so the board's save baseline matches on disk", () => {
+    const once = addCard(base, { activity: "Browse", slice: "MVP" });
+    const first = once.cards[once.cards.length - 1];
+    expect(first.id).toBe("SMC-001");
+    // A second add advances the id (no collision within the board model).
+    const twice = addCard(once, { activity: "Browse", slice: "MVP" });
+    expect(twice.cards[twice.cards.length - 1].id).toBe("SMC-002");
+  });
+
   it("no-ops (same ref) when the target axis is off the map", () => {
     expect(addCard(base, { activity: "Ghost", slice: "MVP" })).toBe(base);
     expect(addCard(base, { activity: "Browse", slice: "Ghost" })).toBe(base);
