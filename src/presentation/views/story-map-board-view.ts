@@ -114,6 +114,8 @@ export class StoryMapBoardView extends LiveDashboardView {
   private unsubscribeDeleted: (() => void) | null = null;
   /** The open in-place rename editor's `<foreignObject>`, or null when none. */
   private editor: Element | null = null;
+  /** Commits (true) / cancels (false) the open rename editor, or null when none. */
+  private commitEditor: ((save: boolean) => void) | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -215,6 +217,11 @@ export class StoryMapBoardView extends LiveDashboardView {
   // fallow-ignore-next-line unused-class-member
   async onClose(): Promise<void> {
     this.isOpen = false;
+    // Commit any open inline rename FIRST so its scheduleSave marks the model
+    // dirty and the single awaited flush below persists it. Otherwise teardownDnd
+    // removes the focused input, whose blur commits + schedules a NEW debounced
+    // save AFTER the only flush — leaving the rename best-effort.
+    this.commitEditor?.(true);
     // Await the pending debounced save so closing the leaf durably persists (or
     // reports) the last board edit; Obsidian waits on the promise onClose returns.
     await this.flushSave();
@@ -324,6 +331,7 @@ export class StoryMapBoardView extends LiveDashboardView {
     input.addEventListener("blur", () => commit(true));
     input.focus();
     input.select();
+    this.commitEditor = commit;
   }
 
   /** Applies a header rename to the model, repaints, and saves. */
@@ -363,6 +371,7 @@ export class StoryMapBoardView extends LiveDashboardView {
   private clearEditor(): void {
     this.editor?.remove();
     this.editor = null;
+    this.commitEditor = null;
   }
 
   /** Builds the `<svg>` from the scene specs and returns it. */
