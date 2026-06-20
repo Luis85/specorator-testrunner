@@ -411,6 +411,66 @@ export const addStep = (map: StoryMap, activity: string): StoryMap | null => {
 };
 
 /**
+ * Renames the activity at `index` to `rawName`, rewriting the label on its steps
+ * and cards (the label is the join key). Returns the SAME map when unchanged, or
+ * null when the cleaned name is blank or duplicates another activity. Pure.
+ */
+export const renameActivity = (map: StoryMap, index: number, rawName: string): StoryMap | null => {
+  const old = map.activities[index];
+  if (old === undefined) return null;
+  const name = cleanLabel(rawName);
+  if (name === old) return map;
+  if (name === "" || map.activities.includes(name)) return null;
+  return {
+    ...map,
+    activities: map.activities.map((a, i) => (i === index ? name : a)),
+    steps: map.steps.map((s) => (s.activity === old ? { ...s, activity: name } : s)),
+    cards: map.cards.map((c) => (c.activity === old ? { ...c, activity: name } : c)),
+  };
+};
+
+/** Renames the slice at `index`, rewriting its cards. Same contract as {@link renameActivity}. */
+export const renameSlice = (map: StoryMap, index: number, rawName: string): StoryMap | null => {
+  const old = map.slices[index];
+  if (old === undefined) return null;
+  const name = cleanLabel(rawName);
+  if (name === old) return map;
+  if (name === "" || map.slices.includes(name)) return null;
+  return {
+    ...map,
+    slices: map.slices.map((s, i) => (i === index ? name : s)),
+    cards: map.cards.map((c) => (c.slice === old ? { ...c, slice: name } : c)),
+  };
+};
+
+/**
+ * Renames step `oldStep` under `activity`, rewriting that activity's cards.
+ * Returns the same map when unchanged, or null when blank or duplicating another
+ * step of the same activity. Pure.
+ */
+export const renameStep = (
+  map: StoryMap,
+  activity: string,
+  oldStep: string,
+  rawName: string,
+): StoryMap | null => {
+  const name = cleanLabel(rawName);
+  if (name === oldStep) return map;
+  const own = map.steps.filter((s) => s.activity === activity).map((s) => s.step);
+  if (!own.includes(oldStep)) return null;
+  if (name === "" || own.includes(name)) return null;
+  return {
+    ...map,
+    steps: map.steps.map((s) =>
+      s.activity === activity && s.step === oldStep ? { ...s, step: name } : s,
+    ),
+    cards: map.cards.map((c) =>
+      c.activity === activity && c.step === oldStep ? { ...c, step: name } : c,
+    ),
+  };
+};
+
+/**
  * A stable signature of a map's STRUCTURAL fields (users, activities, steps,
  * slices, cards) — the optimistic-concurrency baseline a board carries so a save
  * can detect that another surface changed the structure since it loaded.

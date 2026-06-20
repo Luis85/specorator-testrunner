@@ -10,6 +10,9 @@ import {
   isCardStatus,
   isStoryMapStatus,
   moveCard,
+  renameActivity,
+  renameSlice,
+  renameStep,
   reorderActivity,
   reorderCardInCell,
   reorderSlice,
@@ -494,5 +497,51 @@ describe("addActivity / addSlice / addStep", () => {
 
   it("returns null when adding a step to an unknown activity", () => {
     expect(addStep(map(), "Nope")).toBeNull();
+  });
+});
+
+describe("renameActivity / renameSlice / renameStep", () => {
+  const map = (): StoryMap => ({
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: [],
+    activities: ["Browse", "Order"],
+    steps: [{ activity: "Browse", step: "Filter" }],
+    slices: ["Walking skeleton", "Next"],
+    cards: [
+      { title: "A", activity: "Browse", step: "Filter", slice: "Walking skeleton", tags: [] },
+    ],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+  });
+
+  it("renames an activity and rewrites its steps + cards", () => {
+    const next = renameActivity(map(), 0, "Discover");
+    expect(next?.activities).toEqual(["Discover", "Order"]);
+    expect(next?.steps).toEqual([{ activity: "Discover", step: "Filter" }]);
+    expect(next?.cards[0].activity).toBe("Discover");
+  });
+
+  it("renames a slice and rewrites its cards", () => {
+    const next = renameSlice(map(), 0, "Skeleton");
+    expect(next?.slices).toEqual(["Skeleton", "Next"]);
+    expect(next?.cards[0].slice).toBe("Skeleton");
+  });
+
+  it("renames a step and rewrites its cards (within the activity)", () => {
+    const next = renameStep(map(), "Browse", "Filter", "Sort");
+    expect(next?.steps).toEqual([{ activity: "Browse", step: "Sort" }]);
+    expect(next?.cards[0].step).toBe("Sort");
+  });
+
+  it("rejects a blank or duplicate rename, and no-ops an unchanged one", () => {
+    expect(renameActivity(map(), 0, "  ")).toBeNull();
+    expect(renameActivity(map(), 0, "Order")).toBeNull(); // dup
+    const m = map();
+    expect(renameActivity(m, 0, "Browse")).toBe(m); // unchanged → same reference
+    expect(renameSlice(map(), 0, "Next")).toBeNull();
+    expect(renameStep(map(), "Browse", "Filter", "Filter")).toEqual(map()); // unchanged
   });
 });
