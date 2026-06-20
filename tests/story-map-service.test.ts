@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DefaultStoryMapService } from "../src/application/services/story-map-service";
 import type { PrdGuard } from "../src/application/services/story-map-service";
 import {
+  encodeCard,
   moveCard,
   reorderActivity,
   reorderSlice,
@@ -621,6 +622,34 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     const note = fs.files.get(path) ?? "";
     // With no cards left the field is dropped entirely.
     expect(note).not.toContain("cards:");
+  });
+
+  it("rejects an indexed remove/update whose expected card no longer matches (stale row)", async () => {
+    const { service, fs } = build();
+    const path = seedNote(fs); // seeds one card: UC-037 | Author spec | Walking skeleton
+    // The caller believed a different card sat at index 0 (e.g. cards were
+    // reordered elsewhere while a Cards modal stayed open).
+    const stale = encodeCard({
+      ref: "UC-099",
+      title: "Stale",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+      tags: [],
+    });
+    const removed = await service.removeCard("SM-001", 0, stale);
+    expect(removed.ok).toBe(false);
+    if (removed.ok) return;
+    expect(removed.error.message).toMatch(/changed elsewhere/);
+    // The real card survives (was not deleted by the stale-index action).
+    expect(fs.files.get(path)).toContain("UC-037");
+
+    const updated = await service.updateCard(
+      "SM-001",
+      0,
+      { title: "New", activity: "Author spec", slice: "Next", tags: [] },
+      stale,
+    );
+    expect(updated.ok).toBe(false);
   });
 
   it("rejects an out-of-range index for update and remove", async () => {

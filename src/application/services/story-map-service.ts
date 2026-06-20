@@ -96,10 +96,20 @@ export interface StoryMapService {
    * regenerating the managed grid block. Returns the updated map.
    */
   addCard(id: StoryMapId, card: StoryMapCard): Promise<Result<StoryMap>>;
-  /** Replaces the card at `index` (out-of-range → VALIDATION_FAILED). */
-  updateCard(id: StoryMapId, index: number, card: StoryMapCard): Promise<Result<StoryMap>>;
-  /** Removes the card at `index` (out-of-range → VALIDATION_FAILED). */
-  removeCard(id: StoryMapId, index: number): Promise<Result<StoryMap>>;
+  /**
+   * Replaces the card at `index` (out-of-range → VALIDATION_FAILED). `expected`
+   * is the encoded card the caller believes is at `index`; when given, the update
+   * is rejected if the on-disk card there has since changed (so a stale row can't
+   * overwrite a different card).
+   */
+  updateCard(
+    id: StoryMapId,
+    index: number,
+    card: StoryMapCard,
+    expected?: string,
+  ): Promise<Result<StoryMap>>;
+  /** Removes the card at `index` (out-of-range → VALIDATION_FAILED). `expected` guards a stale row (see {@link updateCard}). */
+  removeCard(id: StoryMapId, index: number, expected?: string): Promise<Result<StoryMap>>;
   /**
    * Persists an externally-mutated model (the board's working copy): rewrites the
    * full structure (users/activities/steps/slices/cards) frontmatter and
@@ -163,11 +173,23 @@ const refreshManagedBlocks = (
  */
 const cardMutationError = (
   map: StoryMap,
-  options: { validate?: (map: StoryMap) => string | null; requireIndex?: number },
+  options: {
+    validate?: (map: StoryMap) => string | null;
+    requireIndex?: number;
+    expectedCard?: string;
+  },
 ): string | null => {
   const index = options.requireIndex;
   if (index !== undefined && (index < 0 || index >= map.cards.length)) {
     return `Card index ${index} is out of range for ${map.id}.`;
+  }
+  // Index-level optimistic concurrency: if the caller (e.g. the Cards modal) acts
+  // on a row whose card has since changed/moved on disk, the stored index now
+  // points at a DIFFERENT card — reject rather than edit/delete the wrong one.
+  if (options.expectedCard !== undefined && index !== undefined) {
+    if (encodeCard(map.cards[index]) !== options.expectedCard) {
+      return "That card changed elsewhere — reopen the cards list and retry.";
+    }
   }
   return options.validate?.(map) ?? null;
 };
@@ -403,16 +425,23 @@ export class DefaultStoryMapService implements StoryMapService {
     });
   }
 
-  async updateCard(id: StoryMapId, index: number, card: StoryMapCard): Promise<Result<StoryMap>> {
+  async updateCard(
+    id: StoryMapId,
+    index: number,
+    card: StoryMapCard,
+    expected?: string,
+  ): Promise<Result<StoryMap>> {
     return this.mutateCards(id, (cards) => updateCardInList(cards, index, card), {
       validate: (map) => validateCardPlacement(map, card),
       requireIndex: index,
+      expectedCard: expected,
     });
   }
 
-  async removeCard(id: StoryMapId, index: number): Promise<Result<StoryMap>> {
+  async removeCard(id: StoryMapId, index: number, expected?: string): Promise<Result<StoryMap>> {
     return this.mutateCards(id, (cards) => removeCardFromList(cards, index), {
       requireIndex: index,
+      expectedCard: expected,
     });
   }
 
@@ -430,6 +459,7 @@ export class DefaultStoryMapService implements StoryMapService {
     options: {
       validate?: (map: StoryMap) => string | null;
       requireIndex?: number;
+      expectedCard?: string;
     },
   ): Promise<Result<StoryMap>> {
     return this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {

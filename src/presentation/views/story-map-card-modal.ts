@@ -1,6 +1,6 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
 import type { StoryMapService } from "../../application/services/story-map-service";
-import type { StoryMap, StoryMapCard } from "../../domain/entities/story-map";
+import { encodeCard, type StoryMap, type StoryMapCard } from "../../domain/entities/story-map";
 import {
   buildCardFromForm,
   cardToForm,
@@ -182,9 +182,11 @@ export class StoryMapCardModal extends Modal {
 
   /** Routes to add or update based on whether an edit index was supplied. */
   private persist(card: StoryMapCard) {
-    const { storyMapService, map, editIndex } = this.deps;
-    return editIndex === undefined
-      ? storyMapService.addCard(map.id, card)
-      : storyMapService.updateCard(map.id, editIndex, card);
+    const { storyMapService, map, editIndex, card: original } = this.deps;
+    if (editIndex === undefined) return storyMapService.addCard(map.id, card);
+    // Guard the edit against a stale index: pass the card we opened on, so the
+    // service rejects if a concurrent change moved a different card to this index.
+    const expected = original ? encodeCard(original) : undefined;
+    return storyMapService.updateCard(map.id, editIndex, card, expected);
   }
 }

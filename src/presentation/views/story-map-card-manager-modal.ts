@@ -1,6 +1,6 @@
 import { type App, Modal, Notice } from "obsidian";
 import type { StoryMapService } from "../../application/services/story-map-service";
-import type { StoryMap } from "../../domain/entities/story-map";
+import { encodeCard, type StoryMap } from "../../domain/entities/story-map";
 import { type CardManagerRow, projectCardManagerRows } from "./story-map-card-rows";
 import { StoryMapCardModal } from "./story-map-card-modal";
 
@@ -82,7 +82,10 @@ export class StoryMapCardManagerModal extends Modal {
   }
 
   private async remove(index: number): Promise<void> {
-    const result = await this.deps.storyMapService.removeCard(this.map.id, index);
+    // Pass the card we are showing so the service rejects a stale-index remove
+    // (e.g. the board reordered the cards while this modal stayed open).
+    const expected = encodeCard(this.map.cards[index]);
+    const result = await this.deps.storyMapService.removeCard(this.map.id, index, expected);
     if (!result.ok) {
       new Notice(`Could not remove card: ${result.error.message}`);
       return;
