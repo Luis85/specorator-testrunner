@@ -249,5 +249,17 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
   const addSliceY = lastRow ? lastRow.y + lastRow.height + M.rowGap : headerBottom;
   specs.push(...addButton("sm-board-add-slice", 0, addSliceY, "+ slice", { "data-add": "slice" }));
 
+  // Empty state: when the map has no cards yet, a centered hint in the first row.
+  if (layout.cards.length === 0 && layout.rows.length > 0) {
+    specs.push(
+      text(
+        "sm-board-empty",
+        (M.rowHeaderWidth + layout.width) / 2,
+        layout.rows[0].y + 28,
+        "No cards yet — hover a cell and click + card to add one.",
+      ),
+    );
+  }
+
   return specs;
 };

@@ -1307,6 +1307,21 @@
   cursor: text;
 }
 
+/* Hover elevation + empty state (UX-3). */
+.sm-board-card {
+  transition: filter 0.12s ease;
+}
+
+.sm-board-card-group:hover .sm-board-card {
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.28));
+}
+
+.sm-board-empty {
+  text-anchor: middle;
+  fill: var(--text-muted);
+  font-style: italic;
+}
+
 /* Live drag feedback (UX-2): the dragged card follows the pointer and the target
    cell + insertion slot are highlighted in a transient overlay layer. */
 .sm-board-overlay {

@@ -149,6 +149,19 @@ describe("buildBoardScene", () => {
     expect(tooltipText("sm-board-status-chip")).toBe("Cycle status");
   });
 
+  it("renders an empty-state hint only when the map has no cards", () => {
+    const withCard = flatten(buildBoardScene(computeBoardLayout(map))).find(
+      (s) => s.class === "sm-board-empty",
+    );
+    expect(withCard).toBeUndefined(); // the shared fixture has a card
+
+    const empty: StoryMap = { ...map, cards: [] };
+    const hint = flatten(buildBoardScene(computeBoardLayout(empty))).find(
+      (s) => s.class === "sm-board-empty",
+    );
+    expect(hint?.text).toContain("No cards yet");
+  });
+
   it("keeps every rendered rect inside the canvas bounds (controls don't escape the viewBox)", () => {
     // A two-activity, stepped map exercises the add-activity (right margin),
     // add-slice (bottom margin), and per-activity add-step controls together.
