@@ -311,23 +311,21 @@ export class StoryMapBoardView extends LiveDashboardView {
   }
 
   /**
-   * Handles an external `storymap.updated` (another surface changed this map). If
-   * the board has unsaved local edits, flush them FIRST — the flush compares our
-   * now-stale baseline against the externally-changed note and surfaces a conflict
-   * (Notice + reload), rather than reloading immediately and letting the still-armed
-   * debounced save persist the reloaded state, silently dropping the user's drag.
+   * Handles an external `storymap.updated` (another surface changed this map).
+   * Flush our own pending/in-flight save FIRST — the flush compares our now-stale
+   * baseline against the externally-changed note and surfaces a conflict (Notice +
+   * reload), and it drains the still-armed debounced save so it can't later clobber
+   * the reloaded state with the user's stale drag. THEN reload to render the
+   * external write — including when our save was merely in-flight (`saving !== null`)
+   * with no new dirty edits, where awaiting the flush alone would leave the board on
+   * a stale model until the next edit.
    */
   private async onExternalUpdate(): Promise<void> {
     // Commit any open inline rename FIRST so it counts as a pending edit (dirty)
-    // and takes the flush-first conflict path below — otherwise the reload tears
-    // the editor down, its blur commits + schedules a save against the stale
-    // model, and the reloaded model overwrites the rename before the debounce
-    // fires (silent drop). Same teardown-blur hazard handled in onClose.
+    // and is flushed below, not dropped by the reload's editor teardown (the
+    // blur would otherwise commit + schedule a save against the stale model).
     this.commitEditor?.(true);
-    if (this.dirty || this.saving !== null) {
-      await this.flushSave();
-      return;
-    }
+    if (this.dirty || this.saving !== null) await this.flushSave();
     await this.live.schedule();
   }
 
