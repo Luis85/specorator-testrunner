@@ -226,6 +226,11 @@ export class StoryMapBoardView extends LiveDashboardView {
   async setState(state: unknown, result: { history: boolean }): Promise<void> {
     const next = (state as BoardState | null)?.storyMapId;
     if (typeof next === "string" && next !== this.storyMapId) {
+      // Commit any open inline edit FIRST so its scheduleSave marks the (old) model
+      // dirty and the flush below persists it under the OLD id — otherwise the
+      // retarget resets model/id and the teardown blur commits against the wrong
+      // target, dropping the rename. Same teardown-blur guard as onClose.
+      this.commitEditor?.(true);
       // Persist the previous map's pending move (bound to its own id/model) BEFORE
       // retargeting, so a debounced save can't land the old model under the new id.
       await this.flushSave();
