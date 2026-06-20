@@ -191,6 +191,9 @@ export class StoryMapBoardView extends LiveDashboardView {
   /** Reloads only when THIS board's map was deleted; discards its pending save. */
   private onMapDeleted(deletedId: string | undefined): void {
     if (deletedId !== this.storyMapId) return;
+    // The map is gone — CANCEL (not commit) any open rename so the reload's
+    // teardown blur can't arm a doomed save against the deleted note.
+    this.commitEditor?.(false);
     this.dirty = false;
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
@@ -207,6 +210,12 @@ export class StoryMapBoardView extends LiveDashboardView {
    * debounced save persist the reloaded state, silently dropping the user's drag.
    */
   private async onExternalUpdate(): Promise<void> {
+    // Commit any open inline rename FIRST so it counts as a pending edit (dirty)
+    // and takes the flush-first conflict path below — otherwise the reload tears
+    // the editor down, its blur commits + schedules a save against the stale
+    // model, and the reloaded model overwrites the rename before the debounce
+    // fires (silent drop). Same teardown-blur hazard handled in onClose.
+    this.commitEditor?.(true);
     if (this.dirty || this.saving !== null) {
       await this.flushSave();
       return;
