@@ -215,6 +215,33 @@ describe("buildStoryMapGrid", () => {
     expect(grid.rows[1].points).toBe(11); // 3 + 8 (UC-099 dropped from grid, counted here)
   });
 
+  it("rolls up done/total per slice over its cards", () => {
+    const progress: Pick<StoryMap, "activities" | "steps" | "slices" | "cards"> = {
+      activities: ["Author spec"],
+      steps: [],
+      slices: ["Walking skeleton"],
+      cards: [
+        {
+          title: "Done one",
+          activity: "Author spec",
+          slice: "Walking skeleton",
+          status: "done",
+          tags: [],
+        },
+        {
+          title: "Planned one",
+          activity: "Author spec",
+          slice: "Walking skeleton",
+          status: "planned",
+          tags: [],
+        },
+      ],
+    };
+    const grid = buildStoryMapGrid(progress);
+    expect(grid.rows[0].total).toBe(2);
+    expect(grid.rows[0].done).toBe(1);
+  });
+
   it("drops cards whose (activity, step) match no column", () => {
     const grid = buildStoryMapGrid(map);
     const placed = grid.rows.flatMap((r) =>

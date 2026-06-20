@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildBoardScene, type SvgNodeSpec } from "../src/presentation/views/story-map-board-scene";
 import { computeBoardLayout } from "../src/presentation/views/story-map-board-layout";
 import type { StoryMap } from "../src/domain/entities/story-map";
+import { CARD_TYPES, CARD_TYPE_COLORS } from "../src/domain/entities/story-map-card";
 import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
 
 /** Flattens the scene tree (groups now wrap cards) so a search reaches nested specs. */
@@ -45,18 +46,65 @@ describe("buildBoardScene", () => {
     expect(classes).toContain("sm-board-users");
   });
 
-  it("renders the card title + a compact attribute suffix and carries its color + cardIndex", () => {
+  it("renders the card title + ref badge and carries its color + cardIndex", () => {
     const card = flatten(scene()).find((s) => s.class === "sm-board-card" && s.tag === "rect");
     expect(card?.attrs.fill).toBe("#93c5fd");
     expect(card?.attrs["data-card-index"]).toBe(0);
     const text = flatten(scene()).find((s) => s.class === "sm-board-card-title");
     expect(text?.text).toContain("Filter");
-    const attrs = flatten(scene()).find((s) => s.class === "sm-board-card-attrs");
-    expect(attrs?.text).toContain("planned");
-    expect(attrs?.text).toContain("3pts");
+    const ref = flatten(scene()).find((s) => s.class === "sm-board-card-ref");
+    expect(ref?.text).toContain("UC-001");
   });
 
-  it("falls back to a themed fill for a card with no color", () => {
+  it("emits a points chip and one tag chip per tag along the card footer", () => {
+    const points = flatten(scene()).filter((s) => s.class === "sm-board-chip-points");
+    expect(points).toHaveLength(1);
+    const pointsLabel = flatten(scene()).find((s) => s.class === "sm-board-chip-points-label");
+    expect(pointsLabel?.text).toBe("3");
+    const tags = flatten(scene()).filter(
+      (s) => s.class === "sm-board-chip-tag" && s.tag === "rect",
+    );
+    expect(tags).toHaveLength(1); // one tag: "x"
+  });
+
+  it("omits the points chip for a card with no points but still emits its tag chips", () => {
+    const noPoints: StoryMap = {
+      ...map,
+      cards: [
+        {
+          title: "T",
+          activity: "Browse",
+          slice: "Walking skeleton",
+          tags: ["a", "b"],
+          color: "#fff",
+        },
+      ],
+    };
+    const flat = flatten(buildBoardScene(computeBoardLayout(noPoints)));
+    expect(flat.filter((s) => s.class === "sm-board-chip-points")).toHaveLength(0);
+    expect(flat.filter((s) => s.class === "sm-board-chip-tag" && s.tag === "rect")).toHaveLength(2);
+  });
+
+  it("uses the typed card colour as the card rect fill for an override-less card", () => {
+    const typed: StoryMap = {
+      ...map,
+      cards: [
+        {
+          title: "Typed",
+          activity: "Browse",
+          slice: "Walking skeleton",
+          cardType: "note",
+          tags: [],
+        },
+      ],
+    };
+    const card = flatten(buildBoardScene(computeBoardLayout(typed))).find(
+      (s) => s.class === "sm-board-card" && s.tag === "rect",
+    );
+    expect(card?.attrs.fill).toBe("var(--sm-card-note, #7ed6df)");
+  });
+
+  it("falls back to the default-type (task) fill for a card with no color or type", () => {
     const colorless: StoryMap = {
       ...map,
       cards: [{ title: "No color", activity: "Browse", slice: "Walking skeleton", tags: [] }],
@@ -64,7 +112,7 @@ describe("buildBoardScene", () => {
     const card = flatten(buildBoardScene(computeBoardLayout(colorless))).find(
       (s) => s.class === "sm-board-card" && s.tag === "rect",
     );
-    expect(card?.attrs.fill).toBe("var(--background-secondary)");
+    expect(card?.attrs.fill).toBe("var(--sm-card-task, #f6e58d)");
   });
 
   it("escapes nothing into attributes that aren't strings/numbers", () => {
@@ -174,16 +222,16 @@ describe("buildBoardScene", () => {
     expect(hint?.text).toContain("No cards yet");
   });
 
-  it("emits one editable chip per user (× remove + double-click rename) and a + user add", () => {
+  it("emits one persona card per user (× remove + double-click rename) and a + user add", () => {
     const audience: StoryMap = { ...map, users: ["Designer", "Developer"] };
     const specs = flatten(buildBoardScene(computeBoardLayout(audience)));
 
-    const chips = specs.filter((s) => s.class === "sm-board-user" && s.tag === "rect");
-    expect(chips).toHaveLength(2);
-    expect(chips[0]?.attrs["data-user-index"]).toBe(0);
-    expect(chips[0]?.attrs["aria-label"]).toBe("User: Designer");
-    expect(chips[1]?.attrs["data-user-index"]).toBe(1);
-    expect(chips[1]?.attrs["aria-label"]).toBe("User: Developer");
+    const cards = specs.filter((s) => s.class === "sm-board-user-card" && s.tag === "rect");
+    expect(cards).toHaveLength(2);
+    expect(cards[0]?.attrs["data-user-index"]).toBe(0);
+    expect(cards[0]?.attrs["aria-label"]).toBe("User: Designer");
+    expect(cards[1]?.attrs["data-user-index"]).toBe(1);
+    expect(cards[1]?.attrs["aria-label"]).toBe("User: Developer");
 
     const labels = specs.filter((s) => s.class === "sm-board-user-label").map((s) => s.text);
     expect(labels).toEqual(["Designer", "Developer"]);
@@ -193,6 +241,45 @@ describe("buildBoardScene", () => {
 
     const addUser = specs.find((s) => s.class === "sm-board-add-user" && s.tag === "rect");
     expect(addUser?.attrs["data-add"]).toBe("user");
+  });
+
+  it("renders a progress label and points label on each slice row header", () => {
+    const progress: StoryMap = {
+      ...map,
+      slices: ["Walking skeleton"],
+      cards: [
+        {
+          title: "Done",
+          activity: "Browse",
+          slice: "Walking skeleton",
+          status: "done",
+          points: 3,
+          tags: [],
+        },
+        {
+          title: "Todo",
+          activity: "Browse",
+          slice: "Walking skeleton",
+          status: "planned",
+          points: 5,
+          tags: [],
+        },
+      ],
+    };
+    const specs = flatten(buildBoardScene(computeBoardLayout(progress)));
+    const prog = specs.find((s) => s.class === "sm-board-slice-progress");
+    expect(prog?.text).toBe("1/2");
+    const pts = specs.find((s) => s.class === "sm-board-slice-points");
+    expect(pts?.text).toBe("8 pts");
+  });
+
+  it("emits a legend group with one swatch per card type whose fill matches CARD_TYPE_COLORS", () => {
+    const specs = flatten(buildBoardScene(computeBoardLayout(map)));
+    const legend = specs.find((s) => s.class === "sm-board-legend" && s.tag === "g");
+    expect(legend).toBeDefined();
+    const swatches = specs.filter((s) => s.class === "sm-board-legend-swatch" && s.tag === "rect");
+    expect(swatches).toHaveLength(CARD_TYPES.length);
+    expect(swatches.map((s) => s.attrs.fill)).toEqual(CARD_TYPES.map((t) => CARD_TYPE_COLORS[t]));
   });
 
   it("keeps every rendered rect inside the canvas bounds (controls don't escape the viewBox)", () => {

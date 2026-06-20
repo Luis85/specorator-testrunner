@@ -1,4 +1,4 @@
-import { cardAttributeSuffix } from "../../application/content/story-map-content";
+import { CARD_TYPES, CARD_TYPE_COLORS } from "../../domain/entities/story-map-card";
 import type { BoardLayout } from "./story-map-board-layout";
 import { BOARD_METRICS } from "./story-map-board-layout";
 
@@ -91,6 +91,33 @@ const plusButton = (
   { tag: "text", class: `${cls}-label`, attrs: { x: x + 4, y: y + 12, ...data }, text: "+" },
 ];
 
+/** A small chip (rect + centred-ish label) used for the points/tag footer chips. */
+const chip = (cls: string, x: number, y: number, width: number, label: string): SvgNodeSpec[] => [
+  rect(cls, x, y, width, M.chipHeight),
+  text(`${cls}-label`, x + 4, y + M.chipHeight - 3, label),
+];
+
+/**
+ * The points + tag chips laid left-to-right along a card's chip row (just above the
+ * swatch/status row). A points chip (when set) leads; one tag chip per tag follows.
+ * Pure: returns flat specs at absolute coordinates.
+ */
+const chipSpecs = (box: BoardLayout["cards"][number]): SvgNodeSpec[] => {
+  const specs: SvgNodeSpec[] = [];
+  let x = box.x + 8;
+  const y = box.y + box.height - 32;
+  if (box.chips.points !== undefined) {
+    specs.push(...chip("sm-board-chip-points", x, y, M.chipPointsWidth, String(box.chips.points)));
+    x += M.chipPointsWidth + M.chipGap;
+  }
+  for (const tag of box.chips.tags) {
+    const width = Math.min(M.chipTagMaxWidth, M.chipTagPad + tag.length * M.chipCharWidth);
+    specs.push(...chip("sm-board-chip-tag", x, y, width, `#${tag}`));
+    x += width + M.chipGap;
+  }
+  return specs;
+};
+
 /**
  * One card's `<g class="sm-board-card-group">` wrapping its rect/title/attrs/remove/
  * swatch/chip children AT THEIR ABSOLUTE COORDINATES (no transform). The group carries
@@ -101,12 +128,14 @@ const cardGroupSpec = (box: BoardLayout["cards"][number]): SvgNodeSpec => {
   const children: SvgNodeSpec[] = [
     rect("sm-board-card", box.x, box.y, box.width, box.height, {
       "data-card-index": box.cardIndex,
-      fill: box.card.color ?? "var(--background-secondary)",
+      fill: box.color,
     }),
     text("sm-board-card-title", box.x + 8, box.y + 20, box.card.title),
   ];
-  const suffix = cardAttributeSuffix(box.card).replace(/^ · /, "");
-  if (suffix !== "") children.push(text("sm-board-card-attrs", box.x + 8, box.y + 40, suffix));
+  if (box.card.ref !== undefined && box.card.ref !== "") {
+    children.push(text("sm-board-card-ref", box.x + 8, box.y + 34, box.card.ref));
+  }
+  children.push(...chipSpecs(box));
   const remove = removeButton("sm-board-remove", box.x + box.width - 18, box.y + 4, {
     "data-remove": "card",
     "data-card-index": box.cardIndex,
@@ -160,14 +189,14 @@ const usersLaneSpecs = (layout: BoardLayout): SvgNodeSpec[] => {
   const specs: SvgNodeSpec[] = [rect("sm-board-users", 0, 0, layout.width, M.laneHeight)];
   layout.users.forEach((user, i) => {
     const x = M.cellPadding + i * (M.userChipWidth + M.userChipGap);
-    const chip = rect("sm-board-user", x, 8, M.userChipWidth, 24, {
+    const card = rect("sm-board-user-card", x, 8, M.userChipWidth, M.userCardHeight, {
       "data-user-index": i,
       tabindex: 0,
       role: "button",
       "aria-label": `User: ${user}`,
     });
-    chip.children = [tooltip("Double-click to rename")];
-    specs.push(chip);
+    card.children = [tooltip("Double-click to rename")];
+    specs.push(card);
     specs.push(text("sm-board-user-label", x + 6, 24, user));
     specs.push(
       ...removeButton("sm-board-remove", x + M.userChipWidth - 18, 10, {
@@ -193,6 +222,45 @@ const addCardSpecs = (layout: BoardLayout): SvgNodeSpec[] =>
       }),
     ),
   );
+
+/**
+ * The per-slice roll-up labels on a row header: a `"{done}/{total}"` progress label,
+ * a `"{points} pts"` points label, and a thin progress bar filled proportionally to
+ * `done/total` (zero-width when the slice is empty). Pure.
+ */
+const sliceProgressSpecs = (row: BoardLayout["rows"][number]): SvgNodeSpec[] => {
+  const barWidth = M.rowHeaderWidth - 16;
+  const barY = row.y + 30;
+  const filled = row.total > 0 ? Math.round((barWidth * row.done) / row.total) : 0;
+  return [
+    text("sm-board-slice-progress", 8, row.y + 44, `${row.done}/${row.total}`),
+    text("sm-board-slice-points", 8, row.y + 58, `${row.points} pts`),
+    rect("sm-board-progress-track", 8, barY, barWidth, 4),
+    rect("sm-board-progress", 8, barY, filled, 4),
+  ];
+};
+
+/**
+ * A static card-type legend: a `g.sm-board-legend` with, per CARD_TYPE, a coloured
+ * swatch rect (fill = its CARD_TYPE_COLORS entry) plus a text label, laid out in the
+ * band the layout reserves below the grid. Pure.
+ */
+const legendSpecs = (layout: BoardLayout): SvgNodeSpec[] => {
+  const top = layout.height - (M.legendTop + CARD_TYPES.length * M.legendRowGap);
+  const children: SvgNodeSpec[] = [];
+  CARD_TYPES.forEach((type, i) => {
+    const y = top + i * M.legendRowGap;
+    children.push(
+      rect("sm-board-legend-swatch", 8, y, M.legendSwatch, M.legendSwatch, {
+        fill: CARD_TYPE_COLORS[type],
+      }),
+    );
+    children.push(
+      text("sm-board-legend-label", 8 + M.legendLabelOffset, y + M.legendSwatch - 2, type),
+    );
+  });
+  return [group("sm-board-legend", {}, children)];
+};
 
 /**
  * Pure: a {@link BoardLayout} → the flat list of SVG node specs that render it
@@ -282,6 +350,7 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
     sliceRect.children = [tooltip("Double-click to rename")];
     specs.push(sliceRect);
     specs.push(text("sm-board-slice-label", 8, r.y + 18, r.slice));
+    specs.push(...sliceProgressSpecs(r));
     specs.push(
       ...removeButton("sm-board-remove", M.rowHeaderWidth - 18, r.y + 4, {
         "data-remove": "slice",
@@ -320,6 +389,9 @@ export const buildBoardScene = (layout: BoardLayout): SvgNodeSpec[] => {
   const headerBottom = M.laneHeight + M.activityHeaderHeight + M.stepHeaderHeight;
   const addSliceY = lastRow ? lastRow.y + lastRow.height + M.rowGap : headerBottom;
   specs.push(...addButton("sm-board-add-slice", 0, addSliceY, "+ slice", { "data-add": "slice" }));
+
+  // Static card-type legend below the grid (in the layout-reserved band).
+  specs.push(...legendSpecs(layout));
 
   // Empty state: when the map has no cards yet, a centered hint in the first row.
   if (layout.cards.length === 0 && layout.rows.length > 0) {

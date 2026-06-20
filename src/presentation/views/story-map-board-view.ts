@@ -558,7 +558,7 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.bindEvent(svg, "rect[data-status-index]", "click", (el) => this.onCycleStatus(el));
     this.bindEvent(svg, "rect[data-edit]", "click", (el) => this.onEditCardDetails(el));
     const headers =
-      "rect.sm-board-activity, rect.sm-board-slice, rect.sm-board-step, rect.sm-board-user";
+      "rect.sm-board-activity, rect.sm-board-slice, rect.sm-board-step, rect.sm-board-user-card";
     this.bindEvent(svg, headers, "dblclick", (el) => this.onEditHeader(el as SVGElement));
     this.bindEvent(svg, ".sm-board-card-group", "dblclick", (el) =>
       this.onEditCardTitle(el as SVGElement),

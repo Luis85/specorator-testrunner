@@ -4,6 +4,7 @@ import {
   type StoryMap,
   type StoryMapCard,
 } from "../../domain/entities/story-map";
+import { CARD_TYPES, cardColor } from "../../domain/entities/story-map-card";
 
 /** Fixed pixel metrics for the board scene (a single source of truth for geometry + tests). */
 export const BOARD_METRICS = {
@@ -27,6 +28,20 @@ export const BOARD_METRICS = {
   userChipGap: 8,
   /** The small square `+`/`×` control size (per-activity add-step). */
   plusSize: 16,
+  /** Card footer chip metrics (points + tag chips). */
+  chipHeight: 12,
+  chipGap: 4,
+  chipPointsWidth: 22,
+  chipTagMaxWidth: 56,
+  chipTagPad: 12,
+  chipCharWidth: 6,
+  /** A persona (user) card in the audience lane. */
+  userCardHeight: 24,
+  /** Legend swatch + row metrics. */
+  legendSwatch: 12,
+  legendRowGap: 18,
+  legendLabelOffset: 16,
+  legendTop: 12,
   get minRowHeight(): number {
     return this.cardHeight + 2 * this.cellPadding;
   },
@@ -49,6 +64,20 @@ export interface BoardRow {
   slice: string;
   y: number;
   height: number;
+  /** Count of "done" cards in this slice (from the grid row roll-up). */
+  done: number;
+  /** Total card count in this slice. */
+  total: number;
+  /** Sum of story points in this slice. */
+  points: number;
+}
+
+/** The points + tag chips rendered along a card's footer. */
+export interface BoardCardChips {
+  /** Story points, when the card has them. */
+  points?: number;
+  /** The card's tags (without a leading `#`). */
+  tags: string[];
 }
 
 export interface BoardCardBox {
@@ -59,6 +88,10 @@ export interface BoardCardBox {
   y: number;
   width: number;
   height: number;
+  /** Resolved fill: the explicit colour override, else the card-type colour. */
+  color: string;
+  /** Points + tag chips to render along the card footer. */
+  chips: BoardCardChips;
 }
 
 export interface BoardLayout {
@@ -75,6 +108,16 @@ const M = BOARD_METRICS;
 
 /** x of leaf column index `i`. */
 const columnX = (i: number): number => M.rowHeaderWidth + i * (M.colWidth + M.colGap);
+
+/** Resolved fill for a card box: its explicit colour, else its type colour (default "task"). */
+const boxColor = (card: StoryMapCard): string =>
+  cardColor({ cardType: card.cardType ?? "task", color: card.color });
+
+/** The points + tag chips for a card box (points omitted when the card has none). */
+const boxChips = (card: StoryMapCard): BoardCardChips => ({
+  ...(card.points !== undefined ? { points: card.points } : {}),
+  tags: [...card.tags],
+});
 
 /**
  * Pure board geometry from a {@link StoryMap}. Leaf columns and the (column,
@@ -112,7 +155,14 @@ export const computeBoardLayout = (map: StoryMap): BoardLayout => {
     // Reserve a footer below the card stack so the per-cell `+ card` control sits
     // in empty space (cards are laid from the top) and never overlaps a card.
     const height = stack + M.cellFooter;
-    rows.push({ slice: gridRow.slice, y, height });
+    rows.push({
+      slice: gridRow.slice,
+      y,
+      height,
+      done: gridRow.done,
+      total: gridRow.total,
+      points: gridRow.points,
+    });
 
     gridRow.cells.forEach((cell, colIdx) => {
       const colX = columns[colIdx].x;
@@ -124,6 +174,8 @@ export const computeBoardLayout = (map: StoryMap): BoardLayout => {
           y: y + M.cellPadding + stackIdx * (M.cardHeight + M.cardGap),
           width: M.colWidth - 2 * M.cellPadding,
           height: M.cardHeight,
+          color: boxColor(card),
+          chips: boxChips(card),
         });
       });
     });
@@ -142,7 +194,10 @@ export const computeBoardLayout = (map: StoryMap): BoardLayout => {
   // Reserve canvas space (right + bottom) so the `+ activity` and `+ slice`
   // controls the scene draws past the last column/row stay inside the viewBox.
   const width = Math.max(contentWidth + M.colGap + M.addButtonWidth, usersWidth);
-  const height = y + M.addButtonHeight;
+  // Reserve a band below the `+ slice` control for the static card-type legend the
+  // scene draws (one swatch row per CARD_TYPE), so its rects stay inside the viewBox.
+  const legendBand = M.legendTop + CARD_TYPES.length * M.legendRowGap + M.cellPadding;
+  const height = y + M.addButtonHeight + legendBand;
   return { width, height, users: [...map.users], activityGroups, columns, rows, cards };
 };
 

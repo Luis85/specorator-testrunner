@@ -11,6 +11,7 @@ import {
   resolveSliceDropIndex,
 } from "../src/presentation/views/story-map-board-layout";
 import type { StoryMap, StoryMapCard } from "../src/domain/entities/story-map";
+import { CARD_TYPE_COLORS } from "../src/domain/entities/story-map-card";
 import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
 
 const map = (over: Partial<StoryMap> = {}): StoryMap => ({
@@ -71,6 +72,37 @@ describe("computeBoardLayout — columns & rows", () => {
     expect(layout.rows[0].height).toBe(BOARD_METRICS.minRowHeight + BOARD_METRICS.cellFooter);
   });
 
+  it("exposes per-slice done/total/points on each row", () => {
+    const layout = computeBoardLayout(
+      map({
+        activities: ["Browse"],
+        steps: [],
+        slices: ["Walking skeleton"],
+        cards: [
+          {
+            title: "Done",
+            activity: "Browse",
+            slice: "Walking skeleton",
+            status: "done",
+            points: 3,
+            tags: [],
+          },
+          {
+            title: "Todo",
+            activity: "Browse",
+            slice: "Walking skeleton",
+            status: "planned",
+            points: 5,
+            tags: [],
+          },
+        ],
+      }),
+    );
+    expect(layout.rows[0].total).toBe(2);
+    expect(layout.rows[0].done).toBe(1);
+    expect(layout.rows[0].points).toBe(8);
+  });
+
   it("exposes the users lane and overall canvas size", () => {
     const layout = computeBoardLayout(map());
     expect(layout.users).toEqual(["Customer", "Admin"]);
@@ -118,6 +150,40 @@ describe("computeBoardLayout — cards", () => {
       { title: "X", activity: "Nope", slice: "Walking skeleton", tags: [] },
     ]);
     expect(layout.cards).toEqual([]);
+  });
+
+  it("exposes the typed card colour and points/tags chips on each box", () => {
+    const layout = withCards([
+      {
+        title: "A",
+        activity: "Browse",
+        slice: "Walking skeleton",
+        cardType: "task",
+        points: 5,
+        tags: ["alpha", "beta"],
+      },
+    ]);
+    const box = layout.cards[0];
+    expect(box.color).toBe(CARD_TYPE_COLORS.task);
+    expect(box.chips.points).toBe(5);
+    expect(box.chips.tags).toEqual(["alpha", "beta"]);
+  });
+
+  it("prefers an explicit colour override over the type colour, and omits a missing points chip", () => {
+    const layout = withCards([
+      {
+        title: "B",
+        activity: "Browse",
+        slice: "Walking skeleton",
+        cardType: "note",
+        color: "#abcdef",
+        tags: [],
+      },
+    ]);
+    const box = layout.cards[0];
+    expect(box.color).toBe("#abcdef");
+    expect(box.chips.points).toBeUndefined();
+    expect(box.chips.tags).toEqual([]);
   });
 });
 

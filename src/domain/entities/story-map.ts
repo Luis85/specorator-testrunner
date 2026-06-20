@@ -210,6 +210,10 @@ export interface StoryMapGridRow {
   slice: string;
   /** Per-slice points roll-up: sum of points of ALL cards in this slice. */
   points: number;
+  /** Count of cards in this slice whose status is "done". */
+  done: number;
+  /** Total count of cards in this slice. */
+  total: number;
   cells: StoryMapGridCell[];
 }
 
@@ -686,6 +690,8 @@ export const buildStoryMapGrid = (
       return {
         slice,
         points: sliceCards.reduce((sum, card) => sum + (card.points ?? 0), 0),
+        total: sliceCards.length,
+        done: sliceCards.filter((card) => card.status === "done").length,
         cells: columns.map((column) => ({
           column,
           cards: sliceCards.filter((card) => cardInColumn(card, column)),
