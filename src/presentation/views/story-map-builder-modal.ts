@@ -78,9 +78,11 @@ export class StoryMapBuilderModal extends Modal {
       const seeded = await this.deps.prdService.create({
         title: "Product",
         domains: [],
-        vision: "",
-        scopeIn: [],
-        scopeOut: [],
+        // PrdService.create requires a non-blank vision + at least one in/out-of-scope
+        // item; seed sensible, editable placeholders for the reserved root.
+        vision: "The product this vault plans, specifies, and tests.",
+        scopeIn: ["Define the product scope (edit me)"],
+        scopeOut: ["Out of scope (edit me)"],
       });
       if (seeded.ok) prds = await this.deps.prdService.findAll();
     }
@@ -255,6 +257,7 @@ export class StoryMapBuilderModal extends Modal {
     }
   }
 
+  // fallow-ignore-next-line complexity
   private renderButtons(contentEl: HTMLElement): void {
     const buttonContainer = contentEl.createEl("div", { cls: "button-container" });
 
@@ -278,10 +281,19 @@ export class StoryMapBuilderModal extends Modal {
       }
     });
 
+    // Backstop: PRD-000 is auto-seeded on an empty vault, but if that seed ever
+    // failed there is still no product to anchor to — block Create rather than
+    // dead-end the submit with "Unknown product PRD".
+    const noProduct = this.prdsLoaded && this.prds.length === 0;
+
     // Fast path: once the minimum is met (a title — activities/slices are pre-filled
     // and PRD-000 is auto-seeded), let the user Create from any step rather than
     // walking all six.
-    if (this.state.currentStep < STORY_MAP_STEP_COUNT && canCreateStoryMap(this.state)) {
+    if (
+      this.state.currentStep < STORY_MAP_STEP_COUNT &&
+      canCreateStoryMap(this.state) &&
+      !noProduct
+    ) {
       const fastBtn = buttonContainer.createEl("button", { text: "Create now", cls: "mod-cta" });
       fastBtn.setAttribute("data-testid", "create-now-button");
       fastBtn.addEventListener("click", () => void this.create());
@@ -290,7 +302,15 @@ export class StoryMapBuilderModal extends Modal {
     if (this.state.currentStep === STORY_MAP_STEP_COUNT) {
       const createBtn = buttonContainer.createEl("button", { text: "Create", cls: "mod-cta" });
       createBtn.setAttribute("data-testid", "create-button");
-      createBtn.addEventListener("click", () => void this.create());
+      createBtn.disabled = noProduct;
+      if (noProduct) {
+        buttonContainer.createEl("span", {
+          text: "Could not create a product PRD — create one manually, then retry.",
+          cls: "setting-item-description",
+        });
+      } else {
+        createBtn.addEventListener("click", () => void this.create());
+      }
     }
 
     const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
