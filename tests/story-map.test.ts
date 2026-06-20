@@ -7,11 +7,14 @@ import {
   isCardStatus,
   isStoryMapStatus,
   moveCard,
+  reorderActivity,
   reorderCardInCell,
+  reorderSlice,
   normalizeLabels,
   normalizeSteps,
   parseCard,
   parseStep,
+  storyMapSignature,
   type StoryMap,
   type StoryMapCard,
 } from "../src/domain/entities/story-map";
@@ -382,5 +385,70 @@ describe("reorderCardInCell", () => {
   it("is a no-op for an out-of-range index", () => {
     const m = map();
     expect(reorderCardInCell(m, 9, 0)).toBe(m);
+  });
+});
+
+describe("reorderActivity / reorderSlice", () => {
+  const map = (): StoryMap => ({
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: [],
+    activities: ["Browse", "Order", "Pay"],
+    steps: [{ activity: "Browse", step: "Filter" }],
+    slices: ["Walking skeleton", "Next", "Later"],
+    cards: [{ title: "A", activity: "Order", slice: "Next", tags: [] }],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+  });
+
+  it("moves an activity to a new position, leaving cards' labels intact", () => {
+    const next = reorderActivity(map(), 2, 0); // Pay → front
+    expect(next.activities).toEqual(["Pay", "Browse", "Order"]);
+    expect(next.cards[0].activity).toBe("Order"); // card still references its label
+  });
+
+  it("moves a slice to a new position", () => {
+    expect(reorderSlice(map(), 0, 2).slices).toEqual(["Next", "Later", "Walking skeleton"]);
+  });
+
+  it("returns the same map reference for a no-op (equal or out-of-range index)", () => {
+    const m = map();
+    expect(reorderActivity(m, 1, 1)).toBe(m);
+    expect(reorderActivity(m, 9, 0)).toBe(m);
+    expect(reorderSlice(m, 0, 9)).toBe(m);
+  });
+});
+
+describe("storyMapSignature", () => {
+  const base: StoryMap = {
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: ["U"],
+    activities: ["Browse", "Order"],
+    steps: [{ activity: "Browse", step: "Filter" }],
+    slices: ["Walking skeleton"],
+    cards: [{ title: "A", activity: "Browse", slice: "Walking skeleton", tags: [] }],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+  };
+
+  it("is stable for the same structure and changes when structure changes", () => {
+    expect(storyMapSignature(base)).toBe(storyMapSignature({ ...base }));
+    expect(storyMapSignature(base)).not.toBe(
+      storyMapSignature({ ...base, activities: ["Order", "Browse"] }),
+    );
+    expect(storyMapSignature(base)).not.toBe(
+      storyMapSignature({ ...base, slices: ["Walking skeleton", "Next"] }),
+    );
+  });
+
+  it("ignores non-structural fields (title/status/displayOrder/path)", () => {
+    expect(storyMapSignature(base)).toBe(
+      storyMapSignature({ ...base, title: "Renamed", status: "active", displayOrder: 9 }),
+    );
   });
 });

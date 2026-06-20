@@ -348,6 +348,51 @@ export const moveCard = (
 };
 
 /**
+ * Moves the item at `from` to `to`, returning a NEW array — or the SAME reference
+ * when the move is a no-op (out of range or `from === to`), so callers can detect
+ * "nothing changed". Pure.
+ */
+const moveInArray = <T>(arr: readonly T[], from: number, to: number): readonly T[] => {
+  if (from < 0 || from >= arr.length || to < 0 || to >= arr.length || from === to) return arr;
+  const copy = [...arr];
+  const [item] = copy.splice(from, 1);
+  copy.splice(to, 0, item);
+  return copy;
+};
+
+/**
+ * Reorders the activity at `from` to position `to` on the backbone. Cards
+ * reference activities by label (a string), so reordering never breaks placement.
+ * Returns the same map reference on a no-op. Pure: no I/O.
+ */
+export const reorderActivity = (map: StoryMap, from: number, to: number): StoryMap => {
+  const next = moveInArray(map.activities, from, to);
+  return next === map.activities ? map : { ...map, activities: [...next] };
+};
+
+/** Reorders the release slice at `from` to position `to`. Same contract as {@link reorderActivity}. */
+export const reorderSlice = (map: StoryMap, from: number, to: number): StoryMap => {
+  const next = moveInArray(map.slices, from, to);
+  return next === map.slices ? map : { ...map, slices: [...next] };
+};
+
+/**
+ * A stable signature of a map's STRUCTURAL fields (users, activities, steps,
+ * slices, cards) — the optimistic-concurrency baseline a board carries so a save
+ * can detect that another surface changed the structure since it loaded.
+ * Excludes title/status/displayOrder/path (a rename must not block a board save).
+ * Pure: no I/O.
+ */
+export const storyMapSignature = (map: StoryMap): string =>
+  JSON.stringify([
+    map.users,
+    map.activities,
+    map.steps.map(encodeStep),
+    map.slices,
+    map.cards.map(encodeCard),
+  ]);
+
+/**
  * Reorders the card at `cardIndex` to position `indexInCell` among the cards in
  * its OWN cell (same activity/step/slice). A thin wrapper over {@link moveCard}
  * with the card's current coordinate. Pure: no I/O.
