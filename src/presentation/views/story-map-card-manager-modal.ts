@@ -1,11 +1,13 @@
 import { type App, Modal, Notice } from "obsidian";
 import type { StoryMapService } from "../../application/services/story-map-service";
+import type { UseCaseService } from "../../application/services/use-case-service";
 import { encodeCard, type StoryMap } from "../../domain/entities/story-map";
 import { type CardManagerRow, projectCardManagerRows } from "./story-map-card-rows";
 import { StoryMapCardModal } from "./story-map-card-modal";
 
 export interface StoryMapCardManagerDeps {
   storyMapService: Pick<StoryMapService, "addCard" | "updateCard" | "removeCard" | "findById">;
+  useCaseService: Pick<UseCaseService, "create" | "assignToPrd" | "findAll">;
 }
 
 /**
@@ -74,6 +76,7 @@ export class StoryMapCardManagerModal extends Modal {
   private openEditor(index?: number): void {
     new StoryMapCardModal(this.app, {
       storyMapService: this.deps.storyMapService,
+      useCaseService: this.deps.useCaseService,
       map: this.map,
       editIndex: index,
       card: index === undefined ? undefined : this.map.cards[index],

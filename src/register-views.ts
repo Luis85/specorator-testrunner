@@ -161,6 +161,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         openCardManager: (map) =>
           new StoryMapCardManagerModal(app, map, {
             storyMapService: s.storyMapService,
+            useCaseService: s.useCaseService,
           }).open(),
         openStoryMapBoard: (id) => deps.openStoryMapBoard(id),
       }),

@@ -1,5 +1,6 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
 import type { StoryMapService } from "../../application/services/story-map-service";
+import type { UseCaseService } from "../../application/services/use-case-service";
 import { encodeCard, type StoryMap, type StoryMapCard } from "../../domain/entities/story-map";
 import {
   buildCardFromForm,
@@ -14,6 +15,7 @@ import {
 
 export interface StoryMapCardDeps {
   storyMapService: Pick<StoryMapService, "addCard" | "updateCard">;
+  useCaseService: Pick<UseCaseService, "create" | "assignToPrd" | "findAll">;
   map: StoryMap;
   /** The index to edit, or undefined to add a new card. */
   editIndex?: number;
@@ -33,6 +35,7 @@ export interface StoryMapCardDeps {
 export class StoryMapCardModal extends Modal {
   private values: CardFormValues;
   private submitting = false;
+  private useCases: { id: string; title: string }[] = [];
 
   constructor(
     app: App,
@@ -43,6 +46,13 @@ export class StoryMapCardModal extends Modal {
   }
 
   onOpen(): void {
+    void this.loadUseCases();
+    this.render();
+  }
+
+  private async loadUseCases(): Promise<void> {
+    const all = await this.deps.useCaseService.findAll();
+    if (all.ok) this.useCases = all.value.map((uc) => ({ id: uc.id, title: uc.title }));
     this.render();
   }
 
@@ -103,14 +113,62 @@ export class StoryMapCardModal extends Modal {
     });
   }
 
+  // fallow-ignore-next-line complexity
   private renderReference(contentEl: HTMLElement): void {
     new Setting(contentEl)
       .setName("Reference")
-      .setDesc("Optional Use Case ID.")
+      // `UC-NNN` is the canonical Use Case id format, kept verbatim.
+      .setDesc(
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        "Link to a Use Case (UC-NNN): pick an existing one, type a planned ID, or promote this card.",
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("", "(No reference)");
+        for (const uc of this.useCases) dropdown.addOption(uc.id, `${uc.id} — ${uc.title}`);
+        // Keep a forward ref (one not yet created) visible + selected.
+        if (this.values.ref !== "" && !this.useCases.some((uc) => uc.id === this.values.ref)) {
+          dropdown.addOption(this.values.ref, `${this.values.ref} (not created)`);
+        }
+        dropdown.setValue(this.values.ref);
+        dropdown.onChange((value) => {
+          this.values = { ...this.values, ref: value };
+          this.render();
+        });
+      })
       .addText((text) => {
-        text.setPlaceholder("E.g. An existing Use Case ID").setValue(this.values.ref);
+        // `UC-NNN` is the canonical Use Case id format, kept verbatim.
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        text.setPlaceholder("Or a planned UC-NNN").setValue(this.values.ref);
         text.onChange((value) => (this.values = { ...this.values, ref: value }));
-      });
+      })
+      .addButton((btn) =>
+        btn.setButtonText("Promote to Use Case").onClick(() => void this.promoteToUseCase()),
+      );
+  }
+
+  // fallow-ignore-next-line complexity
+  private async promoteToUseCase(): Promise<void> {
+    const title = this.values.title.trim();
+    if (title === "") {
+      new Notice("Add a title before promoting this card to a Use Case.");
+      return;
+    }
+    const created = await this.deps.useCaseService.create({ title });
+    if (!created.ok) {
+      new Notice(`Could not create Use Case: ${created.error.message}`);
+      return;
+    }
+    const linked = await this.deps.useCaseService.assignToPrd(
+      created.value.id,
+      this.deps.map.product,
+    );
+    if (!linked.ok) {
+      new Notice(`Created ${created.value.id} but could not anchor it: ${linked.error.message}`);
+    } else {
+      new Notice(`Promoted to ${created.value.id}, anchored to ${this.deps.map.product}.`);
+    }
+    this.values = { ...this.values, ref: created.value.id };
+    this.render();
   }
 
   private renderTitle(contentEl: HTMLElement): void {
