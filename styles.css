@@ -1225,3 +1225,26 @@
   cursor: grabbing;
   opacity: 0.6;
 }
+
+/* Add affordances + in-place rename editor (P3b). */
+.sm-board-add-activity,
+.sm-board-add-slice,
+.sm-board-add-step {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+  cursor: pointer;
+}
+
+.sm-board-add-activity-label,
+.sm-board-add-slice-label,
+.sm-board-add-step-label {
+  fill: var(--text-muted);
+  pointer-events: none;
+}
+
+.sm-board-edit-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  font: inherit;
+}

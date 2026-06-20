@@ -65,7 +65,7 @@ A placement on a **Story Map**, encoded as the parser-safe nine-field string `"r
 _Avoid_: Ticket, cell. (A reference-less card IS a "story" here, per ADR-0028.)
 
 **Story Map Board** _(see ADR-0029)_:
-The interactive visual rendering of a **Story Map** in the main workspace view — a users lane, activity/step columns, and slice rows of card tiles. An editable view over the note frontmatter (the single source of truth); the managed Markdown table is kept in sync. P1 shipped the read-only board; P2 added card drag-and-drop (drag a card to another (activity, step, slice) cell); P3 adds structure reordering (drag a column/activity or row/slice header to reorder it). All persist through the same debounced, signature-guarded save (interact.js, pointer-based, behind a swappable adapter). Later phases add step reorder, add/remove of structure, inline editing, and zoom/pan.
+The interactive visual rendering of a **Story Map** in the main workspace view — a users lane, activity/step columns, and slice rows of card tiles. An editable view over the note frontmatter (the single source of truth); the managed Markdown table is kept in sync. P1 shipped the read-only board; P2 added card drag-and-drop (drag a card to another (activity, step, slice) cell); P3 added structure reordering (drag a column/activity or row/slice header); P3b adds creating structure (a `+` inserts a placeholder activity/slice/step) and renaming any of them in place (double-click a header → edit). All persist through the same debounced, signature-guarded save (interact.js, pointer-based, behind a swappable adapter). Later phases add structure removal + step reorder, inline card editing, and zoom/pan.
 _Avoid_: Canvas, whiteboard, grid view.
 
 **Planning Status** _(accepted — see ADR-0028)_:
