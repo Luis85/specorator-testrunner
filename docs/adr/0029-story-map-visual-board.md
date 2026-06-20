@@ -68,3 +68,10 @@ drag library is isolated behind a one-function adapter
   references it (a card is never silently orphaned); step removal is allowed and
   its cards **degrade** to no-step (drop the `step` key, hanging under the
   activity). New cards are `"New card"` placeholders, renamed in place.
+- P4 adds the card-edit ops (pure, in `story-map.ts`): `editCardTitle`,
+  `recolorCard`, `editCardStatus`, `editCardPoints`. Board-native card edits
+  (inline title double-click; swatch color cycle; status-chip cycle) run through
+  the board's own optimistic model → debounced `saveMap` loop. The
+  `StoryMapCardModal` stays the full-attribute-edit surface; it persists via
+  `service.updateCard`, which the open board receives as an external update (and
+  reloads, flushing any in-flight board edit first).
