@@ -23,8 +23,10 @@ import { makeDraggable } from "./story-map-board-dnd";
 
 export const STORY_MAP_BOARD_VIEW_TYPE = "e2e-test-hub-story-map-board";
 
-/** Close the board if its map is deleted; updated events are handled manually (origin guard). */
-const REFRESH_ON: DomainEventType[] = ["storymap.deleted"];
+// Both storymap.updated and storymap.deleted are handled manually (filtered by id
+// + the dirty-save guard), so LiveDashboardView does no blind reload — only its
+// initial render. An UNRELATED map's update/delete must not reload this board.
+const REFRESH_ON: DomainEventType[] = [];
 const SAVE_DEBOUNCE_MS = 300;
 
 export interface StoryMapBoardDeps {
@@ -79,6 +81,7 @@ export class StoryMapBoardView extends LiveDashboardView {
   private saveTimer: number | null = null;
   private cleanups: (() => void)[] = [];
   private unsubscribeUpdated: (() => void) | null = null;
+  private unsubscribeDeleted: (() => void) | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -139,7 +142,27 @@ export class StoryMapBoardView extends LiveDashboardView {
         void this.onExternalUpdate();
       },
     );
+    // Only OUR map's deletion matters; an unrelated map's delete must not reload
+    // this board (which would clobber an unsaved edit via the pending save).
+    this.unsubscribeDeleted = this.deps.eventBus.subscribe(
+      "storymap.deleted",
+      (event: { payload: unknown }) => {
+        const payload = event.payload as { storyMapId?: string };
+        this.onMapDeleted(payload.storyMapId);
+      },
+    );
     await this.live.open(this.refreshOn);
+  }
+
+  /** Reloads only when THIS board's map was deleted; discards its pending save. */
+  private onMapDeleted(deletedId: string | undefined): void {
+    if (deletedId !== this.storyMapId) return;
+    this.dirty = false;
+    if (this.saveTimer !== null) {
+      window.clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    void this.live.schedule();
   }
 
   /**
@@ -164,6 +187,8 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.teardownDnd();
     this.unsubscribeUpdated?.();
     this.unsubscribeUpdated = null;
+    this.unsubscribeDeleted?.();
+    this.unsubscribeDeleted = null;
     this.live.close();
   }
 
