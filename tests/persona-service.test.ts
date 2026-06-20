@@ -49,6 +49,15 @@ describe("DefaultPersonaService", () => {
     expect(result.ok && result.value.id).toBe("PER-002");
   });
 
+  it("serializes concurrent creates so two personas never share an id", async () => {
+    const { svc, fs } = build();
+    const [a, b] = await Promise.all([svc.create({ name: "Alice" }), svc.create({ name: "Bob" })]);
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(new Set([a.value.id, b.value.id]).size).toBe(2);
+    expect(fs.files.size).toBe(2);
+  });
+
   it("persists color when provided", async () => {
     const { svc, fs } = build();
     const result = await svc.create({ name: "Chef", color: "#ff5500" });

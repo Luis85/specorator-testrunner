@@ -24,6 +24,9 @@ export interface PersonaService {
   rename(id: PersonaId, name: string): Promise<Result<Persona>>;
 }
 
+/** Single key serializing persona id-allocation + creation (prevents duplicate ids). */
+const PERSONA_MUTATE_KEY = "persona:mutate";
+
 export class DefaultPersonaService implements PersonaService {
   // Serialize all note I/O per path to prevent lost-update races (mirrors
   // DefaultUseCaseService.noteWrites).
@@ -43,29 +46,33 @@ export class DefaultPersonaService implements PersonaService {
     }
 
     const settings = await this.settingsService.load();
-    const existing = await this.findAll();
-    if (!existing.ok) return err(existing.error);
+    // Allocate the id AND write under one persona-wide key: keying the write by the
+    // final path (which embeds the id) would not serialize two concurrent creates
+    // with different names, so both could read the same `findAll()` and claim the
+    // same PER-NNN, leaving the vault with duplicate ids (mirrors PrdService).
+    return this.noteWrites.run(PERSONA_MUTATE_KEY, async () => {
+      const existing = await this.findAll();
+      if (!existing.ok) return err(existing.error);
 
-    const id = nextPersonaId(existing.value);
-    const path = joinVaultPath(settings.paths.personasPath, personaFileName(id, name));
-    const persona: Persona = {
-      id,
-      name,
-      color: request.color,
-      body: request.body ?? "",
-      path,
-    };
+      const id = nextPersonaId(existing.value);
+      const path = joinVaultPath(settings.paths.personasPath, personaFileName(id, name));
+      const persona: Persona = {
+        id,
+        name,
+        color: request.color,
+        body: request.body ?? "",
+        path,
+      };
 
-    const created = await this.noteWrites.run(path, () =>
-      this.fs.createFile(path, buildPersonaNote(persona)),
-    );
-    if (!created.ok) return err(created.error);
+      const created = await this.fs.createFile(path, buildPersonaNote(persona));
+      if (!created.ok) return err(created.error);
 
-    await this.eventBus.publish(
-      createEvent("persona.created", { personaId: id, name, path }, { correlationId: id }),
-    );
-    this.logger.info("Persona created", { id, path });
-    return ok(persona);
+      await this.eventBus.publish(
+        createEvent("persona.created", { personaId: id, name, path }, { correlationId: id }),
+      );
+      this.logger.info("Persona created", { id, path });
+      return ok(persona);
+    });
   }
 
   async findAll(): Promise<Result<Persona[]>> {
