@@ -1194,10 +1194,11 @@
   pointer-events: none;
 }
 
-/* Header labels must pass pointer hits through to their draggable header rect
-   (the drag handle) — same rule as the card text above. */
+/* Header labels must pass pointer hits through to their header rect (the drag
+   handle + double-click-to-rename target) — same rule as the card text above. */
 .sm-board-activity-label,
-.sm-board-slice-label {
+.sm-board-slice-label,
+.sm-board-step-label {
   pointer-events: none;
 }
 

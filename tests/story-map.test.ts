@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addActivity,
   addSlice,
-  addStep,
+  addStepTo,
   buildStoryMapGrid,
   CARD_STATUSES,
   encodeCard,
@@ -461,7 +461,7 @@ describe("storyMapSignature", () => {
   });
 });
 
-describe("addActivity / addSlice / addStep", () => {
+describe("addActivity / addSlice / addStepTo", () => {
   const map = (over: Partial<StoryMap> = {}): StoryMap => ({
     id: "SM-001",
     title: "J",
@@ -488,7 +488,7 @@ describe("addActivity / addSlice / addStep", () => {
   });
 
   it("appends a uniquely-named placeholder step under an existing activity", () => {
-    const next = addStep(map(), "Browse");
+    const next = addStepTo(map(), "Browse");
     expect(next?.steps).toEqual([
       { activity: "Browse", step: "Filter" },
       { activity: "Browse", step: "New step" },
@@ -496,7 +496,7 @@ describe("addActivity / addSlice / addStep", () => {
   });
 
   it("returns null when adding a step to an unknown activity", () => {
-    expect(addStep(map(), "Nope")).toBeNull();
+    expect(addStepTo(map(), "Nope")).toBeNull();
   });
 });
 

@@ -5,7 +5,7 @@ import type { StoryMap } from "../../domain/entities/story-map";
 import {
   addActivity,
   addSlice,
-  addStep,
+  addStepTo,
   moveCard,
   renameActivity,
   renameSlice,
@@ -298,7 +298,7 @@ export class StoryMapBoardView extends LiveDashboardView {
     if (this.model === null) return null;
     if (kind === "activity") return addActivity(this.model);
     if (kind === "slice") return addSlice(this.model);
-    if (kind === "step" && activity !== null) return addStep(this.model, activity);
+    if (kind === "step" && activity !== null) return addStepTo(this.model, activity);
     return null;
   }
 

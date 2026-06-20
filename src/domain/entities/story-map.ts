@@ -404,7 +404,7 @@ export const addSlice = (map: StoryMap): StoryMap => ({
  * Appends a placeholder step under `activity` (unique among that activity's
  * steps), or null when the activity is not on the backbone. Pure.
  */
-export const addStep = (map: StoryMap, activity: string): StoryMap | null => {
+export const addStepTo = (map: StoryMap, activity: string): StoryMap | null => {
   if (!map.activities.includes(activity)) return null;
   const own = map.steps.filter((s) => s.activity === activity).map((s) => s.step);
   return { ...map, steps: [...map.steps, { activity, step: uniqueLabel(own, "New step") }] };
