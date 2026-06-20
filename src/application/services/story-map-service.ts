@@ -168,6 +168,24 @@ const refreshManagedBlocks = (
 };
 
 /**
+ * The first reason a card in `cards` is invalid against `axes`, or null when
+ * every card is on-map. The shared all-cards placement guard for every write
+ * path (create / saveMap / rebuildGrid / card mutations), so a hand-edited
+ * off-map card can never ride a "successful" write and then block the board's
+ * own saveMap (which validates the whole set). Pure: no I/O.
+ */
+const invalidCardReason = (
+  axes: Pick<StoryMap, "activities" | "slices" | "steps">,
+  cards: readonly StoryMapCard[],
+): string | null => {
+  for (const card of cards) {
+    const reason = validateCardPlacement(axes, card);
+    if (reason !== null) return reason;
+  }
+  return null;
+};
+
+/**
  * The reason a card mutation must be rejected (out-of-range index or invalid
  * placement), or null when it may proceed. Pure: keeps {@link mutateCards} thin.
  */
@@ -233,10 +251,8 @@ export class DefaultStoryMapService implements StoryMapService {
     // axes — otherwise an off-map or unsafe card (`|`/newline fields, non-integer
     // points) would persist and break the encoded frontmatter/roll-up.
     const cards = request.cards ?? [];
-    for (const card of cards) {
-      const reason = validateCardPlacement({ activities, slices, steps }, card);
-      if (reason !== null) return err(appError("VALIDATION_FAILED", reason));
-    }
+    const cardReason = invalidCardReason({ activities, slices, steps }, cards);
+    if (cardReason !== null) return err(appError("VALIDATION_FAILED", cardReason));
 
     const settings = await this.settingsService.load();
 
@@ -387,10 +403,8 @@ export class DefaultStoryMapService implements StoryMapService {
       // card) would then reject ALL edits over that invisible bad row. Validate
       // here so the rebuild reports the offending card now, keeping stored cards
       // consistent with what create/saveMap accept.
-      for (const card of map.cards) {
-        const reason = validateCardPlacement(map, card);
-        if (reason !== null) return err(appError("VALIDATION_FAILED", reason));
-      }
+      const cardReason = invalidCardReason(map, map.cards);
+      if (cardReason !== null) return err(appError("VALIDATION_FAILED", cardReason));
       // The product anchor must still resolve before we write: a hand-edit to the
       // `product` frontmatter (the supported reassignment path) could point at a
       // non-existent PRD, which we'd otherwise write back as a bare link while the
@@ -498,11 +512,19 @@ export class DefaultStoryMapService implements StoryMapService {
       const map = found.value;
       const reason = cardMutationError(map, options);
       if (reason !== null) return err(appError("VALIDATION_FAILED", reason));
+      // Validate the FULL post-transform list, not just the card being added/
+      // updated: a pre-existing hand-edited off-map card would otherwise ride this
+      // "successful" write and then block every later board saveMap. Validating
+      // the RESULT means removing the offending card (which drops it from the
+      // list) is still allowed — only writes that leave a bad card are rejected.
+      const nextCards = transform(map.cards);
+      const cardReason = invalidCardReason(map, nextCards);
+      if (cardReason !== null) return err(appError("VALIDATION_FAILED", cardReason));
       // A card write also refreshes the product paragraph, so the anchor must
       // resolve here too (see rebuildGrid) — don't persist a dangling product.
       const resolvable = await this.requireResolvableProduct(map.product);
       if (!resolvable.ok) return resolvable;
-      return this.writeCards({ ...map, cards: transform(map.cards) });
+      return this.writeCards({ ...map, cards: nextCards });
     });
   }
 
@@ -563,10 +585,8 @@ export class DefaultStoryMapService implements StoryMapService {
       }
       const users = normalizeLabels(model.users);
       const steps = normalizeSteps(model.steps, activities);
-      for (const card of model.cards) {
-        const reason = validateCardPlacement({ activities, slices, steps }, card);
-        if (reason !== null) return err(appError("VALIDATION_FAILED", reason));
-      }
+      const cardReason = invalidCardReason({ activities, slices, steps }, model.cards);
+      if (cardReason !== null) return err(appError("VALIDATION_FAILED", cardReason));
       const resolvable = await this.requireResolvableProduct(onDisk.product);
       if (!resolvable.ok) return resolvable;
 

@@ -601,6 +601,50 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     expect(note).toContain("keep me");
   });
 
+  it("validates the full card list on a card write: blocks a new card while a pre-existing off-map card lingers, but still allows removing the bad card", async () => {
+    const { service, fs } = build({ "UC-037": "Use Cases/UC-037 Author a Use Case.md" });
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "product: PRD-000",
+        "activities:",
+        "  - Author spec",
+        "slices:",
+        "  - Walking skeleton",
+        "cards:",
+        "  - UC-037 | Author spec | Walking skeleton", // good (index 0)
+        "  - UC-040 | Ghost activity | Walking skeleton", // off-map (index 1)
+        "---",
+        "## Map",
+        "",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+      ].join("\n"),
+    );
+
+    // Adding a valid card is rejected while the off-map card still lingers in the list.
+    const add = await service.addCard("SM-001", {
+      title: "New",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+      tags: [],
+    });
+    expect(add.ok).toBe(false);
+
+    // But removing the offending card (index 1) yields a clean list and is allowed.
+    const removed = await service.removeCard("SM-001", 1);
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) return;
+    expect(removed.value.cards).toHaveLength(1);
+    expect(removed.value.cards[0].activity).toBe("Author spec");
+  });
+
   it("rejects a card whose placement is invalid (slice off the map)", async () => {
     const { service, fs } = build();
     seedNote(fs);
