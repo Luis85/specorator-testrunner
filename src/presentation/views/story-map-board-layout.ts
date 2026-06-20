@@ -272,30 +272,79 @@ export const dropIndicator = (layout: BoardLayout, point: BoardPoint): DropCellI
 };
 
 /**
+ * Whether a header reorder is a forward move — the dragged item (`from`) sits
+ * before the target slot, so the move-to-position ops land it PAST the target,
+ * on its trailing side. Null `from` (no source) is treated as backward. Pure.
+ */
+const isForwardMove = (from: number | null, to: number): boolean => from !== null && from < to;
+
+/** A vertical reorder line spanning the board height at board-x `x`. Pure. */
+const verticalLine = (x: number, height: number): HeaderDropIndicator => ({
+  line: { x1: x, y1: M.laneHeight, x2: x, y2: height },
+});
+
+/** A box's leading x, or its trailing edge (`x + width`) on a forward move. Pure. */
+const edgeX = (box: { x: number; width: number }, forward: boolean): number =>
+  forward ? box.x + box.width : box.x;
+
+/** The slice-reorder line: the target row's top (backward) or bottom (forward) edge. */
+const sliceDropLine = (
+  layout: BoardLayout,
+  point: BoardPoint,
+  from: number | null,
+): HeaderDropIndicator | null => {
+  const i = resolveSliceDropIndex(layout, point.y);
+  if (i === null) return null;
+  const row = layout.rows[i];
+  const y = isForwardMove(from, i) ? row.y + row.height : row.y;
+  return { line: { x1: 0, y1: y, x2: layout.width, y2: y } };
+};
+
+/** The activity-reorder line: the target group's leading (backward) or trailing (forward) edge. */
+const activityDropLine = (
+  layout: BoardLayout,
+  point: BoardPoint,
+  from: number | null,
+): HeaderDropIndicator | null => {
+  const i = resolveActivityDropIndex(layout, point.x);
+  if (i === null) return null;
+  return verticalLine(edgeX(layout.activityGroups[i], isForwardMove(from, i)), layout.height);
+};
+
+/** The step-reorder line at the target column's edge, or null off a declared-step column. */
+const stepDropLine = (
+  layout: BoardLayout,
+  point: BoardPoint,
+  from: number | null,
+): HeaderDropIndicator | null => {
+  const col = resolveColumnAt(layout, point.x);
+  if (col === null) return null;
+  if (col.step === undefined) return null;
+  const i = layout.columns.findIndex((c) => c.activity === col.activity && c.step === col.step);
+  if (i === -1) return null;
+  return verticalLine(edgeX(layout.columns[i], isForwardMove(from, i)), layout.height);
+};
+
+/**
  * The header-reorder overlay for a board `point`: a vertical line at the target
- * activity-group / step-column left edge, or a horizontal line at the target slice
- * row's top edge. Null when the point is outside every group/column/row. Pure.
+ * activity-group / step-column edge, or a horizontal line at the target slice
+ * row's edge. Null when the point is outside every group/column/row.
+ *
+ * The reorder ops land the dragged item AT the target's final index (move-to-
+ * position semantics), so for a forward move (`from` before the target) the item
+ * ends up on the FAR side of the target — the line is anchored to the target's
+ * trailing edge so the preview matches the persisted order. `from` is the dragged
+ * item's index on the same axis the target is resolved against (activity/slice
+ * ordinal, or the dragged step's leaf-column index); null/backward keeps the
+ * leading edge. Pure.
  */
 export const headerDropIndicator = (
   layout: BoardLayout,
   kind: "activity" | "slice" | "step",
   point: BoardPoint,
+  from: number | null = null,
 ): HeaderDropIndicator | null => {
-  if (kind === "slice") {
-    const i = resolveSliceDropIndex(layout, point.y);
-    if (i === null) return null;
-    const y = layout.rows[i].y;
-    return { line: { x1: 0, y1: y, x2: layout.width, y2: y } };
-  }
-  if (kind === "activity") {
-    const i = resolveActivityDropIndex(layout, point.x);
-    if (i === null) return null;
-    const x = layout.activityGroups[i].x;
-    return { line: { x1: x, y1: M.laneHeight, x2: x, y2: layout.height } };
-  }
-  const col = resolveColumnAt(layout, point.x);
-  if (col?.step === undefined) return null;
-  const c = layout.columns.find((cc) => cc.activity === col.activity && cc.step === col.step);
-  if (c === undefined) return null;
-  return { line: { x1: c.x, y1: M.laneHeight, x2: c.x, y2: layout.height } };
+  if (kind === "slice") return sliceDropLine(layout, point, from);
+  if (kind === "activity") return activityDropLine(layout, point, from);
+  return stepDropLine(layout, point, from);
 };

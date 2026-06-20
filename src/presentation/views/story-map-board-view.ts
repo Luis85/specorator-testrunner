@@ -94,6 +94,27 @@ const renameFromHeader = (model: StoryMap, rect: Element, value: string): StoryM
   return renameStep(model, activity, step, value);
 };
 
+/**
+ * The dragged header's index on the axis its drop target is resolved against —
+ * the activity/slice ordinal, or the dragged step's leaf-column index — so the
+ * reorder preview can anchor its insertion line on the side the item will land.
+ * Null when the element carries no such index (e.g. a no-step column). Pure.
+ */
+// fallow-ignore-next-line complexity
+const headerDragFromIndex = (
+  el: Element,
+  kind: "activity" | "slice" | "step",
+  layout: BoardLayout,
+): number | null => {
+  if (kind === "activity") return indexAttr(el, "data-activity-index");
+  if (kind === "slice") return indexAttr(el, "data-slice-index");
+  const activity = el.getAttribute("data-activity");
+  const step = el.getAttribute("data-step");
+  if (activity === null || step === null) return null;
+  const i = layout.columns.findIndex((c) => c.activity === activity && c.step === step);
+  return i === -1 ? null : i;
+};
+
 /** Applies an activity/slice header reorder, or null when either index is missing. */
 const applyHeaderReorder = (
   model: StoryMap,
@@ -713,17 +734,17 @@ export class StoryMapBoardView extends LiveDashboardView {
       }),
       makeDraggable(this.contentEl, ".sm-board-activity", {
         onStart: (el) => el.classList.add("is-dragging"),
-        onMove: (_el, x, y) => this.onHeaderDragMove("activity", x, y, svg, layout),
+        onMove: (el, x, y) => this.onHeaderDragMove(el, "activity", x, y, svg, layout),
         onEnd: (el, x, y) => this.onHeaderDrop(el, "activity", x, y, svg, layout),
       }),
       makeDraggable(this.contentEl, ".sm-board-slice", {
         onStart: (el) => el.classList.add("is-dragging"),
-        onMove: (_el, x, y) => this.onHeaderDragMove("slice", x, y, svg, layout),
+        onMove: (el, x, y) => this.onHeaderDragMove(el, "slice", x, y, svg, layout),
         onEnd: (el, x, y) => this.onHeaderDrop(el, "slice", x, y, svg, layout),
       }),
       makeDraggable(this.contentEl, ".sm-board-step", {
         onStart: (el) => el.classList.add("is-dragging"),
-        onMove: (_el, x, y) => this.onHeaderDragMove("step", x, y, svg, layout),
+        onMove: (el, x, y) => this.onHeaderDragMove(el, "step", x, y, svg, layout),
         onEnd: (el, x, y) => this.onStepDrop(el, x, y, svg, layout),
       }),
     );
@@ -774,6 +795,7 @@ export class StoryMapBoardView extends LiveDashboardView {
 
   /** A header drag moved: show the reorder insertion line at the target slot. */
   private onHeaderDragMove(
+    el: SVGElement,
     kind: "activity" | "slice" | "step",
     clientX: number,
     clientY: number,
@@ -782,7 +804,9 @@ export class StoryMapBoardView extends LiveDashboardView {
   ): void {
     if (this.overlay === null) return;
     this.overlay.empty();
-    const indicator = headerDropIndicator(layout, kind, this.toBoardPoint(svg, clientX, clientY));
+    const from = headerDragFromIndex(el, kind, layout);
+    const point = this.toBoardPoint(svg, clientX, clientY);
+    const indicator = headerDropIndicator(layout, kind, point, from);
     if (indicator !== null) this.overlayLine(indicator.line);
   }
 

@@ -299,3 +299,50 @@ describe("dropIndicator / headerDropIndicator", () => {
     expect(headerDropIndicator(layout, "step", { x: noStepCol.x + 5, y: 0 })).toBeNull();
   });
 });
+
+describe("headerDropIndicator insertion side (preview matches persisted order)", () => {
+  // Browse owns two steps so a same-activity forward step move exists; two slices.
+  const m = map({
+    activities: ["Browse", "Order"],
+    steps: [
+      { activity: "Browse", step: "Filter" },
+      { activity: "Browse", step: "Search" },
+    ],
+    slices: ["Walking skeleton", "Next"],
+    cards: [],
+  });
+
+  it("anchors a forward activity move to the target's trailing edge, backward to its leading edge", () => {
+    const layout = computeBoardLayout(m);
+    const target = layout.activityGroups[1];
+    // Dragging group 0 onto group 1 (forward): reorderActivity lands it AT index 1,
+    // i.e. past the target — preview the line on the target's far (right) edge.
+    const forward = headerDropIndicator(layout, "activity", { x: target.x + 5, y: 0 }, 0);
+    expect(forward?.line.x1).toBe(target.x + target.width);
+    // A backward move (drag a later group onto an earlier one) keeps the leading edge.
+    const back = layout.activityGroups[0];
+    const backward = headerDropIndicator(layout, "activity", { x: back.x + 5, y: 0 }, 1);
+    expect(backward?.line.x1).toBe(back.x);
+  });
+
+  it("anchors a forward slice move to the target row's bottom edge", () => {
+    const layout = computeBoardLayout(m);
+    const target = layout.rows[1];
+    const forward = headerDropIndicator(layout, "slice", { x: 0, y: target.y + 5 }, 0);
+    expect(forward?.line.y1).toBe(target.y + target.height);
+    const backward = headerDropIndicator(layout, "slice", { x: 0, y: layout.rows[0].y + 5 }, 1);
+    expect(backward?.line.y1).toBe(layout.rows[0].y);
+  });
+
+  it("anchors a forward step move to the target column's trailing edge", () => {
+    const layout = computeBoardLayout(m);
+    const filter = layout.columns[0]; // Browse / Filter
+    const search = layout.columns[1]; // Browse / Search
+    // Drag Filter (column index 0) onto Search (column index 1): forward.
+    const forward = headerDropIndicator(layout, "step", { x: search.x + 5, y: 0 }, 0);
+    expect(forward?.line.x1).toBe(search.x + search.width);
+    // Drag Search onto Filter: backward → leading edge.
+    const backward = headerDropIndicator(layout, "step", { x: filter.x + 5, y: 0 }, 1);
+    expect(backward?.line.x1).toBe(filter.x);
+  });
+});
