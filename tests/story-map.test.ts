@@ -6,9 +6,13 @@ import {
   addStepTo,
   buildStoryMapGrid,
   CARD_STATUSES,
+  editCardPoints,
+  editCardStatus,
+  editCardTitle,
   encodeCard,
   encodeStep,
   isCardStatus,
+  recolorCard,
   isStoryMapStatus,
   moveCard,
   removeActivity,
@@ -670,5 +674,58 @@ describe("addCard / removeCard", () => {
   it("removes the card at an index and no-ops out of range", () => {
     expect(removeCard(base, 0).cards).toEqual([]);
     expect(removeCard(base, 9)).toBe(base);
+  });
+});
+
+describe("card edits", () => {
+  const base: StoryMap = {
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: [],
+    activities: ["Browse"],
+    steps: [],
+    slices: ["MVP"],
+    cards: [{ title: "Old", activity: "Browse", slice: "MVP", tags: [] }],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+  };
+
+  it("editCardTitle renames a card, rejects blank, no-ops unchanged", () => {
+    expect(editCardTitle(base, 0, "New title")?.cards[0].title).toBe("New title");
+    expect(editCardTitle(base, 0, "  Old  ")).toBe(base); // cleanLabel-equal → no-op
+    expect(editCardTitle(base, 0, "   ")).toBeNull(); // blank rejected
+    expect(editCardTitle(base, 9, "x")).toBeNull(); // out of range
+  });
+
+  /** Narrows an op result to a non-null StoryMap (lint forbids `!` and `as`). */
+  const ok = (map: StoryMap | null): StoryMap => {
+    if (map === null) throw new Error("expected a non-null StoryMap");
+    return map;
+  };
+
+  it("recolorCard sets and clears the color, no-ops unchanged", () => {
+    expect(recolorCard(base, 0, "#f00")?.cards[0].color).toBe("#f00");
+    const colored = ok(recolorCard(base, 0, "#f00"));
+    expect(recolorCard(colored, 0, "")?.cards[0].color).toBeUndefined(); // "" clears
+    expect(recolorCard(base, 0, "")).toBe(base); // already no color → no-op
+    expect(recolorCard(base, 9, "#f00")).toBeNull();
+  });
+
+  it("editCardStatus sets a valid status, clears on '', rejects invalid", () => {
+    expect(editCardStatus(base, 0, "done")?.cards[0].status).toBe("done");
+    const done = ok(editCardStatus(base, 0, "done"));
+    expect(editCardStatus(done, 0, "")?.cards[0].status).toBeUndefined();
+    expect(editCardStatus(base, 0, "bogus")).toBeNull();
+    expect(editCardStatus(base, 0, "")).toBe(base); // already none → no-op
+  });
+
+  it("editCardPoints sets a non-negative int, clears on '', rejects bad input", () => {
+    expect(editCardPoints(base, 0, "5")?.cards[0].points).toBe(5);
+    const five = ok(editCardPoints(base, 0, "5"));
+    expect(editCardPoints(five, 0, "")?.cards[0].points).toBeUndefined();
+    expect(editCardPoints(base, 0, "1.5")).toBeNull();
+    expect(editCardPoints(base, 0, "-1")).toBeNull();
   });
 });

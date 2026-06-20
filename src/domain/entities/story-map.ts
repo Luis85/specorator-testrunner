@@ -473,6 +473,81 @@ export const removeCard = (map: StoryMap, index: number): StoryMap => {
   return { ...map, cards: map.cards.filter((_, i) => i !== index) };
 };
 
+/** Replaces the card at `index` with `card`, returning a new map. Pure. */
+const withCardAt = (map: StoryMap, index: number, card: StoryMapCard): StoryMap => ({
+  ...map,
+  cards: map.cards.map((c, i) => (i === index ? card : c)),
+});
+
+/**
+ * Renames the card at `index`. The title is cleaned (whitespace/`|` collapsed —
+ * `|` is the encoding delimiter). Returns the SAME map when unchanged, or null
+ * when the cleaned title is blank (a card must carry a title) or the index is out
+ * of range. Pure: no I/O.
+ */
+export const editCardTitle = (map: StoryMap, index: number, rawTitle: string): StoryMap | null => {
+  const card = map.cards[index];
+  if (card === undefined) return null;
+  const title = cleanLabel(rawTitle);
+  if (title === card.title) return map;
+  if (title === "") return null;
+  return withCardAt(map, index, { ...card, title });
+};
+
+/**
+ * Sets (or clears, when `color` is "") the color of the card at `index`. Returns
+ * the SAME map when unchanged, or null when the index is out of range. Pure.
+ */
+export const recolorCard = (map: StoryMap, index: number, color: string): StoryMap | null => {
+  const card = map.cards[index];
+  if (card === undefined) return null;
+  const next = color.trim();
+  if (next === (card.color ?? "")) return map;
+  if (next === "") {
+    const { color: _drop, ...noColor } = card;
+    return withCardAt(map, index, noColor);
+  }
+  return withCardAt(map, index, { ...card, color: next });
+};
+
+/**
+ * Sets the planning status of the card at `index`; "" clears it. Returns the SAME
+ * map when unchanged, or null when the index is out of range or `status` is a
+ * non-empty non-status string. Pure: no I/O.
+ */
+export const editCardStatus = (map: StoryMap, index: number, status: string): StoryMap | null => {
+  const card = map.cards[index];
+  if (card === undefined) return null;
+  if (status === "") {
+    if (card.status === undefined) return map;
+    const { status: _drop, ...noStatus } = card;
+    return withCardAt(map, index, noStatus);
+  }
+  if (!isCardStatus(status)) return null;
+  if (status === card.status) return map;
+  return withCardAt(map, index, { ...card, status });
+};
+
+/**
+ * Sets the story points of the card at `index`; "" clears. Returns the SAME map
+ * when unchanged, or null when the index is out of range or the value is not a
+ * non-negative integer (a decimal/non-numeric is rejected, not truncated). Pure.
+ */
+export const editCardPoints = (map: StoryMap, index: number, raw: string): StoryMap | null => {
+  const card = map.cards[index];
+  if (card === undefined) return null;
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    if (card.points === undefined) return map;
+    const { points: _drop, ...noPoints } = card;
+    return withCardAt(map, index, noPoints);
+  }
+  const n = Number(trimmed);
+  if (!Number.isInteger(n) || n < 0) return null;
+  if (n === card.points) return map;
+  return withCardAt(map, index, { ...card, points: n });
+};
+
 /** A label not already in `existing`: `base`, else `base 2`, `base 3`, … Pure. */
 const uniqueLabel = (existing: readonly string[], base: string): string => {
   if (!existing.includes(base)) return base;
