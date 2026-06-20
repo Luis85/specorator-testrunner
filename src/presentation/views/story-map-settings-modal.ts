@@ -86,15 +86,25 @@ export class StoryMapSettingsModal extends Modal {
       .addEventListener("click", () => void this.save());
   }
 
+  /**
+   * Submits ONLY the fields the user changed from the on-open snapshot. Because
+   * `updateMapMeta` leaves an omitted field at its current on-disk value, a
+   * title-only save can't revert a product/status reassignment another surface
+   * made while this modal sat open (nor resubmit a since-deleted product). An
+   * empty diff is a no-op close.
+   */
+  // fallow-ignore-next-line complexity
   private async save(): Promise<void> {
-    const title = this.titleInput.value;
+    const changes: { title?: string; status?: StoryMapStatus; product?: string } = {};
+    if (this.titleInput.value !== this.map.title) changes.title = this.titleInput.value;
     const status = this.statusSelect.value as StoryMapStatus;
-    const product = this.productInput.value;
-    const result = await this.deps.storyMapService.updateMapMeta(this.map.id, {
-      title,
-      status,
-      product,
-    });
+    if (status !== this.map.status) changes.status = status;
+    if (this.productInput.value !== this.map.product) changes.product = this.productInput.value;
+    if (Object.keys(changes).length === 0) {
+      this.close();
+      return;
+    }
+    const result = await this.deps.storyMapService.updateMapMeta(this.map.id, changes);
     if (!result.ok) {
       new Notice(`Could not update ${this.map.id}: ${result.error.message}`);
       return;
