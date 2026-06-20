@@ -9,6 +9,7 @@ import {
   addSlice,
   addStepTo,
   addUser,
+  dropIndexForMove,
   editCardStatus,
   editCardTitle,
   moveCard,
@@ -968,7 +969,10 @@ export class StoryMapBoardView extends LiveDashboardView {
     if (this.model === null || cardIndex === null) return null;
     const target = resolveDropTarget(layout, this.toBoardPoint(svg, clientX, clientY));
     if (target === null) return null;
-    return moveCard(this.model, cardIndex, target, target.indexInCell);
+    // The indicator's index comes from the rendered (pre-removal) stack; adjust it
+    // so a same-cell forward drop lands where the preview showed (see dropIndexForMove).
+    const index = dropIndexForMove(this.model, cardIndex, target, target.indexInCell);
+    return moveCard(this.model, cardIndex, target, index);
   }
 
   /** Screen → board coordinates using the SVG's CTM (identity-ish at P2). */

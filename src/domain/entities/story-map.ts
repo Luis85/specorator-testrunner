@@ -352,6 +352,25 @@ export const moveCard = (
 };
 
 /**
+ * Adjusts a drop indicator's in-cell index for {@link moveCard}. The indicator is
+ * computed from the RENDERED (pre-removal) cell stack, but `moveCard` removes the
+ * dragged card before inserting; for a same-cell FORWARD drag that shifts every
+ * later slot left by one, so the persisted position would land one past the
+ * indicator. When the dragged card already sits in the target cell at a rank
+ * before `indexInCell`, decrement so the drop matches the preview. Cross-cell and
+ * backward drags are unchanged. Pure.
+ */
+export const dropIndexForMove = (
+  map: StoryMap,
+  cardIndex: number,
+  target: CardTarget,
+  indexInCell: number,
+): number => {
+  const rank = cellIndices(map.cards, target).indexOf(cardIndex);
+  return rank >= 0 && rank < indexInCell ? indexInCell - 1 : indexInCell;
+};
+
+/**
  * Moves the item at `from` to `to`, returning a NEW array — or the SAME reference
  * when the move is a no-op (out of range or `from === to`), so callers can detect
  * "nothing changed". Pure.

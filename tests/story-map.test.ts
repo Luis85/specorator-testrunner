@@ -10,6 +10,7 @@ import {
   editCardPoints,
   editCardStatus,
   editCardTitle,
+  dropIndexForMove,
   encodeCard,
   encodeStep,
   isCardStatus,
@@ -375,6 +376,42 @@ describe("moveCard", () => {
   it("returns the map unchanged for an out-of-range index", () => {
     const map = baseMap();
     expect(moveCard(map, 9, { activity: "Order", slice: "Next" })).toBe(map);
+  });
+});
+
+describe("dropIndexForMove", () => {
+  const cell = { activity: "Browse", step: "Filter", slice: "Walking skeleton" };
+  const map = (): StoryMap => ({
+    id: "SM-001",
+    title: "J",
+    status: "draft",
+    product: "PRD-000",
+    users: [],
+    activities: ["Browse"],
+    steps: [{ activity: "Browse", step: "Filter" }],
+    slices: ["Walking skeleton"],
+    displayOrder: 0,
+    path: unsafeVaultPath("Story Maps/SM-001/SM-001.md"),
+    cards: [
+      { title: "A", activity: "Browse", step: "Filter", slice: "Walking skeleton", tags: [] },
+      { title: "B", activity: "Browse", step: "Filter", slice: "Walking skeleton", tags: [] },
+      { title: "C", activity: "Browse", step: "Filter", slice: "Walking skeleton", tags: [] },
+    ],
+  });
+
+  it("decrements a forward same-cell drop (removing the card shifts later slots left)", () => {
+    // Drag A (in-cell rank 0) to the indicator above C (pre-removal index 2) → 1.
+    expect(dropIndexForMove(map(), 0, cell, 2)).toBe(1);
+  });
+
+  it("leaves a backward same-cell drop unchanged", () => {
+    // Drag C (rank 2) to the indicator above B (index 1) → 1.
+    expect(dropIndexForMove(map(), 2, cell, 1)).toBe(1);
+  });
+
+  it("leaves a cross-cell drop unchanged (card not in the target cell)", () => {
+    const other = { activity: "Browse", step: undefined, slice: "Walking skeleton" };
+    expect(dropIndexForMove(map(), 0, other, 0)).toBe(0);
   });
 });
 
