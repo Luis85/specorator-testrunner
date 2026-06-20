@@ -38,6 +38,10 @@ export type DomainEventType =
   // prd
   | "prd.created"
   | "prd.deleted"
+  // persona
+  | "persona.created"
+  | "persona.updated"
+  | "persona.deleted"
   // story map
   | "storymap.created"
   | "storymap.updated"
@@ -123,6 +127,11 @@ export interface EventPayloads {
   // prd
   "prd.created": { prdId: string; title: string; path: string; parentPrdId?: string };
   "prd.deleted": { prdId: string; path: string; preservedFiles: number };
+
+  // persona
+  "persona.created": { personaId: string; name: string; path: string };
+  "persona.updated": { personaId: string; name: string; path: string };
+  "persona.deleted": { personaId: string; path: string };
 
   // story map
   "storymap.created": { storyMapId: string; title: string; path: string; product: string };

@@ -37,14 +37,17 @@ export class StoryMapExplorerView extends LiveDashboardView {
     super(leaf, deps.eventBus, REFRESH_ON);
   }
 
+  // fallow-ignore-next-line unused-class-member
   getViewType(): string {
     return STORY_MAP_VIEW_TYPE;
   }
 
+  // fallow-ignore-next-line unused-class-member
   getDisplayText(): string {
     return "Story Maps";
   }
 
+  // fallow-ignore-next-line unused-class-member
   getIcon(): string {
     return "map";
   }
