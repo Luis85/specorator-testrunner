@@ -189,9 +189,11 @@ export const replaceProductBlock = (body: string, paragraph: string): string => 
   const marked = new RegExp(
     `${escapeRegExp(PRODUCT_BLOCK_START)}[\\s\\S]*?${escapeRegExp(PRODUCT_BLOCK_END)}`,
   );
-  if (marked.test(body)) return body.replace(marked, block);
+  // Replace via a function so `$`-tokens in the block (a resolved note name may
+  // contain `$&`/`$$`) are written literally, not expanded as replacement patterns.
+  if (marked.test(body)) return body.replace(marked, () => block);
   const legacy = /^Story map for .*$/m;
-  return legacy.test(body) ? body.replace(legacy, block) : body;
+  return legacy.test(body) ? body.replace(legacy, () => block) : body;
 };
 
 /**
@@ -204,7 +206,12 @@ export const replaceGridBlock = (body: string, table: string): string => {
   const pattern = new RegExp(
     `${escapeRegExp(GRID_BLOCK_START)}[\\s\\S]*?${escapeRegExp(GRID_BLOCK_END)}`,
   );
-  return pattern.test(body) ? body.replace(pattern, block) : `${body.trimEnd()}\n\n${block}\n`;
+  // Function replacer: a card title or resolved Use Case note name in the block
+  // may contain `$&`/`$$`/`` $` ``/`$'`, which a string replacement would expand
+  // (splicing the old grid/body in or dropping `$`s). A function writes it literally.
+  return pattern.test(body)
+    ? body.replace(pattern, () => block)
+    : `${body.trimEnd()}\n\n${block}\n`;
 };
 
 /**
@@ -214,7 +221,9 @@ export const replaceGridBlock = (body: string, table: string): string => {
  */
 export const replaceStoryMapHeading = (body: string, id: string, title: string): string => {
   const pattern = new RegExp(`^# ${escapeRegExp(id)}:.*$`, "m");
-  return pattern.test(body) ? body.replace(pattern, `# ${id}: ${title}`) : body;
+  // Function replacer so `$`-tokens in a user-authored title (e.g. `$&`) are
+  // written literally rather than expanded as replacement patterns.
+  return pattern.test(body) ? body.replace(pattern, () => `# ${id}: ${title}`) : body;
 };
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

@@ -209,6 +209,18 @@ describe("replaceProductBlock", () => {
     const body = "# SM-001: J\n\n## Notes\nhand-written\n";
     expect(replaceProductBlock(body, paragraph)).toBe(body);
   });
+
+  it("writes $-tokens in the new paragraph literally", () => {
+    // A resolved PRD note name containing $& must not be expanded as a pattern.
+    const dollarParagraph = renderProductParagraph(
+      "PRD-002",
+      new Map([["PRD-002", "PRD-002 $& Co"]]),
+    );
+    const body = [PRODUCT_BLOCK_START, "Story map for [[PRD-001]] — …", PRODUCT_BLOCK_END].join(
+      "\n",
+    );
+    expect(replaceProductBlock(body, dollarParagraph)).toContain("[[PRD-002 $& Co|PRD-002]]");
+  });
 });
 
 describe("parseStoryMapNote", () => {
@@ -262,6 +274,15 @@ describe("replaceGridBlock", () => {
     expect(next).toContain(GRID_BLOCK_START);
     expect(next).toContain("fresh table");
   });
+
+  it("writes $-tokens in the new table literally (no replacement-pattern expansion)", () => {
+    const body = [GRID_BLOCK_START, "old", GRID_BLOCK_END].join("\n");
+    // A card title / resolved note name containing $&, $$, $` and $' must survive
+    // verbatim — a string replacement would expand these into the matched text.
+    const next = replaceGridBlock(body, "cost is $$5 for $& and $` and $'");
+    expect(next).toContain("cost is $$5 for $& and $` and $'");
+    expect(next).not.toContain("old");
+  });
 });
 
 describe("replaceStoryMapHeading", () => {
@@ -284,5 +305,10 @@ describe("replaceStoryMapHeading", () => {
   it("returns the body unchanged when no matching heading is present", () => {
     const body = "## Notes\nhand-written, the title heading was removed by hand\n";
     expect(replaceStoryMapHeading(body, "SM-001", "New title")).toBe(body);
+  });
+
+  it("writes $-tokens in the new title literally", () => {
+    const next = replaceStoryMapHeading("# SM-001: Old", "SM-001", "Pay $& earn $$");
+    expect(next).toBe("# SM-001: Pay $& earn $$");
   });
 });
