@@ -281,18 +281,20 @@ export class StoryMapBuilderModal extends Modal {
       }
     });
 
-    // Backstop: PRD-000 is auto-seeded on an empty vault, but if that seed ever
-    // failed there is still no product to anchor to — block Create rather than
-    // dead-end the submit with "Unknown product PRD".
+    // A resolvable product anchor is required before Create. While the PRD list is
+    // still loading/seeding (`!prdsLoaded`), treat creation as not-yet-available so a
+    // submit can't race ahead of the auto-seed and dead-end with "Unknown product
+    // PRD"; `noProduct` is the post-load case where even the seed produced none.
+    const productReady = this.prdsLoaded && this.prds.length > 0;
     const noProduct = this.prdsLoaded && this.prds.length === 0;
 
     // Fast path: once the minimum is met (a title — activities/slices are pre-filled
     // and PRD-000 is auto-seeded), let the user Create from any step rather than
-    // walking all six.
+    // walking all six. Hidden until a product anchor has actually resolved.
     if (
       this.state.currentStep < STORY_MAP_STEP_COUNT &&
       canCreateStoryMap(this.state) &&
-      !noProduct
+      productReady
     ) {
       const fastBtn = buttonContainer.createEl("button", { text: "Create now", cls: "mod-cta" });
       fastBtn.setAttribute("data-testid", "create-now-button");
@@ -302,14 +304,16 @@ export class StoryMapBuilderModal extends Modal {
     if (this.state.currentStep === STORY_MAP_STEP_COUNT) {
       const createBtn = buttonContainer.createEl("button", { text: "Create", cls: "mod-cta" });
       createBtn.setAttribute("data-testid", "create-button");
-      createBtn.disabled = noProduct;
-      if (noProduct) {
+      createBtn.disabled = !productReady;
+      if (productReady) {
+        createBtn.addEventListener("click", () => void this.create());
+      } else {
         buttonContainer.createEl("span", {
-          text: "Could not create a product PRD — create one manually, then retry.",
+          text: noProduct
+            ? "Could not create a product PRD — create one manually, then retry."
+            : "Loading products…",
           cls: "setting-item-description",
         });
-      } else {
-        createBtn.addEventListener("click", () => void this.create());
       }
     }
 
