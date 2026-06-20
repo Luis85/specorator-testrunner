@@ -237,8 +237,13 @@ export class StoryMapBoardView extends LiveDashboardView {
   private baseline = "";
   /** Set when the model has unsaved edits; drained by the serialized save loop. */
   private dirty = false;
-  /** The in-flight save chain (one save at a time), or null when idle. */
-  private saving: Promise<void> | null = null;
+  /**
+   * The in-flight save chain (one save at a time), or null when idle. Resolves
+   * `true` when the model was persisted cleanly, `false` when a save error /
+   * stale-signature conflict reloaded the board — so dependent ops (e.g. opening
+   * the card editor) can abort instead of acting on a now-stale index.
+   */
+  private saving: Promise<boolean> | null = null;
   private readonly origin = `board-${Math.random().toString(36).slice(2)}`;
   private saveTimer: number | null = null;
   private cleanups: (() => void)[] = [];
@@ -686,7 +691,10 @@ export class StoryMapBoardView extends LiveDashboardView {
    * origin), which the board's `onExternalUpdate` reloads — so no explicit refresh.
    */
   private async openCardEditor(index: number): Promise<void> {
-    await this.flushSave();
+    // If the pre-open flush hit a conflict (or retargeted), the board reloaded and
+    // `index` may now point at a different card — abort rather than seed the modal's
+    // `expected` guard from the wrong card and risk editing it.
+    if (!(await this.flushSave())) return;
     if (this.model === null) return;
     const card = this.model.cards[index];
     if (card === undefined) return;
@@ -991,25 +999,31 @@ export class StoryMapBoardView extends LiveDashboardView {
    * against the just-advanced baseline (so it can't false-conflict with our own
    * prior save). Callers (e.g. setState before retargeting) can await the chain.
    */
-  private flushSave(): Promise<void> {
+  private flushSave(): Promise<boolean> {
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
     if (this.saving !== null) return this.saving;
-    if (!this.dirty) return Promise.resolve();
+    if (!this.dirty) return Promise.resolve(true);
     this.saving = this.runSaveLoop().finally(() => {
       this.saving = null;
     });
     return this.saving;
   }
 
+  /**
+   * Drains the serialized save chain. Resolves `true` when the model was persisted
+   * cleanly (or there was nothing to save), `false` when a save error / conflict
+   * reloaded the board or the leaf retargeted mid-save — in those cases the
+   * in-memory model and any caller-held index are now stale.
+   */
   // fallow-ignore-next-line complexity
-  private async runSaveLoop(): Promise<void> {
+  private async runSaveLoop(): Promise<boolean> {
     while (this.dirty) {
       if (this.model === null || this.storyMapId === null) {
         this.dirty = false;
-        return;
+        return true;
       }
       this.dirty = false;
       const id = this.storyMapId;
@@ -1017,20 +1031,22 @@ export class StoryMapBoardView extends LiveDashboardView {
       // Treat an unexpected throw like a failed Result (the service is Result-based,
       // but never lose an edit silently to an unhandled rejection).
       const error = await this.trySave(id, model);
-      // Ignore the outcome if the leaf retargeted to another map mid-save.
-      if (id !== this.storyMapId) return;
+      // The leaf retargeted to another map mid-save: our model/index context is
+      // gone, so report not-clean so dependent ops abort.
+      if (id !== this.storyMapId) return false;
       if (error !== null) {
         new Notice(`Could not save the board: ${error}`);
         // Revert the optimistic edits to the last-saved state — but not while
         // closing (onClose awaits this flush), where a repaint is pointless and
         // would re-render a view about to be torn down.
         if (this.isOpen) await this.live.schedule();
-        return;
+        return false;
       }
       // Advance the baseline to what we just wrote so the next iteration (a drop
       // that arrived during this save) compares against it, not the stale value.
       this.baseline = storyMapSignature(model);
     }
+    return true;
   }
 
   /** Persists one save; returns an error message, or null on success. Never throws. */
