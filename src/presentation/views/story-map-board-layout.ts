@@ -136,6 +136,26 @@ export interface DropTarget {
 }
 
 /**
+ * The activity index under board-x `x` (the drop slot for a dragged column
+ * header), or null when `x` is outside every activity group. `activityGroups` is
+ * in `map.activities` order, so the returned index addresses `map.activities`.
+ * Pure.
+ */
+export const resolveActivityDropIndex = (layout: BoardLayout, x: number): number | null => {
+  const i = layout.activityGroups.findIndex((g) => x >= g.x && x < g.x + g.width);
+  return i === -1 ? null : i;
+};
+
+/**
+ * The slice index under board-y `y` (the drop slot for a dragged row header), or
+ * null when `y` is outside every row. `rows` is in `map.slices` order. Pure.
+ */
+export const resolveSliceDropIndex = (layout: BoardLayout, y: number): number | null => {
+  const i = layout.rows.findIndex((r) => y >= r.y && y < r.y + r.height);
+  return i === -1 ? null : i;
+};
+
+/**
  * Resolves a board-space point to the (column, row) cell under it and the
  * insertion index within that cell's vertical card stack. Returns null when the
  * point is outside every column or row (e.g. the users lane / header band).

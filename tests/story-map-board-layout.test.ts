@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   BOARD_METRICS,
   computeBoardLayout,
+  resolveActivityDropIndex,
   resolveDropTarget,
+  resolveSliceDropIndex,
 } from "../src/presentation/views/story-map-board-layout";
 import type { StoryMap, StoryMapCard } from "../src/domain/entities/story-map";
 import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
@@ -151,5 +153,31 @@ describe("resolveDropTarget", () => {
     expect(
       resolveDropTarget(layout, { x: col.x + 10, y: row.y + row.height - 2 })?.indexInCell,
     ).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("resolveActivityDropIndex / resolveSliceDropIndex", () => {
+  const m = map({
+    activities: ["Browse", "Order"],
+    steps: [{ activity: "Browse", step: "Filter" }],
+    slices: ["Walking skeleton", "Next"],
+    cards: [],
+  });
+
+  it("returns the activity-group index under a board-x point", () => {
+    const layout = computeBoardLayout(m);
+    expect(resolveActivityDropIndex(layout, layout.activityGroups[0].x + 5)).toBe(0);
+    expect(resolveActivityDropIndex(layout, layout.activityGroups[1].x + 5)).toBe(1);
+  });
+
+  it("returns the slice-row index under a board-y point", () => {
+    const layout = computeBoardLayout(m);
+    expect(resolveSliceDropIndex(layout, layout.rows[1].y + 5)).toBe(1);
+  });
+
+  it("returns null outside every column / row", () => {
+    const layout = computeBoardLayout(m);
+    expect(resolveActivityDropIndex(layout, -50)).toBeNull();
+    expect(resolveSliceDropIndex(layout, -50)).toBeNull();
   });
 });
