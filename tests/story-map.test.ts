@@ -190,6 +190,8 @@ describe("encodeCard / parseCard (rich)", () => {
     // Too few fields.
     expect(parseCard("only-two | x")).toBeNull();
     expect(parseCard("")).toBeNull();
+    // Too many fields: a stray `|` in a field — reject, don't truncate/shift.
+    expect(parseCard("UC-001 | A | s | Sl |  |  |  |  | Title | extra")).toBeNull();
   });
 });
 

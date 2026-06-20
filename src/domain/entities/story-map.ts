@@ -259,7 +259,11 @@ export const parseCard = (raw: string): StoryMapCard | null => {
     if (!isValidUseCaseRef(ref)) return null;
     return { ref, title: ref, activity, slice, tags: [] };
   }
-  if (parts.length < 4) return null;
+  // A rich row has 4..9 fields (missing trailing fields are padded). MORE than
+  // nine means a stray `|` in a field (title/tags/color) — reject rather than
+  // truncate, which would silently drop/shift text on the next rebuild. Service-
+  // authored cards never contain `|`, so an over-delimited row is hand-edit error.
+  if (parts.length < 4 || parts.length > 9) return null;
   const padded = [...parts, "", "", "", "", "", "", "", "", ""].slice(0, 9);
   return richCard(padded);
 };
