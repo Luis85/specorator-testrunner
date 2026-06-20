@@ -1,4 +1,5 @@
 import { buildPrdNote, prdFolderName } from "../content/prd-content";
+import { parseStoryMapNote } from "../content/story-map-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import { resolveParentPrdId } from "./prd-builder";
@@ -350,17 +351,13 @@ export class DefaultPrdService implements PrdService {
       const read = await this.fs.readFile(path);
       // Fail closed (destructive delete): an unreadable map could anchor here.
       if (!read.ok) return read;
-      const { frontmatter: fm } = parseNote(read.value);
-      // Only real Story Map notes anchor a product — mirror StoryMapService.findAll
-      // (type: story-map), so an auxiliary note/attachment under the Story Maps
-      // folder that merely carries a `product:` field can't block PRD deletion.
-      if (
-        fm.type === "story-map" &&
-        typeof fm.product === "string" &&
-        fm.product.trim() === prdId
-      ) {
-        count++;
-      }
+      // Reuse the Story Map parser so the guard's notion of which product a map
+      // anchors to can't drift from StoryMapService.findAll. It filters non-map
+      // notes (type: story-map) AND applies the same default — a missing/blank
+      // `product` resolves to PRD-000 (ADR-0027), which a raw frontmatter equality
+      // check would miss, letting PRD-000 deletion strand those default-root maps.
+      const map = parseStoryMapNote(read.value, path);
+      if (map?.product === prdId) count++;
     }
     return ok(count);
   }

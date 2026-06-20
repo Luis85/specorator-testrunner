@@ -420,6 +420,23 @@ describe("DefaultPrdService.deletePrd", () => {
     expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
   });
 
+  it("treats a Story Map with a blank product as anchored to PRD-000, not a sub-PRD", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    // A map with an omitted/blank `product` resolves to PRD-000 (ADR-0027 default),
+    // so it anchors the root — it must NOT over-block deleting an unrelated sub-PRD.
+    // The guard reuses parseStoryMapNote so this default can't drift from findAll.
+    fs.files.set(
+      "Story Maps/SM-001-j/SM-001-j.md",
+      ["---", "id: SM-001", "type: story-map", "title: J", "---", ""].join("\n"),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok).toBe(true);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
+  });
+
   it("never deletes the root PRD-000", async () => {
     const { service, fs } = build();
     seedRoot(fs);
