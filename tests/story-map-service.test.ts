@@ -495,6 +495,41 @@ describe("DefaultStoryMapService.rebuildGrid", () => {
     expect(fs.files.get(path)).toContain("(empty)");
   });
 
+  it("refuses to rebuild when a card was hand-edited to an off-map activity", async () => {
+    // The cards row references an activity not on the backbone. buildStoryMapGrid
+    // would drop it from the grid, but it would linger in `cards` and make every
+    // later board save fail; the rebuild must reject it now instead.
+    const { service, fs } = build({ "UC-037": "Use Cases/UC-037 Author a Use Case.md" });
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "product: PRD-000",
+        "activities:",
+        "  - Author spec",
+        "slices:",
+        "  - Walking skeleton",
+        "cards:",
+        "  - UC-037 | Ghost activity | Walking skeleton",
+        "---",
+        "## Map",
+        "",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+      ].join("\n"),
+    );
+
+    const result = await service.rebuildGrid("SM-001");
+    expect(result.ok).toBe(false);
+    // The note is left untouched — the bad row isn't written as a "successful" refresh.
+    expect(fs.files.get(path)).toContain("(empty)");
+  });
+
   it("refuses to rebuild a map that does not exist", async () => {
     const { service } = build();
     const result = await service.rebuildGrid("SM-404");

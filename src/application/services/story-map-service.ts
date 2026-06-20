@@ -381,6 +381,16 @@ export class DefaultStoryMapService implements StoryMapService {
         return err(appError("VALIDATION_FAILED", `Story Map ${id} was not found.`));
       }
       const map = found.value;
+      // A hand-edit to the `cards` frontmatter could place a card off the map's
+      // axes; buildStoryMapGrid would silently drop it from the grid while it
+      // lingers in `cards`, and the next board saveMap (which validates every
+      // card) would then reject ALL edits over that invisible bad row. Validate
+      // here so the rebuild reports the offending card now, keeping stored cards
+      // consistent with what create/saveMap accept.
+      for (const card of map.cards) {
+        const reason = validateCardPlacement(map, card);
+        if (reason !== null) return err(appError("VALIDATION_FAILED", reason));
+      }
       // The product anchor must still resolve before we write: a hand-edit to the
       // `product` frontmatter (the supported reassignment path) could point at a
       // non-existent PRD, which we'd otherwise write back as a bare link while the
