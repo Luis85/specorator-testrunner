@@ -7,8 +7,10 @@ import interact from "interactjs";
  * this adapter.
  */
 export interface CardDragCallbacks {
-  /** A drag began on this card element. */
-  onStart: (element: SVGElement) => void;
+  /** A drag began on this element, at the given screen point. */
+  onStart: (element: SVGElement, clientX: number, clientY: number) => void;
+  /** The pointer moved during the drag, at the given screen point. */
+  onMove: (element: SVGElement, clientX: number, clientY: number) => void;
   /** The drag ended at the given screen point. */
   onEnd: (element: SVGElement, clientX: number, clientY: number) => void;
 }
@@ -40,7 +42,10 @@ export const makeDraggable = (
   // type-checked rather than `any`.
   const interactable = interact(selector, { context: root }).draggable({
     listeners: {
-      start: (event: DragEventLike) => callbacks.onStart(event.target),
+      start: (event: DragEventLike) =>
+        callbacks.onStart(event.target, event.client.x, event.client.y),
+      move: (event: DragEventLike) =>
+        callbacks.onMove(event.target, event.client.x, event.client.y),
       end: (event: DragEventLike) => callbacks.onEnd(event.target, event.client.x, event.client.y),
     },
   });

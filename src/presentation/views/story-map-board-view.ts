@@ -30,6 +30,9 @@ import { buildBoardScene, type SvgNodeSpec } from "./story-map-board-scene";
 import {
   type BoardLayout,
   computeBoardLayout,
+  type DropCellIndicator,
+  dropIndicator,
+  headerDropIndicator,
   resolveActivityDropIndex,
   resolveColumnAt,
   resolveDropTarget,
@@ -191,6 +194,10 @@ export class StoryMapBoardView extends LiveDashboardView {
   private editor: Element | null = null;
   /** Commits (true) / cancels (false) the open rename editor, or null when none. */
   private commitEditor: ((save: boolean) => void) | null = null;
+  /** Top-most `<g>` holding transient drag feedback (drop-cell highlight + insertion line). */
+  private overlay: SVGGElement | null = null;
+  /** Board-space point where the active card drag began (for the live translate). */
+  private dragOriginBoard: { x: number; y: number } | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -362,6 +369,9 @@ export class StoryMapBoardView extends LiveDashboardView {
     container.createEl("h2", { text: this.model.title, cls: "sm-board-title" });
     const layout = computeBoardLayout(this.model);
     const svg = this.renderSvg(container, layout);
+    // The overlay is created last so it paints on top of the scene; the view
+    // fills it with the drop-cell highlight + insertion line during a drag.
+    this.overlay = svg.createSvg("g", { cls: "sm-board-overlay" });
     this.wireDnd(svg, layout);
     this.wireControls(svg);
   }
@@ -581,22 +591,96 @@ export class StoryMapBoardView extends LiveDashboardView {
   private wireDnd(svg: SVGSVGElement, layout: BoardLayout): void {
     this.cleanups.push(
       makeDraggable(this.contentEl, ".sm-board-card-group", {
-        onStart: (el) => el.classList.add("is-dragging"),
-        onEnd: (el, clientX, clientY) => this.onCardDrop(el, clientX, clientY, svg, layout),
+        onStart: (el, x, y) => this.onCardDragStart(el, x, y, svg),
+        onMove: (el, x, y) => this.onCardDragMove(el, x, y, svg, layout),
+        onEnd: (el, x, y) => this.onCardDrop(el, x, y, svg, layout),
       }),
       makeDraggable(this.contentEl, ".sm-board-activity", {
         onStart: (el) => el.classList.add("is-dragging"),
+        onMove: (_el, x, y) => this.onHeaderDragMove("activity", x, y, svg, layout),
         onEnd: (el, x, y) => this.onHeaderDrop(el, "activity", x, y, svg, layout),
       }),
       makeDraggable(this.contentEl, ".sm-board-slice", {
         onStart: (el) => el.classList.add("is-dragging"),
+        onMove: (_el, x, y) => this.onHeaderDragMove("slice", x, y, svg, layout),
         onEnd: (el, x, y) => this.onHeaderDrop(el, "slice", x, y, svg, layout),
       }),
       makeDraggable(this.contentEl, ".sm-board-step", {
         onStart: (el) => el.classList.add("is-dragging"),
+        onMove: (_el, x, y) => this.onHeaderDragMove("step", x, y, svg, layout),
         onEnd: (el, x, y) => this.onStepDrop(el, x, y, svg, layout),
       }),
     );
+  }
+
+  /** A card drag began: dim it, record the origin, and raise it above its siblings. */
+  private onCardDragStart(
+    el: SVGElement,
+    clientX: number,
+    clientY: number,
+    svg: SVGSVGElement,
+  ): void {
+    el.classList.add("is-dragging");
+    this.dragOriginBoard = this.toBoardPoint(svg, clientX, clientY);
+    // Raise the dragged card above its siblings (but below the overlay) so it
+    // never slides under other cards as it moves.
+    if (this.overlay !== null) svg.insertBefore(el, this.overlay);
+  }
+
+  /** A card drag moved: translate it to follow the pointer + show the drop target. */
+  private onCardDragMove(
+    el: SVGElement,
+    clientX: number,
+    clientY: number,
+    svg: SVGSVGElement,
+    layout: BoardLayout,
+  ): void {
+    if (this.dragOriginBoard === null) return;
+    const pt = this.toBoardPoint(svg, clientX, clientY);
+    const dx = pt.x - this.dragOriginBoard.x;
+    const dy = pt.y - this.dragOriginBoard.y;
+    el.setAttribute("transform", `translate(${dx} ${dy})`);
+    this.paintDropCell(dropIndicator(layout, pt), el);
+  }
+
+  /** Draws (or clears) the card drop-cell highlight + insertion line in the overlay. */
+  private paintDropCell(indicator: DropCellIndicator | null, el: SVGElement): void {
+    if (this.overlay === null) return;
+    this.overlay.empty();
+    el.classList.toggle("is-no-drop", indicator === null);
+    if (indicator === null) return;
+    this.overlay.createSvg("rect", {
+      cls: "sm-board-drop-cell",
+      attr: { ...indicator.cell, rx: 4 },
+    });
+    this.overlayLine(indicator.line);
+  }
+
+  /** A header drag moved: show the reorder insertion line at the target slot. */
+  private onHeaderDragMove(
+    kind: "activity" | "slice" | "step",
+    clientX: number,
+    clientY: number,
+    svg: SVGSVGElement,
+    layout: BoardLayout,
+  ): void {
+    if (this.overlay === null) return;
+    this.overlay.empty();
+    const indicator = headerDropIndicator(layout, kind, this.toBoardPoint(svg, clientX, clientY));
+    if (indicator !== null) this.overlayLine(indicator.line);
+  }
+
+  /** Appends an insertion line to the overlay. */
+  private overlayLine(line: { x1: number; y1: number; x2: number; y2: number }): void {
+    this.overlay?.createSvg("line", { cls: "sm-board-drop-line", attr: { ...line } });
+  }
+
+  /** Clears the transient drag overlay + the dragged element's live-drag transform. */
+  private clearDragFeedback(el: SVGElement): void {
+    el.classList.remove("is-dragging", "is-no-drop");
+    el.removeAttribute("transform");
+    this.overlay?.empty();
+    this.dragOriginBoard = null;
   }
 
   /**
@@ -612,6 +696,7 @@ export class StoryMapBoardView extends LiveDashboardView {
     svg: SVGSVGElement,
     layout: BoardLayout,
   ): void {
+    this.overlay?.empty();
     el.classList.remove("is-dragging");
     if (this.model === null) return;
     const drop = resolveColumnAt(layout, this.toBoardPoint(svg, clientX, clientY).x);
@@ -631,6 +716,7 @@ export class StoryMapBoardView extends LiveDashboardView {
     svg: SVGSVGElement,
     layout: BoardLayout,
   ): void {
+    this.overlay?.empty();
     el.classList.remove("is-dragging");
     const next = this.buildReorder(el, kind, clientX, clientY, svg, layout);
     if (next === null || next === this.model) return;
@@ -666,7 +752,7 @@ export class StoryMapBoardView extends LiveDashboardView {
     svg: SVGSVGElement,
     layout: BoardLayout,
   ): void {
-    el.classList.remove("is-dragging");
+    this.clearDragFeedback(el);
     const next = this.buildMove(el, clientX, clientY, svg, layout);
     if (next === null || next === this.model) return;
     this.model = next;

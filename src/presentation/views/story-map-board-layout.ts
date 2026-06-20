@@ -204,3 +204,67 @@ export const resolveColumnAt = (
     ? { activity: col.activity, step: col.step }
     : { activity: col.activity };
 };
+
+/** A drag-time card drop overlay: the target cell rect + the stack insertion line. */
+export interface DropCellIndicator {
+  cell: { x: number; y: number; width: number; height: number };
+  line: { x1: number; y1: number; x2: number; y2: number };
+}
+
+/** A drag-time header-reorder overlay: a single insertion line at the target slot. */
+export interface HeaderDropIndicator {
+  line: { x1: number; y1: number; x2: number; y2: number };
+}
+
+/**
+ * The card-drop overlay for a board `point`: the (column × row) cell rect to
+ * highlight and the horizontal insertion line at the resolved stack slot, or null
+ * when the point is over no cell. Pure.
+ */
+export const dropIndicator = (layout: BoardLayout, point: BoardPoint): DropCellIndicator | null => {
+  const target = resolveDropTarget(layout, point);
+  if (target === null) return null;
+  const column = layout.columns.find((c) => point.x >= c.x && point.x < c.x + c.width);
+  const row = layout.rows.find((r) => point.y >= r.y && point.y < r.y + r.height);
+  if (column === undefined || row === undefined) return null;
+  const lineY =
+    row.y + M.cellPadding + target.indexInCell * (M.cardHeight + M.cardGap) - M.cardGap / 2;
+  return {
+    cell: { x: column.x, y: row.y, width: column.width, height: row.height },
+    line: {
+      x1: column.x + M.cellPadding,
+      y1: lineY,
+      x2: column.x + column.width - M.cellPadding,
+      y2: lineY,
+    },
+  };
+};
+
+/**
+ * The header-reorder overlay for a board `point`: a vertical line at the target
+ * activity-group / step-column left edge, or a horizontal line at the target slice
+ * row's top edge. Null when the point is outside every group/column/row. Pure.
+ */
+export const headerDropIndicator = (
+  layout: BoardLayout,
+  kind: "activity" | "slice" | "step",
+  point: BoardPoint,
+): HeaderDropIndicator | null => {
+  if (kind === "slice") {
+    const i = resolveSliceDropIndex(layout, point.y);
+    if (i === null) return null;
+    const y = layout.rows[i].y;
+    return { line: { x1: 0, y1: y, x2: layout.width, y2: y } };
+  }
+  if (kind === "activity") {
+    const i = resolveActivityDropIndex(layout, point.x);
+    if (i === null) return null;
+    const x = layout.activityGroups[i].x;
+    return { line: { x1: x, y1: M.laneHeight, x2: x, y2: layout.height } };
+  }
+  const col = resolveColumnAt(layout, point.x);
+  if (col?.step === undefined) return null;
+  const c = layout.columns.find((cc) => cc.activity === col.activity && cc.step === col.step);
+  if (c === undefined) return null;
+  return { line: { x1: c.x, y1: M.laneHeight, x2: c.x, y2: layout.height } };
+};

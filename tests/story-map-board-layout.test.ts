@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   BOARD_METRICS,
   computeBoardLayout,
+  dropIndicator,
+  headerDropIndicator,
   resolveActivityDropIndex,
   resolveColumnAt,
   resolveDropTarget,
@@ -197,5 +199,64 @@ describe("resolveColumnAt", () => {
     expect(hit?.activity).toBe(col.activity);
     expect(hit?.step).toBe(col.step);
     expect(resolveColumnAt(layout, -50)).toBeNull();
+  });
+});
+
+describe("dropIndicator / headerDropIndicator", () => {
+  // Two activities; Browse has step Filter, Order has none. Two slices.
+  const m = map({
+    activities: ["Browse", "Order"],
+    steps: [{ activity: "Browse", step: "Filter" }],
+    slices: ["Walking skeleton", "Next"],
+    cards: [],
+  });
+
+  it("dropIndicator returns the cell rect and a horizontal line within the cell", () => {
+    const layout = computeBoardLayout(m);
+    const col = layout.columns[0]; // Browse / Filter
+    const row = layout.rows[0]; // Walking skeleton
+    const ind = dropIndicator(layout, { x: col.x + 10, y: row.y + 10 });
+    expect(ind).not.toBeNull();
+    expect(ind?.cell).toEqual({ x: col.x, y: row.y, width: col.width, height: row.height });
+    expect(ind?.line.y1).toBe(ind?.line.y2);
+    expect(ind?.line.y1).toBeGreaterThanOrEqual(row.y);
+    expect(ind?.line.y1).toBeLessThanOrEqual(row.y + row.height);
+    expect(ind?.line.x1).toBeGreaterThanOrEqual(col.x);
+    expect(ind?.line.x2).toBeLessThanOrEqual(col.x + col.width);
+  });
+
+  it("dropIndicator returns null for a point in the header band", () => {
+    const layout = computeBoardLayout(m);
+    expect(dropIndicator(layout, { x: 5, y: 5 })).toBeNull();
+  });
+
+  it("headerDropIndicator(activity) returns a vertical line at the group's x", () => {
+    const layout = computeBoardLayout(m);
+    const g = layout.activityGroups[1];
+    const ind = headerDropIndicator(layout, "activity", { x: g.x + 5, y: 0 });
+    expect(ind).not.toBeNull();
+    expect(ind?.line.x1).toBe(ind?.line.x2);
+    expect(ind?.line.x1).toBe(g.x);
+    expect(headerDropIndicator(layout, "activity", { x: -50, y: 0 })).toBeNull();
+  });
+
+  it("headerDropIndicator(slice) returns a horizontal line at the row's y", () => {
+    const layout = computeBoardLayout(m);
+    const row = layout.rows[1];
+    const ind = headerDropIndicator(layout, "slice", { x: 0, y: row.y + 5 });
+    expect(ind).not.toBeNull();
+    expect(ind?.line.y1).toBe(ind?.line.y2);
+    expect(ind?.line.y1).toBe(row.y);
+  });
+
+  it("headerDropIndicator(step) returns a vertical line at a declared-step column's x, null otherwise", () => {
+    const layout = computeBoardLayout(m);
+    const stepCol = layout.columns[0]; // Browse / Filter
+    const ind = headerDropIndicator(layout, "step", { x: stepCol.x + 5, y: 0 });
+    expect(ind).not.toBeNull();
+    expect(ind?.line.x1).toBe(ind?.line.x2);
+    expect(ind?.line.x1).toBe(stepCol.x);
+    const noStepCol = layout.columns[1]; // Order / (no step)
+    expect(headerDropIndicator(layout, "step", { x: noStepCol.x + 5, y: 0 })).toBeNull();
   });
 });

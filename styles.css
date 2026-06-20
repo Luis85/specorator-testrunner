@@ -1307,6 +1307,33 @@
   cursor: text;
 }
 
+/* Live drag feedback (UX-2): the dragged card follows the pointer and the target
+   cell + insertion slot are highlighted in a transient overlay layer. */
+.sm-board-overlay {
+  pointer-events: none;
+}
+
+.sm-board-drop-cell {
+  fill: var(--text-accent);
+  opacity: 0.12;
+  pointer-events: none;
+}
+
+.sm-board-drop-line {
+  stroke: var(--text-accent);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.sm-board-card-group.is-dragging {
+  cursor: grabbing;
+  opacity: 0.85;
+}
+
+.sm-board-card-group.is-no-drop {
+  cursor: not-allowed;
+}
+
 /* Per-card color swatch + status chip quick-edit affordances (P4). */
 .sm-board-swatch {
   cursor: pointer;
