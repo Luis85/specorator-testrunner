@@ -1282,10 +1282,12 @@
 }
 
 /* Hover-reveal (UX-1): the per-card controls (remove ×, swatch, status chip) stay
-   hidden until you hover the card group or keyboard-focus a control within it. */
-.sm-board-remove,
-.sm-board-swatch,
-.sm-board-status-chip {
+   hidden until you hover the card group or keyboard-focus a control within it.
+   Scoped to card-group descendants so the HEADER `×` controls (loose siblings,
+   not inside a card group) keep their faint-default + hover-full behavior. */
+.sm-board-card-group .sm-board-remove,
+.sm-board-card-group .sm-board-swatch,
+.sm-board-card-group .sm-board-status-chip {
   opacity: 0;
   transition: opacity 0.1s ease;
 }
