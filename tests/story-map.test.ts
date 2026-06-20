@@ -339,6 +339,15 @@ describe("moveCard", () => {
     expect(cell.map((c) => c.title)).toEqual(["A", "B", "C"]);
   });
 
+  it("places the card as the sole occupant of an empty destination cell", () => {
+    // Order / Walking skeleton has no cards in baseMap → the insert-at-end branch.
+    const next = moveCard(baseMap(), 0, { activity: "Order", slice: "Walking skeleton" });
+    const cell = next.cards.filter(
+      (c) => c.activity === "Order" && c.step === undefined && c.slice === "Walking skeleton",
+    );
+    expect(cell.map((c) => c.title)).toEqual(["A"]);
+  });
+
   it("returns the map unchanged for an out-of-range index", () => {
     const map = baseMap();
     expect(moveCard(map, 9, { activity: "Order", slice: "Next" })).toBe(map);

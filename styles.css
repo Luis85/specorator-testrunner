@@ -1185,10 +1185,13 @@
 
 .sm-board-card-title {
   font-weight: 600;
+  /* Let pointer hits fall through the title text to the draggable card rect. */
+  pointer-events: none;
 }
 
 .sm-board-card-attrs {
   fill: var(--text-muted);
+  pointer-events: none;
 }
 
 /* Drag affordances (P2). interact.js is pointer-based, so suppress touch

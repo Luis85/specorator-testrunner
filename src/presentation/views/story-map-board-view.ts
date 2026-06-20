@@ -26,6 +26,18 @@ interface BoardState {
 }
 
 /**
+ * The card's stable `map.cards` index from its rect's `data-card-index`, or null
+ * when the handle is missing or non-numeric (`Number(null)`/`Number("")` are 0,
+ * so guard explicitly rather than silently targeting card 0).
+ */
+const cardIndexFromElement = (el: Element): number | null => {
+  const raw = el.getAttribute("data-card-index");
+  if (raw === null || raw === "") return null;
+  const index = Number(raw);
+  return Number.isNaN(index) ? null : index;
+};
+
+/**
  * Interactive Story Map board (P2): drag a card to another cell and the move is
  * persisted via debounced saveMap. Holds an in-memory working model; ignores the
  * storymap.updated event its own save publishes (origin guard) and reloads only
@@ -210,9 +222,8 @@ export class StoryMapBoardView extends LiveDashboardView {
     svg: SVGSVGElement,
     layout: BoardLayout,
   ): StoryMap | null {
-    if (this.model === null) return null;
-    const cardIndex = Number(el.getAttribute("data-card-index"));
-    if (Number.isNaN(cardIndex)) return null;
+    const cardIndex = cardIndexFromElement(el);
+    if (this.model === null || cardIndex === null) return null;
     const target = resolveDropTarget(layout, this.toBoardPoint(svg, clientX, clientY));
     if (target === null) return null;
     return moveCard(this.model, cardIndex, target, target.indexInCell);
