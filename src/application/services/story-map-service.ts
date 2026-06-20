@@ -103,15 +103,40 @@ export interface StoryMapService {
    * `cards` frontmatter and regenerates the managed blocks under the mutation
    * lock, after validating every card against the normalized axes and the product
    * anchor. Publishes `storymap.updated` carrying `origin` so the caller can skip
-   * the reload it caused. Returns the persisted map.
+   * the reload it caused. `expectedCards` is the encoded card list the board
+   * loaded; when given, the save is rejected if the on-disk cards have since
+   * changed (optimistic concurrency), so a stale board can't overwrite edits
+   * another surface made. Returns the persisted map.
    */
-  saveMap(id: StoryMapId, model: StoryMap, origin?: string): Promise<Result<StoryMap>>;
+  saveMap(
+    id: StoryMapId,
+    model: StoryMap,
+    origin?: string,
+    expectedCards?: string[],
+  ): Promise<Result<StoryMap>>;
 }
 
 const STORY_MAP_ID_RE = /^SM-(\d{3,})$/;
 
 /** Single queue key so all Story Map id-allocating mutations serialize. */
 const STORY_MAP_MUTATE_KEY = "story-map:mutate";
+
+/**
+ * The error when a board's save baseline no longer matches the on-disk cards
+ * (another surface changed them since the board loaded), or null when the save
+ * may proceed. `expectedCards` is the encoded card list the board loaded; an
+ * undefined baseline opts out of the check (non-board callers). Pure.
+ */
+const staleCardsError = (
+  current: readonly StoryMapCard[],
+  expectedCards: readonly string[] | undefined,
+): string | null => {
+  if (expectedCards === undefined) return null;
+  const encoded = current.map(encodeCard);
+  const matches =
+    encoded.length === expectedCards.length && encoded.every((c, i) => c === expectedCards[i]);
+  return matches ? null : "The Story Map changed elsewhere — reload the board and retry.";
+};
 
 /** The defined `UC-NNN` refs of a card set (reference-less cards contribute none). */
 const cardRefs = (cards: readonly StoryMapCard[]): string[] =>
@@ -451,7 +476,12 @@ export class DefaultStoryMapService implements StoryMapService {
     return ok(map);
   }
 
-  async saveMap(id: StoryMapId, model: StoryMap, origin?: string): Promise<Result<StoryMap>> {
+  async saveMap(
+    id: StoryMapId,
+    model: StoryMap,
+    origin?: string,
+    expectedCards?: string[],
+  ): Promise<Result<StoryMap>> {
     return this.noteWrites.run(STORY_MAP_MUTATE_KEY, async () => {
       const found = await this.findById(id);
       if (!found.ok) return found;
@@ -462,6 +492,11 @@ export class DefaultStoryMapService implements StoryMapService {
       // only moves cards in P2; it does not change activities/slices/steps), so a
       // stale board model can't smuggle off-axis structure into the note.
       const axes = found.value;
+      // Optimistic concurrency: if the on-disk cards changed since the board
+      // loaded (another surface added/edited them), reject rather than overwrite
+      // the whole list with the board's stale copy and delete those edits.
+      const stale = staleCardsError(axes.cards, expectedCards);
+      if (stale !== null) return err(appError("VALIDATION_FAILED", stale));
       for (const card of model.cards) {
         const reason = validateCardPlacement(axes, card);
         if (reason !== null) return err(appError("VALIDATION_FAILED", reason));

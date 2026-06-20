@@ -2,7 +2,7 @@ import { Notice, type WorkspaceLeaf } from "obsidian";
 import type { StoryMapService } from "../../application/services/story-map-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { StoryMap } from "../../domain/entities/story-map";
-import { moveCard } from "../../domain/entities/story-map";
+import { encodeCard, moveCard } from "../../domain/entities/story-map";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { renderLoadError } from "./modal-helpers";
@@ -47,6 +47,10 @@ export class StoryMapBoardView extends LiveDashboardView {
   private storyMapId: string | null = null;
   private isOpen = false;
   private model: StoryMap | null = null;
+  /** The encoded card list as loaded — the optimistic-concurrency baseline for saves. */
+  private baselineCards: string[] = [];
+  /** The map id + model + baseline a pending save was scheduled for (bound, not live). */
+  private pendingSave: { id: string; model: StoryMap; expected: string[] } | null = null;
   private readonly origin = `board-${Math.random().toString(36).slice(2)}`;
   private saveTimer: number | null = null;
   private cleanups: (() => void)[] = [];
@@ -86,7 +90,12 @@ export class StoryMapBoardView extends LiveDashboardView {
   async setState(state: unknown, result: { history: boolean }): Promise<void> {
     const next = (state as BoardState | null)?.storyMapId;
     if (typeof next === "string" && next !== this.storyMapId) {
+      // Persist the previous map's pending move (bound to its own id/model) BEFORE
+      // retargeting, so a debounced save can't land the old model under the new id.
+      await this.flushSave();
       this.storyMapId = next;
+      this.model = null;
+      this.baselineCards = [];
       if (this.isOpen) await this.live.schedule();
     }
     await super.setState(state, result);
@@ -145,6 +154,7 @@ export class StoryMapBoardView extends LiveDashboardView {
       return;
     }
     this.model = found.value;
+    this.baselineCards = found.value.cards.map(encodeCard);
     this.paint(container);
   }
 
@@ -244,7 +254,10 @@ export class StoryMapBoardView extends LiveDashboardView {
     return { x: local.x, y: local.y };
   }
 
+  /** Captures the save target now (id/model/baseline) so a later flush can't drift. */
   private scheduleSave(): void {
+    if (this.model === null || this.storyMapId === null) return;
+    this.pendingSave = { id: this.storyMapId, model: this.model, expected: this.baselineCards };
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => void this.flushSave(), SAVE_DEBOUNCE_MS);
   }
@@ -255,13 +268,26 @@ export class StoryMapBoardView extends LiveDashboardView {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    if (this.model === null || this.storyMapId === null) return;
-    const snapshot = this.model;
-    const result = await this.deps.storyMapService.saveMap(this.storyMapId, snapshot, this.origin);
-    if (!result.ok) {
-      new Notice(`Could not save the board: ${result.error.message}`);
-      await this.live.schedule(); // reload the last-saved state (revert the optimistic move)
+    const pending = this.pendingSave;
+    this.pendingSave = null;
+    if (pending === null) return;
+    const result = await this.deps.storyMapService.saveMap(
+      pending.id,
+      pending.model,
+      this.origin,
+      pending.expected,
+    );
+    if (result.ok) {
+      // Advance the baseline to what we just wrote, so the next move's save
+      // compares against it (and isn't a false stale-conflict) — unless the leaf
+      // has since retargeted to another map.
+      if (pending.id === this.storyMapId) this.baselineCards = pending.model.cards.map(encodeCard);
+      return;
     }
+    new Notice(`Could not save the board: ${result.error.message}`);
+    // Revert the optimistic move by reloading the last-saved state (only if we're
+    // still on that map).
+    if (pending.id === this.storyMapId) await this.live.schedule();
   }
 
   private teardownDnd(): void {
