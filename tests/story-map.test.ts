@@ -584,6 +584,16 @@ describe("removeActivity / removeSlice", () => {
     expect(removeSlice(base, 0)).toBeNull(); // MVP has a card
     expect(removeSlice(base, 9)).toBeNull();
   });
+
+  it("rejects removing the last activity (the backbone can't be empty)", () => {
+    const single: StoryMap = { ...base, activities: ["Only"], steps: [], cards: [] };
+    expect(removeActivity(single, 0)).toBeNull();
+  });
+
+  it("rejects removing the last slice (a map needs one release slice)", () => {
+    const single: StoryMap = { ...base, slices: ["Only"], cards: [] };
+    expect(removeSlice(single, 0)).toBeNull();
+  });
 });
 
 describe("addUser / renameUser / removeUser", () => {

@@ -336,6 +336,9 @@ export const reorderSlice = (map: StoryMap, from: number, to: number): StoryMap 
 export const removeActivity = (map: StoryMap, index: number): StoryMap | null => {
   const activity = map.activities[index];
   if (activity === undefined) return null;
+  // A map needs at least one activity (saveMap rejects an empty backbone), so
+  // reject removing the last one rather than let the board make a doomed edit.
+  if (map.activities.length <= 1) return null;
   if (map.cards.some((c) => c.activity === activity)) return null;
   return {
     ...map,
@@ -348,6 +351,9 @@ export const removeActivity = (map: StoryMap, index: number): StoryMap | null =>
 export const removeSlice = (map: StoryMap, index: number): StoryMap | null => {
   const slice = map.slices[index];
   if (slice === undefined) return null;
+  // A map needs at least one release slice (saveMap rejects an empty set), so
+  // reject removing the last one rather than let the board make a doomed edit.
+  if (map.slices.length <= 1) return null;
   if (map.cards.some((c) => c.slice === slice)) return null;
   return { ...map, slices: map.slices.filter((_, i) => i !== index) };
 };
