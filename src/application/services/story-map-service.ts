@@ -25,6 +25,7 @@ import {
   type StoryMapStep,
 } from "../../domain/entities/story-map";
 import { loadCards, reconcileCards } from "./story-map-cards-store";
+import type { PersonaService } from "./persona-service";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
 import { createEvent } from "../../shared/event-bus/create-event";
@@ -263,7 +264,20 @@ export class DefaultStoryMapService implements StoryMapService {
     private readonly logger: Logger,
     private readonly useCases: NoteResolver,
     private readonly prds: PrdGuard,
+    private readonly personaService: Pick<PersonaService, "findOrCreateByName">,
   ) {}
+
+  /**
+   * Best-effort: ensure a shared persona note exists for each user name (ADR-0030).
+   * A persona write failure is logged, not fatal — the map is the primary artifact.
+   */
+  private async ensurePersonas(users: readonly string[]): Promise<void> {
+    for (const name of users) {
+      const r = await this.personaService.findOrCreateByName(name);
+      if (!r.ok)
+        this.logger.warn("Could not materialize persona", { name, error: r.error.message });
+    }
+  }
 
   async create(request: CreateStoryMapRequest): Promise<Result<StoryMap>> {
     // Collapse whitespace/newlines so the title is a single parser-safe line (a
@@ -371,6 +385,9 @@ export class DefaultStoryMapService implements StoryMapService {
           }
           map.cards = await loadCards(this.fs, cardsDir, id);
         }
+
+        // Materialize a shared persona note per user name (best-effort; ADR-0030).
+        await this.ensurePersonas(users);
 
         await this.eventBus.publish(
           createEvent(
@@ -682,6 +699,10 @@ export class DefaultStoryMapService implements StoryMapService {
       );
       if (!reconciled.ok) return reconciled;
       const cards = await loadCards(this.fs, cardsDir, id);
+
+      // Materialize a shared persona note per (normalized) user name (best-effort;
+      // ADR-0030) so a user added via the board becomes its own note too.
+      await this.ensurePersonas(users);
 
       // Persist the on-disk identity (id/path/product/displayOrder) with the
       // board's normalized structure and the re-composed cards.

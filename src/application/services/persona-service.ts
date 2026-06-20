@@ -22,6 +22,12 @@ export interface PersonaService {
   findAll(): Promise<Result<Persona[]>>;
   findById(id: PersonaId): Promise<Result<Persona | null>>;
   rename(id: PersonaId, name: string): Promise<Result<Persona>>;
+  /**
+   * Returns the existing persona whose (trimmed) name matches `name` exactly, or
+   * creates one if none exists. Used by the Story Map service to materialize a
+   * shared persona note per map user (ADR-0030). Blank names are rejected.
+   */
+  findOrCreateByName(name: string): Promise<Result<Persona>>;
 }
 
 /** Single key serializing persona id-allocation + creation (prevents duplicate ids). */
@@ -45,33 +51,68 @@ export class DefaultPersonaService implements PersonaService {
       return err(appError("VALIDATION_FAILED", "A Persona name is required."));
     }
 
-    const settings = await this.settingsService.load();
     // Allocate the id AND write under one persona-wide key: keying the write by the
     // final path (which embeds the id) would not serialize two concurrent creates
     // with different names, so both could read the same `findAll()` and claim the
     // same PER-NNN, leaving the vault with duplicate ids (mirrors PrdService).
+    return this.noteWrites.run(PERSONA_MUTATE_KEY, () =>
+      this.createUnlocked(name, request.color, request.body),
+    );
+  }
+
+  /**
+   * The create body, assuming the caller already holds {@link PERSONA_MUTATE_KEY}.
+   * Allocates the next id from the current vault state and writes the note. Callers
+   * MUST run this inside `this.noteWrites.run(PERSONA_MUTATE_KEY, …)` (never re-enter
+   * that key, which would deadlock the same-key chain) — see {@link findOrCreateByName}.
+   */
+  private async createUnlocked(
+    name: string,
+    color?: string,
+    body?: string,
+  ): Promise<Result<Persona>> {
+    const settings = await this.settingsService.load();
+    const existing = await this.findAll();
+    if (!existing.ok) return err(existing.error);
+
+    const id = nextPersonaId(existing.value);
+    const path = joinVaultPath(settings.paths.personasPath, personaFileName(id, name));
+    const persona: Persona = {
+      id,
+      name,
+      color,
+      body: body ?? "",
+      path,
+    };
+
+    const created = await this.fs.createFile(path, buildPersonaNote(persona));
+    if (!created.ok) return err(created.error);
+
+    await this.eventBus.publish(
+      createEvent("persona.created", { personaId: id, name, path }, { correlationId: id }),
+    );
+    this.logger.info("Persona created", { id, path });
+    return ok(persona);
+  }
+
+  async findOrCreateByName(name: string): Promise<Result<Persona>> {
+    const trimmed = name.trim();
+    if (trimmed === "") {
+      return err(appError("VALIDATION_FAILED", "A Persona name is required."));
+    }
+
+    // Find-then-maybe-create under ONE hold of the persona-wide key so two
+    // concurrent calls for the same name can't both miss the find and create
+    // duplicate notes. We call createUnlocked directly (NOT this.create, which
+    // re-enters the same key and would deadlock the same-key serial chain).
     return this.noteWrites.run(PERSONA_MUTATE_KEY, async () => {
       const existing = await this.findAll();
       if (!existing.ok) return err(existing.error);
 
-      const id = nextPersonaId(existing.value);
-      const path = joinVaultPath(settings.paths.personasPath, personaFileName(id, name));
-      const persona: Persona = {
-        id,
-        name,
-        color: request.color,
-        body: request.body ?? "",
-        path,
-      };
+      const match = existing.value.find((p) => p.name === trimmed);
+      if (match) return ok(match);
 
-      const created = await this.fs.createFile(path, buildPersonaNote(persona));
-      if (!created.ok) return err(created.error);
-
-      await this.eventBus.publish(
-        createEvent("persona.created", { personaId: id, name, path }, { correlationId: id }),
-      );
-      this.logger.info("Persona created", { id, path });
-      return ok(persona);
+      return this.createUnlocked(trimmed);
     });
   }
 

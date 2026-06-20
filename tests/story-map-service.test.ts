@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DefaultStoryMapService } from "../src/application/services/story-map-service";
 import type { PrdGuard } from "../src/application/services/story-map-service";
+import { DefaultPersonaService } from "../src/application/services/persona-service";
 import {
   cardSignature,
   moveCard,
@@ -41,6 +42,9 @@ const build = (ucPaths?: Record<string, string>, prdPaths: Record<string, string
     new DefaultPathSafetyPolicy(),
     bus,
   );
+  // A real PersonaService over the SAME fake fs/settings/bus so the map's
+  // persona side-effects (find-or-create per user) land in this fs.
+  const personaService = new DefaultPersonaService(settings, fs, bus, silentLogger);
   const service = new DefaultStoryMapService(
     settings,
     fs,
@@ -48,6 +52,7 @@ const build = (ucPaths?: Record<string, string>, prdPaths: Record<string, string
     silentLogger,
     resolver(ucPaths),
     resolver(prdPaths),
+    personaService,
   );
   return { service, fs, types, events };
 };
@@ -252,6 +257,46 @@ describe("DefaultStoryMapService.create", () => {
     const result = await service.create({ title: "Cleanup", activities: ["a"], slices: ["s"] });
     expect(result.ok).toBe(false);
     expect([...fs.folders].some((f) => f.startsWith("Story Maps/SM-001"))).toBe(false);
+  });
+
+  it("materializes a shared persona note per user name (ADR-0030)", async () => {
+    const { service, fs } = build();
+    const result = await service.create({
+      title: "Cooking Journey",
+      users: ["Home Cook", "Chef"],
+      activities: ["a"],
+      slices: ["s"],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Names stay as names in the map; the personas are a side-effect library.
+    expect(result.value.users).toEqual(["Home Cook", "Chef"]);
+
+    const personaNotes = [...fs.files.keys()].filter((k) => k.startsWith("Personas/"));
+    expect(personaNotes.length).toBe(2);
+    expect(personaNotes.some((k) => k.startsWith("Personas/PER-001"))).toBe(true);
+    expect(personaNotes.some((k) => k.startsWith("Personas/PER-002"))).toBe(true);
+  });
+
+  it("reuses one persona note when two maps list the same user", async () => {
+    const { service, fs } = build();
+    const first = await service.create({
+      title: "Map One",
+      users: ["Home Cook"],
+      activities: ["a"],
+      slices: ["s"],
+    });
+    expect(first.ok).toBe(true);
+    const second = await service.create({
+      title: "Map Two",
+      users: ["Home Cook"],
+      activities: ["a"],
+      slices: ["s"],
+    });
+    expect(second.ok).toBe(true);
+
+    const homeCookNotes = [...fs.files.keys()].filter((k) => k.startsWith("Personas/PER-"));
+    expect(homeCookNotes.length).toBe(1);
   });
 });
 

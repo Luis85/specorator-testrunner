@@ -108,6 +108,63 @@ describe("DefaultPersonaService", () => {
     if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
   });
 
+  it("findOrCreateByName creates a persona when none with that name exists (PER-001)", async () => {
+    const { svc, fs } = build();
+    const result = await svc.findOrCreateByName("Home Cook");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.id).toBe("PER-001");
+    expect(result.value.name).toBe("Home Cook");
+    expect(fs.files.has(result.value.path)).toBe(true);
+  });
+
+  it("findOrCreateByName reuses an existing persona with the same name (no second note)", async () => {
+    const { svc, fs } = build();
+    const first = await svc.findOrCreateByName("Home Cook");
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const second = await svc.findOrCreateByName("Home Cook");
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    expect(second.value.id).toBe(first.value.id);
+    expect(fs.files.size).toBe(1);
+  });
+
+  it("findOrCreateByName matches on the trimmed name", async () => {
+    const { svc, fs } = build();
+    const first = await svc.findOrCreateByName("Home Cook");
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const second = await svc.findOrCreateByName("  Home Cook  ");
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    expect(second.value.id).toBe(first.value.id);
+    expect(fs.files.size).toBe(1);
+  });
+
+  it("concurrent findOrCreateByName of the same name yields ONE persona (serialized)", async () => {
+    const { svc, fs } = build();
+    const [a, b] = await Promise.all([
+      svc.findOrCreateByName("Home Cook"),
+      svc.findOrCreateByName("Home Cook"),
+    ]);
+    expect(a.ok && b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.value.id).toBe(b.value.id);
+    expect(fs.files.size).toBe(1);
+  });
+
+  it("findOrCreateByName rejects a blank name", async () => {
+    const { svc } = build();
+    const result = await svc.findOrCreateByName("   ");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
   it("findAll scans notes recursively and sorts by id", async () => {
     const { svc, fs } = build();
     fs.files.set(
