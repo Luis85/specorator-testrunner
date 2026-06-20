@@ -186,5 +186,7 @@ export const resolveColumnAt = (
 ): { activity: string; step?: string } | null => {
   const col = layout.columns.find((c) => x >= c.x && x < c.x + c.width);
   if (col === undefined) return null;
-  return col.step !== undefined ? { activity: col.activity, step: col.step } : { activity: col.activity };
+  return col.step !== undefined
+    ? { activity: col.activity, step: col.step }
+    : { activity: col.activity };
 };

@@ -101,7 +101,9 @@ describe("buildBoardScene", () => {
     const stepped: StoryMap = {
       ...map,
       steps: [{ activity: "Browse", step: "Search" }],
-      cards: [{ title: "C", activity: "Browse", step: "Search", slice: "Walking skeleton", tags: [] }],
+      cards: [
+        { title: "C", activity: "Browse", step: "Search", slice: "Walking skeleton", tags: [] },
+      ],
     };
     const specs = buildBoardScene(computeBoardLayout(stepped));
     const removes = specs
