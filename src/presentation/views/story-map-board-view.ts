@@ -2,13 +2,24 @@ import { Notice, type WorkspaceLeaf } from "obsidian";
 import type { StoryMapService } from "../../application/services/story-map-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { StoryMap } from "../../domain/entities/story-map";
-import { moveCard, storyMapSignature } from "../../domain/entities/story-map";
+import {
+  moveCard,
+  reorderActivity,
+  reorderSlice,
+  storyMapSignature,
+} from "../../domain/entities/story-map";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { renderLoadError } from "./modal-helpers";
 import { buildBoardScene } from "./story-map-board-scene";
-import { type BoardLayout, computeBoardLayout, resolveDropTarget } from "./story-map-board-layout";
-import { makeCardsDraggable } from "./story-map-board-dnd";
+import {
+  type BoardLayout,
+  computeBoardLayout,
+  resolveActivityDropIndex,
+  resolveDropTarget,
+  resolveSliceDropIndex,
+} from "./story-map-board-layout";
+import { makeDraggable } from "./story-map-board-dnd";
 
 export const STORY_MAP_BOARD_VIEW_TYPE = "e2e-test-hub-story-map-board";
 
@@ -26,15 +37,26 @@ interface BoardState {
 }
 
 /**
- * The card's stable `map.cards` index from its rect's `data-card-index`, or null
- * when the handle is missing or non-numeric (`Number(null)`/`Number("")` are 0,
- * so guard explicitly rather than silently targeting card 0).
+ * Reads a non-negative integer index attribute (e.g. `data-card-index`), or null
+ * when missing/non-numeric (`Number(null)`/`Number("")` are 0, so guard
+ * explicitly rather than silently targeting index 0).
  */
-const cardIndexFromElement = (el: Element): number | null => {
-  const raw = el.getAttribute("data-card-index");
+const indexAttr = (el: Element, name: string): number | null => {
+  const raw = el.getAttribute(name);
   if (raw === null || raw === "") return null;
   const index = Number(raw);
   return Number.isNaN(index) ? null : index;
+};
+
+/** Applies an activity/slice header reorder, or null when either index is missing. */
+const applyHeaderReorder = (
+  model: StoryMap,
+  kind: "activity" | "slice",
+  from: number | null,
+  to: number | null,
+): StoryMap | null => {
+  if (from === null || to === null) return null;
+  return kind === "activity" ? reorderActivity(model, from, to) : reorderSlice(model, from, to);
 };
 
 /**
@@ -47,10 +69,12 @@ export class StoryMapBoardView extends LiveDashboardView {
   private storyMapId: string | null = null;
   private isOpen = false;
   private model: StoryMap | null = null;
-  /** The map signature as loaded — the optimistic-concurrency baseline for saves. */
-  private baselineCards = "";
-  /** The map id + model + baseline a pending save was scheduled for (bound, not live). */
-  private pendingSave: { id: string; model: StoryMap; expected: string } | null = null;
+  /** The map signature last persisted — the optimistic-concurrency baseline for saves. */
+  private baseline = "";
+  /** Set when the model has unsaved edits; drained by the serialized save loop. */
+  private dirty = false;
+  /** The in-flight save chain (one save at a time), or null when idle. */
+  private saving: Promise<void> | null = null;
   private readonly origin = `board-${Math.random().toString(36).slice(2)}`;
   private saveTimer: number | null = null;
   private cleanups: (() => void)[] = [];
@@ -95,7 +119,7 @@ export class StoryMapBoardView extends LiveDashboardView {
       await this.flushSave();
       this.storyMapId = next;
       this.model = null;
-      this.baselineCards = "";
+      this.baseline = "";
       if (this.isOpen) await this.live.schedule();
     }
     await super.setState(state, result);
@@ -154,7 +178,7 @@ export class StoryMapBoardView extends LiveDashboardView {
       return;
     }
     this.model = found.value;
-    this.baselineCards = storyMapSignature(found.value);
+    this.baseline = storyMapSignature(found.value);
     this.paint(container);
   }
 
@@ -197,11 +221,55 @@ export class StoryMapBoardView extends LiveDashboardView {
    */
   private wireDnd(svg: SVGSVGElement, layout: BoardLayout): void {
     this.cleanups.push(
-      makeCardsDraggable(this.contentEl, {
+      makeDraggable(this.contentEl, ".sm-board-card", {
         onStart: (el) => el.classList.add("is-dragging"),
         onEnd: (el, clientX, clientY) => this.onCardDrop(el, clientX, clientY, svg, layout),
       }),
+      makeDraggable(this.contentEl, ".sm-board-activity", {
+        onStart: (el) => el.classList.add("is-dragging"),
+        onEnd: (el, x, y) => this.onHeaderDrop(el, "activity", x, y, svg, layout),
+      }),
+      makeDraggable(this.contentEl, ".sm-board-slice", {
+        onStart: (el) => el.classList.add("is-dragging"),
+        onEnd: (el, x, y) => this.onHeaderDrop(el, "slice", x, y, svg, layout),
+      }),
     );
+  }
+
+  /** Reorders an activity or slice when its header is dropped over another. */
+  private onHeaderDrop(
+    el: SVGElement,
+    kind: "activity" | "slice",
+    clientX: number,
+    clientY: number,
+    svg: SVGSVGElement,
+    layout: BoardLayout,
+  ): void {
+    el.classList.remove("is-dragging");
+    const next = this.buildReorder(el, kind, clientX, clientY, svg, layout);
+    if (next === null || next === this.model) return;
+    this.model = next;
+    this.paint(this.contentEl);
+    this.scheduleSave();
+  }
+
+  /** Resolves a header drop to the reordered model, or null when invalid/no-op. */
+  private buildReorder(
+    el: SVGElement,
+    kind: "activity" | "slice",
+    clientX: number,
+    clientY: number,
+    svg: SVGSVGElement,
+    layout: BoardLayout,
+  ): StoryMap | null {
+    if (this.model === null) return null;
+    const point = this.toBoardPoint(svg, clientX, clientY);
+    const from = indexAttr(el, kind === "activity" ? "data-activity-index" : "data-slice-index");
+    const to =
+      kind === "activity"
+        ? resolveActivityDropIndex(layout, point.x)
+        : resolveSliceDropIndex(layout, point.y);
+    return applyHeaderReorder(this.model, kind, from, to);
   }
 
   /** Applies the dropped card's move optimistically and schedules a save. */
@@ -232,7 +300,7 @@ export class StoryMapBoardView extends LiveDashboardView {
     svg: SVGSVGElement,
     layout: BoardLayout,
   ): StoryMap | null {
-    const cardIndex = cardIndexFromElement(el);
+    const cardIndex = indexAttr(el, "data-card-index");
     if (this.model === null || cardIndex === null) return null;
     const target = resolveDropTarget(layout, this.toBoardPoint(svg, clientX, clientY));
     if (target === null) return null;
@@ -254,40 +322,54 @@ export class StoryMapBoardView extends LiveDashboardView {
     return { x: local.x, y: local.y };
   }
 
-  /** Captures the save target now (id/model/baseline) so a later flush can't drift. */
+  /** Marks the model dirty and (re)arms the debounce. */
   private scheduleSave(): void {
-    if (this.model === null || this.storyMapId === null) return;
-    this.pendingSave = { id: this.storyMapId, model: this.model, expected: this.baselineCards };
+    this.dirty = true;
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => void this.flushSave(), SAVE_DEBOUNCE_MS);
   }
 
-  // fallow-ignore-next-line complexity
-  private async flushSave(): Promise<void> {
+  /**
+   * Runs (or joins) the serialized save chain and resolves when no work remains.
+   * Only one save is ever in flight; a drop queued behind it re-runs the loop
+   * against the just-advanced baseline (so it can't false-conflict with our own
+   * prior save). Callers (e.g. setState before retargeting) can await the chain.
+   */
+  private flushSave(): Promise<void> {
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    const pending = this.pendingSave;
-    this.pendingSave = null;
-    if (pending === null) return;
-    const result = await this.deps.storyMapService.saveMap(
-      pending.id,
-      pending.model,
-      this.origin,
-      pending.expected,
-    );
-    if (result.ok) {
-      // Advance the baseline to what we just wrote, so the next move's save
-      // compares against it (and isn't a false stale-conflict) — unless the leaf
-      // has since retargeted to another map.
-      if (pending.id === this.storyMapId) this.baselineCards = storyMapSignature(pending.model);
-      return;
+    if (this.saving !== null) return this.saving;
+    if (!this.dirty) return Promise.resolve();
+    this.saving = this.runSaveLoop().finally(() => {
+      this.saving = null;
+    });
+    return this.saving;
+  }
+
+  // fallow-ignore-next-line complexity
+  private async runSaveLoop(): Promise<void> {
+    while (this.dirty) {
+      if (this.model === null || this.storyMapId === null) {
+        this.dirty = false;
+        return;
+      }
+      this.dirty = false;
+      const id = this.storyMapId;
+      const model = this.model;
+      const result = await this.deps.storyMapService.saveMap(id, model, this.origin, this.baseline);
+      // Ignore the outcome if the leaf retargeted to another map mid-save.
+      if (id !== this.storyMapId) return;
+      if (!result.ok) {
+        new Notice(`Could not save the board: ${result.error.message}`);
+        await this.live.schedule(); // revert the optimistic edits to the last-saved state
+        return;
+      }
+      // Advance the baseline to what we just wrote so the next iteration (a drop
+      // that arrived during this save) compares against it, not the stale value.
+      this.baseline = storyMapSignature(model);
     }
-    new Notice(`Could not save the board: ${result.error.message}`);
-    // Revert the optimistic move by reloading the last-saved state (only if we're
-    // still on that map).
-    if (pending.id === this.storyMapId) await this.live.schedule();
   }
 
   private teardownDnd(): void {
