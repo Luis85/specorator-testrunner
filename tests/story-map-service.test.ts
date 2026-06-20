@@ -964,3 +964,95 @@ describe("DefaultStoryMapService.saveMap", () => {
     expect(fs.files.get(path)).toContain("(empty)");
   });
 });
+
+describe("DefaultStoryMapService.updateMapMeta", () => {
+  /** Creates a map (status defaults to "draft") anchored to the given product. */
+  const createMap = async (
+    service: DefaultStoryMapService,
+    product = "PRD-000",
+  ): Promise<{ id: string; path: VaultPath }> => {
+    const created = await service.create({
+      title: "Original",
+      product,
+      activities: ["Author spec"],
+      slices: ["Walking skeleton"],
+    });
+    if (!created.ok) throw new Error("setup: create failed");
+    return { id: created.value.id, path: created.value.path };
+  };
+
+  it("updates the status only, persisting it without touching structure or the path", async () => {
+    const { service, fs, types } = build();
+    const { id, path } = await createMap(service);
+
+    const result = await service.updateMapMeta(id, { status: "active" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe("active");
+    expect(result.value.title).toBe("Original");
+    expect(result.value.activities).toEqual(["Author spec"]);
+    expect(result.value.slices).toEqual(["Walking skeleton"]);
+    // The folder/path is stable (identity is the id, not the slug).
+    expect(result.value.path).toBe(path);
+
+    const note = fs.files.get(path) ?? "";
+    expect(note).toContain("status: active");
+    expect(types()).toContain("storymap.updated");
+  });
+
+  it("renames the title, collapsing whitespace and rewriting the heading, path stable", async () => {
+    const { service, fs } = build();
+    const { id, path } = await createMap(service);
+
+    const result = await service.updateMapMeta(id, { title: "  Renamed  Journey  " });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.title).toBe("Renamed Journey");
+    expect(result.value.path).toBe(path);
+
+    const note = fs.files.get(path) ?? "";
+    expect(note).toContain(`# ${id}: Renamed Journey`);
+  });
+
+  it("re-anchors the product to another resolvable PRD", async () => {
+    const { service, fs } = build({}, { ...ROOT_PRD, "PRD-003": "PRDs/PRD-003-x/PRD-003-x.md" });
+    const { id, path } = await createMap(service, "PRD-000");
+
+    const result = await service.updateMapMeta(id, { product: "PRD-003" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.product).toBe("PRD-003");
+
+    const note = fs.files.get(path) ?? "";
+    expect(note).toContain("product: PRD-003");
+  });
+
+  it("rejects a product that does not resolve to a real PRD", async () => {
+    const { service } = build();
+    const { id } = await createMap(service);
+
+    const result = await service.updateMapMeta(id, { product: "PRD-999" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+    expect(result.error.message).toContain("PRD-999");
+  });
+
+  it("rejects a blank title", async () => {
+    const { service } = build();
+    const { id } = await createMap(service);
+
+    const result = await service.updateMapMeta(id, { title: "   " });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("rejects a map that does not exist", async () => {
+    const { service } = build();
+    const result = await service.updateMapMeta("SM-404", {});
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("not found");
+  });
+});

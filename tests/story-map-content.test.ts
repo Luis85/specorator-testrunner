@@ -15,6 +15,7 @@ import {
   renderUsersLane,
   replaceGridBlock,
   replaceProductBlock,
+  replaceStoryMapHeading,
   storyMapFolderName,
 } from "../src/application/content/story-map-content";
 import type { StoryMap } from "../src/domain/entities/story-map";
@@ -260,5 +261,28 @@ describe("replaceGridBlock", () => {
     const next = replaceGridBlock("## Map\n\nno markers here", "fresh table");
     expect(next).toContain(GRID_BLOCK_START);
     expect(next).toContain("fresh table");
+  });
+});
+
+describe("replaceStoryMapHeading", () => {
+  it("rewrites the title heading by its id prefix, leaving other headings and body untouched", () => {
+    const body = [
+      "# SM-001: Old",
+      "",
+      "## Notes",
+      "# A hand-written heading",
+      "Some prose mentioning SM-001 inline.",
+    ].join("\n");
+    const next = replaceStoryMapHeading(body, "SM-001", "New title");
+    expect(next).toContain("# SM-001: New title");
+    expect(next).not.toContain("# SM-001: Old");
+    expect(next).toContain("## Notes");
+    expect(next).toContain("# A hand-written heading");
+    expect(next).toContain("Some prose mentioning SM-001 inline.");
+  });
+
+  it("returns the body unchanged when no matching heading is present", () => {
+    const body = "## Notes\nhand-written, the title heading was removed by hand\n";
+    expect(replaceStoryMapHeading(body, "SM-001", "New title")).toBe(body);
   });
 });

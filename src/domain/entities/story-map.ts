@@ -6,7 +6,7 @@ export type StoryMapId = string;
 /** The reserved root product (PRD id) a Story Map anchors to by default (ADR-0027). */
 export const STORY_MAP_DEFAULT_PRODUCT = "PRD-000";
 
-const STORY_MAP_STATUSES = ["draft", "active", "deprecated"] as const;
+export const STORY_MAP_STATUSES = ["draft", "active", "deprecated"] as const;
 export type StoryMapStatus = (typeof STORY_MAP_STATUSES)[number];
 
 export const isStoryMapStatus = (value: unknown): value is StoryMapStatus =>

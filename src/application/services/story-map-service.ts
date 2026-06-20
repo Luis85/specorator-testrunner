@@ -5,6 +5,7 @@ import {
   renderStoryMapGridTable,
   replaceGridBlock,
   replaceProductBlock,
+  replaceStoryMapHeading,
   storyMapFolderName,
 } from "../content/story-map-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
@@ -12,6 +13,7 @@ import type { SettingsService } from "./settings-service";
 import {
   encodeCard,
   encodeStep,
+  isStoryMapStatus,
   normalizeLabels,
   normalizeSteps,
   STORY_MAP_DEFAULT_PRODUCT,
@@ -19,6 +21,7 @@ import {
   type StoryMap,
   type StoryMapCard,
   type StoryMapId,
+  type StoryMapStatus,
   type StoryMapStep,
 } from "../../domain/entities/story-map";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
@@ -127,6 +130,20 @@ export interface StoryMapService {
     origin?: string,
     expected?: string,
   ): Promise<Result<StoryMap>>;
+  /**
+   * Edits a map's metadata — title, lifecycle status, and/or product anchor —
+   * without touching its structure (users/activities/steps/slices/cards). Each
+   * field is optional; an omitted field is left as-is. The title is collapsed to
+   * a single line and must be non-blank; the status must be a valid lifecycle
+   * value; the resolved product must resolve to a real PRD (same rule as create),
+   * checked under the PRD lock. Rewrites the title/status/product frontmatter and
+   * refreshes the visible product link + heading. The on-disk folder path stays
+   * stable (a map's identity is its id, not its slug). Returns the updated map.
+   */
+  updateMapMeta(
+    id: StoryMapId,
+    changes: { title?: string; status?: StoryMapStatus; product?: string },
+  ): Promise<Result<StoryMap>>;
 }
 
 const STORY_MAP_ID_RE = /^SM-(\d{3,})$/;
@@ -210,6 +227,27 @@ const cardMutationError = (
     }
   }
   return options.validate?.(map) ?? null;
+};
+
+/**
+ * Validates + normalizes a metadata change against the on-disk map: returns the
+ * first rejection reason, or the resolved {title,status,product} to persist plus
+ * whether the title (and thus the heading) changed. Pure: no I/O.
+ */
+const resolveMetaChange = (
+  map: StoryMap,
+  changes: { title?: string; status?: StoryMapStatus; product?: string },
+):
+  | { error: string }
+  | { title: string; status: StoryMapStatus; product: string; titleChanged: boolean } => {
+  const title = changes.title !== undefined ? changes.title.replace(/\s+/g, " ").trim() : map.title;
+  if (title === "") return { error: "A Story Map title is required." };
+  const status = changes.status ?? map.status;
+  if (!isStoryMapStatus(status)) return { error: `Unknown Story Map status: ${String(status)}.` };
+  const trimmedProduct = changes.product?.trim();
+  const product =
+    trimmedProduct !== undefined && trimmedProduct !== "" ? trimmedProduct : map.product;
+  return { title, status, product, titleChanged: title !== map.title };
 };
 
 export class DefaultStoryMapService implements StoryMapService {
@@ -599,6 +637,30 @@ export class DefaultStoryMapService implements StoryMapService {
     });
   }
 
+  async updateMapMeta(
+    id: StoryMapId,
+    changes: { title?: string; status?: StoryMapStatus; product?: string },
+  ): Promise<Result<StoryMap>> {
+    return this.withProductSafeWrite(async () => {
+      const found = await this.findById(id);
+      if (!found.ok) return found;
+      if (!found.value) {
+        return err(appError("VALIDATION_FAILED", `Story Map ${id} was not found.`));
+      }
+      const map = found.value;
+      const resolved = resolveMetaChange(map, changes);
+      if ("error" in resolved) return err(appError("VALIDATION_FAILED", resolved.error));
+      // The product anchor must resolve before we write (mirrors create/rebuildGrid):
+      // never persist a map pointing at a non-existent PRD. Checked under the PRD lock.
+      const resolvable = await this.requireResolvableProduct(resolved.product);
+      if (!resolvable.ok) return resolvable;
+      return this.writeMeta(
+        { ...map, title: resolved.title, status: resolved.status, product: resolved.product },
+        resolved.titleChanged,
+      );
+    });
+  }
+
   /**
    * Persists the full structure (users/activities/steps/slices/cards) frontmatter
    * and regenerates the managed blocks, leaving id/product/hand-written body
@@ -623,6 +685,34 @@ export class DefaultStoryMapService implements StoryMapService {
     const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
     if (!written.ok) return written;
     await this.publishUpdated(map, origin);
+    return ok(map);
+  }
+
+  /**
+   * Persists the title/status/product frontmatter and refreshes the managed
+   * blocks (so a reassigned product link updates in the body) plus the title
+   * heading when the title changed, leaving structure/hand-written body untouched.
+   * CRLF-safe, mirrors {@link writeMap}. Publishes `storymap.updated`.
+   */
+  private async writeMeta(map: StoryMap, titleChanged: boolean): Promise<Result<StoryMap>> {
+    const read = await this.fs.readFile(map.path);
+    if (!read.ok) return read;
+    const noteNames = await this.resolveNoteNames(map);
+    const normalized = read.value.replace(/\r\n/g, "\n");
+    const updated = updateNoteFrontmatter(normalized, {
+      title: map.title,
+      status: map.status,
+      product: map.product,
+    });
+    const { body } = parseNote(updated);
+    const refreshed = refreshManagedBlocks(body, map, noteNames);
+    const nextBody = titleChanged
+      ? replaceStoryMapHeading(refreshed, map.id, map.title)
+      : refreshed;
+    const frontmatter = updated.slice(0, updated.length - body.length);
+    const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
+    if (!written.ok) return written;
+    await this.publishUpdated(map);
     return ok(map);
   }
 

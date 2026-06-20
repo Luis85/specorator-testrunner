@@ -207,6 +207,16 @@ export const replaceGridBlock = (body: string, table: string): string => {
   return pattern.test(body) ? body.replace(pattern, block) : `${body.trimEnd()}\n\n${block}\n`;
 };
 
+/**
+ * Rewrites the note's title heading (`# <id>: <title>`) to a new title, matching
+ * the line by its `# <id>:` prefix so hand-written body headings are untouched.
+ * Returns the body unchanged when the heading is absent (hand-removed). Pure.
+ */
+export const replaceStoryMapHeading = (body: string, id: string, title: string): string => {
+  const pattern = new RegExp(`^# ${escapeRegExp(id)}:.*$`, "m");
+  return pattern.test(body) ? body.replace(pattern, `# ${id}: ${title}`) : body;
+};
+
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**

@@ -29,6 +29,7 @@ import {
   StoryMapBoardView,
 } from "./presentation/views/story-map-board-view";
 import { StoryMapCardManagerModal } from "./presentation/views/story-map-card-manager-modal";
+import { StoryMapSettingsModal } from "./presentation/views/story-map-settings-modal";
 import { SUITE_VIEW_TYPE, SuiteDashboardView } from "./presentation/views/suite-dashboard-view";
 import { TEST_CONSOLE_VIEW_TYPE, TestConsoleView } from "./presentation/views/test-console-view";
 import {
@@ -163,6 +164,8 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
             storyMapService: s.storyMapService,
             useCaseService: s.useCaseService,
           }).open(),
+        openMapSettings: (map) =>
+          new StoryMapSettingsModal(app, map, { storyMapService: s.storyMapService }).open(),
         openStoryMapBoard: (id) => deps.openStoryMapBoard(id),
       }),
   );
