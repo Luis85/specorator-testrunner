@@ -118,6 +118,14 @@ export interface LoopCapabilities {
  * has a Feature AND its automation status has moved past `missing-steps`; a run
  * counts when there is a recorded last run or evidence (the loop's last hop).
  *
+ * `featureCount` is the number of Feature Specifications the UC actually owns. It
+ * defaults to `useCase.featureFiles.length`, but the detail view passes the count
+ * derived from the **filename back-reference** (ADR-0012, `<UC-id>-<slug>.feature`)
+ * instead — that listing is the source of truth, since a Feature created on disk
+ * whose forward-link write failed is missing from `useCase.featureFiles` yet still
+ * belongs to the UC. Feeding the rail the same listing the Feature section uses
+ * keeps the two from disagreeing about whether a Feature exists (Codex review).
+ *
  * `inSuite` is **best-effort and informational only** — it reads the `suites`
  * frontmatter, but Test Suite membership is by **Tag Expression** and
  * `SuiteService.create` does not append the suite id to a Use Case, so this stays
@@ -125,8 +133,11 @@ export interface LoopCapabilities {
  * Suite as an OPTIONAL node that never gates Run (a Use Case can be run directly
  * by UC scope without belonging to any Suite — Codex review). Pure.
  */
-export const loopCapabilitiesFor = (useCase: UseCase): LoopCapabilities => {
-  const hasFeature = useCase.featureFiles.length > 0;
+export const loopCapabilitiesFor = (
+  useCase: UseCase,
+  featureCount: number = useCase.featureFiles.length,
+): LoopCapabilities => {
+  const hasFeature = featureCount > 0;
   return {
     hasFeature,
     stepsDefined: hasFeature && STEPS_DEFINED_STATUSES.has(useCase.automationStatus),
@@ -173,10 +184,14 @@ const stageDone = (stage: LoopRailStage, caps: LoopCapabilities): boolean => {
  * the optional Suite stage is skipped when choosing `current` so it never blocks
  * Run. Every other not-done stage is `todo`. A fully-complete loop (all required
  * stages done) has no current node and no action. Pure: derives entirely from the
- * Use Case entity.
+ * Use Case entity plus `featureCount` (see {@link loopCapabilitiesFor} — the view
+ * passes the filename-derived count so the rail and the Feature list agree).
  */
-export const projectLoopRail = (useCase: UseCase): LoopRail => {
-  const caps = loopCapabilitiesFor(useCase);
+export const projectLoopRail = (
+  useCase: UseCase,
+  featureCount: number = useCase.featureFiles.length,
+): LoopRail => {
+  const caps = loopCapabilitiesFor(useCase, featureCount);
   const doneByStage = LOOP_RAIL_STAGES.map((stage) => stageDone(stage, caps));
   // The next step is the first not-done REQUIRED stage; the optional Suite stage
   // is never `current`, so a missing/undetectable suite can't strand the rail.

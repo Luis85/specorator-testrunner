@@ -95,6 +95,24 @@ describe("loopCapabilitiesFor", () => {
       true,
     );
   });
+
+  it("derives feature presence from the supplied count, not the entity's featureFiles", () => {
+    // The detail view passes the filename-derived Feature count (ADR-0012) so the
+    // rail agrees with the Feature list. A Feature on disk whose forward-link write
+    // failed is missing from `featureFiles` yet still counts (Codex review).
+    const caps = loopCapabilitiesFor(useCase({ featureFiles: [] }), 1);
+    expect(caps.hasFeature).toBe(true);
+  });
+
+  it("an explicit zero count overrides a stale featureFiles entry", () => {
+    // Defensive inverse: the supplied count is authoritative. If the listing finds
+    // no Feature for this UC, a stale `featureFiles` link must not fake one.
+    const caps = loopCapabilitiesFor(
+      useCase({ featureFiles: [vp("Features/UC-001-happy.feature")] }),
+      0,
+    );
+    expect(caps.hasFeature).toBe(false);
+  });
 });
 
 describe("projectLoopRail", () => {
@@ -204,6 +222,16 @@ describe("projectLoopRail", () => {
     expectLoopClosed(rail);
     // The optional Suite node reads not-done but never reopens the loop.
     expect(rail.nodes.find((n) => n.stage === "suite")?.state).toBe("todo");
+  });
+
+  it("advances off Feature when the supplied count is positive despite empty featureFiles", () => {
+    // The rail threads the filename-derived count: a UC with a Feature on disk but
+    // no forward link still shows Feature done and Steps as the next step.
+    const uc = useCase({ featureFiles: [], automationStatus: "missing-steps" });
+    const rail = projectLoopRail(uc, 1);
+    expect(stateOf(uc, "feature")).not.toBe("done"); // entity-only projection still reads no Feature
+    expect(rail.nodes.find((n) => n.stage === "feature")?.state).toBe("done");
+    expect(rail.currentStage).toBe("steps");
   });
 
   it("current is the FIRST not-done stage; each node still reflects its own true capability", () => {

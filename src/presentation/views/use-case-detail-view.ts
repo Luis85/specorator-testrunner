@@ -1,7 +1,10 @@
 import type { WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
-import type { SpecificationService } from "../../application/services/specification-service";
+import type {
+  FeatureFileEntry,
+  SpecificationService,
+} from "../../application/services/specification-service";
 import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { StepDefinitionService } from "../../application/services/step-definition-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
@@ -11,8 +14,9 @@ import type { UseCase } from "../../domain/entities/use-case";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import type { EventBus } from "../../shared/event-bus/event-bus";
+import type { Result } from "../../shared/result/result";
 import type { RunLauncher } from "../run/run-launcher";
-import { type ChecklistRow, renderChecklist } from "./checklist";
+import { checklistRow, type ChecklistRow, renderChecklist } from "./checklist";
 import { EditUseCaseModal } from "./edit-use-case-modal";
 import { type LoopRailAction, projectLoopRail, renderLoopRail } from "./loop-rail-rows";
 import { LiveDashboardView } from "./live-dashboard-view";
@@ -237,8 +241,18 @@ export class UseCaseDetailView extends LiveDashboardView {
     const maps = await this.deps.storyMapService.findAll();
     const backlinks = maps.ok ? storyMapBacklinks(useCase.id, maps.value) : [];
 
-    this.renderHeader(container, useCase, prdTitleById, backlinks);
-    await this.renderFeatures(container, useCase);
+    // List the UC's Feature Specifications ONCE and feed the SAME listing to both
+    // the loop rail and the Feature section. The rail's "does a Feature exist?"
+    // and "which files take generate-steps?" must agree with what the rows show,
+    // and the ADR-0012 filename back-reference — not `useCase.featureFiles`, which
+    // can lag a failed forward-link write — is the source of truth (Codex review).
+    const listed = await this.deps.specificationService.listFeatures();
+    const featurePaths = listed.ok
+      ? projectFeatureRows(useCase.id, listed.value).map((row) => row.path)
+      : null;
+
+    this.renderHeader(container, useCase, prdTitleById, backlinks, featurePaths);
+    this.renderFeatures(container, useCase, listed);
   }
 
   private renderHeader(
@@ -246,13 +260,14 @@ export class UseCaseDetailView extends LiveDashboardView {
     useCase: UseCase,
     prdTitleById: Map<string, string>,
     backlinks: StoryMapBacklink[],
+    featurePaths: VaultPath[] | null,
   ): void {
     const header = projectUseCaseHeader(useCase);
 
     // WS-C1 loop rail: the forward-momentum spine above everything else. It
     // reads the next obvious step off the Use Case's current capabilities and
     // routes its live button to the SAME services/flows the buttons below use.
-    this.renderLoopRail(container, useCase);
+    this.renderLoopRail(container, useCase, featurePaths);
 
     const headerEl = container.createDiv({ cls: "e2e-test-hub-uc-detail-header" });
     // Breadcrumb back to the explorer (entry-point review): the healthy detail
@@ -329,7 +344,11 @@ export class UseCaseDetailView extends LiveDashboardView {
    * existing flows so nothing is reinvented. The view's own REFRESH_ON
    * subscriptions re-render the rail as the artifact gains each capability.
    */
-  private renderLoopRail(container: HTMLElement, useCase: UseCase): void {
+  private renderLoopRail(
+    container: HTMLElement,
+    useCase: UseCase,
+    featurePaths: VaultPath[] | null,
+  ): void {
     const wrap = container.createDiv();
     const rail = wrap.createDiv();
     // A persistent result area below the rail for the generate-steps outcome
@@ -338,8 +357,12 @@ export class UseCaseDetailView extends LiveDashboardView {
       cls: "e2e-test-hub-uc-detail-feature-result",
       attr: { "aria-live": "polite" },
     });
-    renderLoopRail(rail, projectLoopRail(useCase), (action) =>
-      this.runLoopAction(action, useCase, resultEl),
+    // The filename-derived listing is the source of truth for feature presence
+    // AND the generate-steps targets; when the listing failed we fall back to the
+    // entity's own `featureFiles` so the rail still projects (degraded, not blank).
+    const paths = featurePaths ?? useCase.featureFiles;
+    renderLoopRail(rail, projectLoopRail(useCase, paths.length), (action) =>
+      this.runLoopAction(action, useCase, paths, resultEl),
     );
   }
 
@@ -347,7 +370,7 @@ export class UseCaseDetailView extends LiveDashboardView {
    * Dispatches a loop-rail next-step action to the SAME services/flows the
    * detail view's per-row buttons use (no run/generate/suite logic is forked):
    * Feature → the generate-Feature flow; Steps → generate step definitions for
-   * the Use Case's first Feature; Suite → the create-Suite modal; Run → a
+   * EVERY one of the Use Case's Features; Suite → the create-Suite modal; Run → a
    * Use Case-scoped run through the shared launcher.
    */
   // Untested view dispatch — its CRAP score is high only because views are
@@ -358,21 +381,21 @@ export class UseCaseDetailView extends LiveDashboardView {
   private runLoopAction(
     action: Exclude<LoopRailAction, null>,
     useCase: UseCase,
+    featurePaths: VaultPath[],
     resultEl: HTMLElement,
   ): void {
     switch (action) {
       case "generate-feature":
         this.deps.openGenerateFeature(useCase, () => void this.live.schedule());
         return;
-      case "generate-steps": {
+      case "generate-steps":
         // The Steps node only surfaces once a Feature exists; generate against
-        // the first feature file (the common single-feature case) and render the
-        // outcome inline, reusing the per-row orchestration. A refresh follows so
-        // the rail re-projects once the steps land (the event also fires).
-        const featurePath = useCase.featureFiles[0];
-        if (featurePath !== undefined) void this.generateStepDefinitions(featurePath, resultEl);
+        // EVERY Feature the UC owns (not just the first) so a multi-Feature Use
+        // Case actually advances off Steps, reusing the per-row orchestration and
+        // rendering each outcome inline. A refresh follows once the steps land
+        // (the event also fires) so the rail re-projects.
+        void this.generateStepsForAll(featurePaths, resultEl);
         return;
-      }
       case "create-suite":
         this.deps.openCreateSuite();
         return;
@@ -435,11 +458,14 @@ export class UseCaseDetailView extends LiveDashboardView {
     });
   }
 
-  private async renderFeatures(container: HTMLElement, useCase: UseCase): Promise<void> {
+  private renderFeatures(
+    container: HTMLElement,
+    useCase: UseCase,
+    listed: Result<FeatureFileEntry[]>,
+  ): void {
     const section = container.createDiv({ cls: "e2e-test-hub-uc-detail-features" });
     section.createEl("h3", { text: "Feature Specifications" });
 
-    const listed = await this.deps.specificationService.listFeatures();
     if (!listed.ok) {
       // Recoverable dead-end: offer a retry instead of a bare terminal message.
       renderLoadError(
@@ -583,6 +609,40 @@ export class UseCaseDetailView extends LiveDashboardView {
         featurePath,
       ),
     );
+  }
+
+  /**
+   * The loop rail's Steps action: generate step definitions for EVERY Feature the
+   * Use Case owns, not just the first, so a multi-Feature UC actually advances off
+   * Steps (Codex review). Each Feature reuses the same per-row orchestration
+   * ({@link generateStepDefinitions}'s outcome); the inline result aggregates them,
+   * labelling each Feature when there is more than one so the report stays legible.
+   * A single-Feature UC reads exactly as the per-row generate did.
+   */
+  private async generateStepsForAll(
+    featurePaths: VaultPath[],
+    resultEl: HTMLElement,
+  ): Promise<void> {
+    if (featurePaths.length === 1) {
+      // The common case: identical to the per-row generate (no Feature headers).
+      await this.generateStepDefinitions(featurePaths[0], resultEl);
+      return;
+    }
+    this.renderChecklist(resultEl, [
+      { status: "pending", icon: "…", text: "Generating step definitions…" },
+    ]);
+    const rows: ChecklistRow[] = [];
+    for (const featurePath of featurePaths) {
+      rows.push(checklistRow("info", featurePath));
+      rows.push(
+        ...(await generateStepDefinitionsOutcome(
+          this.deps.specificationService,
+          this.deps.stepDefinitionService,
+          featurePath,
+        )),
+      );
+    }
+    this.renderChecklist(resultEl, rows);
   }
 
   /** Replaces a feature's result container with the given checklist rows. */
