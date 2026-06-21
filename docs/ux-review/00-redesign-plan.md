@@ -204,7 +204,9 @@ plan's structure**:
 3. **Run view granularity (T4):** can/should the runner emit **per-scenario events**
    mid-run (enables live results + re-run-failed), or stay output-log-first for now?
 4. **Run-time environment override:** allow running against a non-active environment
-   without changing the persisted active one (the single-active-env model)?
+   without changing the persisted active one (the single-active-env model)? NB: not UI-only —
+   needs an optional env threaded through `ExecuteTestRequest` → `RunLauncher` → `runEnv`
+   (today `runEnv` always reads `settings.sut.active`) (Codex catch — see 03 corrected).
 5. **Board scope (T-board):** (a) inline swatch cycles **Card Types** (one colour
    language) — OK to change the documented P4 behaviour? (b) Expose/edit the card **body**
    on the board via the inspector? (c) Focus = camera-only (recommended) or also filter?
