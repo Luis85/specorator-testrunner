@@ -65,6 +65,13 @@ export interface StoryMapCard {
   cardType?: CardType;
   /** Index within its cell (later task). */
   order?: number;
+  /**
+   * The vault path the card-note was loaded from. Set by `loadCards`; a user can
+   * rename a card note in Obsidian (it still loads by its `id`/`map` frontmatter),
+   * so reconcile must delete/migrate THIS path, not a reconstructed `cards/<id>.md`.
+   * Infrastructure-only: ignored by rendering and excluded from `cardSignature`.
+   */
+  notePath?: VaultPath;
 }
 
 /**

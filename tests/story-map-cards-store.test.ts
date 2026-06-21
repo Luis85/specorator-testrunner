@@ -144,6 +144,37 @@ describe("reconcileCards", () => {
     expect(written).toContain("title: new title");
   });
 
+  it("deletes a renamed card note by its loaded path, not a reconstructed canonical path", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    // The user renamed cards/SMC-003.md to a meaningful filename; it still loads
+    // by its id/map frontmatter.
+    const renamed = joinVaultPath(CARDS_DIR, "Login flow.md");
+    seedNote(fs, cardNote({ id: "SMC-003", title: "Login", path: renamed }));
+    const existing = await loadCards(fs, CARDS_DIR, MAP_ID); // carries notePath = renamed
+
+    await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, [], existing);
+
+    expect(fs.files.has(String(renamed))).toBe(false);
+    expect(fs.files.has(String(joinVaultPath(CARDS_DIR, "SMC-003.md")))).toBe(false);
+  });
+
+  it("rewrites a renamed card note in place without creating a duplicate canonical note", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    const renamed = joinVaultPath(CARDS_DIR, "Login flow.md");
+    seedNote(fs, cardNote({ id: "SMC-003", title: "old", body: "Body kept.", path: renamed }));
+    const existing = await loadCards(fs, CARDS_DIR, MAP_ID);
+    const model = [modelCard({ id: "SMC-003", title: "new" })];
+
+    await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, model, existing);
+
+    expect(fs.files.has(String(joinVaultPath(CARDS_DIR, "SMC-003.md")))).toBe(false);
+    const written = fs.files.get(String(renamed));
+    expect(written).toContain("title: new");
+    expect(written).toContain("Body kept.");
+  });
+
   it("updates order frontmatter when two cards in a cell are reordered", async () => {
     const fs = new FakeVaultFileSystem();
     const queue = new KeyedSerialQueue();

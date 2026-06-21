@@ -424,6 +424,7 @@ describe("DefaultStoryMapService.findAll/parse", () => {
         color: undefined,
         tags: [],
         order: 1,
+        notePath: "Story Maps/SM-001-j/cards/SMC-002.md",
       },
       {
         id: "SMC-001",
@@ -438,6 +439,7 @@ describe("DefaultStoryMapService.findAll/parse", () => {
         tags: ["auth"],
         color: "blue",
         order: 0,
+        notePath: "Story Maps/SM-001-j/cards/SMC-001.md",
       },
     ]);
   });
