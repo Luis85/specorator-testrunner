@@ -1,4 +1,4 @@
-import { Notice, type WorkspaceLeaf } from "obsidian";
+import { Notice, setIcon, type WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { StoryMapService } from "../../application/services/story-map-service";
 import type { StoryMap } from "../../domain/entities/story-map";
@@ -84,65 +84,93 @@ export class StoryMapExplorerView extends LiveDashboardView {
 
   private renderRow(parent: HTMLElement, map: StoryMap): void {
     const li = parent.createEl("li", { cls: "e2e-test-hub-story-map-node" });
-    const row = li.createDiv({ cls: "e2e-test-hub-story-map-row" });
+    const card = li.createDiv({ cls: "e2e-test-hub-story-map-card" });
 
-    const count = (n: number, singular: string, plural = `${singular}s`): string =>
-      `${n} ${n === 1 ? singular : plural}`;
-    const meta = [
-      count(map.users.length, "user"),
-      count(map.activities.length, "activity", "activities"),
-      count(map.steps.length, "step"),
-      count(map.slices.length, "slice"),
-      count(map.cards.length, "card"),
-    ].join(" · ");
-    const open = row.createEl("button", {
-      text: `${map.id}: ${map.title} (${meta})`,
-      cls: "e2e-test-hub-link-button",
+    // Title row: prominent title (opens the board) + status pill.
+    const titleRow = card.createDiv({ cls: "e2e-test-hub-story-map-card-title-row" });
+    const open = titleRow.createEl("button", {
+      text: map.title,
+      cls: "e2e-test-hub-story-map-card-title",
       attr: { "aria-label": `Open the board for ${map.id} ${map.title}` },
     });
-    // The board is the primary working surface — the row's main click opens it.
+    // The board is the primary working surface — the card's title opens it.
     open.addEventListener("click", () => this.deps.openStoryMapBoard(map.id));
 
-    row.createEl("span", {
+    titleRow.createEl("span", {
       text: map.status,
       cls: "e2e-test-hub-story-map-status",
       attr: { "data-status": map.status, title: `Map status: ${map.status}` },
     });
 
-    row
-      .createEl("button", {
-        text: "Settings",
-        cls: "e2e-test-hub-link-button",
-        attr: { "aria-label": `Edit settings for ${map.id}` },
-      })
-      .addEventListener("click", () => this.deps.openMapSettings(map));
+    // Meta row: id + product anchor + count chips.
+    const metaRow = card.createDiv({ cls: "e2e-test-hub-story-map-card-meta" });
+    metaRow.createEl("span", {
+      text: map.id,
+      cls: "e2e-test-hub-story-map-card-id",
+    });
+    metaRow.createEl("span", {
+      text: map.product,
+      cls: "e2e-test-hub-story-map-card-product",
+      attr: { title: `Anchored to ${map.product}` },
+    });
+    const chips = metaRow.createDiv({ cls: "e2e-test-hub-story-map-card-chips" });
+    const count = (n: number, singular: string, plural = `${singular}s`): string =>
+      `${n} ${n === 1 ? singular : plural}`;
+    const chip = (text: string): void => {
+      chips.createEl("span", { text, cls: "e2e-test-hub-story-map-chip" });
+    };
+    chip(count(map.users.length, "user"));
+    chip(count(map.activities.length, "activity", "activities"));
+    chip(count(map.steps.length, "step"));
+    chip(count(map.slices.length, "slice"));
+    chip(count(map.cards.length, "card"));
 
-    row
-      .createEl("button", {
-        text: "Open note",
-        cls: "e2e-test-hub-link-button",
-        attr: { "aria-label": `Open the ${map.id} note` },
-      })
-      .addEventListener("click", () => void openOrNotice(this.deps.workspace, map.path));
+    // Action bar: compact icon buttons.
+    const actions = card.createDiv({ cls: "e2e-test-hub-story-map-card-actions" });
+    this.addIconAction(actions, "settings", "Settings", `Edit settings for ${map.id}`, () =>
+      this.deps.openMapSettings(map),
+    );
+    this.addIconAction(actions, "file-text", "Open note", `Open the ${map.id} note`, () => {
+      void openOrNotice(this.deps.workspace, map.path);
+    });
+    this.addIconAction(
+      actions,
+      "refresh-cw",
+      "Refresh tables",
+      `Refresh the Markdown tables for ${map.id}`,
+      () => {
+        void this.rebuildGrid(map);
+      },
+    );
+    this.addIconAction(
+      actions,
+      "trash-2",
+      "Delete",
+      `Delete Story Map ${map.id}`,
+      () => {
+        void this.deleteStoryMap(map);
+      },
+      "e2e-test-hub-story-map-action-danger",
+    );
+  }
 
-    row
-      .createEl("button", {
-        text: "Refresh tables",
-        cls: "e2e-test-hub-link-button",
-        attr: {
-          "aria-label": `Refresh the Markdown tables for ${map.id}`,
-          title: "Regenerate the managed Markdown tables from this note's frontmatter",
-        },
-      })
-      .addEventListener("click", () => void this.rebuildGrid(map));
-
-    row
-      .createEl("button", {
-        text: "Delete",
-        cls: "e2e-test-hub-link-button",
-        attr: { "aria-label": `Delete Story Map ${map.id}` },
-      })
-      .addEventListener("click", () => void this.deleteStoryMap(map));
+  private addIconAction(
+    parent: HTMLElement,
+    icon: string,
+    label: string,
+    ariaLabel: string,
+    onClick: () => void,
+    extraCls?: string,
+  ): void {
+    const cls = extraCls
+      ? `e2e-test-hub-story-map-action ${extraCls}`
+      : "e2e-test-hub-story-map-action";
+    const button = parent.createEl("button", {
+      cls,
+      attr: { "aria-label": ariaLabel, title: label },
+    });
+    setIcon(button, icon);
+    button.addEventListener("click", onClick);
   }
 
   private async rebuildGrid(map: StoryMap): Promise<void> {

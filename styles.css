@@ -1089,12 +1089,132 @@
   padding-left: 0;
 }
 
-.e2e-test-hub-story-map-row {
+.e2e-test-hub-story-map-node {
+  margin: 0 0 var(--size-2-3, 8px);
+}
+
+/* Per-map card: padded, bordered, hover-interactive. */
+.e2e-test-hub-story-map-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-3, 8px);
+  padding: var(--size-4-3, 12px);
+  border: 1px solid var(--background-modifier-border);
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-secondary);
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.e2e-test-hub-story-map-card:hover {
+  background: var(--background-modifier-hover);
+  border-left-color: var(--interactive-accent);
+}
+
+/* Title row: prominent title (opens board) + status pill on the right. */
+.e2e-test-hub-story-map-card-title-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-story-map-card-title {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+  text-align: left;
+  cursor: pointer;
+}
+
+.e2e-test-hub-story-map-card-title:hover {
+  color: var(--text-accent);
+}
+
+.e2e-test-hub-story-map-card-title:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* Meta row: id + product anchor + count chips, all muted/small. */
+.e2e-test-hub-story-map-card-meta {
+  display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  padding: var(--size-2-1, 4px) 0;
+  gap: var(--size-2-2, 6px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.e2e-test-hub-story-map-card-id {
+  font-weight: var(--font-semibold, 600);
+  letter-spacing: 0.02em;
+}
+
+.e2e-test-hub-story-map-card-product {
+  color: var(--text-muted);
+}
+
+.e2e-test-hub-story-map-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-1, 4px);
+}
+
+/* Count chip — tiny muted pill. */
+.e2e-test-hub-story-map-chip {
+  padding: 1px var(--size-2-2, 6px);
+  border-radius: var(--radius-s, 4px);
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+/* Action bar: compact icon-only buttons. */
+.e2e-test-hub-story-map-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-1, 4px);
+}
+
+.e2e-test-hub-story-map-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s, 4px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.e2e-test-hub-story-map-action:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.e2e-test-hub-story-map-action:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.e2e-test-hub-story-map-action.e2e-test-hub-story-map-action-danger:hover {
+  color: var(--text-error);
 }
 
 /* Status pill — text always present, so colour is never the only signal. */
