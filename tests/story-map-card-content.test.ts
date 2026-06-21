@@ -50,6 +50,12 @@ describe("card note content", () => {
     const note = buildCardNote({ ...card, ref: undefined, title: "" });
     expect(parseCardNote(note, card.path)?.title).toBe("SMC-001");
   });
+  it("preserves the first body line when stripping a blank-title card's `# ` heading", () => {
+    // A referenced card with no title emits a blank "# " heading; stripping it
+    // must not consume the blank-line separator and the first real body line.
+    const note = buildCardNote({ ...card, title: "", body: "First line.\nSecond line." });
+    expect(parseCardNote(note, card.path)?.body).toBe("First line.\nSecond line.");
+  });
   it("rejects a non-card note and falls back an out-of-set card_type", () => {
     expect(parseCardNote("---\ntype: note\n---\n", card.path)).toBeNull();
     const bad = buildCardNote(card).replace("card_type: task", "card_type: epic");

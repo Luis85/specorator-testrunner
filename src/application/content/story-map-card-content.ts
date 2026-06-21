@@ -66,7 +66,10 @@ export const parseCardNote = (content: string, path: VaultPath): StoryMapCardNot
     // note id, so the board/grid don't surface "SMC-NNN" and a later save doesn't
     // persist that id as the title (StoryMapCard.title: "falls back to ref").
     title: str(fm.title) || (ref ?? fm.id),
-    body: body.replace(/^#\s+.*\n?/, "").trim(),
+    // Strip ONLY the generated heading line. `[ \t]` (not `\s`) so a blank `# `
+    // heading — emitted for a referenced card with no title — can't let the match
+    // run past the newline and eat the blank-line separator + the first body line.
+    body: body.replace(/^#[ \t]+.*\n?/, "").trim(),
     path,
   };
 };
