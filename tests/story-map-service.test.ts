@@ -948,6 +948,11 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.message).toContain("EIO");
+    // Cleanup runs BEFORE the map-note delete, so a failed cleanup leaves both the
+    // map note and its card notes intact — the delete stays retryable (findById can
+    // still locate the map to finish the job).
+    expect(fs.files.has("Story Maps/SM-001-j/SM-001-j.md")).toBe(true);
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-001.md")).toBe(true);
   });
 
   it("rejects a card whose placement is invalid (slice off the map)", async () => {

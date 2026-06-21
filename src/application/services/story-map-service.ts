@@ -451,17 +451,20 @@ export class DefaultStoryMapService implements StoryMapService {
         return err(appError("VALIDATION_FAILED", `Story Map ${id} was not found.`));
       }
 
-      // Delete the map note; the per-card notes under cards/ are generated, not
-      // user attachments, so remove them too — otherwise orphaned card notes linger
-      // and a future map reusing this id/path would silently re-adopt them via
-      // loadCards. Any OTHER sibling attachments (diagrams, etc.) are preserved.
+      // Remove the generated per-card notes under cards/ FIRST, then the map note.
+      // The card notes are generated, not user attachments, so a future map reusing
+      // this id/path would silently re-adopt them via loadCards. Cleaning first keeps
+      // the delete retryable: if cleanup hits a real I/O error it fails closed, and
+      // leaving the map note intact means findById can still locate the map to finish
+      // the job (deleting the note first would orphan the cards unrecoverably).
+      // cleanupCardNotes skips the still-present map note; OTHER siblings are kept.
       const mapNote = target.value;
       const folder = parentVaultPath(mapNote.path);
-      const deleted = await this.fs.deleteFile(mapNote.path);
-      if (!deleted.ok) return deleted;
       const cleaned = await this.cleanupCardNotes(folder, mapNote.path, this.cardsDirOf(mapNote));
       if (!cleaned.ok) return cleaned;
       const preservedFiles = cleaned.value;
+      const deleted = await this.fs.deleteFile(mapNote.path);
+      if (!deleted.ok) return deleted;
 
       await this.eventBus.publish(
         createEvent(
