@@ -18,6 +18,7 @@ import { DASHBOARD_VIEW_TYPE } from "../views/dashboard-view";
 import { EVIDENCE_EXPLORER_VIEW_TYPE } from "../views/evidence-explorer-view";
 import { GenerateFeatureModal } from "../views/generate-feature-modal";
 import { GUIDED_TOUR_VIEW_TYPE } from "../views/guided-tour-view";
+import { STORY_MAP_VIEW_TYPE } from "../views/story-map-explorer-view";
 import { SUITE_VIEW_TYPE } from "../views/suite-dashboard-view";
 import { USE_CASE_VIEW_TYPE } from "../views/use-case-dashboard-view";
 import { registerRunCommands } from "./register-run-commands";
@@ -54,6 +55,7 @@ export interface TestHubCommandDeps {
   openCreateUseCase(): void;
   openCreateSuite(): void;
   openPrdBuilder(): void;
+  openStoryMapBuilder(): void;
   openDocumentation(
     documentType?: "getting-started" | "manual" | "troubleshooting" | "index",
   ): Promise<void>;
@@ -311,6 +313,16 @@ export function registerCommands(
     id: "create-prd",
     name: "New PRD",
     callback: () => deps.openPrdBuilder(),
+  });
+  plugin.addCommand({
+    id: "create-story-map",
+    name: "New Story Map",
+    callback: () => deps.openStoryMapBuilder(),
+  });
+  plugin.addCommand({
+    id: "open-story-maps",
+    name: "Open Story Maps",
+    callback: () => void deps.workspace.openView(STORY_MAP_VIEW_TYPE, "sidebar"),
   });
   plugin.addCommand({
     id: "open-test-suites",

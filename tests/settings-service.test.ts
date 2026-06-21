@@ -20,6 +20,10 @@ describe("DefaultSettingsService", () => {
     expect(String(DEFAULT_SETTINGS.paths.domainsPath)).toBe("Domains");
   });
 
+  it("defaults personasPath to Personas", () => {
+    expect(String(DEFAULT_SETTINGS.paths.personasPath)).toBe("Personas");
+  });
+
   it("defaults runner.browsers to chromium-only", () => {
     expect(DEFAULT_SETTINGS.runner.browsers).toEqual(["chromium"]);
     expect(DEFAULT_SETTINGS.runner.browserInstallCommand).toBe("npx playwright install chromium");

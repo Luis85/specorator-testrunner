@@ -1080,3 +1080,506 @@
   margin: 0;
   padding-left: var(--size-4-4, 16px);
 }
+
+/* ---- Story Maps explorer (mirrors the PRD explorer patterns) ---- */
+.e2e-test-hub-story-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-3, 12px);
+  flex-wrap: wrap;
+}
+
+.e2e-test-hub-story-map-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.e2e-test-hub-story-map-node {
+  margin: 0 0 var(--size-2-3, 8px);
+}
+
+/* Per-map card: padded, bordered, hover-interactive. */
+.e2e-test-hub-story-map-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-3, 8px);
+  padding: var(--size-4-3, 12px);
+  border: 1px solid var(--background-modifier-border);
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-secondary);
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.e2e-test-hub-story-map-card:hover {
+  background: var(--background-modifier-hover);
+  border-left-color: var(--interactive-accent);
+}
+
+/* Title row: prominent title (opens board) + status pill on the right. */
+.e2e-test-hub-story-map-card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-2, 8px);
+}
+
+.e2e-test-hub-story-map-card-title {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold, 600);
+  text-align: left;
+  cursor: pointer;
+}
+
+.e2e-test-hub-story-map-card-title:hover {
+  color: var(--text-accent);
+}
+
+.e2e-test-hub-story-map-card-title:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+/* Meta row: id + product anchor + count chips, all muted/small. */
+.e2e-test-hub-story-map-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--size-2-2, 6px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.e2e-test-hub-story-map-card-id {
+  font-weight: var(--font-semibold, 600);
+  letter-spacing: 0.02em;
+}
+
+.e2e-test-hub-story-map-card-product {
+  color: var(--text-muted);
+}
+
+.e2e-test-hub-story-map-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-1, 4px);
+}
+
+/* Count chip — tiny muted pill. */
+.e2e-test-hub-story-map-chip {
+  padding: 1px var(--size-2-2, 6px);
+  border-radius: var(--radius-s, 4px);
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+/* Action bar: compact icon-only buttons. */
+.e2e-test-hub-story-map-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-1, 4px);
+}
+
+.e2e-test-hub-story-map-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-s, 4px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.e2e-test-hub-story-map-action:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.e2e-test-hub-story-map-action:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.e2e-test-hub-story-map-action.e2e-test-hub-story-map-action-danger:hover {
+  color: var(--text-error);
+}
+
+/* Status pill — text always present, so colour is never the only signal. */
+.e2e-test-hub-story-map-status {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 var(--size-2-2, 6px);
+  border-radius: var(--radius-s, 4px);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.e2e-test-hub-story-map-status[data-status="active"] {
+  color: var(--text-success);
+  border-color: var(--text-success);
+}
+
+.e2e-test-hub-story-map-status[data-status="deprecated"] {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Builder/card-manager add-item rows. */
+.story-map-items,
+.story-map-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  flex-wrap: wrap;
+}
+
+.e2e-test-hub-story-map-card-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.e2e-test-hub-story-map-card-node {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  flex-wrap: wrap;
+  padding: var(--size-2-1, 4px) 0;
+}
+
+/* ---- Story Map board (P1, ADR-0029) ---- */
+.sm-board-container {
+  overflow: auto;
+  padding: var(--size-4-2, 8px);
+}
+
+.sm-board-title {
+  margin: 0 0 var(--size-4-2, 8px);
+}
+
+.sm-board-hint {
+  margin: 0 0 var(--size-4-2, 8px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.sm-board-svg {
+  display: block;
+}
+
+.sm-board-svg text {
+  fill: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.sm-board-users {
+  fill: var(--background-secondary-alt);
+}
+
+.sm-board-activity {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-step {
+  fill: var(--background-primary-alt);
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-slice {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-user-card {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+  cursor: pointer;
+}
+
+.sm-board-card {
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-card-title {
+  font-weight: 600;
+  /* Card fills are light pastels (CARD_TYPE_COLORS) in BOTH themes, so the title
+     uses fixed dark ink for contrast rather than the theme text colour (which is
+     near-white in the dark theme and would vanish on a pastel card). */
+  fill: var(--sm-card-ink, #1a1a22);
+  /* Let pointer hits fall through the title text to the draggable card rect. */
+  pointer-events: none;
+}
+
+.sm-board-card-ref {
+  fill: var(--sm-card-ink-muted, rgba(26, 26, 34, 0.62));
+  font-size: 10px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+/* Card footer chips (points + tags). */
+.sm-board-chip-points {
+  fill: var(--background-modifier-border);
+}
+
+.sm-board-chip-tag {
+  fill: var(--background-secondary-alt);
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-chip-points-label,
+.sm-board-chip-tag-label {
+  fill: var(--text-muted);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+/* Per-slice roll-up labels + progress bar on a row header. */
+.sm-board-slice-progress,
+.sm-board-slice-points {
+  fill: var(--text-muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.sm-board-progress-track {
+  fill: var(--background-modifier-border);
+}
+
+.sm-board-progress {
+  fill: var(--text-accent);
+}
+
+/* Static card-type legend below the grid. */
+.sm-board-legend-swatch {
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-legend-label {
+  fill: var(--text-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+/* Header labels must pass pointer hits through to their header rect (the drag
+   handle + double-click-to-rename target) — same rule as the card text above. */
+.sm-board-activity-label,
+.sm-board-slice-label,
+.sm-board-step-label,
+.sm-board-user-label,
+.sm-board-remove-label,
+.sm-board-add-card-label,
+.sm-board-status-chip-label {
+  pointer-events: none;
+}
+
+/* Drag affordances (P2). interact.js is pointer-based, so suppress touch
+   panning on a card while it is the drag handle. */
+.sm-board-card {
+  cursor: grab;
+  touch-action: none;
+}
+
+.sm-board-card.is-dragging {
+  cursor: grabbing;
+  opacity: 0.5;
+}
+
+/* Header drag-reorder affordances (P3 activities/slices; P3c steps). */
+.sm-board-activity,
+.sm-board-slice,
+.sm-board-step {
+  cursor: grab;
+  touch-action: none;
+}
+
+.sm-board-activity.is-dragging,
+.sm-board-slice.is-dragging,
+.sm-board-step.is-dragging {
+  cursor: grabbing;
+  opacity: 0.6;
+}
+
+/* Add affordances + in-place rename editor (P3b). */
+.sm-board-add-activity,
+.sm-board-add-slice,
+.sm-board-add-step,
+.sm-board-add-user {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border);
+  cursor: pointer;
+}
+
+.sm-board-add-activity-label,
+.sm-board-add-slice-label,
+.sm-board-add-step-label,
+.sm-board-add-user-label {
+  fill: var(--text-muted);
+  pointer-events: none;
+}
+
+.sm-board-edit-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  font: inherit;
+}
+
+/* Remove (`×`) + add-card affordances (P3c). */
+.sm-board-remove {
+  fill: var(--background-modifier-error);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.sm-board-remove:hover {
+  opacity: 1;
+}
+
+.sm-board-remove-label {
+  fill: var(--text-on-accent);
+  font-size: 12px;
+}
+
+.sm-board-edit {
+  fill: var(--background-modifier-border);
+  cursor: pointer;
+}
+
+.sm-board-edit-label {
+  fill: var(--text-muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.sm-board-add-card {
+  fill: var(--background-modifier-border);
+  cursor: pointer;
+}
+
+.sm-board-add-card-label {
+  fill: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Hover-reveal (UX-1): the per-card controls (remove ×, swatch, status chip) stay
+   hidden until you hover the card group or keyboard-focus a control within it.
+   Scoped to card-group descendants so the HEADER `×` controls (loose siblings,
+   not inside a card group) keep their faint-default + hover-full behavior. */
+.sm-board-card-group .sm-board-remove,
+.sm-board-card-group .sm-board-edit,
+.sm-board-card-group .sm-board-swatch,
+.sm-board-card-group .sm-board-status-chip {
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.sm-board-card-group:hover .sm-board-remove,
+.sm-board-card-group:hover .sm-board-edit,
+.sm-board-card-group:hover .sm-board-swatch,
+.sm-board-card-group:hover .sm-board-status-chip,
+.sm-board-card-group:focus-within .sm-board-remove,
+.sm-board-card-group:focus-within .sm-board-edit,
+.sm-board-card-group:focus-within .sm-board-swatch,
+.sm-board-card-group:focus-within .sm-board-status-chip {
+  opacity: 1;
+}
+
+/* Rename cue (UX-1): the draggable headers carry cursor:grab by default; a text
+   cursor on hover hints that double-click renames them. */
+.sm-board-activity:hover,
+.sm-board-slice:hover,
+.sm-board-step:hover,
+.sm-board-user-card:hover {
+  cursor: text;
+}
+
+/* Keyboard focus rings (UX-4): cards + headers are tabbable and operable. */
+.sm-board-card-group:focus-visible,
+.sm-board-activity:focus-visible,
+.sm-board-slice:focus-visible,
+.sm-board-step:focus-visible,
+.sm-board-user-card:focus-visible {
+  outline: 2px solid var(--text-accent);
+  outline-offset: 1px;
+}
+
+/* Hover elevation + empty state (UX-3). */
+.sm-board-card {
+  transition: filter 0.12s ease;
+}
+
+.sm-board-card-group:hover .sm-board-card {
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.28));
+}
+
+.sm-board-empty {
+  text-anchor: middle;
+  fill: var(--text-muted);
+  font-style: italic;
+}
+
+/* Live drag feedback (UX-2): the dragged card follows the pointer and the target
+   cell + insertion slot are highlighted in a transient overlay layer. */
+.sm-board-overlay {
+  pointer-events: none;
+}
+
+.sm-board-drop-cell {
+  fill: var(--text-accent);
+  opacity: 0.12;
+  pointer-events: none;
+}
+
+.sm-board-drop-line {
+  stroke: var(--text-accent);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.sm-board-card-group.is-dragging {
+  cursor: grabbing;
+  opacity: 0.85;
+}
+
+.sm-board-card-group.is-no-drop {
+  cursor: not-allowed;
+}
+
+/* Per-card color swatch + status chip quick-edit affordances (P4). */
+.sm-board-swatch {
+  cursor: pointer;
+  stroke: var(--background-modifier-border);
+}
+
+.sm-board-status-chip {
+  fill: var(--background-secondary);
+  cursor: pointer;
+}
+
+.sm-board-status-chip-label {
+  fill: var(--text-muted);
+  font-size: 10px;
+}

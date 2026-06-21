@@ -41,6 +41,17 @@ export const joinVaultPath = (...segments: (string | VaultPath)[]): VaultPath =>
  * Used to point the runner's working directory at the feature folder
  * regardless of how either is configured (per ADR-0008).
  */
+/**
+ * The parent folder of a note path, e.g. `PRDs/PRD-001-x/PRD-001-x.md` →
+ * `PRDs/PRD-001-x`. A path with no `/` is returned unchanged. Shared by the PRD
+ * and Story Map delete flows, which must agree on what "the note's folder" is.
+ */
+export const parentVaultPath = (path: VaultPath): VaultPath => {
+  const s = String(path);
+  const idx = s.lastIndexOf("/");
+  return (idx === -1 ? s : s.slice(0, idx)) as VaultPath;
+};
+
 export const relativeVaultPath = (from: VaultPath, to: VaultPath): string => {
   const fromParts = from.split("/").filter((s) => s !== "");
   const toParts = to.split("/").filter((s) => s !== "");

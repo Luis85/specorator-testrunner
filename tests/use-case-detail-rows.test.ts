@@ -15,6 +15,7 @@ import {
   projectFeatureRows,
   projectUseCaseHeader,
   stepGenerationRows,
+  storyMapBacklinks,
   validateFeatureOutcome,
 } from "../src/presentation/views/use-case-detail-rows";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
@@ -36,6 +37,40 @@ const useCase = (over: Partial<UseCase> = {}): UseCase => ({
 const entry = (path: string): FeatureFileEntry => ({
   path: vp(path),
   label: path.replace(/^Features\//, ""),
+});
+
+describe("storyMapBacklinks", () => {
+  const maps = [
+    {
+      id: "SM-002",
+      title: "Beta",
+      path: vp("Story Maps/SM-002/SM-002.md"),
+      cards: [{ ref: "UC-001" }, { ref: undefined }],
+    },
+    {
+      id: "SM-001",
+      title: "Alpha",
+      path: vp("Story Maps/SM-001/SM-001.md"),
+      cards: [{ ref: "UC-001" }, { ref: "UC-009" }],
+    },
+    {
+      id: "SM-003",
+      title: "Gamma",
+      path: vp("Story Maps/SM-003/SM-003.md"),
+      cards: [{ ref: "UC-009" }],
+    },
+  ];
+
+  it("returns the maps that reference the Use Case, sorted by id", () => {
+    expect(storyMapBacklinks("UC-001", maps)).toEqual([
+      { id: "SM-001", title: "Alpha", path: "Story Maps/SM-001/SM-001.md" },
+      { id: "SM-002", title: "Beta", path: "Story Maps/SM-002/SM-002.md" },
+    ]);
+  });
+
+  it("returns nothing when no map references the Use Case", () => {
+    expect(storyMapBacklinks("UC-404", maps)).toEqual([]);
+  });
 });
 
 describe("projectUseCaseHeader", () => {

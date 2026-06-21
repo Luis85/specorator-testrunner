@@ -20,6 +20,15 @@ import {
 import { generateFeatureForUseCase } from "./presentation/views/generate-feature-modal";
 import { GUIDED_TOUR_VIEW_TYPE, GuidedTourView } from "./presentation/views/guided-tour-view";
 import { PRD_VIEW_TYPE, PrdExplorerView } from "./presentation/views/prd-explorer-view";
+import {
+  STORY_MAP_VIEW_TYPE,
+  StoryMapExplorerView,
+} from "./presentation/views/story-map-explorer-view";
+import {
+  STORY_MAP_BOARD_VIEW_TYPE,
+  StoryMapBoardView,
+} from "./presentation/views/story-map-board-view";
+import { StoryMapSettingsModal } from "./presentation/views/story-map-settings-modal";
 import { SUITE_VIEW_TYPE, SuiteDashboardView } from "./presentation/views/suite-dashboard-view";
 import { TEST_CONSOLE_VIEW_TYPE, TestConsoleView } from "./presentation/views/test-console-view";
 import {
@@ -49,6 +58,8 @@ export interface ViewWiringDeps {
   openUseCaseDetail: (useCaseId: string) => void;
   openCreateSuite: () => void;
   openPrdBuilder: (parentPrdId?: string) => void;
+  openStoryMapBuilder: () => void;
+  openStoryMapBoard: (storyMapId: string) => void;
   openWizard: () => void;
   openDocumentation: (documentType?: DashboardDocumentType | "index") => void | Promise<void>;
   generateDocumentation: () => void | Promise<void>;
@@ -96,6 +107,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         traceability: s.traceabilityService,
         useCaseService: s.useCaseService,
         prdService: s.prdService,
+        storyMapService: s.storyMapService,
         specificationService: s.specificationService,
         stepDefinitionService: s.stepDefinitionService,
         featureInsight: s.featureInsightService,
@@ -136,6 +148,28 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         workspace,
         eventBus,
         openPrdBuilder: (parentPrdId) => deps.openPrdBuilder(parentPrdId),
+      }),
+  );
+  plugin.registerView(
+    STORY_MAP_VIEW_TYPE,
+    (leaf) =>
+      new StoryMapExplorerView(leaf, {
+        storyMapService: s.storyMapService,
+        workspace,
+        eventBus,
+        openStoryMapBuilder: () => deps.openStoryMapBuilder(),
+        openMapSettings: (map) =>
+          new StoryMapSettingsModal(app, map, { storyMapService: s.storyMapService }).open(),
+        openStoryMapBoard: (id) => deps.openStoryMapBoard(id),
+      }),
+  );
+  plugin.registerView(
+    STORY_MAP_BOARD_VIEW_TYPE,
+    (leaf) =>
+      new StoryMapBoardView(leaf, {
+        storyMapService: s.storyMapService,
+        useCaseService: s.useCaseService,
+        eventBus,
       }),
   );
   plugin.registerView(

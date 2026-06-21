@@ -85,6 +85,27 @@ every command, but each one is also reachable through a view:
   inline), plus **Validate environment**, **Repair installation**, **Generate CI
   workflow**, and **Check CI readiness** with inline result checklists.
 
+## Using Story Maps
+
+Story Maps are an upstream-design overlay alongside PRDs (see _Vault layout_).
+The fast path from a blank map to a working board:
+
+- **Create a map** with **New Story Map** (ribbon **Open Story Maps** →
+  **New Story Map**). Creation auto-seeds the reserved root **PRD-000** if no PRD
+  resolves yet, so it completes from a fresh vault.
+- **The board opens** for the new map — the board is the primary working surface
+  (the explorer row's title click reopens it).
+- **Add cards** with the per-cell **+ card** affordance (revealed on cell hover);
+  hover an existing card to edit its attributes, cycle its color, set its
+  planning status, or remove it.
+- **Arrange** by dragging cards and headers to move and reorder, and
+  **double-click any header or card** to rename it inline.
+- **Promote a card to a Use Case** from the card editor: it creates the UC,
+  anchors it to the map's product, and sets the card's reference in one step.
+- **The managed Markdown tables stay in sync** with the note's frontmatter; after
+  hand-editing the `cards`/`product` frontmatter, run **Refresh tables** on the
+  explorer row to regenerate them.
+
 ## Vision
 
 Enable teams to transform requirements into executable specifications and
@@ -166,6 +187,7 @@ Vault
 │   └── Troubleshooting.md
 ├── PRDs
 │   └── PRD-000-product-vision
+├── Story Maps
 ├── Domains
 ├── Use Cases
 ├── Specifications
@@ -180,6 +202,14 @@ decomposes into feature-scoped sub-PRDs, each owning the Use Cases that detail
 its solution. Open the **PRDs** explorer (ribbon: _Open PRDs_) or the dashboard's
 **PRDs & roadmap** section to navigate the tree, and use **New PRD** to launch the
 builder. See `docs/adr/0026-prd-hierarchy-artifact-model.md` for the model.
+
+**Story Maps** (`Story Maps/`) are an upstream-design overlay _alongside_ PRDs,
+not inside the tree: a vault-local, single-user user-story map (audience →
+backbone activities → steps → release slices) over rich cards that reference Use
+Cases by id. Open the **Story Maps** explorer (ribbon: _Open Story Maps_) and use
+**New Story Map** to launch the builder; add cards via the explorer's **Cards**
+action. See `docs/adr/0027-story-map-prd-sibling-overlay.md` and
+`docs/adr/0028-story-map-rich-model.md`.
 
 ## Repository layout
 

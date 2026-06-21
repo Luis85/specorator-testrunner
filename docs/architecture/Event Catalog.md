@@ -185,6 +185,52 @@ PRDs, and PRDs with linked Use Cases are never deleted.
 
 ---
 
+## 5b. Story Map Events
+
+Story Maps are PRD-sibling overlays (ADR-0027, extended by ADR-0028). All three
+events carry `correlationId = storyMapId`.
+
+### `storymap.created`
+
+```ts
+{
+  storyMapId: string; // e.g. "SM-001"
+  title: string;
+  path: string;       // vault path to the Story Map note
+  product: string;    // the anchored product PRD id (e.g. "PRD-000")
+}
+```
+
+Emitted by `DefaultStoryMapService.create()` after the note is written.
+
+### `storymap.updated`
+
+```ts
+{
+  storyMapId: string;
+  path: string; // vault path to the rewritten note
+}
+```
+
+Emitted by `DefaultStoryMapService` after a card mutation
+(`addCard`/`updateCard`/`removeCard`) or a `rebuildGrid` rewrites the note, so
+live views (the Story Maps explorer) refresh. Added by ADR-0028 for the rich-card
+authoring workflow.
+
+### `storymap.deleted`
+
+```ts
+{
+  storyMapId: string;
+  path: string;          // vault path to the deleted note
+  preservedFiles: number; // sibling attachments left in the map folder
+}
+```
+
+Emitted by `DefaultStoryMapService.deleteStoryMap()` after the note is removed.
+
+---
+
 ## 5. Specification Events
 
 ### `specification.created`

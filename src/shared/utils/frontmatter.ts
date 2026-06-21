@@ -14,6 +14,7 @@ export type FrontmatterValue =
 
 const needsQuoting = (value: string): boolean =>
   value === "" ||
+  /[\r\n]/.test(value) || // interior line breaks would split the scalar across lines
   /^\s|\s$/.test(value) || // leading/trailing whitespace
   /^[-?:,[\]{}#&*!|>'"%@`]/.test(value) || // ambiguous leading indicator
   /:\s/.test(value) || // looks like a nested mapping

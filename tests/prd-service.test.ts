@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DefaultPrdService } from "../src/application/services/prd-service";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
+import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
 const build = () => {
@@ -383,6 +384,136 @@ describe("DefaultPrdService.deletePrd", () => {
 
     const result = await service.deletePrd("PRD-001");
     expect(result.ok).toBe(false);
+  });
+
+  it("refuses to delete a PRD that is a Story Map's product anchor", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    fs.files.set(
+      "Story Maps/SM-001-j/SM-001-j.md",
+      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-001", "---", ""].join(
+        "\n",
+      ),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toContain("Story Map");
+    // The PRD note survives so the map's anchor can't dangle.
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(true);
+  });
+
+  it("ignores a non-story-map note under Story Maps that merely carries a product field", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    // An auxiliary note (e.g. a preserved attachment) with a `product:` field but
+    // not type: story-map must NOT block deletion (mirrors findAll's type filter).
+    fs.files.set(
+      "Story Maps/SM-001-j/notes.md",
+      ["---", "type: note", "product: PRD-001", "---", "scratch"].join("\n"),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok).toBe(true);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
+  });
+
+  it("does not fail-close PRD deletion when a generated card note under cards/ is unreadable", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    // A valid map (anchored to the root, not PRD-001) plus an UNREADABLE generated
+    // card note under its cards/ subtree — card notes can't anchor a PRD, so a bad
+    // one must not block deleting an unrelated PRD.
+    fs.files.set(
+      "Story Maps/SM-001-j/SM-001-j.md",
+      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-000", "---", ""].join(
+        "\n",
+      ),
+    );
+    const cardPath = "Story Maps/SM-001-j/cards/SMC-001.md";
+    fs.files.set(cardPath, "unreadable card note");
+    const realRead = fs.readFile.bind(fs);
+    fs.readFile = async (p) =>
+      String(p) === cardPath
+        ? { ok: false as const, error: { code: "INIT_FAILED" as const, message: "EIO card note" } }
+        : realRead(p);
+
+    const result = await service.deletePrd("PRD-001");
+
+    expect(result.ok).toBe(true);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
+  });
+
+  it("counts a map note under a top-level 'cards' folder (only <map>/cards/ is skipped)", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    // A map note the user placed under a top-level "cards" folder — NOT the generated
+    // <map>/cards/ child — must still count as an anchor.
+    fs.files.set(
+      "Story Maps/cards/SM-001-j.md",
+      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-001", "---", ""].join(
+        "\n",
+      ),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+
+    expect(result.ok).toBe(false);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(true);
+  });
+
+  it("still counts map notes as anchors when storyMapsPath is nested under a 'cards' segment", async () => {
+    // A storyMapsPath that itself contains a `cards` segment: the card-note skip must
+    // be RELATIVE to the maps root, else every map-note path matches and the guard
+    // counts zero — deleting a PRD still used as a map's `product` (dangling anchor).
+    const fs = new FakeVaultFileSystem();
+    const { bus } = recordingEventBus();
+    const settings = new DefaultSettingsService(
+      new FakeDataStore({
+        schemaVersion: 1,
+        ...DEFAULT_SETTINGS,
+        paths: { ...DEFAULT_SETTINGS.paths, storyMapsPath: "Planning/cards/Story Maps" },
+      }),
+      new DefaultPathSafetyPolicy(),
+      bus,
+    );
+    const service = new DefaultPrdService(settings, fs, bus, silentLogger);
+    seedRoot(fs);
+    seedSub(fs);
+    fs.files.set(
+      "Planning/cards/Story Maps/SM-001-j/SM-001-j.md",
+      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-001", "---", ""].join(
+        "\n",
+      ),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+
+    // PRD-001 is still the map's product anchor → deletion refused (map note counted).
+    expect(result.ok).toBe(false);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(true);
+  });
+
+  it("treats a Story Map with a blank product as anchored to PRD-000, not a sub-PRD", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    // A map with an omitted/blank `product` resolves to PRD-000 (ADR-0027 default),
+    // so it anchors the root — it must NOT over-block deleting an unrelated sub-PRD.
+    // The guard reuses parseStoryMapNote so this default can't drift from findAll.
+    fs.files.set(
+      "Story Maps/SM-001-j/SM-001-j.md",
+      ["---", "id: SM-001", "type: story-map", "title: J", "---", ""].join("\n"),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+    expect(result.ok).toBe(true);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
   });
 
   it("never deletes the root PRD-000", async () => {

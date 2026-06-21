@@ -1,4 +1,5 @@
 import { buildPrdNote, prdFolderName } from "../content/prd-content";
+import { parseStoryMapNote } from "../content/story-map-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import { resolveParentPrdId } from "./prd-builder";
@@ -10,7 +11,7 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { parseNote } from "../../shared/utils/frontmatter";
 import { err, ok, type Result } from "../../shared/result/result";
-import { joinVaultPath } from "../../shared/utils/vault-path";
+import { joinVaultPath, parentVaultPath } from "../../shared/utils/vault-path";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
 import { isPrdStatus } from "../../domain/entities/prd";
 
@@ -58,13 +59,6 @@ const PRD_MUTATE_KEY = "prd:mutate";
 /** Drop blanks and collapse newlines so each item is a single parser-safe line. */
 const normalizeLines = (values: string[] | undefined): string[] =>
   (values ?? []).filter((s) => s.trim() !== "").map((s) => s.replace(/\n+/g, " ").trim());
-
-/** The folder containing a note path, e.g. `PRDs/PRD-001-x/PRD-001-x.md` → `PRDs/PRD-001-x`. */
-const parentFolder = (path: VaultPath): VaultPath => {
-  const s = String(path);
-  const idx = s.lastIndexOf("/");
-  return (idx === -1 ? s : s.slice(0, idx)) as VaultPath;
-};
 
 export class DefaultPrdService implements PrdService {
   private readonly noteWrites = new KeyedSerialQueue();
@@ -281,8 +275,22 @@ export class DefaultPrdService implements PrdService {
         );
       }
 
+      // A Story Map anchors to a PRD via its `product` field; deleting that PRD
+      // would dangle the map's product link (ADR-0027/0028). Refuse, mirroring
+      // the linked-Use-Case guard above, so the anchor can never go missing.
+      const linkedMaps = await this.countLinkedStoryMaps(id);
+      if (!linkedMaps.ok) return linkedMaps;
+      if (linkedMaps.value > 0) {
+        return err(
+          appError(
+            "VALIDATION_FAILED",
+            `PRD ${id} is the product anchor of ${linkedMaps.value} Story Map(s); reassign them first.`,
+          ),
+        );
+      }
+
       // Delete only the PRD note; leave any sibling attachments (diagrams, etc.).
-      const folder = parentFolder(target.path);
+      const folder = parentVaultPath(target.path);
       const deleted = await this.fs.deleteFile(target.path);
       if (!deleted.ok) return deleted;
 
@@ -304,10 +312,19 @@ export class DefaultPrdService implements PrdService {
     });
   }
 
-  /** Counts Use Case notes whose `prd-id` frontmatter points at `prdId`. */
-  private async countLinkedUseCases(prdId: PrdId): Promise<Result<number>> {
-    const settings = await this.settingsService.load();
-    const listed = await this.fs.listFilesRecursive(settings.paths.useCasesPath);
+  /**
+   * Counts the `.md` notes under `dir` that `counts` accepts. Fail-closed for a
+   * DESTRUCTIVE delete: unlike findAll's best-effort indexing, an unreadable note
+   * could still carry the anchor being checked, so a read error propagates (and
+   * deletePrd aborts); a missing folder counts as 0. `skip` excludes whole subtrees
+   * (e.g. generated card notes that can't carry the anchor).
+   */
+  private async countNotesUnder(
+    dir: VaultPath,
+    counts: (content: string, path: VaultPath) => boolean,
+    skip?: (path: VaultPath) => boolean,
+  ): Promise<Result<number>> {
+    const listed = await this.fs.listFilesRecursive(dir);
     if (!listed.ok) {
       const messageLC = listed.error.message.toLowerCase();
       if (messageLC.includes("enoent") || messageLC.includes("not found")) return ok(0);
@@ -316,16 +333,41 @@ export class DefaultPrdService implements PrdService {
     let count = 0;
     for (const path of listed.value) {
       if (!String(path).endsWith(".md")) continue;
+      if (skip?.(path)) continue;
       const read = await this.fs.readFile(path);
-      // Unlike findAll's best-effort indexing, this guards a DESTRUCTIVE delete:
-      // a skipped unreadable note could still carry `prd-id: <this>`, so treating
-      // it as unlinked could trash a PRD that a Use Case still points at. Fail
-      // closed — propagate the read error so deletePrd aborts.
       if (!read.ok) return read;
-      const { frontmatter: fm } = parseNote(read.value);
-      if (typeof fm["prd-id"] === "string" && fm["prd-id"].trim() === prdId) count++;
+      if (counts(read.value, path)) count++;
     }
     return ok(count);
+  }
+
+  /** Counts Use Case notes whose `prd-id` frontmatter points at `prdId`. */
+  private async countLinkedUseCases(prdId: PrdId): Promise<Result<number>> {
+    const settings = await this.settingsService.load();
+    return this.countNotesUnder(settings.paths.useCasesPath, (content) => {
+      const { frontmatter: fm } = parseNote(content);
+      return typeof fm["prd-id"] === "string" && fm["prd-id"].trim() === prdId;
+    });
+  }
+
+  /** Counts Story Map notes whose `product` frontmatter anchors to `prdId`. */
+  private async countLinkedStoryMaps(prdId: PrdId): Promise<Result<number>> {
+    const settings = await this.settingsService.load();
+    const root = String(settings.paths.storyMapsPath);
+    // Reuse parseStoryMapNote so the guard can't drift from StoryMapService.findAll:
+    // it filters non-map notes AND applies the ADR-0027 default (a blank `product`
+    // resolves to PRD-000). Skip per-card notes (ADR-0030) WITHOUT reading them (so
+    // an unreadable card note can't fail-close the delete), but only at their exact
+    // generated location — `<map>/cards/<file>` relative to the maps root — so a map
+    // note under a differently-structured or top-level `cards` folder is still scanned.
+    return this.countNotesUnder(
+      settings.paths.storyMapsPath,
+      (content, path) => parseStoryMapNote(content, path)?.product === prdId,
+      (path) => {
+        const rel = String(path).slice(root.length).replace(/^\/+/, "").split("/");
+        return rel.length === 3 && rel[1] === "cards";
+      },
+    );
   }
 
   private nextId(ids: PrdId[]): PrdId {
