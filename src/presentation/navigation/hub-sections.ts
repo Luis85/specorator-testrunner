@@ -39,8 +39,16 @@ export type HubBodyId =
   | "evidence";
 
 /**
+ * Where a `leaf` content ref opens — the SAME `"main" | "sidebar"` union
+ * `WorkspacePort.openView(viewType, location?)` takes. The hub renderer passes this
+ * straight through, so a section leaf lands where it belongs instead of defaulting
+ * to a main tab.
+ */
+export type HubLeafLocation = "main" | "sidebar";
+
+/**
  * The no-required-state leaf a section opens as a section-level action — only the
- * Test Console qualifies (a singleton sidebar companion opened with no target).
+ * Test Console qualifies (a singleton **sidebar** companion opened with no target).
  * Plain string constant mirroring the view's own `*_VIEW_TYPE`, so this module
  * stays dependency-light and pure.
  *
@@ -57,13 +65,14 @@ const TEST_CONSOLE_LEAF = "e2e-test-hub-console";
  * One piece of content a section hosts — a discriminated union the (later) view
  * maps to either an in-hub body render or a navigate-out leaf:
  * - `section-body` → render the named {@link HubBodyId} inside the hub leaf;
- * - `leaf` → open `viewType` as its own workspace leaf, for a NO-STATE surface
- *   (the Test Console). Id-targeted leaves (board/detail) are reached per-row via
- *   the B4 navigate port instead — see the {@link TEST_CONSOLE_LEAF} note.
+ * - `leaf` → open `viewType` at `location` as its own workspace leaf, for a
+ *   NO-STATE surface (the Test Console, which must open in the `sidebar`).
+ *   Id-targeted leaves (board/detail) are reached per-row via the B4 navigate port
+ *   instead — see the {@link TEST_CONSOLE_LEAF} note.
  */
 export type HubContentRef =
   | { kind: "section-body"; body: HubBodyId }
-  | { kind: "leaf"; viewType: string };
+  | { kind: "leaf"; viewType: string; location: HubLeafLocation };
 
 /** A rail section's static descriptor: its label, Lucide icon, and hosted content. */
 export interface HubSectionDescriptor {
@@ -81,8 +90,12 @@ export interface HubSectionDescriptor {
 /** Builds an in-hub body content ref. */
 const body = (id: HubBodyId): HubContentRef => ({ kind: "section-body", body: id });
 
-/** Builds a navigate-out leaf content ref. */
-const leaf = (viewType: string): HubContentRef => ({ kind: "leaf", viewType });
+/** Builds a navigate-out leaf content ref opened at `location`. */
+const leaf = (viewType: string, location: HubLeafLocation): HubContentRef => ({
+  kind: "leaf",
+  viewType,
+  location,
+});
 
 /**
  * The static descriptor for every rail section. List surfaces are in-hub bodies;
@@ -117,7 +130,7 @@ export const HUB_SECTION_DESCRIPTORS: Record<HubSectionId, HubSectionDescriptor>
     label: "Run",
     icon: "play",
     ariaLabel: "Run — Test Suites and the Test Console",
-    contents: [body("suites"), leaf(TEST_CONSOLE_LEAF)],
+    contents: [body("suites"), leaf(TEST_CONSOLE_LEAF, "sidebar")],
   },
   review: {
     id: "review",

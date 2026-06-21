@@ -18,11 +18,11 @@ const bodiesOf = (section: HubSectionId): string[] =>
     .filter((c): c is Extract<HubContentRef, { kind: "section-body" }> => c.kind === "section-body")
     .map((c) => c.body);
 
-/** The leaf view types a `leaf` content ref routes out to, in order. */
-const leavesOf = (section: HubSectionId): string[] =>
-  HUB_SECTION_DESCRIPTORS[section].contents
-    .filter((c): c is Extract<HubContentRef, { kind: "leaf" }> => c.kind === "leaf")
-    .map((c) => c.viewType);
+type LeafRef = Extract<HubContentRef, { kind: "leaf" }>;
+
+/** The leaf content refs a section routes out to, in order. */
+const leavesOf = (section: HubSectionId): LeafRef[] =>
+  HUB_SECTION_DESCRIPTORS[section].contents.filter((c): c is LeafRef => c.kind === "leaf");
 
 describe("HUB_SECTIONS", () => {
   it("lists the five sections in rail order, overview first", () => {
@@ -81,9 +81,13 @@ describe("HUB_SECTION_DESCRIPTORS", () => {
     expect(leavesOf("build")).toEqual([]);
   });
 
-  it("hosts the run suites list as a body and the Test Console as a no-state section leaf", () => {
+  it("hosts the run suites list as a body and the Test Console as a sidebar section leaf", () => {
     expect(bodiesOf("run")).toEqual(["suites"]);
-    expect(leavesOf("run")).toEqual(["e2e-test-hub-console"]);
+    // The console must open in the SIDEBAR (openView defaults to main), so the
+    // model carries the location, not just the view type (Codex review).
+    expect(leavesOf("run")).toEqual([
+      { kind: "leaf", viewType: "e2e-test-hub-console", location: "sidebar" },
+    ]);
   });
 
   it("hosts the review evidence list as an in-hub body with no leaf", () => {

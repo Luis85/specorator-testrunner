@@ -35,11 +35,14 @@ Each section hosts content (`hub-sections.ts` `contents` map):
 - **overview** — KPI/health summary + recent runs (in-hub bodies).
 - **plan** — PRD roadmap + Story Map list (in-hub bodies).
 - **build** — Use Cases list (in-hub body).
-- **run** — Test Suites list (in-hub body); Open Test Console is a section leaf.
+- **run** — Test Suites list (in-hub body); Open Test Console is a section leaf
+  opened in the **sidebar**.
 - **review** — Evidence list (in-hub body).
 
 A section's `contents` lists only what it renders statically: in-hub bodies, plus
-the **no-required-state** Test Console as a `leaf` content ref. The id-TARGETED
+the **no-required-state** Test Console as a `leaf` content ref. The `leaf` ref
+carries its `location` (`"main" | "sidebar"`, the `openView` param) so the console
+opens as its sidebar companion rather than defaulting to a main tab. The id-TARGETED
 leaves — a specific Story Map *board* or Use Case *detail* — are **not** section
 contents: they open **per row** from the `story-maps` / `use-cases` bodies via the
 B4 navigate port (`navigate({ kind: "artifact", id })`), which resolves the id to a
