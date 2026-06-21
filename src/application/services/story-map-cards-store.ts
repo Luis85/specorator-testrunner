@@ -9,6 +9,7 @@ import {
   type StoryMapCardNote,
 } from "../../domain/entities/story-map-card";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
+import { appError } from "../../shared/errors/errors";
 import { err, ok, type Result } from "../../shared/result/result";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
 import { joinVaultPath } from "../../shared/utils/vault-path";
@@ -119,11 +120,27 @@ interface DesiredCard {
 }
 
 /**
+ * The `SMC-NNN` ids occupied by files already under `cards/`, keyed by FILENAME
+ * (not parsed content) so a file that doesn't load as one of THIS map's cards — a
+ * hand-edited `id` typo, or a note from a prior map that reused the folder — still
+ * reserves its name and can't be silently overwritten by a freshly-allocated id.
+ */
+const occupiedCardIds = (paths: readonly VaultPath[]): StoryMapCardId[] => {
+  const ids: StoryMapCardId[] = [];
+  for (const p of paths) {
+    const base = String(p).split("/").pop()?.replace(/\.md$/, "");
+    if (base !== undefined && isStoryMapCardId(base)) ids.push(base);
+  }
+  return ids;
+};
+
+/**
  * Assigns an id to every model card lacking a well-formed `SMC-NNN` one,
  * advancing the allocation seed as it goes so two new cards in a single call get
- * distinct ids. Seeded with the `existing` (on-disk) ids AND every valid id the
- * model already carries, so a freshly-minted id can never collide with a
- * preassigned one regardless of their order in `model`.
+ * distinct ids. Seeded with the `existing` (on-disk) ids, every valid id the model
+ * already carries, AND `reserved` (ids occupied by files on disk), so a
+ * freshly-minted id can never collide with a preassigned one OR overwrite an
+ * existing — possibly unparsable — file.
  *
  * A card's id becomes its note's file name (`cards/<id>.md`). A caller-supplied
  * id is therefore validated here — the filesystem boundary — not trusted: a
@@ -137,12 +154,15 @@ interface DesiredCard {
 const allocateIds = (
   model: StoryMapCard[],
   existing: StoryMapCard[],
+  reserved: readonly StoryMapCardId[] = [],
 ): { card: StoryMapCard; id: StoryMapCardId }[] => {
   const validIds = (cards: StoryMapCard[]): StoryMapCardId[] =>
     cards.map((c) => c.id).filter((id): id is StoryMapCardId => isStoryMapCardId(id));
-  const seed: { id: StoryMapCardId }[] = [...validIds(existing), ...validIds(model)].map((id) => ({
-    id,
-  }));
+  const seed: { id: StoryMapCardId }[] = [
+    ...validIds(existing),
+    ...validIds(model),
+    ...reserved,
+  ].map((id) => ({ id }));
   const used = new Set<StoryMapCardId>();
   return model.map((card) => {
     // Claim a valid, not-yet-taken preassigned id; otherwise mint a fresh one
@@ -173,20 +193,30 @@ const withCellOrder = (allocated: { card: StoryMapCard; id: StoryMapCardId }[]):
 };
 
 /**
- * The existing note's hand-written body, `ok("")` when it doesn't exist yet, or
- * the read error when an EXISTING note can't be read. Failing closed here lets
- * `upsertCard` abort instead of overwriting the note with an empty body and
- * silently destroying the user's card text during a transient I/O failure.
+ * The body to carry onto the note about to be written at `path`. Fails closed —
+ * so `upsertCard` aborts instead of silently destroying data — when an EXISTING
+ * file is (a) unreadable (transient I/O), or (b) NOT one of THIS map's card notes
+ * (an unparsable file, or a note from another map occupying the path): blanking
+ * its body and overwriting would erase a file this card has no claim to. The
+ * benign cases — no file yet, or a genuine update of this map's own note — return
+ * `ok("")` / the preserved body.
  */
 const readBody = async (
   fs: VaultFileSystem,
   existed: boolean,
+  mapId: string,
   path: VaultPath,
 ): Promise<Result<string>> => {
   if (!existed) return ok("");
   const read = await fs.readFile(path);
   if (!read.ok) return err(read.error);
-  return ok(parseCardNote(read.value, path)?.body ?? "");
+  const note = parseCardNote(read.value, path);
+  if (note === null || note.map !== mapId) {
+    return err(
+      appError("VALIDATION_FAILED", `Refusing to overwrite ${path}: not a ${mapId} card note.`),
+    );
+  }
+  return ok(note.body);
 };
 
 /**
@@ -202,7 +232,7 @@ const upsertCard = async (
 ): Promise<Result<void>> => {
   const { card, id, order } = desired;
   const existed = await fs.exists(path);
-  const body = await readBody(fs, existed, path);
+  const body = await readBody(fs, existed, mapId, path);
   if (!body.ok) return body;
   const content = buildCardNote({
     id,
@@ -298,7 +328,11 @@ export const reconcileCards = async (
   model: StoryMapCard[],
   existing: StoryMapCard[],
 ): Promise<Result<void>> => {
-  const desired = withCellOrder(allocateIds(model, existing));
+  // Reserve every id whose file already occupies cards/ so a newly-minted id can
+  // never overwrite a pre-existing (possibly unparsable / foreign) note.
+  const listed = await fs.listFilesRecursive(cardsDir);
+  const reserved = listed.ok ? occupiedCardIds(listed.value) : [];
+  const desired = withCellOrder(allocateIds(model, existing, reserved));
 
   if (desired.length > 0 && !(await fs.exists(cardsDir))) {
     const created = await fs.createFolder(cardsDir);

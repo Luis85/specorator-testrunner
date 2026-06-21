@@ -295,6 +295,40 @@ describe("reconcileCards", () => {
     );
   });
 
+  it("allocates past an occupied filename so a new card never overwrites a pre-existing file", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    // A hand-edited / unparsable file occupies cards/SMC-001.md.
+    fs.files.set(String(joinVaultPath(CARDS_DIR, "SMC-001.md")), "not a card note");
+    const model = [modelCard({ title: "new" })]; // id-less → would naively mint SMC-001
+
+    const result = await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, model, []);
+
+    expect(result.ok).toBe(true);
+    // The pre-existing file survives; the new card took the next free id.
+    expect(fs.files.get(String(joinVaultPath(CARDS_DIR, "SMC-001.md")))).toBe("not a card note");
+    expect(fs.files.has(String(joinVaultPath(CARDS_DIR, "SMC-002.md")))).toBe(true);
+  });
+
+  it("fails closed instead of overwriting a foreign note when a preassigned id collides", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    // A valid card note from a PRIOR map occupies cards/SMC-001.md.
+    seedNote(
+      fs,
+      cardNote({ id: "SMC-001", map: "SM-OLD", title: "theirs", body: "Prior map body." }),
+    );
+    const model = [modelCard({ id: "SMC-001", title: "mine" })]; // preassigned, collides
+
+    const result = await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, model, []);
+
+    expect(result.ok).toBe(false);
+    // The prior map's note is preserved, not clobbered with this map's content.
+    expect(fs.files.get(String(joinVaultPath(CARDS_DIR, "SMC-001.md")))).toContain(
+      "Prior map body.",
+    );
+  });
+
   it("updates order frontmatter when two cards in a cell are reordered", async () => {
     const fs = new FakeVaultFileSystem();
     const queue = new KeyedSerialQueue();
