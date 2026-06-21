@@ -7,6 +7,7 @@ import type { ObsidianWorkspaceAdapter } from "./infrastructure/obsidian/obsidia
 import type { EventBus } from "./shared/event-bus/event-bus";
 import type { ConsoleLogger } from "./shared/logging/logger";
 import type { ComposedServices } from "./compose-services";
+import type { NavigationTarget } from "./presentation/navigation/navigation-target";
 import type { DashboardDocumentType } from "./presentation/views/dashboard-view";
 import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
 import {
@@ -56,8 +57,11 @@ export interface ViewWiringDeps {
   getSettings: () => TestHubSettings;
   openCreateUseCase: () => void;
   openUseCaseDetail: (useCaseId: string) => void;
-  /** WS-A4 deep-link port: open whatever artifact `id` names (PRD/UC/Story Map). */
-  openArtifact: (id: string) => void;
+  /**
+   * WS-A4/B4 deep-link port: open whatever node `target` names — PRD/UC/Story
+   * Map by id, Feature/Suite/Evidence by path, or a Run by id.
+   */
+  navigate: (target: NavigationTarget) => void;
   openCreateSuite: () => void;
   openPrdBuilder: (parentPrdId?: string) => void;
   openStoryMapBuilder: () => void;
@@ -117,7 +121,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         eventBus,
         runLauncher: s.runLauncher,
         openCreateSuite: () => deps.openCreateSuite(),
-        openArtifact: (id) => deps.openArtifact(id),
+        navigate: (target) => deps.navigate(target),
         openGenerateFeature: (useCase, onGenerated) =>
           generateFeatureForUseCase(
             app,
@@ -136,11 +140,13 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
     (leaf) =>
       new SuiteDashboardView(leaf, {
         suiteService: s.suiteService,
-        workspace,
         eventBus,
         runLauncher: s.runLauncher,
         featureInsight: s.featureInsightService,
         onCreate: () => deps.openCreateSuite(),
+        // WS-B4: a suite row opens through the unified deep-link port (a Suite is
+        // addressed by its note path), not an ad-hoc openOrNotice.
+        navigate: (target) => deps.navigate(target),
       }),
   );
   plugin.registerView(
@@ -149,10 +155,9 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
       new PrdExplorerView(leaf, {
         prdService: s.prdService,
         useCaseService: s.useCaseService,
-        workspace,
         eventBus,
         openPrdBuilder: (parentPrdId) => deps.openPrdBuilder(parentPrdId),
-        openArtifact: (id) => deps.openArtifact(id),
+        navigate: (target) => deps.navigate(target),
       }),
   );
   plugin.registerView(
@@ -175,7 +180,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         storyMapService: s.storyMapService,
         useCaseService: s.useCaseService,
         eventBus,
-        openArtifact: (id) => deps.openArtifact(id),
+        navigate: (target) => deps.navigate(target),
       }),
   );
   plugin.registerView(
@@ -243,7 +248,9 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
       new EvidenceExplorerView(leaf, {
         runHistory: s.runHistoryService,
         eventBus,
-        openEvidence: (path) => deps.openEvidence(path),
+        // WS-B4: a run row opens through the unified deep-link port by run id
+        // (the port resolves the run to the evidence note it produced).
+        navigate: (target) => deps.navigate(target),
       }),
   );
   plugin.registerView(

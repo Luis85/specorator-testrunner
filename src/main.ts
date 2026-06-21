@@ -52,6 +52,7 @@ import { STORY_MAP_BOARD_VIEW_TYPE } from "./presentation/views/story-map-board-
 import { openOrNotice } from "./presentation/views/modal-helpers";
 import { ArtifactNavigator } from "./presentation/navigation/artifact-navigator";
 import type { ArtifactNavigationPort } from "./presentation/navigation/artifact-navigation-port";
+import type { NavigationTarget } from "./presentation/navigation/navigation-target";
 import { DASHBOARD_VIEW_TYPE } from "./presentation/views/dashboard-view";
 import { GUIDED_TOUR_VIEW_TYPE } from "./presentation/views/guided-tour-view";
 import { InMemoryEventBus, type EventBus } from "./shared/event-bus/event-bus";
@@ -191,6 +192,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       prdService: this.prdService,
       useCaseService: this.useCaseService,
       storyMapService: this.storyMapService,
+      // WS-B4: the Evidence↔Run hop resolves a run id to the evidence note it
+      // produced (the run history's only by-id lookup).
+      runHistory: services.runHistoryService,
       openUseCaseDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
       openStoryMapBoard: (storyMapId) => void this.openStoryMapBoard(storyMapId),
       openFile: (path) => this.workspaceAdapter.openFile(path),
@@ -210,7 +214,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       getSettings: () => this.hubSettings,
       openCreateUseCase: () => this.openCreateUseCase(),
       openUseCaseDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
-      openArtifact: (id) => void this.openArtifact(id),
+      navigate: (target) => void this.navigate(target),
       openCreateSuite: () => this.openCreateSuite(),
       openPrdBuilder: (parentPrdId) => this.openPrdBuilder(parentPrdId),
       openStoryMapBuilder: () => this.openStoryMapBuilder(),
@@ -361,11 +365,12 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     }).open();
   }
 
-  // WS-A4: open whatever artifact `id` names (PRD/UC/Story Map) through the
-  // deep-link port, surfacing a graceful Notice when the id can't be resolved
+  // WS-A4/B4: open whatever node `target` names (PRD/UC/Story Map by id;
+  // Feature/Suite/Evidence by path; Run by id) through the deep-link port,
+  // surfacing a graceful Notice when the target can't be resolved
   // (renamed/deleted/unrecognized) rather than failing silently.
-  private async openArtifact(id: string): Promise<void> {
-    const result = await this.artifactNavigator.openArtifact(id);
+  private async navigate(target: NavigationTarget): Promise<void> {
+    const result = await this.artifactNavigator.navigate(target);
     if (!result.ok) new Notice(result.error.message, 8000);
   }
 

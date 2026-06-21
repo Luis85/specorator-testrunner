@@ -1,5 +1,5 @@
 /**
- * Pure artifact-id classification for the `openArtifact(id)` deep-link port
+ * Pure artifact-id classification for the deep-link port's `artifact` target
  * (01-§3.2, WS-A4). The artifact graph (PRD ↔ Use Case ↔ Story Map ↔ …) keys
  * every node by an immutable, prefixed id (`PRD-NNN` / `UC-NNN` / `SM-NNN`).
  * `classifyArtifactId` maps a raw id to the kind of node it names so the

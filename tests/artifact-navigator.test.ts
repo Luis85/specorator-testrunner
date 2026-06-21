@@ -3,22 +3,39 @@ import {
   ArtifactNavigator,
   type ArtifactNavigatorDeps,
 } from "../src/presentation/navigation/artifact-navigator";
+import {
+  artifactTarget,
+  evidenceTarget,
+  featureTarget,
+  runTarget,
+  suiteTarget,
+} from "../src/presentation/navigation/navigation-target";
+import type { RunHistoryEntry } from "../src/application/services/run-history-service";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { ok, type Result } from "../src/shared/result/result";
 
 const path = (p: string): VaultPath => p as unknown as VaultPath;
 
+const runEntry = (overrides: Partial<RunHistoryEntry> = {}): RunHistoryEntry => ({
+  runId: "RUN-001",
+  evidencePath: path("Test Evidence/2026/06/RUN-001/summary.md"),
+  year: "2026",
+  month: "06",
+  ...overrides,
+});
+
 const makeDeps = (overrides: Partial<ArtifactNavigatorDeps> = {}): ArtifactNavigatorDeps => ({
   prdService: { findById: vi.fn(async () => ok(null)) },
   useCaseService: { findById: vi.fn(async () => ok(null)) },
   storyMapService: { findById: vi.fn(async () => ok(null)) },
+  runHistory: { findByRunId: vi.fn(async () => ok(null)) },
   openUseCaseDetail: vi.fn(),
   openStoryMapBoard: vi.fn(),
   openFile: vi.fn(async (): Promise<Result<void>> => ok(undefined)),
   ...overrides,
 });
 
-describe("ArtifactNavigator.openArtifact", () => {
+describe("ArtifactNavigator.navigate — artifact targets", () => {
   it("opens a Use Case's detail view by id", async () => {
     const openUseCaseDetail = vi.fn();
     const deps = makeDeps({
@@ -27,7 +44,7 @@ describe("ArtifactNavigator.openArtifact", () => {
       },
       openUseCaseDetail,
     });
-    const result = await new ArtifactNavigator(deps).openArtifact("UC-021");
+    const result = await new ArtifactNavigator(deps).navigate(artifactTarget("UC-021"));
     expect(result.ok).toBe(true);
     expect(openUseCaseDetail).toHaveBeenCalledWith("UC-021");
   });
@@ -40,7 +57,7 @@ describe("ArtifactNavigator.openArtifact", () => {
       },
       openStoryMapBoard,
     });
-    const result = await new ArtifactNavigator(deps).openArtifact("SM-002");
+    const result = await new ArtifactNavigator(deps).navigate(artifactTarget("SM-002"));
     expect(result.ok).toBe(true);
     expect(openStoryMapBoard).toHaveBeenCalledWith("SM-002");
   });
@@ -53,7 +70,7 @@ describe("ArtifactNavigator.openArtifact", () => {
       },
       openFile,
     });
-    const result = await new ArtifactNavigator(deps).openArtifact("PRD-003");
+    const result = await new ArtifactNavigator(deps).navigate(artifactTarget("PRD-003"));
     expect(result.ok).toBe(true);
     expect(openFile).toHaveBeenCalledWith(path("prd.md"));
   });
@@ -66,7 +83,7 @@ describe("ArtifactNavigator.openArtifact", () => {
       },
       openUseCaseDetail,
     });
-    await new ArtifactNavigator(deps).openArtifact("  UC-021  ");
+    await new ArtifactNavigator(deps).navigate(artifactTarget("  UC-021  "));
     expect(openUseCaseDetail).toHaveBeenCalledWith("UC-021");
   });
 
@@ -77,7 +94,7 @@ describe("ArtifactNavigator.openArtifact", () => {
       useCaseService: { findById: findUseCase },
       openUseCaseDetail,
     });
-    const result = await new ArtifactNavigator(deps).openArtifact("EV-2026");
+    const result = await new ArtifactNavigator(deps).navigate(artifactTarget("FOO-2026"));
     expect(result.ok).toBe(false);
     expect(findUseCase).not.toHaveBeenCalled();
     expect(openUseCaseDetail).not.toHaveBeenCalled();
@@ -85,7 +102,7 @@ describe("ArtifactNavigator.openArtifact", () => {
 
   it("fails gracefully for a recognized-but-missing id (renamed/deleted)", async () => {
     const deps = makeDeps();
-    const result = await new ArtifactNavigator(deps).openArtifact("UC-999");
+    const result = await new ArtifactNavigator(deps).navigate(artifactTarget("UC-999"));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("UC-999");
     expect(deps.openUseCaseDetail).not.toHaveBeenCalled();
@@ -100,7 +117,90 @@ describe("ArtifactNavigator.openArtifact", () => {
         })),
       },
     });
-    const result = await new ArtifactNavigator(deps).openArtifact("PRD-003");
+    const result = await new ArtifactNavigator(deps).navigate(artifactTarget("PRD-003"));
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("ArtifactNavigator.navigate — path targets", () => {
+  it("opens a Feature by its vault path", async () => {
+    const openFile = vi.fn(async (): Promise<Result<void>> => ok(undefined));
+    const deps = makeDeps({ openFile });
+    const result = await new ArtifactNavigator(deps).navigate(
+      featureTarget(path("Specs/UC-021-checkout.feature")),
+    );
+    expect(result.ok).toBe(true);
+    expect(openFile).toHaveBeenCalledWith(path("Specs/UC-021-checkout.feature"));
+  });
+
+  it("opens a Suite by its vault path", async () => {
+    const openFile = vi.fn(async (): Promise<Result<void>> => ok(undefined));
+    const deps = makeDeps({ openFile });
+    const result = await new ArtifactNavigator(deps).navigate(
+      suiteTarget(path("Test Suites/Smoke.md")),
+    );
+    expect(result.ok).toBe(true);
+    expect(openFile).toHaveBeenCalledWith(path("Test Suites/Smoke.md"));
+  });
+
+  it("opens an Evidence note by its vault path", async () => {
+    const openFile = vi.fn(async (): Promise<Result<void>> => ok(undefined));
+    const deps = makeDeps({ openFile });
+    const result = await new ArtifactNavigator(deps).navigate(
+      evidenceTarget(path("Test Evidence/2026/06/RUN-001/summary.md")),
+    );
+    expect(result.ok).toBe(true);
+    expect(openFile).toHaveBeenCalledWith(path("Test Evidence/2026/06/RUN-001/summary.md"));
+  });
+
+  it("propagates the workspace failure when a note path is missing/renamed", async () => {
+    const deps = makeDeps({
+      openFile: vi.fn(async () => ({
+        ok: false as const,
+        error: { code: "RUNNER_MISSING_FILE" as const, message: "gone" },
+      })),
+    });
+    const result = await new ArtifactNavigator(deps).navigate(
+      featureTarget(path("Specs/gone.feature")),
+    );
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("ArtifactNavigator.navigate — run target", () => {
+  it("opens the evidence note the run produced", async () => {
+    const openFile = vi.fn(async (): Promise<Result<void>> => ok(undefined));
+    const deps = makeDeps({
+      runHistory: { findByRunId: vi.fn(async () => ok(runEntry())) },
+      openFile,
+    });
+    const result = await new ArtifactNavigator(deps).navigate(runTarget("RUN-001"));
+    expect(result.ok).toBe(true);
+    expect(openFile).toHaveBeenCalledWith(path("Test Evidence/2026/06/RUN-001/summary.md"));
+  });
+
+  it("fails gracefully for a missing/renamed run id", async () => {
+    const openFile = vi.fn(async (): Promise<Result<void>> => ok(undefined));
+    const deps = makeDeps({
+      runHistory: { findByRunId: vi.fn(async () => ok(null)) },
+      openFile,
+    });
+    const result = await new ArtifactNavigator(deps).navigate(runTarget("RUN-gone"));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("RUN-gone");
+    expect(openFile).not.toHaveBeenCalled();
+  });
+
+  it("propagates a run-lookup error result rather than throwing", async () => {
+    const deps = makeDeps({
+      runHistory: {
+        findByRunId: vi.fn(async () => ({
+          ok: false as const,
+          error: { code: "EVIDENCE_LIST_FAILED" as const, message: "io" },
+        })),
+      },
+    });
+    const result = await new ArtifactNavigator(deps).navigate(runTarget("RUN-001"));
     expect(result.ok).toBe(false);
   });
 });

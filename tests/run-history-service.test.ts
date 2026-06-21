@@ -5,7 +5,7 @@ import {
 } from "../src/application/services/run-history-service";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
-import { err } from "../src/shared/result/result";
+import { err, type Result } from "../src/shared/result/result";
 import { FakeVaultFileSystem, serviceHarness, silentLogger } from "./fakes";
 
 const ROOT = "Test Evidence";
@@ -38,6 +38,21 @@ const build = () => {
   const { fs, settings } = serviceHarness();
   const service = new DefaultRunHistoryService(settings, fs, silentLogger);
   return { service, fs };
+};
+
+/**
+ * Both `list` and `findByRunId` scan the same evidence tree, so each surfaces a
+ * directory-listing fault as EVIDENCE_LIST_FAILED. Arranges the listing fault and
+ * runs whichever call the test names, returning its Result for the (one-line)
+ * assertion — so the two cases share the setup without cloning it.
+ */
+const runWithListingFault = async <T>(
+  call: (service: DefaultRunHistoryService) => Promise<Result<T>>,
+): Promise<Result<T>> => {
+  const { service, fs } = build();
+  fs.folders.add(vp(ROOT));
+  fs.listFilesRecursive = async () => err({ code: "RUNNER_MISSING_FILE", message: "io error" });
+  return call(service);
 };
 
 describe("DefaultRunHistoryService", () => {
@@ -161,14 +176,56 @@ describe("DefaultRunHistoryService", () => {
   });
 
   it("surfaces a listing failure as EVIDENCE_LIST_FAILED", async () => {
-    const { service, fs } = build();
-    fs.folders.add(vp(ROOT));
-    fs.listFilesRecursive = async () => err({ code: "RUNNER_MISSING_FILE", message: "io error" });
-
-    const result = await service.list({ offset: 0, limit: 50 });
-
+    const result = await runWithListingFault((service) => service.list({ offset: 0, limit: 50 }));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("EVIDENCE_LIST_FAILED");
+  });
+
+  describe("findByRunId", () => {
+    it("resolves a run's evidence entry by its run id", async () => {
+      const { service, fs } = build();
+      seed(fs, "2026/05/RUN-2026-05-30-080000");
+      seed(fs, "2026/05/RUN-2026-05-31-100000");
+
+      const result = await service.findByRunId("RUN-2026-05-31-100000");
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value?.evidencePath).toBe(
+        "Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md",
+      );
+      expect(result.value?.status).toBe("passed");
+    });
+
+    it("returns null for an unknown run id (renamed/deleted)", async () => {
+      const { service, fs } = build();
+      seed(fs, "2026/05/RUN-2026-05-31-100000");
+
+      const result = await service.findByRunId("RUN-does-not-exist");
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBeNull();
+    });
+
+    it("returns null on a fresh vault (no evidence folder)", async () => {
+      const { service } = build();
+
+      const result = await service.findByRunId("RUN-2026-05-31-100000");
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBeNull();
+    });
+
+    it("surfaces a listing failure as EVIDENCE_LIST_FAILED", async () => {
+      const result = await runWithListingFault((service) =>
+        service.findByRunId("RUN-2026-05-31-100000"),
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("EVIDENCE_LIST_FAILED");
+    });
   });
 });

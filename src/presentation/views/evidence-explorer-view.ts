@@ -1,7 +1,7 @@
 import type { WorkspaceLeaf } from "obsidian";
 import type { RunHistoryService } from "../../application/services/run-history-service";
-import type { VaultPath } from "../../domain/value-objects/identifiers";
 import type { EventBus } from "../../shared/event-bus/event-bus";
+import { runTarget, type NavigationTarget } from "../navigation/navigation-target";
 import {
   EVIDENCE_PAGE_SIZE,
   EVIDENCE_STATUS_FILTERS,
@@ -17,14 +17,14 @@ import { renderLoadError } from "./modal-helpers";
 export const EVIDENCE_EXPLORER_VIEW_TYPE = "e2e-test-hub-evidence";
 
 /**
- * Callbacks/services the explorer drives. `openEvidence` is the same callback
- * the dashboard's recent-run rows use, wired in main.ts — the view never opens
- * files itself.
+ * Callbacks/services the explorer drives. A run row navigates by run id through
+ * the unified deep-link port (WS-B4), which resolves the run to the evidence
+ * note it produced — the view never opens files itself.
  */
 export interface EvidenceExplorerViewDeps {
   runHistory: RunHistoryService;
   eventBus: EventBus;
-  openEvidence: (path: VaultPath) => void | Promise<void>;
+  navigate: (target: NavigationTarget) => void;
 }
 
 /**
@@ -141,7 +141,9 @@ export class EvidenceExplorerView extends LiveDashboardView {
       // link-button and the whole-row click is a sighted-user convenience.
       const tr = body.createEl("tr", { cls: "e2e-test-hub-run-row is-navigable" });
       const open = (): void => {
-        void this.deps.openEvidence(row.evidencePath);
+        // WS-B4: navigate by run id (the row IS a run); the port resolves it to
+        // the evidence note the run produced.
+        this.deps.navigate(runTarget(row.runId));
       };
       // Same pattern as the Use Cases table's id link-button.
       const link = tr.createEl("td").createEl("button", {

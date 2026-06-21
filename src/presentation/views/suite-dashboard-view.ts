@@ -1,11 +1,11 @@
 import type { WorkspaceLeaf } from "obsidian";
-import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SuiteService } from "../../application/services/suite-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
-import { openOrNotice, renderLoadError } from "./modal-helpers";
+import { suiteTarget, type NavigationTarget } from "../navigation/navigation-target";
+import { renderLoadError } from "./modal-helpers";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { projectSuiteRows, scenarioCountCell } from "./suite-rows";
 
@@ -26,7 +26,6 @@ const REFRESH_ON: DomainEventType[] = [
 
 export interface SuiteDashboardDeps {
   suiteService: SuiteService;
-  workspace: WorkspacePort;
   eventBus: EventBus;
   // Shared run-launch surface (Wave B): the per-row Run button starts a
   // suite-scoped run through the same launcher the command palette uses.
@@ -35,6 +34,9 @@ export interface SuiteDashboardDeps {
   // scenarios so the "Scenarios" column shows the actual matched count.
   featureInsight: Pick<FeatureInsightService, "scenarioCounter">;
   onCreate: () => void;
+  // WS-B4 deep-link port: a suite row opens by its note path (a Suite is not
+  // id-resolvable), routed through the one unified navigator.
+  navigate: (target: NavigationTarget) => void;
 }
 
 /**
@@ -112,7 +114,7 @@ export class SuiteDashboardView extends LiveDashboardView {
         attr: { "aria-label": `Open Test Suite ${row.name}` },
       });
       open.addEventListener("click", () => {
-        void openOrNotice(this.deps.workspace, row.path);
+        this.deps.navigate(suiteTarget(row.path));
       });
       tr.createEl("td", { text: row.id });
       tr.createEl("td", { text: row.tagExpression });
