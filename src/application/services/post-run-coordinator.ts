@@ -61,6 +61,20 @@ export interface PostRunCoordinatorDeps {
 }
 
 /**
+ * The post-run coordination contract: lifecycle (start/stop), the on-unload
+ * drain (whenSettled), the on-demand re-import (importLastRun, UC-016), and the
+ * synchronous last-evidence probe (Wave G §1). A port like every other
+ * application service, so consumers depend on the contract, not the class.
+ */
+export interface PostRunCoordinator {
+  lastEvidence(): LastEvidence | null;
+  start(): void;
+  stop(): void;
+  whenSettled(): Promise<void>;
+  importLastRun(): Promise<Result<ImportLastRunOutcome>>;
+}
+
+/**
  * In-process post-run coordinator (P2-1/P2-6/P2-7, replacing the never-built
  * `ReportFileWatcher`/`report.detected` choreography). Subscribes to the EN-2
  * terminal run events on the {@link EventBus} and, on a terminal event, runs the
@@ -82,7 +96,7 @@ export interface PostRunCoordinatorDeps {
  * run one at a time; {@link whenSettled} lets the caller await the tail on
  * unload. Each task first waits for its run to settle (snapshot recorded).
  */
-export class PostRunCoordinator {
+export class DefaultPostRunCoordinator implements PostRunCoordinator {
   private subscriptions: Unsubscribe[] = [];
   // Post-run import+evidence reads then writes Use Case frontmatter, so back-to-
   // back runs could interleave and clobber each other's evidence/last_run fields
@@ -126,11 +140,6 @@ export class PostRunCoordinator {
   stop(): void {
     for (const unsubscribe of this.subscriptions) unsubscribe();
     this.subscriptions = [];
-  }
-
-  /** Alias for {@link stop} (lifecycle-symmetry with the views' dispose()). */
-  dispose(): void {
-    this.stop();
   }
 
   /**

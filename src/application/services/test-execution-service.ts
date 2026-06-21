@@ -4,7 +4,7 @@ import type { SettingsService } from "./settings-service";
 import type { SuiteService } from "./suite-service";
 import type { UseCaseService } from "./use-case-service";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
-import type { ChildProcessRunner } from "../ports/child-process-runner";
+import type { ChildProcessRunner, RunnerCommandResult } from "../ports/child-process-runner";
 import type { ExecutionScope, TestRun } from "../../domain/entities/test-run";
 import type { CommandSafetyPolicy } from "../../domain/policies/command-safety-policy";
 import type { DomainEventType, EventPayloads } from "../../domain/events/domain-event";
@@ -18,7 +18,7 @@ import type { Logger } from "../../shared/logging/logger";
 import { redactSecrets } from "../../shared/logging/redact";
 import { err, ok, type Result } from "../../shared/result/result";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
-import { displayCommand, resolveRunnerCommand } from "./runner-command";
+import { displayCommand, resolveRunnerCommand, runEnv } from "./runner-command";
 export { tokenizeCommand } from "./runner-command";
 
 /** Test execution contract (TIS §8.10). */
@@ -104,6 +104,19 @@ interface ActiveRun {
   /** Resolves when `execute()` settles (runner process closed) — for unload. */
   completion: Promise<void>;
   settle: () => void;
+}
+
+/**
+ * The resolved inputs `execute()` needs to spawn a run, produced by
+ * {@link DefaultTestExecutionService.prepareRun}: the validated argv, the runner
+ * working directory, and the scope-specific env (BDD_TAGS/BDD_FEATURES) layered
+ * on top of the run env.
+ */
+interface RunSetup {
+  argv: string[];
+  cwd: string;
+  /** Optional like `RunnerCommand.env`; spread over the run env (`{}` when absent). */
+  scopeEnv: Record<string, string> | undefined;
 }
 
 /** UTC `RUN-YYYY-MM-DD-HHMMSS` id (TIS §3.3). */
@@ -204,9 +217,6 @@ export class DefaultTestExecutionService implements TestExecutionService {
     return this.active?.completion ?? Promise.resolve();
   }
 
-  // Pre-existing runner-orchestration complexity to be decomposed during the
-  // EPIC-013 runner rewrite (tracked as TD-010).
-  // fallow-ignore-next-line complexity
   async execute(request: ExecuteTestRequest): Promise<Result<TestRun>> {
     // Maintenance (reset/repair) and runs are mutually exclusive (security L1).
     // Read the lock SYNCHRONOUSLY here — before reserving the slot below and
@@ -264,53 +274,12 @@ export class DefaultTestExecutionService implements TestExecutionService {
       const settings = await this.settingsService.load();
       run.workingDirectory = settings.paths.testRunnerPath;
 
-      const command = await resolveRunnerCommand(request.scope, request.target, settings, {
-        useCaseService: this.useCaseService,
-        suiteService: this.suiteService,
-      });
-      if (!command.ok) return err(command.error);
-      const argv = command.value.args;
-      // Scope-specific env (BDD_TAGS for suite tag-expression runs) layered on
-      // TOP of the Active SUT env (BASE_URL + auth.env) below — never replacing
-      // it. The suite case is the only contributor today.
-      const scopeEnv = command.value.env;
-
-      // Defense in depth (TIS §14.2): V1 targets come from trusted vault data;
-      // validate the argv (allowed program, no control chars) before spawning.
-      // The args are literal under shell: false, so tags/paths with $, & or
-      // spaces no longer need quoting and are no longer false-rejected (PR #7).
-      const cwd = await assertSafeAndResolveCwd(
-        this.commandSafety,
-        this.absoluteFs,
-        argv,
-        settings.paths.testRunnerPath,
-      );
-      if (!cwd.ok) return err(cwd.error);
-      // Delete any prior report so a run that fails BEFORE producing one (bad
-      // config, missing deps, glob miss) can't have a previous run's stale
-      // report imported and attributed to it (the path is fixed, no run id).
-      // deleteAbsolute uses force (an absent file is ok); a real failure
-      // (locked/read-only) must abort setup, or the stale report survives and
-      // defeats the very cleanup this performs.
-      const cleared = await this.absoluteFs.deleteAbsolute(
-        `${cwd.value}/reports/cucumber-report.json`,
-      );
-      if (!cleared.ok) return err(cleared.error);
-      // Snapshot the feature files as they are NOW (run start), so post-run
-      // scenario-identity resolution reflects the content bddgen actually ran
-      // even if the user edits a `.feature` mid-run (US-056). Best-effort: a
-      // failure just leaves the resolver to read the live files.
-      await snapshotFeatures(run, cwd.value, String(settings.paths.featureFilesPath), {
-        absoluteFs: this.absoluteFs,
-        logger: this.logger,
-      });
-      // Human-readable display string; the runner is given the raw argv below.
-      run.command = displayCommand(argv);
-
-      // A cancel() during setup (settings/command/cwd resolution) already
-      // published testrun.cancelled and freed the slot — bail before emitting
-      // run events or spawning an untracked process.
-      if (activeRun.terminated) return ok(run);
+      const setup = await this.prepareRun(run, activeRun, request, settings);
+      if (!setup.ok) return err(setup.error);
+      // A cancel() during setup already published testrun.cancelled and freed the
+      // slot — bail before emitting run events or spawning an untracked process.
+      if (setup.value === null) return ok(run);
+      const { argv, cwd, scopeEnv } = setup.value;
 
       await this.publish("testrun.requested", run.id, {
         // The scope is published VERBATIM, including "demo" (Event Catalog §7):
@@ -343,8 +312,8 @@ export class DefaultTestExecutionService implements TestExecutionService {
       const result = await this.childProcess.runStreaming(
         {
           args: argv,
-          cwd: cwd.value,
-          env: { ...this.runEnv(settings), ...scopeEnv },
+          cwd,
+          env: { ...runEnv(settings), ...scopeEnv },
           processId: run.id,
         },
         (output) => {
@@ -361,54 +330,7 @@ export class DefaultTestExecutionService implements TestExecutionService {
         },
       );
 
-      // A cancel that landed mid-flight already published the terminal event.
-      // The cancelled process may still have flushed a partial Cucumber report,
-      // so snapshot it to reports/<runId>.json before returning — otherwise the
-      // (now slot-free) cancelled-run import would race a new run's cleanup of
-      // the fixed report and lose/mis-attribute that evidence.
-      if (activeRun.terminated) {
-        await snapshotReport(run, cwd.value, this.absoluteFs);
-        return ok(run);
-      }
-      // The process has closed: from here only best-effort snapshot I/O remains
-      // before the terminal event. Mark it so a cancel() racing that I/O window
-      // can't relabel this finished run as cancelled.
-      activeRun.processClosed = true;
-
-      if (!result.ok) {
-        // Spawn fault (crash / missing dependency): errored, never completed.
-        run.status = "errored";
-        this.finish(run, startedAt);
-        await this.terminal(activeRun, "testrun.failed", {
-          runId: run.id,
-          reason: result.error.message,
-        });
-        return ok(run);
-      }
-
-      const { exitCode } = result.value;
-      run.status = exitCode === 0 ? "passed" : "failed";
-      this.finish(run, startedAt, result.value.durationMs);
-
-      await snapshotReport(run, cwd.value, this.absoluteFs);
-
-      if (run.scope === "suite") {
-        // UC-013 supporting event, before the terminal event.
-        await this.publish("suite.executed", run.id, {
-          suiteId: run.target,
-          runId: run.id,
-        });
-      }
-
-      await this.terminal(activeRun, "testrun.completed", {
-        runId: run.id,
-        status: run.status,
-        durationMs: run.durationMs ?? 0,
-        passed: 0,
-        failed: 0,
-        skipped: 0,
-      });
-      return ok(run);
+      return await this.finalizeRun(activeRun, result, cwd, startedAt);
     } catch (cause) {
       // A non-Result throw (a rejecting settings load, an adapter bug) after
       // `testrun.started` would otherwise emit NO terminal event — the console
@@ -438,6 +360,132 @@ export class DefaultTestExecutionService implements TestExecutionService {
       // Let any unload waiter (whenActiveSettles) know the process has closed.
       activeRun.settle();
     }
+  }
+
+  /**
+   * Resolves and validates everything `execute()` needs before spawning: the
+   * runner argv + scope env (resolveRunnerCommand), the safe working directory
+   * (assertSafeAndResolveCwd), a cleared stale report, and a feature-file
+   * snapshot — stamping `run.command` along the way. Returns the {@link RunSetup}
+   * inputs, an error Result if any step fails, or `ok(null)` when a cancel()
+   * landed during setup (the caller bails before emitting run events).
+   */
+  private async prepareRun(
+    run: TestRun,
+    activeRun: ActiveRun,
+    request: ExecuteTestRequest,
+    settings: TestHubSettings,
+  ): Promise<Result<RunSetup | null>> {
+    const command = await resolveRunnerCommand(request.scope, request.target, settings, {
+      useCaseService: this.useCaseService,
+      suiteService: this.suiteService,
+    });
+    if (!command.ok) return err(command.error);
+    const argv = command.value.args;
+    // Scope-specific env (BDD_TAGS for suite tag-expression runs) layered on TOP
+    // of the Active SUT env (BASE_URL + auth.env) by execute() — never replacing
+    // it. The suite case is the only contributor today.
+    const scopeEnv = command.value.env;
+
+    // Defense in depth (TIS §14.2): V1 targets come from trusted vault data;
+    // validate the argv (allowed program, no control chars) before spawning. The
+    // args are literal under shell: false, so tags/paths with $, & or spaces no
+    // longer need quoting and are no longer false-rejected (PR #7).
+    const cwd = await assertSafeAndResolveCwd(
+      this.commandSafety,
+      this.absoluteFs,
+      argv,
+      settings.paths.testRunnerPath,
+    );
+    if (!cwd.ok) return err(cwd.error);
+    // Delete any prior report so a run that fails BEFORE producing one (bad
+    // config, missing deps, glob miss) can't have a previous run's stale report
+    // imported and attributed to it (the path is fixed, no run id). deleteAbsolute
+    // uses force (an absent file is ok); a real failure (locked/read-only) must
+    // abort setup, or the stale report survives and defeats this very cleanup.
+    const cleared = await this.absoluteFs.deleteAbsolute(
+      `${cwd.value}/reports/cucumber-report.json`,
+    );
+    if (!cleared.ok) return err(cleared.error);
+    // Snapshot the feature files as they are NOW (run start), so post-run
+    // scenario-identity resolution reflects the content bddgen actually ran even
+    // if the user edits a `.feature` mid-run (US-056). Best-effort: a failure just
+    // leaves the resolver to read the live files.
+    await snapshotFeatures(run, cwd.value, String(settings.paths.featureFilesPath), {
+      absoluteFs: this.absoluteFs,
+      logger: this.logger,
+    });
+    // Human-readable display string; the runner is given the raw argv.
+    run.command = displayCommand(argv);
+
+    // A cancel() during setup (settings/command/cwd resolution) already published
+    // testrun.cancelled and freed the slot.
+    if (activeRun.terminated) return ok(null);
+    return ok({ argv, cwd: cwd.value, scopeEnv });
+  }
+
+  /**
+   * Handles a closed runner process: snapshots a cancelled run's partial report
+   * and bails; otherwise marks the process closed, maps the spawn fault / exit
+   * code to a status, snapshots the report, emits the `suite.executed` supporting
+   * event for suite runs, and publishes the terminal event. Preserves the
+   * terminated/processClosed ordering execute() relies on for cancel() races.
+   */
+  private async finalizeRun(
+    activeRun: ActiveRun,
+    result: Result<RunnerCommandResult>,
+    cwd: string,
+    startedAt: Date,
+  ): Promise<Result<TestRun>> {
+    const { run } = activeRun;
+    // A cancel that landed mid-flight already published the terminal event. The
+    // cancelled process may still have flushed a partial Cucumber report, so
+    // snapshot it to reports/<runId>.json before returning — otherwise the (now
+    // slot-free) cancelled-run import would race a new run's cleanup of the fixed
+    // report and lose/mis-attribute that evidence.
+    if (activeRun.terminated) {
+      await snapshotReport(run, cwd, this.absoluteFs);
+      return ok(run);
+    }
+    // The process has closed: from here only best-effort snapshot I/O remains
+    // before the terminal event. Mark it so a cancel() racing that I/O window
+    // can't relabel this finished run as cancelled.
+    activeRun.processClosed = true;
+
+    if (!result.ok) {
+      // Spawn fault (crash / missing dependency): errored, never completed.
+      run.status = "errored";
+      this.finish(run, startedAt);
+      await this.terminal(activeRun, "testrun.failed", {
+        runId: run.id,
+        reason: result.error.message,
+      });
+      return ok(run);
+    }
+
+    const { exitCode } = result.value;
+    run.status = exitCode === 0 ? "passed" : "failed";
+    this.finish(run, startedAt, result.value.durationMs);
+
+    await snapshotReport(run, cwd, this.absoluteFs);
+
+    if (run.scope === "suite") {
+      // UC-013 supporting event, before the terminal event.
+      await this.publish("suite.executed", run.id, {
+        suiteId: run.target,
+        runId: run.id,
+      });
+    }
+
+    await this.terminal(activeRun, "testrun.completed", {
+      runId: run.id,
+      status: run.status,
+      durationMs: run.durationMs ?? 0,
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+    });
+    return ok(run);
   }
 
   async cancel(runId: RunId): Promise<Result<void>> {
@@ -501,33 +549,6 @@ export class DefaultTestExecutionService implements TestExecutionService {
     this.lastIdBase = base;
     this.idSeq = 1;
     return base;
-  }
-
-  /**
-   * Builds the runner subprocess env from the Active SUT environment
-   * (ADR-0013/0014): `BASE_URL` plus any `auth.env` credentials, injected
-   * verbatim. The host process env is merged by the ChildProcessRunner adapter.
-   * Scope env (e.g. suite `BDD_TAGS`) is layered on top by `execute()`.
-   */
-  private runEnv(settings: TestHubSettings): Record<string, string> {
-    // TESTRUNNER_BROWSERS is a global runner setting, independent of the active
-    // SUT environment. It must always be present so the generated playwright
-    // config uses the correct browser list — even when the active env name
-    // doesn't resolve (dangling reference; validate() will flag it separately).
-    const browsers = settings.runner.browsers.join(",");
-
-    // Object.hasOwn, not a truthy index: an active named "toString"/
-    // "constructor" with no such environment defined would otherwise resolve a
-    // prototype member (truthy) and build the env from `undefined` fields.
-    if (!Object.hasOwn(settings.sut.environments, settings.sut.active)) {
-      return { TESTRUNNER_BROWSERS: browsers };
-    }
-    const active = settings.sut.environments[settings.sut.active];
-    return {
-      BASE_URL: active.baseUrl,
-      ...(active.auth?.env ?? {}),
-      TESTRUNNER_BROWSERS: browsers,
-    };
   }
 
   private finish(run: TestRun, startedAt: Date, durationMs?: number): void {

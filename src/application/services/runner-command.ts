@@ -36,6 +36,33 @@ export interface ResolvedCommand {
 export const displayCommand = (args: string[]): string =>
   args.map((arg) => (arg.includes(" ") ? `"${arg}"` : arg)).join(" ");
 
+/**
+ * Builds the runner subprocess env from the Active SUT environment (ADR-0013/
+ * 0014): `BASE_URL` plus any `auth.env` credentials, injected verbatim. The host
+ * process env is merged by the ChildProcessRunner adapter; scope env (e.g. suite
+ * `BDD_TAGS`) is layered on top by `execute()`.
+ */
+export const runEnv = (settings: TestHubSettings): Record<string, string> => {
+  // TESTRUNNER_BROWSERS is a global runner setting, independent of the active SUT
+  // environment. It must always be present so the generated playwright config
+  // uses the correct browser list — even when the active env name doesn't resolve
+  // (dangling reference; validate() will flag it separately).
+  const browsers = settings.runner.browsers.join(",");
+
+  // Object.hasOwn, not a truthy index: an active named "toString"/"constructor"
+  // with no such environment defined would otherwise resolve a prototype member
+  // (truthy) and build the env from `undefined` fields.
+  if (!Object.hasOwn(settings.sut.environments, settings.sut.active)) {
+    return { TESTRUNNER_BROWSERS: browsers };
+  }
+  const active = settings.sut.environments[settings.sut.active];
+  return {
+    BASE_URL: active.baseUrl,
+    ...(active.auth?.env ?? {}),
+    TESTRUNNER_BROWSERS: browsers,
+  };
+};
+
 // Consumes one character while inside a quote: returns the next quote state and
 // accumulated token, plus whether a `\"`/`\\` escape also consumed the following
 // char. Only double quotes honour escapes; single quotes are literal. Split out

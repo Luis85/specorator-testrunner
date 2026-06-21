@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  PostRunCoordinator,
+  DefaultPostRunCoordinator,
   type PostRunCoordinatorDeps,
 } from "../src/application/services/post-run-coordinator";
 import type { EvidenceGenerationService } from "../src/application/services/evidence-generation-service";
@@ -155,7 +155,7 @@ const build = (overrides: Partial<PostRunCoordinatorDeps> = {}) => {
     isEvidenceMarkdownEnabled: () => markdownEnabled,
     ...overrides,
   };
-  const coordinator = new PostRunCoordinator(deps);
+  const coordinator = new DefaultPostRunCoordinator(deps);
   return {
     coordinator,
     bus,

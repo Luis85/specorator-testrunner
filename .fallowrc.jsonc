@@ -58,13 +58,9 @@
     { "implements": "PrdService", "members": ["findById", "withMutationLock"] },
     { "implements": "PrdLookup", "members": ["findById", "withMutationLock"] },
     { "implements": "TestExecutionService", "members": ["activeRunStartedAt"] },
-    // NOTE — deliberately NOT suppressed: PostRunCoordinator.{start,whenSettled,
-    // importLastRun,dispose}. It is the one application service without a port
-    // interface, so there is no heritage clause to scope on, and its methods are
-    // reached only through composition-root closures / `Pick<>` slices the static
-    // graph can't follow. They are trace-verified live (start/whenSettled/
-    // importLastRun) plus the documented stop() symmetry alias (dispose), and are
-    // left visible rather than blanket-suppressed by generic names like `start`/
-    // `dispose`, which also occur on GuidedTourService / the render scheduler.
+    // PostRunCoordinator now has a port interface (DefaultPostRunCoordinator
+    // implements PostRunCoordinator), so its DI-reached methods scope cleanly
+    // here like the rest — consumed via composition-root closures / `Pick<>`.
+    { "implements": "PostRunCoordinator", "members": ["start", "whenSettled", "importLastRun"] },
   ],
 }
