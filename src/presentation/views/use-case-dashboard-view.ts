@@ -6,8 +6,7 @@ import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
 import { LiveDashboardView } from "./live-dashboard-view";
-import { openOrNotice, renderLoadError } from "./modal-helpers";
-import { featureCountCell, projectUseCaseRows } from "./use-case-rows";
+import { renderUseCaseDashboardBody } from "./use-case-dashboard-body";
 
 export const USE_CASE_VIEW_TYPE = "e2e-test-hub-use-cases";
 
@@ -78,93 +77,17 @@ export class UseCaseDashboardView extends LiveDashboardView {
   }
 
   protected async render(): Promise<void> {
-    const container = this.renderListHeader({
-      headerCls: "e2e-test-hub-uc-header",
-      title: "Use Cases",
-      actionLabel: "New Use Case",
-      onAction: () => this.deps.onCreate(),
+    // Thin caller: the body builds entirely into this leaf's `contentEl` via the
+    // host-agnostic renderer, so the standalone leaf and the (later) Test Hub
+    // body render identically (ADR-0031).
+    await renderUseCaseDashboardBody(this.contentEl, {
+      traceability: this.deps.traceability,
+      specificationService: this.deps.specificationService,
+      workspace: this.deps.workspace,
+      runLauncher: this.deps.runLauncher,
+      onCreate: this.deps.onCreate,
+      onOpenDetail: this.deps.onOpenDetail,
+      refresh: () => void this.live.schedule(),
     });
-
-    const [result, listed] = await Promise.all([
-      this.deps.traceability.deriveAll(),
-      this.deps.specificationService.listFeatures(),
-    ]);
-    if (!result.ok) {
-      // Recoverable dead-end: offer a retry instead of a bare terminal message.
-      renderLoadError(
-        container,
-        `Could not load Use Cases: ${result.error.message}`,
-        "Retry loading the Use Cases",
-        () => void this.live.schedule(),
-      );
-      return;
-    }
-
-    // A failed Feature listing degrades the "Features" column to "—" (unknown)
-    // rather than hiding the whole explorer — the listing is insight, not data.
-    const rows = projectUseCaseRows(result.value, listed.ok ? listed.value : null);
-    if (rows.length === 0) {
-      container.createEl("p", { text: "No Use Cases yet. Create one to get started." });
-      return;
-    }
-
-    const table = container.createEl("table", { cls: "e2e-test-hub-uc-table" });
-    const headRow = table.createEl("thead").createEl("tr");
-    for (const label of ["ID", "Title", "Status", "Automation", "Features", "Note", "Run"]) {
-      // scope="col" ties each header to its column for screen-reader tables.
-      headRow.createEl("th", { text: label, attr: { scope: "col" } });
-    }
-
-    const body = table.createEl("tbody");
-    for (const row of rows) {
-      const tr = body.createEl("tr");
-      // Wave D: the id opens the Use Case detail view (Feature Specifications +
-      // authoring/testing actions); raw note access stays a separate "Note"
-      // link in its own column.
-      const open = tr.createEl("td").createEl("button", {
-        text: row.id,
-        cls: "e2e-test-hub-link-button",
-        attr: { "aria-label": `Open Use Case ${row.id} detail` },
-      });
-      open.addEventListener("click", () => {
-        this.deps.onOpenDetail(row.id);
-      });
-      tr.createEl("td", { text: row.title });
-      tr.createEl("td", { text: row.status });
-      tr.createEl("td", { text: row.automationStatus });
-      // Wave F insight: Feature Specification count per Use Case, warning-
-      // accented at 0 so a spec gap is visible without opening anything.
-      const featuresCell = featureCountCell(row.featureCount);
-      const featuresTd = tr.createEl("td", {
-        text: featuresCell.text,
-        cls: "e2e-test-hub-uc-features",
-        attr: {
-          "aria-label":
-            row.featureCount === null
-              ? `Feature Specifications for ${row.id} could not be listed`
-              : `${row.featureCount} Feature Specification${row.featureCount === 1 ? "" : "s"}`,
-        },
-      });
-      if (featuresCell.tooltip !== null) featuresTd.setAttr("title", featuresCell.tooltip);
-      if (featuresCell.status !== null) featuresTd.dataset.status = featuresCell.status;
-      const note = tr.createEl("td").createEl("button", {
-        text: "Note",
-        cls: "e2e-test-hub-link-button",
-        attr: { "aria-label": `Open the ${row.id} note` },
-      });
-      note.addEventListener("click", () => {
-        void openOrNotice(this.deps.workspace, row.path);
-      });
-      // Per-row Run button (Wave B): launches a use-case-scoped run via the
-      // shared launcher, which reveals the Test Console first.
-      const run = tr.createEl("td").createEl("button", {
-        text: "Run",
-        cls: "e2e-test-hub-run-button",
-        attr: { "aria-label": `Run Use Case ${row.id}` },
-      });
-      run.addEventListener("click", () => {
-        void this.deps.runLauncher.launch({ scope: "use-case", target: row.id });
-      });
-    }
   }
 }
