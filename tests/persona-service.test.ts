@@ -26,6 +26,18 @@ describe("DefaultPersonaService", () => {
     expect(all.ok && all.value.map((p) => p.name)).toEqual(["Home Cook"]);
   });
 
+  it("create rejects a name that already exists (no duplicate names)", async () => {
+    const { svc } = build();
+    await svc.create({ name: "Home Cook" }); // PER-001
+    const dup = await svc.create({ name: "Home Cook" });
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.error.code).toBe("VALIDATION_FAILED");
+    // Still exactly one persona with that name (findOrCreateByName can't resolve it
+    // to the wrong duplicate).
+    const all = await svc.findAll();
+    expect(all.ok && all.value.filter((p) => p.name === "Home Cook").length).toBe(1);
+  });
+
   it("allocates PER-001 for the first persona and writes the note file", async () => {
     const { svc, fs } = build();
     const result = await svc.create({ name: "Home Cook" });

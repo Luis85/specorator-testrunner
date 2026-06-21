@@ -74,6 +74,13 @@ export class DefaultPersonaService implements PersonaService {
     const settings = await this.settingsService.load();
     const existing = await this.findAll();
     if (!existing.ok) return err(existing.error);
+    // Reject a same-name Persona (under the persona-wide key the caller holds) so
+    // create() can't leave two notes sharing a `name` — findOrCreateByName would then
+    // resolve that label to the wrong duplicate (first sorted id wins). findOrCreateByName
+    // reaches here only after a miss, so this never blocks its legitimate create.
+    if (existing.value.some((p) => p.name === name)) {
+      return err(appError("VALIDATION_FAILED", `A Persona named "${name}" already exists.`));
+    }
 
     const id = nextPersonaId(existing.value);
     const path = joinVaultPath(settings.paths.personasPath, personaFileName(id, name));
