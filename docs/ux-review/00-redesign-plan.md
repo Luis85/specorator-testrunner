@@ -30,6 +30,20 @@ implementation subagents. The detail lives in the source reports — cited as `[
 
 ---
 
+## 0. Decisions log
+
+**2026-06-21 (product owner):**
+- **T1 — IA depth → HUB SHELL (bold).** Commit to the single Test Hub home leaf with a
+  Plan/Build/Run/Review section rail (WS-B1). Deep-linking, breadcrumbs, and the loop rail
+  still land first to de-risk it. A new ADR will record the shell + workspace-restore model.
+- **T2 — Identity → DEFAULT Specorator brand hue.** `--spec-accent` defaults to a Specorator
+  hue (initial pick: **teal**, a single adjustable token — light/dark-aware, `--text-on-accent`
+  contrast verified), *not* opt-in. Class names migrate to `spec-`, UI wordmark "Specorator";
+  plugin **id** stays `e2e-test-hub` (renaming is a breaking data migration, out of scope).
+- **Proceeding to Increment 1 (Phase 0 Foundations) now.**
+- Still open (decide as their phase begins): T4 run-view granularity, run-time env override,
+  board colour/inspector/focus scope, health-hero metric (§6 items 3–6).
+
 ## 1. Vision & design principles
 
 **North star:** Specorator should feel like *one coherent BDD workbench* — a place you
