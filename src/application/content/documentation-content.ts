@@ -3,14 +3,14 @@ import type { TestHubSettings } from "../../domain/settings/settings";
 /**
  * Stable identity for a generated doc. The first three map to the
  * `documentation.opened` payload's `documentType` (TIS §12); `index` is the
- * navigational hub the "Open Documentation" command opens (UC-021/022/023).
+ * navigational hub the "Help — open documentation" command opens (UC-021/022/023).
  */
 export type DocumentationType = "getting-started" | "manual" | "troubleshooting" | "index";
 
 /**
  * A doc's `documentType` as carried by `documentation.opened`. The Event Catalog
  * enum is extended to include `index` (TIS §12 / UC-021,022,023): the navigational
- * hub is the natural default entry point for the "Open Documentation" command, so
+ * hub is the natural default entry point for the "Help — open documentation" command, so
  * it must be openable and a valid event documentType.
  */
 export type OpenableDocumentType = DocumentationType;
@@ -169,8 +169,8 @@ into \`${paths.useCasesPath}/\`. Browse them from the **Build — open Use Cases
 
 Run **Build — generate feature from Use Case**, pick a Use Case, and a Gherkin
 \`.feature\` scaffold is written under \`${paths.featureFilesPath}/\` and linked
-back to the Use Case. **Build — validate feature** checks the Gherkin; **Detect Missing
-Steps** lists step definitions you still need.
+back to the Use Case. **Build — validate feature** checks the Gherkin;
+**Build — detect missing steps** lists step definitions you still need.
 
 ## How to: organize Suites
 
