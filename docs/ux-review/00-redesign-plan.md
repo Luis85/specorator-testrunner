@@ -253,5 +253,8 @@ Lower-risk polish (C2/C4/C5, D3/D4/D5, E2/E3/E4) slots in alongside as capacity 
 
 ---
 
-*Plan derived from `docs/ux-review/01..05`. Awaiting product-owner decisions in §6 before
-breaking Increment 1 into per-task subagent briefs.*
+*Plan derived from `docs/ux-review/01..05`. **Increment 1 (Phase 0 — A1–A4) is approved and
+proceeding now** (see §0); it does not gate on the remaining §6 questions. Only the
+**later-phase** briefs that depend on them — the Run view / re-run-failed / env-override
+(§6.3–4), the board colour/inspector/focus scope (§6.5), and the health-hero metric/denominator
+(§6.6) — are decided as their phase begins.*

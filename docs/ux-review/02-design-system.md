@@ -156,7 +156,7 @@ One recognisable, theme-safe motif applied consistently:
 
 1. **The accent spine.** A `--spec-spine-width` left edge on panels/cards that is **transparent by default and lights to `--spec-accent` on hover/active.** The Story Map explorer card *already does exactly this* (styles.css:1110 `border-left: 2px solid transparent` → 1121 accent on hover). **Promote it to the house style** for every panel (KPI tiles, roadmap, onboarding, env blocks). This is the cheapest, most distinctive move and it is already proven in-codebase.
 2. **One accent, used sparingly** — links, primary CTAs, focus rings, active tour step, KPI hover, progress bars all draw `--spec-accent`. No second hue.
-3. **Optional brand tint (opt-in setting).** Ship `--spec-accent` defaulting to the theme accent. Offer a single settings toggle "Use Specorator accent" that overrides `--spec-accent` to a teal/indigo. Identity-on-demand without ever fighting a user's theme.
+3. **Brand tint — DECIDED: default Specorator hue, not opt-in** (supersedes this report's original opt-in-default recommendation; see `00-redesign-plan.md` §0/T2 and the as-shipped A1). Ship `--spec-accent` defaulting to a **Specorator brand teal** (a single adjustable, contrast-tuned token), *not* the theme accent. A settings toggle may still let a user fall *back* to their theme accent, but the shipped default is the brand hue. **Implementers: follow the §0/T2 decision, not the earlier opt-in framing anywhere in this report.**
 
 ### 3.3 Canonical component library (consolidate the duplicates)
 
@@ -220,7 +220,7 @@ Note this *unifies* the spine motif: the same left edge that carries hover-accen
 | R7 | Tokenise the SVG board: board type scale, `28px`, durations, elevation, palettes (fixes M3, M4) | M | M | Med — SVG inline attrs + TS hex arrays | R1 |
 | R8 | Collapse `sm-board-`/`e2e-test-hub-story-map-` → `spec-storymap-`; fix unprefixed/undefined classes (fixes M1) | M | M | Med — coordinate TS `cls:` + CSS | R3 |
 | R9 | Add a `renderEmptyState()` primitive + `.spec-empty`, sibling to `renderLoadError` | L | L | Low | none |
-| R10 | Ship an opt-in "Specorator accent" settings toggle overriding `--spec-accent` (§3.2.3) | M | M | Med — theme-compat testing across light/dark | R1, R3 |
+| R10 | **DECIDED: ship `--spec-accent` defaulting to the Specorator brand teal** (not opt-in; §0/T2 — done in A1). An *optional* toggle to fall back to the theme accent is a nice-to-have, not the default. | M | M | Med — theme-compat testing across light/dark | R1, R3 |
 | R11 | Add `prefers-contrast`/forced-colors hardening (L2) | L | M | Low | R1 |
 
 **Suggested first slice (low-risk, high-signal):** R1 → R2 → R3. Tokens + reduced-motion + the accent spine give immediate, visible identity with near-zero regression risk before touching the higher-churn button/pill consolidations.
@@ -229,7 +229,7 @@ Note this *unifies* the spine motif: the same left edge that carries hover-accen
 
 ## 5. Open questions for the product owner
 
-1. **Brand colour:** native-only (accent always = theme accent), or a real Specorator hue (teal/indigo) as the *default*? R10 assumes opt-in default-native — confirm.
+1. ~~**Brand colour**~~ — **DECIDED (§0/T2): a real Specorator hue (teal) as the *default***, not native-only and not opt-in. Shipped in A1.
 2. **Plugin id rename:** `e2e-test-hub` → `specorator-testrunner` is a breaking migration (settings/data path). In scope for this redesign, or keep id and rename only classes/UI?
 3. **Class-prefix churn:** OK to migrate `e2e-test-hub-*` → `spec-*` for shared primitives now (one big-ish PR series), or stage it so existing snapshot/integration tests that assert class names migrate incrementally?
 4. **The accent spine as house style:** is the left-edge accent (proven on Story Map cards) the identity motif you want everywhere, or do you prefer a top-border / corner-mark / icon-lockup signature?
