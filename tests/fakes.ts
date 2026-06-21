@@ -371,7 +371,11 @@ export const serviceHarness = (
 } => {
   const fs = new FakeVaultFileSystem();
   const { bus, types, events } = recordingEventBus();
-  const settings = new DefaultSettingsService(new FakeDataStore(data), new DefaultPathSafetyPolicy(), bus);
+  const settings = new DefaultSettingsService(
+    new FakeDataStore(data),
+    new DefaultPathSafetyPolicy(),
+    bus,
+  );
   return { fs, bus, types, events, settings };
 };
 
