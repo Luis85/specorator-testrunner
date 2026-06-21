@@ -1066,7 +1066,20 @@ export class StoryMapBoardView extends LiveDashboardView {
       // persist (labels/steps, and each card through the buildCardNote→parseCardNote
       // round-trip), so a model-derived baseline would make the next save see a
       // phantom external change ("changed elsewhere").
-      this.baseline = storyMapSignature(outcome.saved);
+      const saved = outcome.saved;
+      const drifted = storyMapSignature(saved) !== storyMapSignature(model);
+      this.baseline = storyMapSignature(saved);
+      // Rebase the rendered model to the persisted, canonicalized one (reloadCards
+      // sorts cards by cell/order) so data-card-index matches on-disk order and the
+      // card modal's index/expected guard targets the right card. Only when the
+      // board is idle — no edit arrived mid-save, the saved model is still current,
+      // and no inline editor is open — so we never clobber newer optimistic state or
+      // tear down an in-progress rename. The assign+paint is synchronous, so no edit
+      // can interleave between them.
+      if (drifted && !this.dirty && this.model === model && this.commitEditor === null) {
+        this.model = saved;
+        if (this.isOpen) this.paint(this.contentEl);
+      }
     }
     return true;
   }
