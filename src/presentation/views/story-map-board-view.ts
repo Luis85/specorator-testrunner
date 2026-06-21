@@ -60,6 +60,9 @@ export interface StoryMapBoardDeps {
   /** Passed to the Card modal for the reference picker + Promote-to-Use-Case. */
   useCaseService: Pick<UseCaseService, "create" | "assignToPrd" | "findAll">;
   eventBus: EventBus;
+  // WS-A4 deep-link port: clicking a card's `UC-NNN` ref opens that Use Case's
+  // detail (01-§3.2). The board already resolves refs; this navigates to them.
+  openArtifact: (id: string) => void;
 }
 
 interface BoardState {
@@ -564,6 +567,8 @@ export class StoryMapBoardView extends LiveDashboardView {
     this.bindEvent(svg, "rect[data-color-index]", "click", (el) => this.onCycleColor(el));
     this.bindEvent(svg, "rect[data-status-index]", "click", (el) => this.onCycleStatus(el));
     this.bindEvent(svg, "rect[data-edit]", "click", (el) => this.onEditCardDetails(el));
+    // WS-A4: a card's `UC-NNN` ref deep-links to its Use Case detail.
+    this.bindEvent(svg, "text[data-card-ref]", "click", (el) => this.onOpenCardRef(el));
     const headers =
       "rect.sm-board-activity, rect.sm-board-slice, rect.sm-board-step, rect.sm-board-user-card";
     this.bindEvent(svg, headers, "dblclick", (el) => this.onEditHeader(el as SVGElement));
@@ -696,6 +701,12 @@ export class StoryMapBoardView extends LiveDashboardView {
   private onEditCardDetails(el: Element): void {
     const index = indexAttr(el, "data-card-index");
     if (index !== null) void this.openCardEditor(index);
+  }
+
+  /** WS-A4: opens the Use Case detail named by a clicked card's `UC-NNN` ref. */
+  private onOpenCardRef(el: Element): void {
+    const ref = el.getAttribute("data-card-ref");
+    if (ref !== null && ref !== "") this.deps.openArtifact(ref);
   }
 
   /**

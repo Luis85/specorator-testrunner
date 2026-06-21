@@ -7,6 +7,7 @@ import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { openOrNotice, renderEmptyState, renderLoadError } from "./modal-helpers";
 import { LiveDashboardView } from "./live-dashboard-view";
+import { firstUseCaseIdOfPrd } from "../navigation/use-cases-of-prd";
 
 export const PRD_VIEW_TYPE = "e2e-test-hub-prds";
 
@@ -61,6 +62,9 @@ export interface PrdExplorerDeps {
   eventBus: EventBus;
   /** Opens the PRD Builder; a node's "＋ sub-PRD" button passes its id as parent. */
   openPrdBuilder: (parentPrdId?: string) => void;
+  // WS-A4 deep-link port: a PRD row with Use Cases gains an affordance to jump
+  // into them — opening the first linked Use Case's detail (01-§3.2).
+  openArtifact: (id: string) => void;
 }
 
 /**
@@ -96,9 +100,10 @@ export class PrdExplorerView extends LiveDashboardView {
       onAction: () => this.deps.openPrdBuilder(),
     });
 
-    const [prds, counts] = await Promise.all([
+    const [prds, counts, useCases] = await Promise.all([
       this.deps.prdService.findAll(),
       this.deps.useCaseService.countUseCasesByPrd(),
+      this.deps.useCaseService.findAll(),
     ]);
     if (!prds.ok) {
       renderLoadError(
@@ -119,11 +124,19 @@ export class PrdExplorerView extends LiveDashboardView {
     }
 
     const tree = buildPrdTree(prds.value, counts.ok ? counts.value : new Map<string, number>());
+    // The flat Use Case list (best-effort) backs the per-row "Open Use Cases"
+    // deep-link; a list-load failure just hides that affordance (the counts and
+    // tree still render).
+    const ucList = useCases.ok ? useCases.value : [];
     const root = container.createEl("ul", { cls: "e2e-test-hub-prd-tree" });
-    for (const node of tree) this.renderNode(root, node);
+    for (const node of tree) this.renderNode(root, node, ucList);
   }
 
-  private renderNode(parent: HTMLElement, node: PrdTreeNode): void {
+  private renderNode(
+    parent: HTMLElement,
+    node: PrdTreeNode,
+    useCases: readonly { id: string; prdId?: string }[],
+  ): void {
     const li = parent.createEl("li", { cls: "e2e-test-hub-prd-node" });
     const row = li.createDiv({ cls: "e2e-test-hub-prd-row" });
 
@@ -134,6 +147,20 @@ export class PrdExplorerView extends LiveDashboardView {
       attr: { "aria-label": `Open PRD ${node.prd.id} ${node.prd.title}` },
     });
     open.addEventListener("click", () => void openOrNotice(this.deps.workspace, node.prd.path));
+
+    // WS-A4 deep-link: jump from a PRD into its Use Cases. Opens the first linked
+    // Use Case's detail through the openArtifact port; only shown when the PRD
+    // actually has one (avoids a dead affordance).
+    const firstUcId = firstUseCaseIdOfPrd(useCases, node.prd.id);
+    if (firstUcId !== null) {
+      row
+        .createEl("button", {
+          text: "Open Use Cases",
+          cls: "e2e-test-hub-link-button",
+          attr: { "aria-label": `Open the Use Cases of PRD ${node.prd.id}` },
+        })
+        .addEventListener("click", () => this.deps.openArtifact(firstUcId));
+    }
 
     row.createEl("span", {
       text: node.prd.status,
@@ -163,7 +190,7 @@ export class PrdExplorerView extends LiveDashboardView {
 
     if (node.children.length > 0) {
       const childList = li.createEl("ul", { cls: "e2e-test-hub-prd-tree" });
-      for (const child of node.children) this.renderNode(childList, child);
+      for (const child of node.children) this.renderNode(childList, child, useCases);
     }
   }
 
