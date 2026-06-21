@@ -6,7 +6,11 @@ import {
   serialiseFeature,
   useCaseIdFromPath,
 } from "../content/gherkin";
-import { isStepDefined, type StepDefinitionPattern } from "../content/step-definitions";
+import {
+  findMissingSteps,
+  isStepDefined,
+  type StepDefinitionPattern,
+} from "../content/step-definitions";
 import { loadStepDefinitions } from "./load-step-definitions";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
@@ -113,6 +117,20 @@ export interface SpecificationService {
    * the list directly rather than a `Result`.
    */
   listStepPatterns(): Promise<StepDefinitionPattern[]>;
+  /**
+   * Whether EVERY Gherkin step across the given Features already has a matching
+   * step definition — the loop rail's real "steps defined" signal (WS-C1). Uses
+   * the SAME static {@link listStepPatterns} source the Feature Editor's
+   * missing-step flags read, NOT `bddgen` and NOT the `automationStatus` proxy
+   * (which can't see the runner project's stubs and conflates
+   * `planned`/`failing`/`implemented` with undefined steps). Spawns no process and
+   * has no side effects, so it is safe to call on every detail-view render.
+   *
+   * Returns `false` for an empty Feature set, when any Feature is unreadable (the
+   * step coverage can't be proven), or when the Features declare no steps at all.
+   * Best-effort and infallible — it answers the boolean directly.
+   */
+  allStepsDefined(featurePaths: readonly VaultPath[]): Promise<boolean>;
 }
 
 /**
@@ -302,6 +320,24 @@ export class DefaultSpecificationService implements SpecificationService {
     const settings = await this.settingsService.load();
     const stepsDir = joinVaultPath(settings.paths.testRunnerPath, "src/steps");
     return loadStepDefinitions(this.fs, stepsDir);
+  }
+
+  async allStepsDefined(featurePaths: readonly VaultPath[]): Promise<boolean> {
+    if (featurePaths.length === 0) return false;
+    // Read the defined patterns ONCE, then gather every Feature's Gherkin steps —
+    // the same static source as the Feature Editor's flags, no bddgen spawn.
+    const definitions = await this.listStepPatterns();
+    const stepTexts: string[] = [];
+    for (const featurePath of featurePaths) {
+      const feature = await readFeatureFile(this.fs, featurePath);
+      // An unreadable Feature means we can't prove its steps are covered: don't
+      // claim "defined" (the rail keeps offering Generate step definitions).
+      if (!feature.ok) return false;
+      stepTexts.push(...collectStepTexts(feature.value));
+    }
+    // Require at least one step (a step-less Feature set proves nothing) AND no
+    // step left unmatched by a definition.
+    return stepTexts.length > 0 && findMissingSteps(stepTexts, definitions).length === 0;
   }
 
   /** UC-007 / US-020: parse the Feature and report structural errors. */

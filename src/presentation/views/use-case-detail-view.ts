@@ -97,7 +97,7 @@ export interface UseCaseDetailDeps {
   storyMapService: Pick<StoryMapService, "findAll">;
   specificationService: Pick<
     SpecificationService,
-    "listFeatures" | "validate" | "detectMissingSteps"
+    "listFeatures" | "validate" | "detectMissingSteps" | "allStepsDefined"
   >;
   stepDefinitionService: Pick<StepDefinitionService, "generate">;
   // Wave F insight: per-Feature health (scenario count, @wip work, the
@@ -250,8 +250,16 @@ export class UseCaseDetailView extends LiveDashboardView {
     const featurePaths = listed.ok
       ? projectFeatureRows(useCase.id, listed.value).map((row) => row.path)
       : null;
+    // The filename listing is the source of truth for the loop rail; fall back to
+    // the entity's own links only when the listing itself failed.
+    const railPaths = featurePaths ?? useCase.featureFiles;
+    // The REAL "steps defined" signal: do all the listed Features' Gherkin steps
+    // have matching step definitions? A static read of the step-definition patterns
+    // (no bddgen spawn, no side effects), so it is safe on every render and tells
+    // the rail the truth the automationStatus proxy could not (Codex review).
+    const stepsDefined = await this.deps.specificationService.allStepsDefined(railPaths);
 
-    this.renderHeader(container, useCase, prdTitleById, backlinks, featurePaths);
+    this.renderHeader(container, useCase, prdTitleById, backlinks, railPaths, stepsDefined);
     this.renderFeatures(container, useCase, listed);
   }
 
@@ -260,14 +268,15 @@ export class UseCaseDetailView extends LiveDashboardView {
     useCase: UseCase,
     prdTitleById: Map<string, string>,
     backlinks: StoryMapBacklink[],
-    featurePaths: VaultPath[] | null,
+    featurePaths: VaultPath[],
+    stepsDefined: boolean,
   ): void {
     const header = projectUseCaseHeader(useCase);
 
     // WS-C1 loop rail: the forward-momentum spine above everything else. It
     // reads the next obvious step off the Use Case's current capabilities and
     // routes its live button to the SAME services/flows the buttons below use.
-    this.renderLoopRail(container, useCase, featurePaths);
+    this.renderLoopRail(container, useCase, featurePaths, stepsDefined);
 
     const headerEl = container.createDiv({ cls: "e2e-test-hub-uc-detail-header" });
     // Breadcrumb back to the explorer (entry-point review): the healthy detail
@@ -347,7 +356,8 @@ export class UseCaseDetailView extends LiveDashboardView {
   private renderLoopRail(
     container: HTMLElement,
     useCase: UseCase,
-    featurePaths: VaultPath[] | null,
+    featurePaths: VaultPath[],
+    stepsDefined: boolean,
   ): void {
     const wrap = container.createDiv();
     const rail = wrap.createDiv();
@@ -357,12 +367,11 @@ export class UseCaseDetailView extends LiveDashboardView {
       cls: "e2e-test-hub-uc-detail-feature-result",
       attr: { "aria-live": "polite" },
     });
-    // The filename-derived listing is the source of truth for feature presence
-    // AND the generate-steps targets; when the listing failed we fall back to the
-    // entity's own `featureFiles` so the rail still projects (degraded, not blank).
-    const paths = featurePaths ?? useCase.featureFiles;
-    renderLoopRail(rail, projectLoopRail(useCase, paths.length), (action) =>
-      this.runLoopAction(action, useCase, paths, resultEl),
+    // `featurePaths` is both the feature-presence count and the generate-steps
+    // targets; `stepsDefined` is the static step-definition coverage signal.
+    const facts = { featureCount: featurePaths.length, stepsDefined };
+    renderLoopRail(rail, projectLoopRail(useCase, facts), (action) =>
+      this.runLoopAction(action, useCase, featurePaths, resultEl),
     );
   }
 

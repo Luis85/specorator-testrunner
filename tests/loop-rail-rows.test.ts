@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStatus, UseCase } from "../src/domain/entities/use-case";
+import type { UseCase } from "../src/domain/entities/use-case";
 import {
   LOOP_RAIL_STAGES,
   loopCapabilitiesFor,
   projectLoopRail,
   type LoopRail,
+  type LoopRailFacts,
   type LoopRailStage,
 } from "../src/presentation/views/loop-rail-rows";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
@@ -30,15 +31,29 @@ const useCase = (over: Partial<UseCase> = {}): UseCase => ({
   ...over,
 });
 
-const stateOf = (uc: UseCase, stage: LoopRailStage): string => {
-  const node = projectLoopRail(uc).nodes.find((n) => n.stage === stage);
+/**
+ * The two facts the detail view supplies (the entity can't give them reliably):
+ * how many Features the filename listing found, and whether their step definitions
+ * all exist. Both default to the "nothing yet" floor.
+ */
+const facts = (over: Partial<LoopRailFacts> = {}): LoopRailFacts => ({
+  featureCount: 0,
+  stepsDefined: false,
+  ...over,
+});
+
+/** A UC that owns one Feature whose step definitions are all written. */
+const STEPS_READY: LoopRailFacts = { featureCount: 1, stepsDefined: true };
+
+const stateOf = (uc: UseCase, f: LoopRailFacts, stage: LoopRailStage): string => {
+  const node = projectLoopRail(uc, f).nodes.find((n) => n.stage === stage);
   if (!node) throw new Error(`no node ${stage}`);
   return node.state;
 };
 
 describe("loopCapabilitiesFor", () => {
-  it("derives no capabilities for a bare Use Case", () => {
-    expect(loopCapabilitiesFor(useCase())).toEqual({
+  it("derives no capabilities for a bare Use Case with no facts", () => {
+    expect(loopCapabilitiesFor(useCase(), facts())).toEqual({
       hasFeature: false,
       stepsDefined: false,
       inSuite: false,
@@ -46,89 +61,47 @@ describe("loopCapabilitiesFor", () => {
     });
   });
 
-  it("reports a Feature once a feature file exists", () => {
-    const caps = loopCapabilitiesFor(
-      useCase({ featureFiles: [vp("Features/UC-001-happy.feature")] }),
-    );
-    expect(caps.hasFeature).toBe(true);
+  it("reports a Feature once the listing found one", () => {
+    expect(loopCapabilitiesFor(useCase(), facts({ featureCount: 1 })).hasFeature).toBe(true);
   });
 
-  it("treats missing-steps automation as steps-not-defined even with a Feature", () => {
-    const caps = loopCapabilitiesFor(
-      useCase({
-        featureFiles: [vp("Features/UC-001-happy.feature")],
-        automationStatus: "missing-steps",
-      }),
-    );
-    expect(caps.stepsDefined).toBe(false);
+  it("reports steps-defined only when a Feature exists AND the fact is set", () => {
+    expect(
+      loopCapabilitiesFor(useCase(), facts({ featureCount: 1, stepsDefined: true })).stepsDefined,
+    ).toBe(true);
   });
 
-  it("treats `passing` automation as steps-defined when a Feature exists", () => {
-    // `passing` is the only sound proof: it requires EVERY contributing scenario to
-    // have run and passed, so every step necessarily matched its definition.
-    const caps = loopCapabilitiesFor(
-      useCase({ featureFiles: [vp("Features/UC-001-happy.feature")], automationStatus: "passing" }),
-    );
-    expect(caps.stepsDefined).toBe(true);
+  it("never reports steps-defined without a Feature, even if the fact is set", () => {
+    // Defensive guard: a steps-defined signal with no Feature can't be trusted.
+    expect(
+      loopCapabilitiesFor(useCase(), facts({ featureCount: 0, stepsDefined: true })).stepsDefined,
+    ).toBe(false);
   });
 
-  it.each<AutomationStatus>(["planned", "failing", "implemented"])(
-    "treats `%s` automation as steps-NOT-defined even with a Feature",
-    (automationStatus) => {
-      // None proves all stubs exist: `planned` precedes any stub; `failing` can be
-      // a missing-step failure; `implemented` can carry a NEW unrun scenario whose
-      // steps aren't generated yet. The rail conservatively keeps the Generate-steps
-      // CTA for all three.
-      const caps = loopCapabilitiesFor(
-        useCase({ featureFiles: [vp("Features/UC-001-happy.feature")], automationStatus }),
-      );
-      expect(caps.stepsDefined).toBe(false);
-    },
-  );
-
-  it("does not report steps-defined without a Feature, even if status moved on", () => {
-    // A defensive guard: status alone can't imply steps when there's no Feature.
-    const caps = loopCapabilitiesFor(useCase({ automationStatus: "passing" }));
-    expect(caps.stepsDefined).toBe(false);
+  it("treats steps as NOT defined when the coverage fact is false", () => {
+    expect(
+      loopCapabilitiesFor(useCase(), facts({ featureCount: 1, stepsDefined: false })).stepsDefined,
+    ).toBe(false);
   });
 
   it("reports membership when the Use Case is in a Suite", () => {
-    expect(loopCapabilitiesFor(useCase({ suites: ["SUITE-smoke"] })).inSuite).toBe(true);
+    expect(loopCapabilitiesFor(useCase({ suites: ["SUITE-smoke"] }), facts()).inSuite).toBe(true);
   });
 
   it("reports a run from a recorded last run", () => {
-    const caps = loopCapabilitiesFor(useCase({ lastTestRun: PASSED_RUN }));
-    expect(caps.hasRun).toBe(true);
+    expect(loopCapabilitiesFor(useCase({ lastTestRun: PASSED_RUN }), facts()).hasRun).toBe(true);
   });
 
   it("reports a run from recorded evidence", () => {
-    expect(loopCapabilitiesFor(useCase({ evidence: [vp("Test Evidence/UC-001.md")] })).hasRun).toBe(
-      true,
-    );
-  });
-
-  it("derives feature presence from the supplied count, not the entity's featureFiles", () => {
-    // The detail view passes the filename-derived Feature count (ADR-0012) so the
-    // rail agrees with the Feature list. A Feature on disk whose forward-link write
-    // failed is missing from `featureFiles` yet still counts (Codex review).
-    const caps = loopCapabilitiesFor(useCase({ featureFiles: [] }), 1);
-    expect(caps.hasFeature).toBe(true);
-  });
-
-  it("an explicit zero count overrides a stale featureFiles entry", () => {
-    // Defensive inverse: the supplied count is authoritative. If the listing finds
-    // no Feature for this UC, a stale `featureFiles` link must not fake one.
-    const caps = loopCapabilitiesFor(
-      useCase({ featureFiles: [vp("Features/UC-001-happy.feature")] }),
-      0,
-    );
-    expect(caps.hasFeature).toBe(false);
+    expect(
+      loopCapabilitiesFor(useCase({ evidence: [vp("Test Evidence/UC-001.md")] }), facts()).hasRun,
+    ).toBe(true);
   });
 });
 
 describe("projectLoopRail", () => {
   it("renders the five glossary nodes in pipeline order", () => {
-    const rail = projectLoopRail(useCase());
+    const rail = projectLoopRail(useCase(), facts());
     expect(rail.nodes.map((n) => n.stage)).toEqual([...LOOP_RAIL_STAGES]);
     expect(rail.nodes.map((n) => n.label)).toEqual([
       "Use Case",
@@ -140,8 +113,8 @@ describe("projectLoopRail", () => {
   });
 
   it("marks the Use Case done and Feature the current next step for a bare UC", () => {
-    const rail = projectLoopRail(useCase());
-    expect(stateOf(useCase(), "use-case")).toBe("done");
+    const rail = projectLoopRail(useCase(), facts());
+    expect(stateOf(useCase(), facts(), "use-case")).toBe("done");
     expect(rail.currentStage).toBe("feature");
     expect(rail.currentAction).toBe("generate-feature");
     const feature = rail.nodes.find((n) => n.stage === "feature");
@@ -150,7 +123,7 @@ describe("projectLoopRail", () => {
   });
 
   it("only the current node carries an action; later nodes are todo with no action", () => {
-    const rail = projectLoopRail(useCase());
+    const rail = projectLoopRail(useCase(), facts());
     const withAction = rail.nodes.filter((n) => n.action !== null);
     expect(withAction).toHaveLength(1);
     expect(withAction[0]?.stage).toBe("feature");
@@ -159,10 +132,11 @@ describe("projectLoopRail", () => {
     expect(later.every((n) => n.action === null && n.actionLabel === "")).toBe(true);
   });
 
-  it("advances current to Steps once a Feature exists", () => {
-    const uc = useCase({ featureFiles: [vp("Features/UC-001-happy.feature")] });
-    const rail = projectLoopRail(uc);
-    expect(stateOf(uc, "feature")).toBe("done");
+  it("advances current to Steps once a Feature exists but its steps aren't defined", () => {
+    const uc = useCase();
+    const f = facts({ featureCount: 1, stepsDefined: false });
+    const rail = projectLoopRail(uc, f);
+    expect(stateOf(uc, f, "feature")).toBe("done");
     expect(rail.currentStage).toBe("steps");
     expect(rail.currentAction).toBe("generate-steps");
     expect(rail.nodes.find((n) => n.stage === "steps")?.actionLabel).toBe(
@@ -173,86 +147,38 @@ describe("projectLoopRail", () => {
   it("advances current to Run once steps are defined — Suite is optional and never blocks", () => {
     // Steps defined but NOT in any Suite (suite membership is by tag and not
     // reflected on the entity). The rail must skip the optional Suite node and
-    // make Run the next step, not strand the user on "Create suite". `passing` is
-    // the only steps-defined status; with no recorded run on the entity this
-    // isolates the steps-defined-but-run-pending state the projection must handle.
-    const uc = useCase({
-      featureFiles: [vp("Features/UC-001-happy.feature")],
-      automationStatus: "passing",
-    });
-    const rail = projectLoopRail(uc);
+    // make Run the next step, not strand the user on "Create suite".
+    const rail = projectLoopRail(useCase(), STEPS_READY);
     expect(rail.currentStage).toBe("run");
     expect(rail.currentAction).toBe("run");
     expect(rail.nodes.find((n) => n.stage === "run")?.actionLabel).toBe("Run");
-    // The optional Suite node is never `current` and never carries an action.
     const suite = rail.nodes.find((n) => n.stage === "suite");
     expect(suite?.state).not.toBe("current");
     expect(suite?.action).toBeNull();
   });
 
-  it("keeps Steps current at `planned` — status can't prove the stubs exist yet", () => {
-    // `planned` is reached the instant Generate Feature writes scenarios, before
-    // any step-definition stub exists; the rail keeps offering Generate steps
-    // rather than Run against undefined steps (it advances once a run records).
-    const uc = useCase({
-      featureFiles: [vp("Features/UC-001-happy.feature")],
-      automationStatus: "planned",
-    });
-    const rail = projectLoopRail(uc);
+  it("keeps Steps current while step definitions are missing, even with a recorded run", () => {
+    // A run can be recorded against undefined steps (it imports as failed), so a
+    // recorded run does NOT prove the stubs exist. The rail offers Generate steps
+    // as the recovery action even though the Run node reads done.
+    const uc = useCase({ lastTestRun: { runId: "RUN-2", status: "failed", date: "2026-06-21" } });
+    const f = facts({ featureCount: 1, stepsDefined: false });
+    const rail = projectLoopRail(uc, f);
     expect(rail.currentStage).toBe("steps");
     expect(rail.currentAction).toBe("generate-steps");
-  });
-
-  it("keeps Steps current at `failing` even with a recorded run — stubs may be missing", () => {
-    // A run with undefined steps imports as `failed`, so `failing` doesn't prove
-    // the stubs exist. Even though the run is recorded (Run reads done), the rail
-    // conservatively offers Generate steps, not Run, as the recovery step.
-    const uc = useCase({
-      featureFiles: [vp("Features/UC-001-happy.feature")],
-      automationStatus: "failing",
-      lastTestRun: { runId: "RUN-2", status: "failed", date: "2026-06-21" },
-    });
-    const rail = projectLoopRail(uc);
-    expect(rail.currentStage).toBe("steps");
-    expect(rail.currentAction).toBe("generate-steps");
-    // The run capability is still reported truthfully on its own node.
     expect(rail.nodes.find((n) => n.stage === "run")?.state).toBe("done");
   });
 
   it("marks the Suite node done when the Use Case lists a suite (informational)", () => {
-    const uc = useCase({
-      featureFiles: [vp("Features/UC-001-happy.feature")],
-      automationStatus: "passing",
-      suites: ["SUITE-smoke"],
-    });
-    const rail = projectLoopRail(uc);
+    const rail = projectLoopRail(useCase({ suites: ["SUITE-smoke"] }), STEPS_READY);
     expect(rail.nodes.find((n) => n.stage === "suite")?.state).toBe("done");
     expect(rail.currentStage).toBe("run"); // still Run; suite never gates it
   });
 
-  it("keeps Steps current at `implemented` with a recorded run — a new unrun scenario may lack stubs", () => {
-    // `implemented` can mean a previously-passing UC gained a NEW scenario whose
-    // steps aren't generated yet (old scenarios passed, the new one has no result).
-    // Even with a prior run recorded, the rail must NOT close — it offers Generate
-    // steps so the new scenario's stubs get written before the next run.
-    const uc = useCase({
-      featureFiles: [vp("Features/UC-001-happy.feature")],
-      automationStatus: "implemented",
-      lastTestRun: PASSED_RUN,
-    });
-    const rail = projectLoopRail(uc);
-    expect(rail.currentStage).toBe("steps");
-    expect(rail.currentAction).toBe("generate-steps");
-  });
-
   it("closes the loop (no current, no action) once everything is done", () => {
     const rail = projectLoopRail(
-      useCase({
-        featureFiles: [vp("Features/UC-001-happy.feature")],
-        automationStatus: "passing",
-        suites: ["SUITE-smoke"],
-        lastTestRun: PASSED_RUN,
-      }),
+      useCase({ suites: ["SUITE-smoke"], lastTestRun: PASSED_RUN }),
+      STEPS_READY,
     );
     expectLoopClosed(rail);
     expect(rail.nodes.every((n) => n.state === "done")).toBe(true);
@@ -261,39 +187,21 @@ describe("projectLoopRail", () => {
 
   it("closes the required loop even without a Suite (Suite is optional)", () => {
     // no `suites` — membership is by tag and not reflected on the entity
-    const rail = projectLoopRail(
-      useCase({
-        featureFiles: [vp("Features/UC-001-happy.feature")],
-        automationStatus: "passing",
-        lastTestRun: PASSED_RUN,
-      }),
-    );
+    const rail = projectLoopRail(useCase({ lastTestRun: PASSED_RUN }), STEPS_READY);
     expectLoopClosed(rail);
     // The optional Suite node reads not-done but never reopens the loop.
     expect(rail.nodes.find((n) => n.stage === "suite")?.state).toBe("todo");
   });
 
-  it("advances off Feature when the supplied count is positive despite empty featureFiles", () => {
-    // The rail threads the filename-derived count: a UC with a Feature on disk but
-    // no forward link still shows Feature done and Steps as the next step.
-    const uc = useCase({ featureFiles: [], automationStatus: "missing-steps" });
-    const rail = projectLoopRail(uc, 1);
-    expect(stateOf(uc, "feature")).not.toBe("done"); // entity-only projection still reads no Feature
-    expect(rail.nodes.find((n) => n.stage === "feature")?.state).toBe("done");
-    expect(rail.currentStage).toBe("steps");
-  });
-
   it("current is the FIRST not-done stage; each node still reflects its own true capability", () => {
-    // Already in a Suite (a later stage) but no Feature yet. `current` is the
-    // first gap (Feature), but the Suite node reads `done` because the rail tells
-    // the truth about each capability the artifact actually has — it never lies
-    // a satisfied stage back to todo just because an earlier one is missing.
+    // Already in a Suite (a later stage) but no Feature yet. `current` is the first
+    // gap (Feature), but the Suite node reads `done` because the rail tells the
+    // truth about each capability the artifact actually has.
     const uc = useCase({ suites: ["SUITE-smoke"] });
-    const rail = projectLoopRail(uc);
+    const rail = projectLoopRail(uc, facts());
     expect(rail.currentStage).toBe("feature");
     expect(rail.currentAction).toBe("generate-feature");
     expect(rail.nodes.find((n) => n.stage === "suite")?.state).toBe("done");
-    // …and only the current node carries an action (the satisfied Suite does not).
     expect(rail.nodes.find((n) => n.stage === "suite")?.action).toBeNull();
   });
 });

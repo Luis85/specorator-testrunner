@@ -1,4 +1,4 @@
-import type { AutomationStatus, UseCase } from "../../domain/entities/use-case";
+import type { UseCase } from "../../domain/entities/use-case";
 
 /**
  * The loop rail (WS-C1, 03-§3.1 / R1): the forward-momentum spine that turns the
@@ -84,53 +84,9 @@ const STAGE_ACTION: Record<LoopRailStage, LoopRailAction> = {
 };
 
 /**
- * Automation statuses that PROVE every one of the Use Case's step definitions
- * exists. Only `passing` qualifies: it is reached solely when EVERY contributing
- * scenario has run AND its latest result is `passed` (a scenario with no history
- * makes the Feature `partial`, not `passing`). Every passed scenario necessarily
- * matched its step definitions, so `passing` is full proof.
- *
- * Every other status is EXCLUDED, because none proves all the stubs exist:
- * - `planned` ("has Gherkin steps, not yet run") is reached the instant Generate
- *   Feature writes scenarios, BEFORE any stub exists. The `missing-steps` gate in
- *   `computeAutomationStatus` measures empty **Gherkin** steps in the `.feature`
- *   (`scenario.steps.length === 0`), NOT the runner project's step-definition stubs.
- * - `failing` can come straight from missing stubs: bddgen exits 0 while printing
- *   undefined steps, and `cucumber-json-report-parser` maps `undefined`/`pending`/
- *   `ambiguous` to `failed`, so a run with no step definitions lands on `failing`.
- * - `implemented` is NOT full proof either: when a previously-passing UC gains a
- *   NEW scenario, the history roll-up reads `partial`→`implemented` (old scenarios
- *   passed, the new one has no result yet), but the new scenario can still lack its
- *   stubs — it simply hasn't been RUN to surface the undefined step. Including it
- *   would mark Steps done and, with a prior run/evidence recorded, close the loop
- *   before the new scenario's steps are generated (Codex review).
- *
- * Since the status alone can't tell a fully-defined UC from one carrying an unrun,
- * stub-less scenario, the rail takes the conservative reading (matching its
- * `planned`/`failing` handling): at any non-`passing` status the Steps node stays
- * the current "Generate step definitions" CTA. generate-steps is non-destructive
- * (a no-op once stubs exist) and the header's "Run Use Case" button still runs
- * directly, so the redundant CTA costs nothing; a full `passing` run advances the
- * rail. (The exact alternative — gating on per-Feature missing-step detection —
- * spawns the bddgen process per render and was deferred; this is the cheap floor.)
- *
- * Known limitation (accepted): `automationStatus` is derived from the UC's
- * frontmatter `featureFiles` (TraceabilityService), while the rail derives Feature
- * *presence* from the ADR-0012 filename listing. An orphan Feature (filename matches
- * `UC-NNN-` but is absent from frontmatter) therefore counts for presence but not
- * for this status, so the rail can sit on the Generate-steps CTA until the UC's
- * forward link is repaired. The CTA is non-destructive and the header Run button
- * still works, so this degrades gracefully rather than dead-ending.
- */
-const STEPS_DEFINED_STATUSES: ReadonlySet<AutomationStatus> = new Set<AutomationStatus>([
-  "passing",
-]);
-
-/**
- * The Use Case's current loop capabilities, derived from the entity alone (no
- * I/O): does it have ≥1 Feature, are its steps defined, is it in a Suite, has it
- * run? A separate input shape so the projection is trivially unit-testable and
- * the view passes exactly what it already holds.
+ * The Use Case's current loop capabilities: does it have ≥1 Feature, are its step
+ * definitions written, is it in a Suite, has it run? A separate shape so the
+ * projection is trivially unit-testable.
  */
 export interface LoopCapabilities {
   hasFeature: boolean;
@@ -140,17 +96,38 @@ export interface LoopCapabilities {
 }
 
 /**
- * Derives the loop capabilities from a Use Case. Steps are "defined" once the UC
- * has a Feature AND its automation status has moved past `missing-steps`; a run
- * counts when there is a recorded last run or evidence (the loop's last hop).
+ * The two facts the loop rail CANNOT read reliably from the Use Case entity, so
+ * the detail view computes and supplies them:
  *
- * `featureCount` is the number of Feature Specifications the UC actually owns. It
- * defaults to `useCase.featureFiles.length`, but the detail view passes the count
- * derived from the **filename back-reference** (ADR-0012, `<UC-id>-<slug>.feature`)
- * instead — that listing is the source of truth, since a Feature created on disk
- * whose forward-link write failed is missing from `useCase.featureFiles` yet still
- * belongs to the UC. Feeding the rail the same listing the Feature section uses
- * keeps the two from disagreeing about whether a Feature exists (Codex review).
+ * - `featureCount` — how many Feature Specifications the UC owns, derived from the
+ *   ADR-0012 filename back-reference (`<UC-id>-<slug>.feature`), the source of
+ *   truth. A Feature created on disk whose forward-link write failed is missing
+ *   from `useCase.featureFiles` yet still belongs to the UC, so the view passes
+ *   the filename listing rather than the frontmatter count.
+ *
+ * - `stepsDefined` — whether EVERY Gherkin step across those Features already has a
+ *   matching step definition (`SpecificationService.allStepsDefined`, the static
+ *   `listStepPatterns` signal). This replaces the old `automationStatus` proxy,
+ *   which could not see the runner project's step-definition stubs: `planned` is
+ *   reached before any stub exists, and both `failing` and `implemented` can carry
+ *   a scenario whose stubs are missing (an undefined step imports as `failed`; a
+ *   newly-added scenario rolls up `implemented` while still unrun). Reading the
+ *   actual step definitions tells the rail the truth, and because it reads the same
+ *   filename-listed Features it also removes the old frontmatter-vs-filename
+ *   inconsistency (Codex review).
+ *
+ * `inSuite` and `hasRun` still derive from the entity below — those are reliable.
+ */
+export interface LoopRailFacts {
+  featureCount: number;
+  stepsDefined: boolean;
+}
+
+/**
+ * Derives the loop capabilities from a Use Case plus the view-supplied
+ * {@link LoopRailFacts}. A Feature exists when the filename listing found ≥1; steps
+ * are "defined" only when a Feature exists AND every Gherkin step is matched by a
+ * definition; a run counts when there is a recorded last run or evidence.
  *
  * `inSuite` is **best-effort and informational only** — it reads the `suites`
  * frontmatter, but Test Suite membership is by **Tag Expression** and
@@ -159,14 +136,11 @@ export interface LoopCapabilities {
  * Suite as an OPTIONAL node that never gates Run (a Use Case can be run directly
  * by UC scope without belonging to any Suite — Codex review). Pure.
  */
-export const loopCapabilitiesFor = (
-  useCase: UseCase,
-  featureCount: number = useCase.featureFiles.length,
-): LoopCapabilities => {
-  const hasFeature = featureCount > 0;
+export const loopCapabilitiesFor = (useCase: UseCase, facts: LoopRailFacts): LoopCapabilities => {
+  const hasFeature = facts.featureCount > 0;
   return {
     hasFeature,
-    stepsDefined: hasFeature && STEPS_DEFINED_STATUSES.has(useCase.automationStatus),
+    stepsDefined: hasFeature && facts.stepsDefined,
     inSuite: useCase.suites.length > 0,
     hasRun: useCase.lastTestRun !== undefined || useCase.evidence.length > 0,
   };
@@ -210,14 +184,10 @@ const stageDone = (stage: LoopRailStage, caps: LoopCapabilities): boolean => {
  * the optional Suite stage is skipped when choosing `current` so it never blocks
  * Run. Every other not-done stage is `todo`. A fully-complete loop (all required
  * stages done) has no current node and no action. Pure: derives entirely from the
- * Use Case entity plus `featureCount` (see {@link loopCapabilitiesFor} — the view
- * passes the filename-derived count so the rail and the Feature list agree).
+ * Use Case entity plus the view-supplied {@link LoopRailFacts}.
  */
-export const projectLoopRail = (
-  useCase: UseCase,
-  featureCount: number = useCase.featureFiles.length,
-): LoopRail => {
-  const caps = loopCapabilitiesFor(useCase, featureCount);
+export const projectLoopRail = (useCase: UseCase, facts: LoopRailFacts): LoopRail => {
+  const caps = loopCapabilitiesFor(useCase, facts);
   const doneByStage = LOOP_RAIL_STAGES.map((stage) => stageDone(stage, caps));
   // The next step is the first not-done REQUIRED stage; the optional Suite stage
   // is never `current`, so a missing/undetectable suite can't strand the rail.

@@ -156,6 +156,7 @@ const buildDeps = (): TestHubCommandDeps => ({
     listFeatures: vi.fn(async () => ok([])),
     announceUpdated: vi.fn(async () => undefined),
     listStepPatterns: vi.fn(async () => []),
+    allStepsDefined: vi.fn(async () => false),
   },
 
   stepDefinitionService: {
