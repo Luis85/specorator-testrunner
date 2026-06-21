@@ -16,7 +16,8 @@ export const CARD_TYPE_COLORS: Record<CardType, string> = {
 };
 
 export type StoryMapCardId = string; // "SMC-NNN"
-export const STORY_MAP_CARD_ID_RE = /^SMC-(\d{3,})$/;
+// Module-private: the public surface is isStoryMapCardId / nextStoryMapCardId.
+const STORY_MAP_CARD_ID_RE = /^SMC-(\d{3,})$/;
 
 /**
  * True when `value` is a well-formed `SMC-NNN` card id. Card ids become file
