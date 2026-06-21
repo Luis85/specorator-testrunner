@@ -100,11 +100,13 @@ collapsing the eleven co-equal leaves. Two framings:
   de-risk the shell. (a) needs a new ADR (Obsidian per-leaf workspace-restore is the
   main risk).
 
-**T2 — Identity strength.** Mandate = "native + light identity." **Recommendation:**
-`--spec-accent` **defaults to the theme accent** (pure-native out of the box), with an
-**opt-in settings toggle** for a Specorator hue. Keep the plugin **id** `e2e-test-hub`
-(renaming is a breaking data migration — out of scope) but migrate **class names** to a
-`spec-` prefix and the UI wordmark to "Specorator." [02-R10, 02-Q2]
+**T2 — Identity strength. DECIDED (§0): default Specorator brand hue.**
+`--spec-accent` **defaults to a Specorator brand teal** (a single adjustable token,
+light/dark contrast-tuned) — **not** the theme accent and **not** opt-in. A settings toggle
+may still let a user fall *back* to their theme accent, but the shipped default is the brand
+hue. Keep the plugin **id** `e2e-test-hub` (renaming is a breaking data migration — out of
+scope) but migrate **class names** to a `spec-` prefix and the UI wordmark to "Specorator."
+[02-R10; supersedes report-02's opt-in-default recommendation]
 
 **T3 — Status semantics vs. rendering.** CONTEXT.md is explicit that Planning Status,
 Automation Status, and Run Status are *different axes*. **Recommendation:** unify the
@@ -149,7 +151,7 @@ pure modules it should produce (to keep presentation thin), and its risk.
 |---|---|---|---|
 | **C1 Loop rail / forward momentum** | A 5-node next-step spine (Use Case · Feature · Steps · Suite · Run) on every authoring surface; create-UC opens the **detail cockpit**, not the raw note; ▶ Run in the Feature editor toolbar. | 03-R1 | Low — additive, reuses existing services |
 | **C2 Pending Steps panel** | First-class surface listing undefined steps; "Generate stub" + **open the step file at the inserted stub**; merge detect+generate into one "Steps" action; progress bar. | 03-R2 | Med — needs a `.testrunner` open-at-line path |
-| **C3 Run view** | Reframe the console as a Run view: per-scenario live results, progress (N of M), **environment chip**, inline evidence, **re-run failed only**, raw log behind a disclosure. | 03-R3/R4/R5 | Med–High — gated by T4 (per-scenario events) |
+| **C3 Run view** | Reframe the console as a Run view: per-scenario live results, progress (N of M), **environment chip**, inline evidence, **re-run failed only**, raw log behind a disclosure. NB: re-run-failed needs a **new failure-set execution scope** — today `ExecutionScope` is only `use-case\|feature\|suite\|all\|demo` and `RunLauncher` forwards one scope/target, so this requires runner-command/scope/event/evidence work, not just reusing existing plumbing (Codex catch — see 03 corrected). | 03-R3/R4/R5 | Med–High — gated by T4 (per-scenario events) + a new failure-set scope |
 | **C4 Tag-expression builder** | Vault-wide tag palette + operator buttons + live "Matches N" in the suite modal; "Included in N suites" under editor scenarios; a lightweight Tag glossary. | 03-R6 | Low — reuses `listKnownTags`/`scenarioCounter` |
 | **C5 Rename-identity protection** | Intercept a history-dropping scenario rename with an inline confirm weighted by history depth ("47 runs of history"). | 03-R7 | Med — editor commit is fire-and-forget on blur |
 
@@ -158,7 +160,7 @@ pure modules it should produce (to keep presentation thin), and its risk.
 | WS | Scope | Sources | Risk |
 |---|---|---|---|
 | **D1 Reconciling board render** | Replace `empty()`+rebuild with the A3 keyed differ so edits don't reset scroll/zoom/hover. **Keystone** for D2. | 04-R1 | Med — hottest path; careful DnD re-wire |
-| **D2 Zoom/pan/focus + minimap** | `panzoom` behind a one-function adapter (mirrors the dnd adapter); fit-to-screen; **focus a Slice/Activity** (camera frame + dim); minimap. Pointer math already board-corrects (`toBoardPoint`). ADR-0029's named remaining phase. | 04-R2/R3/R4 | Med — new runtime dep (anticipated by ADR-0029 P5) |
+| **D2 Zoom/pan/focus + minimap** | `panzoom` behind a one-function adapter (mirrors the dnd adapter); fit-to-screen; **focus a Slice/Activity** (camera frame + dim); minimap. The adapter must **own screen→board conversion** (invert the wrapper group's CTM); `toBoardPoint` today reads the **outer** SVG's CTM and must route through the adapter (Codex catch — see 04 corrected). ADR-0029's named remaining phase. | 04-R2/R3/R4 | Med — new runtime dep (anticipated by ADR-0029 P5); coordinate inversion is real work |
 | **D3 Card visual language** | Bigger breathing cards + **type-tinted spine** + 2-line wrapped titles + **status-as-visual-state**; resolve `ref` to a clickable aliased `[[note\|UC-NNN]]`; reconcile the two colour systems (inline swatch cycles **Card Types**; free-text `color` modal-only). | 04-R5/R6/R7 | Low–Med — R7 changes documented P4 behaviour (T-board) |
 | **D4 Board toolbar + panels** | Persistent toolbar (breadcrumb + view controls + add + legend toggle); **live legend** (filter + type palette); **right-docked card inspector** exposing the card **body** (invisible today); **persona identity** (colour/initial chips linking to `PER-NNN`). | 04-R8/R9/R10/R12 | Med |
 | **D5 Board polish** | In-board undo (pure-model snapshot stack); real empty/first-run states + coachmarks; satellite consistency (Settings modal → `Setting` rows; builder board-shape preview); light identity layer (dot-grid, banded slices). | 04-R11/R13/R14/R15 | Low |
@@ -167,7 +169,7 @@ pure modules it should produce (to keep presentation thin), and its risk.
 
 | WS | Scope | Sources | Risk |
 |---|---|---|---|
-| **E1 Hub home redesign** | **Health hero** ("is my product green?": pass-rate, active env, last-run verdict); **KPI funnel** with denominators/%/bars; make tiles **real filters** (widen `DashboardNavTarget`); reorder so health/actions/KPIs lead and docs/onboarding defer. | 05-R1/R2/R3/R4 | Low–Med (R3 needs an explorer filter contract) |
+| **E1 Hub home redesign** | **Health hero** ("is my product green?": pass-rate + last-run verdict). NB: the UC-automation roll-up is **environment-agnostic today** (`TestRunSummary`/evidence carry no env) — either add an environment dimension or **omit the active-env label** from the hero (Codex catch — see 05 corrected). **KPI funnel** with denominators/%/bars; make tiles **real filters** (widen `DashboardNavTarget`); reorder so health/actions/KPIs lead and docs/onboarding defer. | 05-R1/R2/R3/R4 | Low–Med (R3 needs an explorer filter contract; env-attributed health needs a model change) |
 | **E2 PRD explorer + builder** | Quiet primary row target + actions menu; **PRD delete behind the shared two-click confirm**; per-PRD coverage chip; builder step rail + per-step validation + drop the dead Success step + clickable Review. | 05-R5/R7/R9 | Low–Med |
 | **E3 Settings IA** | Advanced/collapsible vault paths; explicit **Danger zone** for Reset; environments as summary cards that expand; auth column headers/caption. | 05-R6/R10 | Low |
 | **E4 Runs & live feedback** | Richer recent-runs (counts, env, duration, re-run, friendly label); "updated just now" live-refresh feedback. | 05-R8/R11 | Med (needs run summary to carry counts/env/duration) |
@@ -196,10 +198,9 @@ shared vocabulary).
 Consolidated from the 34 open questions across the five reports — the ones that **gate the
 plan's structure**:
 
-1. **IA depth (T1):** commit to the **hub-shell** destination (bold), or stop at
-   **loop-rail + deep-linking** (lower risk)? *Determines Phase 1 + whether B1 happens.*
-2. **Identity & brand (T2):** opt-in Specorator accent (default-native) + `spec-` class
-   rename + "Specorator" wordmark — confirmed? Plugin **id** stays `e2e-test-hub`?
+1. ~~**IA depth (T1)**~~ — **DECIDED (§0): hub shell (bold).**
+2. ~~**Identity & brand (T2)**~~ — **DECIDED (§0): default Specorator brand hue, not
+   opt-in; `spec-` class rename + "Specorator" wordmark; plugin id stays `e2e-test-hub`.**
 3. **Run view granularity (T4):** can/should the runner emit **per-scenario events**
    mid-run (enables live results + re-run-failed), or stay output-log-first for now?
 4. **Run-time environment override:** allow running against a non-active environment
@@ -207,8 +208,12 @@ plan's structure**:
 5. **Board scope (T-board):** (a) inline swatch cycles **Card Types** (one colour
    language) — OK to change the documented P4 behaviour? (b) Expose/edit the card **body**
    on the board via the inspector? (c) Focus = camera-only (recommended) or also filter?
-6. **Health-hero metric:** headline = **pass-rate of automated UCs**, or a
-   coverage-weighted figure that also penalises unspecified/unautomated UCs?
+6. **Health-hero metric & environment attribution:** headline = **pass-rate of automated
+   UCs**, or a coverage-weighted figure penalising unspecified/unautomated UCs? **And:** the
+   UC-automation roll-up is **environment-agnostic today** — `TestRunSummary`/evidence carry
+   no environment field — so the hero can't honestly label counts with the active env
+   without first **adding an environment dimension** to runs/evidence/history. Decide:
+   add that dimension, or drop the env label from the hero (see 05-§3.1, corrected).
 
 The remaining report-level questions (slug defaults, minimap cost, persona-ownership model,
 settings audience, recent-runs depth, etc.) are workstream-local and can be decided as each

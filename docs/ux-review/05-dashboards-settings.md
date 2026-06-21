@@ -189,9 +189,17 @@ Restructure `render()` into a clear above-the-fold hero and a deferable below-th
 
 - **Health hero (new, top).** One large card answering "is my product green?": a big
   **pass-rate ring/bar** (passing ÷ (passing+failing), `@wip` already excluded upstream), the
-  active environment it reflects, the timestamp of the last run, and a one-line verdict
-  ("12 of 14 Use Cases passing · 2 failing · last run 6m ago on *staging*"). This is the
-  identity moment — a single confident, theme-native focal element.
+  timestamp of the last run, and a one-line verdict ("12 of 14 Use Cases passing · 2 failing ·
+  last run 6m ago"). This is the identity moment — a single confident, theme-native focal
+  element. **Caveat — do NOT label the health with the active environment** (reviewer catch,
+  Codex 2026-06-21): the roll-up aggregates from Use Case **automation status**
+  (`traceability-service.ts:128-134`), and `TestRunSummary` / the evidence link carry **no
+  environment field** (`test-run.ts:73-80`; `evidence-generation-service.ts:198-205` writes
+  only runId/status/date/scope/evidencePath). A vault that switches prod→staging after a prod
+  run would show prod-derived counts mislabelled "staging." So either (a) **omit the env
+  label** (recommended for V1 — the hero states product automation health, env-agnostic), or
+  (b) first **add an environment dimension** to runs/evidence/history and attribute counts per
+  environment. This is a model decision, not a freebie (see §6/00-plan).
 - **Demote docs + onboarding.** Collapse the 3 documentation buttons into a single overflow
   "Help ▾" / move them to a footer; show onboarding/tour CTAs *only* in the empty/first-run
   state, never on a populated hub (`render:216-218`).
@@ -260,7 +268,7 @@ feature is invisible.
 
 | # | Recommendation | Impact | Effort | Risk | Dependencies |
 |---|---|---|---|---|---|
-| R1 | Health hero card leading the hub (pass-rate, active env, last-run verdict) | H | M | Low | Snapshot already provides counts; new projection in `dashboard-rows` |
+| R1 | Health hero card leading the hub (pass-rate, last-run verdict; **no env label** unless a run-environment dimension is added first — §3.1 caveat) | H | M | Low | Snapshot already provides counts; new projection in `dashboard-rows` |
 | R2 | KPI funnel with denominators/%/bars + Failing-only-when-`>0` | H | M | Low | Pure projection change; CSS |
 | R3 | Make KPI tiles real filters (widen `DashboardNavTarget`, honour filter in UC explorer) | H | M | Med | Cross-surface: Use Cases explorer must accept a filter (coordinate with explorer owner) |
 | R4 | Reorder hub: health/actions/KPIs/runs first; docs+onboarding deferred to footer/empty-state | H | L | Low | None |
@@ -279,9 +287,12 @@ feature is invisible.
 
 ## 5. Open questions for the product owner
 
-1. **Health hero metric:** is the headline "pass rate of automated Use Cases" (passing ÷
-   passing+failing), or a coverage-weighted figure that also penalises unspecified/unautomated
-   Use Cases? This decides whether the hero rewards green tests or honest coverage.
+1. **Health hero metric & environment attribution:** is the headline "pass rate of automated
+   Use Cases" (passing ÷ passing+failing), or a coverage-weighted figure that also penalises
+   unspecified/unautomated Use Cases? This decides whether the hero rewards green tests or
+   honest coverage. **And** — since runs/evidence carry no environment today (§3.1 caveat) —
+   do we ship the hero env-agnostic for V1, or add a run-environment dimension so health can be
+   attributed per environment?
 2. **KPI filter drill-downs (R3):** are we willing to add a filter contract to the Use Cases
    explorer so "Failing" lands on failing UCs? Without it, the tiles stay decorative.
 3. **"Roadmap" framing:** the hub section labelled "roadmap" only lists direct sub-PRDs. Should

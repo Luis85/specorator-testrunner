@@ -217,12 +217,17 @@ note, per ADR-0029 consequence). Concretely:
 
 - **A pan/zoom layer via `panzoom` behind a one-function adapter** mirroring
   `story-map-board-dnd.ts` — e.g. `story-map-board-viewport.ts` exposing
-  `mountViewport(svg) → { setTransform, fit, getTransform, destroy }`. The view
-  applies the transform to a single wrapper `<g>`; **the existing
-  `getScreenCTM().inverse()` path already board-corrects pointer coordinates**
-  (`toBoardPoint:993`), so DnD hit-testing keeps working under zoom with zero
-  geometry changes. interact.js was *chosen* for exactly this (ADR-0029: "robust
-  over the CSS-transformed (zoomed) surface").
+  `mountViewport(svg) → { setTransform, fit, getTransform, toBoardPoint, destroy }`.
+  The view applies the transform to a single wrapper `<g>`. **Hit-testing must be
+  re-pointed at the transformed group, not the outer SVG** (reviewer catch, Codex
+  2026-06-21): `toBoardPoint` today calls `getScreenCTM()` on the **outer `<svg>`**
+  (`toBoardPoint:993`), which maps screen→viewport but does **not** invert the
+  child wrapper's pan/zoom transform — so under zoom/pan, drag and hover would
+  resolve against the wrong cell. The viewport adapter must therefore own the
+  screen→board conversion (invert the **wrapper group's** `getScreenCTM()`), and
+  `toBoardPoint` must route through it. interact.js was *chosen* to stay robust
+  over the CSS-transformed surface (ADR-0029), but the coordinate inversion is real
+  work this phase must do, not a freebie.
 - **Fit-to-screen** + **zoom 100% / +/−** controls in a persistent board toolbar
   (top-right). `fit()` computes scale from `layout.width/height` vs the viewport —
   a pure helper in the layout module (`computeFitTransform(layout, viewport)`),
@@ -245,13 +250,20 @@ note, per ADR-0029 consequence). Concretely:
 ### 3.2 Stop the full-repaint (prerequisite for everything above)
 
 C2 must be addressed or zoom/focus will flicker. Move from "empty + rebuild" to a
-**reconciling render**: keep node identity (the scene specs already carry stable
-`data-card-index` / header indices), and on an edit, update only the changed
-element's attributes/text rather than `container.empty()`. This can stay pure-ish:
-`buildBoardScene` already returns data; a small differ ("apply spec list to existing
-SVG, keyed by a stable `data-key`") lives in the view layer but is mechanical and
-testable as a function over two spec lists. This preserves scroll/zoom/hover across
-every cycle and inline edit, and is the foundation a 60fps board needs.
+**reconciling render**: keep node identity and, on an edit, update only the changed
+element's attributes/text rather than `container.empty()`. **Key the differ by
+stable model identifiers, not positional indices** (reviewer catch, Codex
+2026-06-21): `data-card-index` and header indices **shift** whenever cards/
+activities/slices/steps are added, removed, or reordered, so reusing them as keys
+would re-attach focus/hover/inline-editor state to the *wrong* card after a reorder.
+The scene specs must therefore carry a stable `data-key` derived from the
+persistent **`StoryMapCard.id`** (`src/domain/entities/story-map.ts:63`, minted by
+`addCard`) for cards and a stable composite key (e.g. `activity\|step\|slice` names,
+or a minted structural id) for headers. `buildBoardScene` already returns data; the
+differ ("apply spec list to existing SVG, keyed by the stable `data-key`") lives in
+the view layer but is mechanical and testable as a pure function over two spec
+lists. This preserves scroll/zoom/hover across every cycle and inline edit, and is
+the foundation a 60fps board needs.
 
 ### 3.3 Card & canvas visual language
 
@@ -327,8 +339,8 @@ Flag: ★ = keeps the ItemView thin (logic lands in pure modules / a thin adapte
 
 | # | Recommendation | Impact | Effort | Risk | Dependencies | Thin? |
 |---|----------------|--------|--------|------|--------------|-------|
-| R1 | **Reconciling render** — replace full `empty()`+rebuild with a keyed spec-differ so edits don't reset scroll/zoom/hover (C2) | H | M | M (touches the hottest path; needs careful DnD re-wire) | none (enables R2/R3) | ★ differ is a pure fn over two spec lists |
-| R2 | **Zoom/pan via `panzoom` adapter** + fit-to-screen + zoom controls (C1, ADR-0029 phase) | H | M | M (new runtime dep; pointer math already board-corrected) | R1 strongly preferred | ★ adapter mirrors dnd.ts; `computeFit` pure |
+| R1 | **Reconciling render** — replace full `empty()`+rebuild with a spec-differ **keyed by stable `StoryMapCard.id` / structural keys** (not positional indices) so edits don't reset scroll/zoom/hover or misattach state on reorder (C2) | H | M | M (touches the hottest path; needs careful DnD re-wire) | none (enables R2/R3) | ★ differ is a pure fn over two spec lists |
+| R2 | **Zoom/pan via `panzoom` adapter** + fit-to-screen + zoom controls (C1, ADR-0029 phase). Adapter **owns screen→board conversion** (invert the wrapper group's CTM); `toBoardPoint` routes through it | H | M | M (new runtime dep; coordinate inversion is real work, not free) | R1 strongly preferred | ★ adapter mirrors dnd.ts; `computeFit` pure |
 | R3 | **Focus mode** — frame a Slice/Activity, dim the rest; `f`/Esc keys (C1) | H | M | L | R2 | ★ `frameForSlice/Activity` pure |
 | R4 | **Minimap** overview with draggable viewport rect | M | M | L | R2 | ★ re-renders the same pure specs at scale |
 | R5 | **Bigger cards + type spine + 2-line wrapped titles + status-as-visual-state** (C3, M6) | H | M | L | metrics are pure; check tests | ★ all in `BOARD_METRICS`/scene/CSS |
