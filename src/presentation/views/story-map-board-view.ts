@@ -30,6 +30,7 @@ import {
 } from "../../domain/entities/story-map";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { LiveDashboardView } from "./live-dashboard-view";
+import { artifactTarget, type NavigationTarget } from "../navigation/navigation-target";
 import { renderLoadError } from "./modal-helpers";
 import { buildBoardScene, type SvgNodeSpec } from "./story-map-board-scene";
 import { StoryMapCardModal } from "./story-map-card-modal";
@@ -60,9 +61,9 @@ export interface StoryMapBoardDeps {
   /** Passed to the Card modal for the reference picker + Promote-to-Use-Case. */
   useCaseService: Pick<UseCaseService, "create" | "assignToPrd" | "findAll">;
   eventBus: EventBus;
-  // WS-A4 deep-link port: clicking a card's `UC-NNN` ref opens that Use Case's
+  // WS-A4/B4 deep-link port: clicking a card's `UC-NNN` ref opens that Use Case's
   // detail (01-§3.2). The board already resolves refs; this navigates to them.
-  openArtifact: (id: string) => void;
+  navigate: (target: NavigationTarget) => void;
 }
 
 interface BoardState {
@@ -703,10 +704,10 @@ export class StoryMapBoardView extends LiveDashboardView {
     if (index !== null) void this.openCardEditor(index);
   }
 
-  /** WS-A4: opens the Use Case detail named by a clicked card's `UC-NNN` ref. */
+  /** WS-A4/B4: opens the Use Case detail named by a clicked card's `UC-NNN` ref. */
   private onOpenCardRef(el: Element): void {
     const ref = el.getAttribute("data-card-ref");
-    if (ref !== null && ref !== "") this.deps.openArtifact(ref);
+    if (ref !== null && ref !== "") this.deps.navigate(artifactTarget(ref));
   }
 
   /**

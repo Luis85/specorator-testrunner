@@ -4,7 +4,7 @@
  * PRD's Use Cases. The view holds the flat `findAll()` list; this projection
  * picks the ones linked to a PRD (by `prd-id`, the single-parent tree, ADR-0026)
  * in a stable, id-sorted order, so the row can open the first/only one through
- * the `openArtifact` port. Pure (no I/O), so it is unit-tested.
+ * the deep-link port (an `artifact` target). Pure (no I/O), so it is unit-tested.
  */
 
 /** The minimal Use Case shape this projection needs — its id and PRD link. */

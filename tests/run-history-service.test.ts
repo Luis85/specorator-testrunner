@@ -171,4 +171,54 @@ describe("DefaultRunHistoryService", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("EVIDENCE_LIST_FAILED");
   });
+
+  describe("findByRunId", () => {
+    it("resolves a run's evidence entry by its run id", async () => {
+      const { service, fs } = build();
+      seed(fs, "2026/05/RUN-2026-05-30-080000");
+      seed(fs, "2026/05/RUN-2026-05-31-100000");
+
+      const result = await service.findByRunId("RUN-2026-05-31-100000");
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value?.evidencePath).toBe(
+        "Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md",
+      );
+      expect(result.value?.status).toBe("passed");
+    });
+
+    it("returns null for an unknown run id (renamed/deleted)", async () => {
+      const { service, fs } = build();
+      seed(fs, "2026/05/RUN-2026-05-31-100000");
+
+      const result = await service.findByRunId("RUN-does-not-exist");
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBeNull();
+    });
+
+    it("returns null on a fresh vault (no evidence folder)", async () => {
+      const { service } = build();
+
+      const result = await service.findByRunId("RUN-2026-05-31-100000");
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value).toBeNull();
+    });
+
+    it("surfaces a listing failure as EVIDENCE_LIST_FAILED", async () => {
+      const { service, fs } = build();
+      fs.folders.add(vp(ROOT));
+      fs.listFilesRecursive = async () => err({ code: "RUNNER_MISSING_FILE", message: "io error" });
+
+      const result = await service.findByRunId("RUN-2026-05-31-100000");
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("EVIDENCE_LIST_FAILED");
+    });
+  });
 });

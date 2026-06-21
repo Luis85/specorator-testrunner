@@ -38,6 +38,14 @@ export interface RunHistoryPage {
 export interface RunHistoryService {
   /** Newest-first page of run history entries. */
   list(options: { offset: number; limit: number }): Promise<Result<RunHistoryPage>>;
+  /**
+   * Resolves a single run by its `runId` (WS-B4): the deep-link target
+   * `{kind:"run", runId}` opens "the run that produced this evidence", and the
+   * run history has no other by-id lookup. Returns `null` when no partition
+   * carries that run id (renamed/deleted), so the navigator can fall through to
+   * a graceful not-found — the same tolerance the UC-detail view has.
+   */
+  findByRunId(runId: string): Promise<Result<RunHistoryEntry | null>>;
 }
 
 /** `YYYY/MM/<runId>/summary.md` relative to the evidence root (ADR-0016). */
@@ -76,10 +84,37 @@ export class DefaultRunHistoryService implements RunHistoryService {
   ) {}
 
   async list(options: { offset: number; limit: number }): Promise<Result<RunHistoryPage>> {
+    const scanned = await this.partitions();
+    if (!scanned.ok) return err(scanned.error);
+    const partitions = scanned.value;
+
+    const page = partitions.slice(options.offset, options.offset + options.limit);
+    const entries: RunHistoryEntry[] = [];
+    for (const partition of page) entries.push(await this.toEntry(partition));
+    return ok({ entries, hasMore: options.offset + options.limit < partitions.length });
+  }
+
+  async findByRunId(runId: string): Promise<Result<RunHistoryEntry | null>> {
+    const scanned = await this.partitions();
+    if (!scanned.ok) return err(scanned.error);
+    // The run id is the partition's third path segment (set on every Partition),
+    // so a linear scan finds it without reading any frontmatter for the misses.
+    const match = scanned.value.find((partition) => partition.runId === runId);
+    if (!match) return ok(null);
+    return ok(await this.toEntry(match));
+  }
+
+  /**
+   * Scans the evidence tree into the recency-ordered run partitions (newest
+   * first), the shared basis for both `list` (a page of them) and `findByRunId`
+   * (a lookup over them). A fresh vault yields an empty list, not an error; a
+   * listing fault surfaces as EVIDENCE_LIST_FAILED.
+   */
+  private async partitions(): Promise<Result<Partition[]>> {
     const settings = await this.settingsService.load();
     const root = settings.paths.evidencePath;
     // A fresh vault has no evidence folder yet — that is "no history", not an error.
-    if (!(await this.fs.exists(root))) return ok({ entries: [], hasMore: false });
+    if (!(await this.fs.exists(root))) return ok([]);
 
     const listed = await this.fs.listFilesRecursive(root);
     if (!listed.ok) {
@@ -99,11 +134,7 @@ export class DefaultRunHistoryService implements RunHistoryService {
       partitions.push({ path, relative, year: match[1], month: match[2], runId: match[3] });
     }
     partitions.sort((a, b) => (a.relative < b.relative ? 1 : a.relative > b.relative ? -1 : 0));
-
-    const page = partitions.slice(options.offset, options.offset + options.limit);
-    const entries: RunHistoryEntry[] = [];
-    for (const partition of page) entries.push(await this.toEntry(partition));
-    return ok({ entries, hasMore: options.offset + options.limit < partitions.length });
+    return ok(partitions);
   }
 
   private async toEntry(partition: Partition): Promise<RunHistoryEntry> {

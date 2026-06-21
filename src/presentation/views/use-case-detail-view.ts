@@ -20,6 +20,11 @@ import { checklistRow, type ChecklistRow, renderChecklist } from "./checklist";
 import { EditUseCaseModal } from "./edit-use-case-modal";
 import { type LoopRailAction, projectLoopRail, renderLoopRail } from "./loop-rail-rows";
 import { LiveDashboardView } from "./live-dashboard-view";
+import {
+  artifactTarget,
+  featureTarget,
+  type NavigationTarget,
+} from "../navigation/navigation-target";
 import { openOrNotice, renderEmptyState, renderLoadError } from "./modal-helpers";
 import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
 import {
@@ -117,9 +122,10 @@ export interface UseCaseDetailDeps {
   // create-Suite flow (the rail reuses the same modal the dashboard/explorer
   // open — no suite-creation logic is duplicated here).
   openCreateSuite: () => void;
-  // WS-A4 deep-link port: the PRD breadcrumb opens the SPECIFIC parent PRD
-  // (01-§3.2) instead of the PRD explorer — one id-keyed navigation path.
-  openArtifact: (id: string) => void;
+  // WS-A4/B4 deep-link port: the PRD breadcrumb opens the SPECIFIC parent PRD
+  // (by id, 01-§3.2), a Feature row opens by its vault path, and a Story Map
+  // backlink opens its board (by id) — all through the one unified navigator.
+  navigate: (target: NavigationTarget) => void;
 }
 
 /**
@@ -446,13 +452,15 @@ export class UseCaseDetailView extends LiveDashboardView {
           cls: "e2e-test-hub-link-button",
           attr: { "aria-label": `Open PRD ${prdId}` },
         })
-        .addEventListener("click", () => this.deps.openArtifact(prdId));
+        .addEventListener("click", () => this.deps.navigate(artifactTarget(prdId)));
     }
   }
 
   /**
    * The "Referenced by Story Maps" backlink line: a button per map that places
-   * this Use Case, opening the map's note. Renders nothing when no map does.
+   * this Use Case, opening that map's BOARD through the deep-link port (WS-B4,
+   * 01-§3.2 — UC-detail Story Map backlinks open the board at that card), not the
+   * raw note. Renders nothing when no map does.
    */
   private renderStoryMapBacklinks(headerEl: HTMLElement, backlinks: StoryMapBacklink[]): void {
     if (backlinks.length === 0) return;
@@ -466,7 +474,7 @@ export class UseCaseDetailView extends LiveDashboardView {
           cls: "e2e-test-hub-link-button",
           attr: { "aria-label": `Open Story Map ${map.id} ${map.title}` },
         })
-        .addEventListener("click", () => void openOrNotice(this.deps.workspace, map.path));
+        .addEventListener("click", () => this.deps.navigate(artifactTarget(map.id)));
     });
   }
 
@@ -536,9 +544,10 @@ export class UseCaseDetailView extends LiveDashboardView {
       return el;
     };
 
-    button("Open", `Open ${row.label}`).addEventListener(
-      "click",
-      () => void openOrNotice(this.deps.workspace, row.path),
+    button("Open", `Open ${row.label}`).addEventListener("click", () =>
+      // WS-B4: a Feature opens through the deep-link port by its vault path
+      // (Features are not id-resolvable), routing to the `.feature` editor.
+      this.deps.navigate(featureTarget(row.path)),
     );
     // Visible label matches the explorers' per-row "Run"; the aria-label keeps
     // the full "Run <feature label>" so assistive tech still hears the target.

@@ -15,7 +15,7 @@ import { type ArtifactKind, classifyArtifactId } from "./artifact-id";
  * One crumb in a breadcrumb trail. `id` is the artifact id (`PRD-003`/`UC-021`/
  * `SM-002`) for the segments that name a node, and `undefined` for the static
  * "home" segments (`Test Hub`, the `Plan` section) — those navigate by their
- * own affordance, not through `openArtifact`. A crumb with an `id` is meant to
+ * own affordance, not through the deep-link port. A crumb with an `id` is meant to
  * be a deep-link; a crumb without one is a plain label or a section root.
  */
 export interface Crumb {

@@ -1,13 +1,13 @@
 import { Notice, type WorkspaceLeaf } from "obsidian";
-import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { PrdService } from "../../application/services/prd-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { Prd } from "../../domain/entities/prd";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { buttonElementControl, wireConfirmAction } from "./confirm-action";
-import { openOrNotice, renderEmptyState, renderLoadError } from "./modal-helpers";
+import { renderEmptyState, renderLoadError } from "./modal-helpers";
 import { LiveDashboardView } from "./live-dashboard-view";
+import { artifactTarget, type NavigationTarget } from "../navigation/navigation-target";
 import { firstUseCaseIdOfPrd } from "../navigation/use-cases-of-prd";
 
 export const PRD_VIEW_TYPE = "e2e-test-hub-prds";
@@ -59,13 +59,13 @@ export const buildPrdTree = (prds: Prd[], ucCounts: Map<string, number>): PrdTre
 export interface PrdExplorerDeps {
   prdService: PrdService;
   useCaseService: UseCaseService;
-  workspace: WorkspacePort;
   eventBus: EventBus;
   /** Opens the PRD Builder; a node's "＋ sub-PRD" button passes its id as parent. */
   openPrdBuilder: (parentPrdId?: string) => void;
-  // WS-A4 deep-link port: a PRD row with Use Cases gains an affordance to jump
-  // into them — opening the first linked Use Case's detail (01-§3.2).
-  openArtifact: (id: string) => void;
+  // WS-A4/B4 deep-link port: a PRD row opens the PRD itself (by id) and gains an
+  // affordance to jump into its Use Cases (the first linked UC's detail, 01-§3.2)
+  // — both through the one unified navigator.
+  navigate: (target: NavigationTarget) => void;
 }
 
 /**
@@ -147,10 +147,10 @@ export class PrdExplorerView extends LiveDashboardView {
       cls: "e2e-test-hub-link-button",
       attr: { "aria-label": `Open PRD ${node.prd.id} ${node.prd.title}` },
     });
-    open.addEventListener("click", () => void openOrNotice(this.deps.workspace, node.prd.path));
+    open.addEventListener("click", () => this.deps.navigate(artifactTarget(node.prd.id)));
 
-    // WS-A4 deep-link: jump from a PRD into its Use Cases. Opens the first linked
-    // Use Case's detail through the openArtifact port; only shown when the PRD
+    // WS-A4/B4 deep-link: jump from a PRD into its Use Cases. Opens the first
+    // linked Use Case's detail through the navigator; only shown when the PRD
     // actually has one (avoids a dead affordance).
     const firstUcId = firstUseCaseIdOfPrd(useCases, node.prd.id);
     if (firstUcId !== null) {
@@ -160,7 +160,7 @@ export class PrdExplorerView extends LiveDashboardView {
           cls: "e2e-test-hub-link-button",
           attr: { "aria-label": `Open the Use Cases of PRD ${node.prd.id}` },
         })
-        .addEventListener("click", () => this.deps.openArtifact(firstUcId));
+        .addEventListener("click", () => this.deps.navigate(artifactTarget(firstUcId)));
     }
 
     row.createEl("span", {
