@@ -169,7 +169,7 @@ pure modules it should produce (to keep presentation thin), and its risk.
 
 | WS | Scope | Sources | Risk |
 |---|---|---|---|
-| **E1 Hub home redesign** | **Health hero** ("is my product green?": pass-rate + last-run verdict). NB: the UC-automation roll-up is **environment-agnostic today** (`TestRunSummary`/evidence carry no env) — either add an environment dimension or **omit the active-env label** from the hero (Codex catch — see 05 corrected). **KPI funnel** with denominators/%/bars; make tiles **real filters** (widen `DashboardNavTarget`); reorder so health/actions/KPIs lead and docs/onboarding defer. | 05-R1/R2/R3/R4 | Low–Med (R3 needs an explorer filter contract; env-attributed health needs a model change) |
+| **E1 Hub home redesign** | **Health hero** ("is my product green?": pass-rate + last-run verdict). NB: denominator = **`automatedUseCases`** (passing÷(passing+failing) drops `implemented` and overstates health — Codex catch). NB: the UC-automation roll-up is **environment-agnostic today** (`TestRunSummary`/evidence carry no env) — either add an environment dimension or **omit the active-env label** from the hero (Codex catch — see 05 corrected). **KPI funnel** with denominators/%/bars; make tiles **real filters** (widen `DashboardNavTarget`); reorder so health/actions/KPIs lead and docs/onboarding defer. | 05-R1/R2/R3/R4 | Low–Med (R3 needs an explorer filter contract; env-attributed health needs a model change) |
 | **E2 PRD explorer + builder** | Quiet primary row target + actions menu; **PRD delete behind the shared two-click confirm**; per-PRD coverage chip; builder step rail + per-step validation + drop the dead Success step + clickable Review. | 05-R5/R7/R9 | Low–Med |
 | **E3 Settings IA** | Advanced/collapsible vault paths; explicit **Danger zone** for Reset; environments as summary cards that expand; auth column headers/caption. | 05-R6/R10 | Low |
 | **E4 Runs & live feedback** | Richer recent-runs (counts, env, duration, re-run, friendly label); "updated just now" live-refresh feedback. | 05-R8/R11 | Med (needs run summary to carry counts/env/duration) |
@@ -212,10 +212,13 @@ plan's structure**:
 5. **Board scope (T-board):** (a) inline swatch cycles **Card Types** (one colour
    language) — OK to change the documented P4 behaviour? (b) Expose/edit the card **body**
    on the board via the inspector? (c) Focus = camera-only (recommended) or also filter?
-6. **Health-hero metric & environment attribution:** headline = **pass-rate of automated
-   UCs**, or a coverage-weighted figure penalising unspecified/unautomated UCs? **And:** the
-   UC-automation roll-up is **environment-agnostic today** — `TestRunSummary`/evidence carry
-   no environment field — so the hero can't honestly label counts with the active env
+6. **Health-hero metric, denominator & environment attribution:** headline = **pass-rate of
+   automated UCs** — if so, **`passing ÷ automatedUseCases`** (honest; includes
+   mid-implementation `implemented` UCs) vs `passing ÷ (passing+failing)` (terminal-only,
+   overstates health by dropping `implemented` — Codex catch); or a coverage-weighted figure
+   penalising unspecified/unautomated UCs? **And:** the UC-automation roll-up is
+   **environment-agnostic today** — `TestRunSummary`/evidence carry no environment field — so
+   the hero can't honestly label counts with the active env
    without first **adding an environment dimension** to runs/evidence/history. Decide:
    add that dimension, or drop the env label from the hero (see 05-§3.1, corrected).
 

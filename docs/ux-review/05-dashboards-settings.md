@@ -188,9 +188,16 @@ repaints.
 Restructure `render()` into a clear above-the-fold hero and a deferable below-the-fold:
 
 - **Health hero (new, top).** One large card answering "is my product green?": a big
-  **pass-rate ring/bar** (passing ÷ (passing+failing), `@wip` already excluded upstream), the
-  timestamp of the last run, and a one-line verdict ("12 of 14 Use Cases passing · 2 failing ·
-  last run 6m ago"). This is the identity moment — a single confident, theme-native focal
+  **pass-rate ring/bar** over the **automated Use Cases** (`passing ÷ automatedUseCases`,
+  `@wip` already excluded upstream), the timestamp of the last run, and a one-line verdict
+  ("12 of 16 automated Use Cases passing · 2 failing · 2 in progress"). **Choose the
+  denominator deliberately** (reviewer catch, Codex 2026-06-21): `passing ÷ (passing+failing)`
+  is only a *terminal* pass/fail rate — it silently drops `implemented` UCs (scenarios ran
+  but not fully green), which the KPI model (`projectDashboardSnapshot`, ADR-0017) counts as
+  *automated*. Using `passing ÷ (passing+failing)` would therefore **overstate** health
+  whenever any UC is mid-implementation. Use `passing ÷ automatedUseCases` for an honest
+  "automated health", or, if a terminal rate is wanted, label it explicitly as such. This is
+  the identity moment — a single confident, theme-native focal
   element. **Caveat — do NOT label the health with the active environment** (reviewer catch,
   Codex 2026-06-21): the roll-up aggregates from Use Case **automation status**
   (`traceability-service.ts:128-134`), and `TestRunSummary` / the evidence link carry **no
@@ -287,12 +294,14 @@ feature is invisible.
 
 ## 5. Open questions for the product owner
 
-1. **Health hero metric & environment attribution:** is the headline "pass rate of automated
-   Use Cases" (passing ÷ passing+failing), or a coverage-weighted figure that also penalises
-   unspecified/unautomated Use Cases? This decides whether the hero rewards green tests or
-   honest coverage. **And** — since runs/evidence carry no environment today (§3.1 caveat) —
-   do we ship the hero env-agnostic for V1, or add a run-environment dimension so health can be
-   attributed per environment?
+1. **Health hero metric, denominator & environment attribution:** is the headline "pass rate
+   of automated Use Cases" — and if so, **`passing ÷ automatedUseCases`** (honest; includes
+   mid-implementation `implemented` UCs) or `passing ÷ (passing+failing)` (a *terminal* rate
+   that drops `implemented` and overstates health — §3.1 caveat)? Or a coverage-weighted
+   figure that also penalises unspecified/unautomated Use Cases? This decides whether the hero
+   rewards green tests or honest coverage. **And** — since runs/evidence carry no environment
+   today (§3.1 caveat) — do we ship the hero env-agnostic for V1, or add a run-environment
+   dimension so health can be attributed per environment?
 2. **KPI filter drill-downs (R3):** are we willing to add a filter contract to the Use Cases
    explorer so "Failing" lands on failing UCs? Without it, the tiles stay decorative.
 3. **"Roadmap" framing:** the hub section labelled "roadmap" only lists direct sub-PRDs. Should
