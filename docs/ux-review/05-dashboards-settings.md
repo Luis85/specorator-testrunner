@@ -4,7 +4,9 @@
 **Mandate:** bold redesign, "native + light identity". Focus on each surface's internal
 content, hierarchy and components (global/cross-surface nav is another agent's slice).
 **Constraints honoured throughout:** desktop-only, natively themed via Obsidian CSS
-variables, presentation stays thin over tested pure projections (ADR-0029), no `as`/`!`.
+variables (+ the decided `--spec-accent` brand teal), presentation stays thin over tested
+pure projections (ADR-0029); eslint `strictTypeChecked` bans `!`/`any` and unsafe `as` casts
+are avoided in `src` (not a blanket `as` ban — `as const` ok, tests relax `no-unsafe-*`).
 
 ---
 

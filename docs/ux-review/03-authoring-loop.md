@@ -2,7 +2,7 @@
 
 **Scope:** Use Case → Feature Specification → Test Suite → Test Run / Test Console → Evidence.
 **Direction (product mandate):** bold redesign, *native + light identity*. One of the three highest-weighted focus areas.
-**Constraint baseline:** desktop-only; presentation is thin over tested pure modules (ADR-0029, AGENTS.md); native theming only (`styles.css` is 377 `var(--…)` refs, 1 hardcoded hex, no custom font / gradient / shadow identity); eslint forbids `as` / `!`.
+**Constraint baseline:** desktop-only; presentation is thin over tested pure modules (ADR-0029, AGENTS.md); native theming via Obsidian CSS vars (+ the decided `--spec-accent` brand teal); eslint `strictTypeChecked` bans `!`/`any` and unsafe `as` casts are avoided in `src` (not a blanket `as` ban — `as const` ok, tests relax `no-unsafe-*`).
 
 This review reads the loop end-to-end and proposes a redesign that **collapses steps, makes editing inline, and keeps every surface's outcome on-screen** — without breaking the Markdown-native, hexagonal, native-theme contract.
 

@@ -139,7 +139,7 @@ Wire the data graph that already exists into click-through navigation, both dire
 - UC-detail Story Map backlinks → open the **Story Map Board** at that card.
 - Evidence note ↔ Run ↔ the Suite/Use Case that produced it. **Note (Codex catch): Evidence/Run are NOT id-resolvable like PRD/UC/SM** — Evidence is addressed by `VaultPath` (`TraceabilityRecord.evidence: VaultPath[]`) and `RunHistoryService` has only `list()` (no `findById`). So the nav target is a **discriminated union** (`{kind:"evidence", path}` / `{kind:"run", runId}` alongside `{kind:"artifact", id}`), and "open the run behind this evidence" needs a run/evidence lookup added — it is not free from `openArtifact(id)` alone.
 
-Standardize on **one** `openLinkText`/`openArtifact(id)` navigation port so every node links the same way (today links are ad-hoc `openView` calls with no target id for PRD/Story Map).
+Standardize on **one** navigation port so every node links the same way (today links are ad-hoc `openView` calls with no target). Its target is the **discriminated union** above — `{kind:"artifact", id}` for PRD/UC/SM, `{kind:"evidence", path}`, `{kind:"run", runId}` — **not** an id-only `openArtifact(id)` signature (Evidence/Run aren't id-resolvable; Codex catch).
 
 ### 3.3 Consistent breadcrumbs / back-navigation
 

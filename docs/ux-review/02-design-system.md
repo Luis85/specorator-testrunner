@@ -2,7 +2,7 @@
 
 **Scope:** the cross-cutting visual look-and-feel every surface shares — `styles.css` (1585 lines), the shared presentation primitives, and how views apply classes.
 **Mandate:** a **bold redesign** with a *native + light identity* — stay theme-compatible via Obsidian CSS variables, but introduce a subtle, consistent Specorator identity (a real design system) that aids hierarchy and recognition.
-**Constraint:** zero raw HTML (`createEl`/`createDiv` only); eslint forbids `as` casts and `!`; colours flow from Obsidian CSS vars; desktop-only.
+**Constraint:** render via `createEl`/`createDiv` (never `innerHTML`/raw HTML); eslint `strictTypeChecked` bans `!` and `any`, and unsafe `as` casts are avoided in `src` via Result narrowing (not a blanket `as` ban — `as const` is fine, tests relax `no-unsafe-*`); colours flow from Obsidian CSS vars (+ the decided `--spec-accent` brand teal); desktop-only.
 
 ---
 
