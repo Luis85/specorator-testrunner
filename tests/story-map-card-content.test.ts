@@ -61,6 +61,11 @@ describe("card note content", () => {
     const note = buildCardNote({ ...card, title: "", body: "First line.\nSecond line." });
     expect(parseCardNote(note, card.path)?.body).toBe("First line.\nSecond line.");
   });
+  it("preserves meaningful body whitespace (indented code, blank lines) across build/parse", () => {
+    const body = "    indented code\n\nfoo\n\n\ntrailing blanks\n";
+    const parsed = parseCardNote(buildCardNote({ ...card, body }), card.path);
+    expect(parsed?.body).toBe(body);
+  });
   it("rejects a non-card note and falls back an out-of-set card_type", () => {
     expect(parseCardNote("---\ntype: note\n---\n", card.path)).toBeNull();
     const bad = buildCardNote(card).replace("card_type: task", "card_type: epic");

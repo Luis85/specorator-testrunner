@@ -22,18 +22,19 @@ const displayTitle = (title: string, ref: string | undefined, id: string): strin
 
 /**
  * Recovers the user's body by removing the `# <title>` heading {@link buildCardNote}
- * prepends (and its blank-line separator). The explicit, line-based inverse of that
- * prepend: it drops at most the heading line plus one blank line, so — unlike a
- * `\s`-based regex on a blank heading — it can never run past the heading and eat
- * real body text.
+ * prepends (and its single blank-line separator). The explicit, line-based inverse
+ * of that prepend: it drops at most the heading line plus one blank line and keeps
+ * every remaining byte intact — NO trim — so a hand-written body with meaningful
+ * leading/trailing whitespace (an indented code block, intentional blank lines)
+ * survives a board save unchanged.
  */
 const stripCardHeading = (body: string): string => {
   const lines = body.split("\n");
   if (lines[0]?.startsWith("# ")) {
     lines.shift(); // the generated heading line
-    if (lines[0] === "") lines.shift(); // its blank-line separator, when present
+    if (lines[0] === "") lines.shift(); // its single blank-line separator, when present
   }
-  return lines.join("\n").trim();
+  return lines.join("\n");
 };
 
 export const buildCardNote = (c: StoryMapCardNote): string => {
@@ -55,8 +56,10 @@ export const buildCardNote = (c: StoryMapCardNote): string => {
     title: c.title,
   };
   const heading = displayTitle(c.title, ref, c.id);
-  const trimmed = c.body.trim();
-  const body = trimmed === "" ? `# ${heading}\n` : `# ${heading}\n\n${trimmed}\n`;
+  // Body bytes are preserved verbatim (no trim, no appended newline) — the inverse
+  // of stripCardHeading — so a hand-written body's meaningful whitespace survives a
+  // board save unchanged. An empty body collapses to a heading-only note.
+  const body = c.body === "" ? `# ${heading}\n` : `# ${heading}\n\n${c.body}`;
   return buildNote(fields, body);
 };
 
