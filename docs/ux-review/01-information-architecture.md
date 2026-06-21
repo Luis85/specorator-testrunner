@@ -188,7 +188,7 @@ Reduce to **one** ribbon icon: "Open Test Hub" (the home shell). Everything else
 
 ## 5. Open questions for the product owner
 
-1. **Hub as shell vs. tabs:** should the four sections live *inside one Test Hub leaf* (left-rail switcher) or remain separate Obsidian leaves coordinated by a shared breadcrumb? The former is a stronger IA but heavier against Obsidian's per-leaf workspace-restore model.
+1. ~~**Hub as shell vs. tabs**~~ — **DECIDED (§0/T1 in `00-redesign-plan.md`): the single Test Hub shell** (one leaf, left-rail switcher). The B1 brief has one IA target; the multi-leaf path is not an option. (A new ADR will record the workspace-restore approach.)
 2. **Ribbon minimalism:** is the intent truly one ribbon icon (per the `main.ts:221` comment), or are PRDs/Story Maps deliberately promoted? Code and comment currently disagree — which wins?
 3. **Onboarding consolidation:** can the dashboard `Get started` panel and the tour be merged into a single docked rail, or must the sidebar Guided Tour persist as its own node for users who close the hub?
 4. **Sidebar vs main for planning:** PRDs and Story Maps are primary planning artifacts but open in the cramped sidebar today — should they be promoted to main-area sections?

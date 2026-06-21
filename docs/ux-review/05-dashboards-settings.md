@@ -197,9 +197,14 @@ Restructure `render()` into a clear above-the-fold hero and a deferable below-th
   links back to Use Cases (`evidence-generation-service.ts:185-206`), and **errored runs are
   skipped** by post-run import (`post-run-coordinator.ts:194-196`). So if the latest run fails
   to spawn or produces no linked evidence, the hero would report the previous evidence-linked
-  run as "latest". Source the last-run verdict from the **run-history / test-execution** layer
-  (which sees every terminal run, incl. errors/cancels — RUN-ids per ADR-0018), or drop the
-  last-run line from R1. **Choose the
+  run as "latest". **And the existing run-history layer does NOT close this gap** (reviewer
+  catch, Codex 2026-06-21): `DefaultRunHistoryService.list()` also scans
+  `Test Evidence/YYYY/MM/<runId>/summary.md` (evidence-backed), and `PostRunCoordinator.onTerminal()`
+  skips spawn-`errored` runs before evidence generation — so it omits the same no-evidence
+  terminal runs. A reliable last-run verdict therefore needs a **durable execution log that
+  records every terminal run at spawn/terminate (incl. spawn-errors and cancels), independent
+  of evidence** — which does not exist today. So either **add that durable execution source**,
+  or **drop the last-run line from R1**. **Choose the
   denominator deliberately** (reviewer catch, Codex 2026-06-21): `passing ÷ (passing+failing)`
   is only a *terminal* pass/fail rate — it silently drops `implemented` UCs (scenarios ran
   but not fully green), which the KPI model (`projectDashboardSnapshot`, ADR-0017) counts as
@@ -329,6 +334,7 @@ feature is invisible.
    be collapsed/hidden behind Advanced; if power-users relocate vaults often, they stay visible.
 6. **Recent-runs depth:** how much do we surface inline (counts/env/duration/re-run) vs. defer
    to the Evidence Explorer? This sets where the "actionable" line is drawn.
-7. **Identity system:** is there an agreed accent/identity colour and iconography for the bold
-   redesign, or should the hero/KPIs stay strictly within Obsidian theme variables (current
-   constraint) and express identity through layout + typography only?
+7. ~~**Identity system**~~ — **DECIDED (§0/T2): a default Specorator brand teal** (`--spec-accent`,
+   shipped in A1). The hero/KPIs draw the brand token, not theme-only — staying strictly within
+   Obsidian variables is no longer an option. Express identity through that accent + layout +
+   typography + iconography.
