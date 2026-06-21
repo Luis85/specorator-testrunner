@@ -46,6 +46,14 @@ export const markDestructive = (button: ButtonComponent): void => {
  */
 export interface ConfirmControl {
   setLabel(label: string): void;
+  /**
+   * Syncs the accessible name (`aria-label`). Optional — only invoked when the
+   * config supplied aria labels (a control whose `aria-label` differs from its
+   * visible text, e.g. the PRD Delete button). For controls whose visible text
+   * already is their accessible name, the config omits aria labels and this is
+   * never called, so no stale/blank `aria-label` is written.
+   */
+  setAriaLabel?(label: string): void;
   setDestructive(on: boolean): void;
   /** Registers the click handler; the wirer supplies the per-click behaviour. */
   onClick(handler: () => void): void;
@@ -97,6 +105,11 @@ export const wireConfirmAction = (
 
   const apply = (directive: ConfirmActionDirective): void => {
     control.setLabel(directive.label);
+    // Keep the accessible name in sync so screen-reader users hear the armed
+    // confirm prompt — `aria-label` otherwise overrides the visible text. Only
+    // when the config provides aria labels (else leave the accessible name to
+    // the visible text — unchanged for the settings call sites).
+    if (directive.ariaLabel !== undefined) control.setAriaLabel?.(directive.ariaLabel);
     control.setDestructive(directive.destructive);
   };
 
@@ -138,6 +151,9 @@ export const buttonComponentControl = (button: ButtonComponent): ConfirmControl 
   setLabel: (label) => {
     button.setButtonText(label);
   },
+  setAriaLabel: (label) => {
+    button.buttonEl.setAttribute("aria-label", label);
+  },
   setDestructive: (on) => {
     if (on) markDestructive(button);
     else button.buttonEl.removeClass("mod-warning");
@@ -154,6 +170,9 @@ export const buttonComponentControl = (button: ButtonComponent): ConfirmControl 
 export const buttonElementControl = (button: HTMLButtonElement): ConfirmControl => ({
   setLabel: (label) => {
     button.setText(label);
+  },
+  setAriaLabel: (label) => {
+    button.setAttribute("aria-label", label);
   },
   setDestructive: (on) => {
     button.toggleClass("mod-warning", on);

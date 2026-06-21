@@ -31,6 +31,21 @@ export interface ConfirmActionConfig {
    * differing UX of the two existing call sites.
    */
   destructiveWhenIdle: boolean;
+  /**
+   * Optional accessible name for the resting state. Supply this (with
+   * {@link armedAriaLabel}) when the control carries an `aria-label` that differs
+   * from its visible text — e.g. the PRD Delete button, whose visible text is
+   * "Delete" but whose accessible name disambiguates *which* PRD ("Delete PRD
+   * PRD-003"). Because `aria-label` takes precedence over button text as the
+   * accessible name, changing only the visible label on arm would leave
+   * screen-reader users hearing the stale resting name; the directive carries the
+   * accessible label so the adapter keeps it in sync. Omit for buttons whose
+   * visible text *is* their accessible name (the settings call sites) — then no
+   * `aria-label` is written and behaviour is unchanged.
+   */
+  idleAriaLabel?: string;
+  /** Accessible name once armed, e.g. "Delete PRD PRD-003 — click again to confirm". */
+  armedAriaLabel?: string;
 }
 
 /**
@@ -42,6 +57,12 @@ export interface ConfirmActionConfig {
  */
 export interface ConfirmActionDirective {
   label: string;
+  /**
+   * The accessible name to sync onto the control's `aria-label`, or `undefined`
+   * when the call site supplied no aria labels (then the adapter leaves the
+   * accessible name to the visible text — unchanged behaviour).
+   */
+  ariaLabel?: string;
   destructive: boolean;
   /** True only on the confirming (second) click — the caller runs the action. */
   execute: boolean;
@@ -58,6 +79,7 @@ export interface ConfirmActionTransition {
 /** The resting directive for a freshly-wired (idle) control. */
 export const initialDirective = (config: ConfirmActionConfig): ConfirmActionDirective => ({
   label: config.idleLabel,
+  ariaLabel: config.idleAriaLabel,
   destructive: config.destructiveWhenIdle,
   execute: false,
   startDisarmTimer: false,
@@ -78,6 +100,7 @@ export const onClick = (
       phase: "armed",
       directive: {
         label: config.armedLabel,
+        ariaLabel: config.armedAriaLabel,
         destructive: true,
         execute: false,
         startDisarmTimer: true,
@@ -88,6 +111,7 @@ export const onClick = (
     phase: "idle",
     directive: {
       label: config.idleLabel,
+      ariaLabel: config.idleAriaLabel,
       destructive: config.destructiveWhenIdle,
       execute: true,
       startDisarmTimer: false,

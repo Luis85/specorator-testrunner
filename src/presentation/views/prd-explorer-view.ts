@@ -165,6 +165,12 @@ export class PrdExplorerView extends LiveDashboardView {
         config: {
           idleLabel: "Delete",
           armedLabel: "Delete — click again to confirm",
+          // The button's visible text is just "Delete"; its accessible name
+          // disambiguates *which* PRD. Carry that through arm/disarm so
+          // screen-reader users hear the confirm prompt without losing the id
+          // (aria-label otherwise overrides the visible text).
+          idleAriaLabel: `Delete PRD ${node.prd.id}`,
+          armedAriaLabel: `Delete PRD ${node.prd.id} — click again to confirm`,
           destructiveWhenIdle: false,
         },
         onConfirm: () => void this.deletePrd(node.prd),

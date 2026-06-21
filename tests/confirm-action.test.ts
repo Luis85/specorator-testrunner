@@ -18,11 +18,17 @@ import {
 const makeControl = () => {
   let label = "";
   let destructive = false;
+  let ariaLabel: string | undefined;
+  let ariaWrites = 0;
   let click: () => void = () => {};
   let blur: () => void = () => {};
   const control: ConfirmControl = {
     setLabel: (l) => {
       label = l;
+    },
+    setAriaLabel: (l) => {
+      ariaLabel = l;
+      ariaWrites += 1;
     },
     setDestructive: (on) => {
       destructive = on;
@@ -37,6 +43,7 @@ const makeControl = () => {
   return {
     control,
     state: () => ({ label, destructive }),
+    aria: () => ({ ariaLabel, ariaWrites }),
     click: () => click(),
     blur: () => blur(),
   };
@@ -67,11 +74,45 @@ const benignConfig = {
   destructiveWhenIdle: false,
 };
 
+/** Benign config that also carries aria labels (the PRD-delete shape). */
+const ariaConfig = {
+  ...benignConfig,
+  idleAriaLabel: "Delete PRD PRD-003",
+  armedAriaLabel: "Delete PRD PRD-003 — click again to confirm",
+};
+
 describe("wireConfirmAction()", () => {
   it("renders the resting label and is not destructive at rest (benign config)", () => {
     const c = makeControl();
     wireConfirmAction(c.control, { config: benignConfig, onConfirm: vi.fn() });
     expect(c.state()).toEqual({ label: "Delete", destructive: false });
+  });
+
+  it("never writes an aria-label when the config supplies none (visible text is the name)", () => {
+    const c = makeControl();
+    wireConfirmAction(c.control, {
+      config: benignConfig,
+      onConfirm: vi.fn(),
+      scheduleDisarm: makeScheduler().schedule,
+    });
+    c.click(); // arm
+    expect(c.aria()).toEqual({ ariaLabel: undefined, ariaWrites: 0 });
+  });
+
+  it("syncs the accessible name on rest, arm, and disarm when aria labels are configured", () => {
+    const c = makeControl();
+    const scheduler = makeScheduler();
+    wireConfirmAction(c.control, {
+      config: ariaConfig,
+      onConfirm: vi.fn(),
+      scheduleDisarm: scheduler.schedule,
+    });
+    // Rest: the disambiguating accessible name, not the bare visible "Delete".
+    expect(c.aria().ariaLabel).toBe("Delete PRD PRD-003");
+    c.click(); // arm — the confirm prompt must be announced, keeping the id
+    expect(c.aria().ariaLabel).toBe("Delete PRD PRD-003 — click again to confirm");
+    scheduler.fire(); // disarm — restore the resting accessible name
+    expect(c.aria().ariaLabel).toBe("Delete PRD PRD-003");
   });
 
   it("arms on the first click without confirming", () => {
@@ -274,21 +315,32 @@ describe("buttonElementControl()", () => {
   const makeEl = () => {
     const setText = vi.fn();
     const toggleClass = vi.fn();
+    const setAttribute = vi.fn();
     const listeners: Record<string, () => void> = {};
     const el = {
       setText,
       toggleClass,
+      setAttribute,
       addEventListener: (type: string, h: () => void) => {
         listeners[type] = h;
       },
     } as unknown as HTMLButtonElement;
-    return { el, setText, toggleClass, listeners };
+    return { el, setText, toggleClass, setAttribute, listeners };
   };
 
   it("sets the label through setText", () => {
     const { el, setText } = makeEl();
     buttonElementControl(el).setLabel("Delete");
     expect(setText).toHaveBeenCalledWith("Delete");
+  });
+
+  it("syncs the accessible name through setAttribute('aria-label', …)", () => {
+    const { el, setAttribute } = makeEl();
+    buttonElementControl(el).setAriaLabel?.("Delete PRD PRD-003 — click again to confirm");
+    expect(setAttribute).toHaveBeenCalledWith(
+      "aria-label",
+      "Delete PRD PRD-003 — click again to confirm",
+    );
   });
 
   it("toggles mod-warning for the destructive style", () => {
