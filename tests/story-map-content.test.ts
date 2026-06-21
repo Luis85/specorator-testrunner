@@ -72,6 +72,25 @@ describe("cardAttributeSuffix", () => {
   it("is empty for a card with no planning attributes", () => {
     expect(cardAttributeSuffix({ title: "T", activity: "A", slice: "S", tags: [] })).toBe("");
   });
+
+  it("surfaces a non-default card type ahead of the other attributes", () => {
+    expect(
+      cardAttributeSuffix({
+        title: "T",
+        activity: "A",
+        slice: "S",
+        cardType: "question",
+        status: "planned",
+        tags: [],
+      }),
+    ).toBe(" · question · planned");
+  });
+
+  it("omits the card type for the default `task`", () => {
+    expect(
+      cardAttributeSuffix({ title: "T", activity: "A", slice: "S", cardType: "task", tags: [] }),
+    ).toBe("");
+  });
 });
 
 describe("renderActivityTable", () => {
@@ -104,6 +123,10 @@ describe("renderPointsRollup / renderLegend", () => {
   it("lists the four planning statuses in the legend", () => {
     const legend = renderLegend();
     expect(legend).toContain("planned · in-progress · done · blocked");
+  });
+
+  it("lists the card types in the legend", () => {
+    expect(renderLegend()).toContain("Card type: task · note · question · edge-case · design");
   });
 });
 

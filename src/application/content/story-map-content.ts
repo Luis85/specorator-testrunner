@@ -14,6 +14,7 @@ import {
   type StoryMapStep,
 } from "../../domain/entities/story-map";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
+import { CARD_TYPES } from "../../domain/entities/story-map-card";
 
 /** Kebab-case folder/file name shared by a Story Map's folder and its note. */
 export const storyMapFolderName = (id: string, title: string): string => {
@@ -53,12 +54,14 @@ const cellLink = (ref: string, ucNoteNames: Map<string, string>): string => {
 const tableSafe = (value: string): string => value.replace(/\|/g, "\\|");
 
 /**
- * The compact attribute suffix shown after a card's title/link: status, points,
- * and tags, each prefixed with `·`. Empty when the card carries no attributes.
- * Pure: no I/O.
+ * The compact attribute suffix shown after a card's title/link: card type (when
+ * not the default `task`), status, points, and tags, each prefixed with `·`.
+ * Empty when the card carries no attributes. Pure: no I/O.
  */
 export const cardAttributeSuffix = (card: StoryMapCard): string => {
   const parts: string[] = [];
+  const cardType = card.cardType ?? "task";
+  if (cardType !== "task") parts.push(cardType);
   if (card.status) parts.push(card.status);
   if (card.points !== undefined) parts.push(`${card.points}pts`);
   for (const tag of card.tags) parts.push(`#${tag}`);
@@ -115,9 +118,14 @@ export const renderPointsRollup = (map: StoryMap): string => {
   );
 };
 
-/** The planning-status legend (the four hand-set statuses). */
+/** The legend: the hand-set planning statuses and the card types. */
 export const renderLegend = (): string =>
-  ["#### Legend", "", `Planning status: ${CARD_STATUSES.join(" · ")}`].join("\n");
+  [
+    "#### Legend",
+    "",
+    `Planning status: ${CARD_STATUSES.join(" · ")}`,
+    `Card type: ${CARD_TYPES.join(" · ")}`,
+  ].join("\n");
 
 /**
  * The audience lane: the personas the journey serves — storymaps.io's top
