@@ -1,0 +1,197 @@
+import { Notice } from "obsidian";
+import type { PrdService } from "../../application/services/prd-service";
+import type { UseCaseService } from "../../application/services/use-case-service";
+import type { Prd } from "../../domain/entities/prd";
+import { artifactTarget, type NavigationTarget } from "../navigation/navigation-target";
+import { firstUseCaseIdOfPrd } from "../navigation/use-cases-of-prd";
+import { buttonElementControl, wireConfirmAction } from "./confirm-action";
+import { renderListHeader } from "./list-header";
+import { renderEmptyState, renderLoadError } from "./modal-helpers";
+
+export interface PrdTreeNode {
+  prd: Prd;
+  ucCount: number;
+  children: PrdTreeNode[];
+}
+
+/**
+ * Build the single-parent PRD tree from a flat list plus per-PRD Use Case
+ * counts. Sub-PRDs nest under their parent; a PRD whose parent is missing is
+ * treated as a root (orphan tolerance). Siblings sort by `displayOrder` then id
+ * — ids are immutable, so reordering never renames them.
+ */
+export const buildPrdTree = (prds: Prd[], ucCounts: Map<string, number>): PrdTreeNode[] => {
+  const nodes = new Map<string, PrdTreeNode>();
+  for (const prd of prds) {
+    nodes.set(prd.id, { prd, ucCount: ucCounts.get(prd.id) ?? 0, children: [] });
+  }
+  const roots: PrdTreeNode[] = [];
+  for (const node of nodes.values()) {
+    const parent = node.prd.parentPrdId ? nodes.get(node.prd.parentPrdId) : undefined;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+  const sort = (list: PrdTreeNode[]): void => {
+    list.sort(
+      (a, b) => a.prd.displayOrder - b.prd.displayOrder || a.prd.id.localeCompare(b.prd.id),
+    );
+    list.forEach((n) => sort(n.children));
+  };
+  sort(roots);
+  return roots;
+};
+
+/**
+ * The deps the PRDs body needs to load + render, independent of the leaf: the
+ * services it reads, the deep-link/navigation callbacks, and a `refresh` it
+ * wires to the load-error retry + post-delete re-render (the standalone leaf
+ * passes `this.live.schedule`, the later Test Hub its own section re-render).
+ */
+export interface PrdExplorerBodyDeps {
+  prdService: PrdService;
+  useCaseService: UseCaseService;
+  /** Opens the PRD Builder; a node's "＋ sub-PRD" button passes its id as parent. */
+  openPrdBuilder: (parentPrdId?: string) => void;
+  navigate: (target: NavigationTarget) => void;
+  /** Re-renders the body (load-error retry + after a delete settles). */
+  refresh: () => void;
+}
+
+/**
+ * Renders the "PRDs" body into `el` (host-agnostic, ADR-0031): the header bar,
+ * then the hierarchical PRD tree with per-PRD Use Case counts, or the
+ * empty/error state. Builds entirely into the passed element via the shared
+ * {@link renderListHeader}, so the standalone leaf and the (later) hub render it
+ * identically. Loads its own data so the hub calls it the same way the leaf does.
+ */
+export const renderPrdExplorerBody = async (
+  el: HTMLElement,
+  deps: PrdExplorerBodyDeps,
+): Promise<void> => {
+  renderListHeader(el, {
+    headerCls: "e2e-test-hub-prd-header",
+    title: "PRDs",
+    actionLabel: "New PRD",
+    onAction: () => deps.openPrdBuilder(),
+  });
+
+  const [prds, counts, useCases] = await Promise.all([
+    deps.prdService.findAll(),
+    deps.useCaseService.countUseCasesByPrd(),
+    deps.useCaseService.findAll(),
+  ]);
+  if (!prds.ok) {
+    renderLoadError(
+      el,
+      `Could not load PRDs: ${prds.error.message}`,
+      "Retry loading the PRDs",
+      () => deps.refresh(),
+    );
+    return;
+  }
+
+  if (prds.value.length === 0) {
+    renderEmptyState(el, "No PRDs yet. Create PRD-000 (the product vision) to get started.");
+    return;
+  }
+
+  const tree = buildPrdTree(prds.value, counts.ok ? counts.value : new Map<string, number>());
+  // The flat Use Case list (best-effort) backs the per-row "Open Use Cases"
+  // deep-link; a list-load failure just hides that affordance (the counts and
+  // tree still render).
+  const ucList = useCases.ok ? useCases.value : [];
+  const root = el.createEl("ul", { cls: "e2e-test-hub-prd-tree" });
+  for (const node of tree) renderNode(root, node, ucList, deps);
+};
+
+const renderNode = (
+  parent: HTMLElement,
+  node: PrdTreeNode,
+  useCases: readonly { id: string; prdId?: string }[],
+  deps: PrdExplorerBodyDeps,
+): void => {
+  const li = parent.createEl("li", { cls: "e2e-test-hub-prd-node" });
+  const row = li.createDiv({ cls: "e2e-test-hub-prd-row" });
+
+  const ucs = node.ucCount === 1 ? "1 UC" : `${node.ucCount} UCs`;
+  const open = row.createEl("button", {
+    text: `${node.prd.id}: ${node.prd.title} (${ucs})`,
+    cls: "e2e-test-hub-link-button",
+    attr: { "aria-label": `Open PRD ${node.prd.id} ${node.prd.title}` },
+  });
+  open.addEventListener("click", () => deps.navigate(artifactTarget(node.prd.id)));
+
+  // WS-A4/B4 deep-link: jump from a PRD into its Use Cases. Opens the first
+  // linked Use Case's detail through the navigator; only shown when the PRD
+  // actually has one (avoids a dead affordance).
+  const firstUcId = firstUseCaseIdOfPrd(useCases, node.prd.id);
+  if (firstUcId !== null) {
+    row
+      .createEl("button", {
+        text: "Open Use Cases",
+        cls: "e2e-test-hub-link-button",
+        attr: { "aria-label": `Open the Use Cases of PRD ${node.prd.id}` },
+      })
+      .addEventListener("click", () => deps.navigate(artifactTarget(firstUcId)));
+  }
+
+  row.createEl("span", {
+    text: node.prd.status,
+    cls: "spec-pill",
+    attr: { "data-status": node.prd.status },
+  });
+
+  row
+    .createEl("button", {
+      text: "＋ sub-PRD",
+      cls: "e2e-test-hub-link-button",
+      attr: { "aria-label": `Add a sub-PRD under ${node.prd.id}` },
+    })
+    .addEventListener("click", () => deps.openPrdBuilder(node.prd.id));
+
+  // The root PRD anchors the tree and is never deletable (the service also
+  // refuses it); only offer Delete on sub-PRDs.
+  if (node.prd.parentPrdId !== undefined) {
+    const deleteButton = row.createEl("button", {
+      text: "Delete",
+      cls: "e2e-test-hub-link-button",
+      attr: { "aria-label": `Delete PRD ${node.prd.id}` },
+    });
+    // 05-M3 safety fix: gate the (previously immediate) delete behind the same
+    // two-click arm/disarm confirm the rest of the app uses for destructive
+    // actions. Disarms on blur too, since a tree row is easy to tab away from.
+    wireConfirmAction(buttonElementControl(deleteButton), {
+      config: {
+        idleLabel: "Delete",
+        armedLabel: "Delete — click again to confirm",
+        // The button's visible text is just "Delete"; its accessible name
+        // disambiguates *which* PRD. Carry that through arm/disarm so
+        // screen-reader users hear the confirm prompt without losing the id
+        // (aria-label otherwise overrides the visible text).
+        idleAriaLabel: `Delete PRD ${node.prd.id}`,
+        armedAriaLabel: `Delete PRD ${node.prd.id} — click again to confirm`,
+        destructiveWhenIdle: false,
+      },
+      onConfirm: () => void deletePrd(node.prd, deps),
+      disarmOnBlur: true,
+    });
+  }
+
+  if (node.children.length > 0) {
+    const childList = li.createEl("ul", { cls: "e2e-test-hub-prd-tree" });
+    for (const child of node.children) renderNode(childList, child, useCases, deps);
+  }
+};
+
+const deletePrd = async (prd: Prd, deps: PrdExplorerBodyDeps): Promise<void> => {
+  const result = await deps.prdService.deletePrd(prd.id);
+  if (!result.ok) {
+    new Notice(`Could not delete ${prd.id}: ${result.error.message}`);
+    return;
+  }
+  const preserved = result.value.preservedFiles;
+  const suffix =
+    preserved > 0 ? ` (kept ${preserved} other file${preserved === 1 ? "" : "s"})` : "";
+  new Notice(`Deleted ${prd.id}${suffix}.`);
+  deps.refresh();
+};
