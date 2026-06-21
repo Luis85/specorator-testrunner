@@ -414,11 +414,23 @@ export const reorderStep = (
  * baseline would no longer match the now-id'd on-disk card — a false stale
  * conflict that drops the edit. A stale board can't collide ids: its optimistic
  * baseline would already mismatch and force a reload first.
+ *
+ * `reservedIds` lets the caller exclude ids that are gone from `map.cards` but
+ * whose notes still live on disk — e.g. a card deleted on the board but not yet
+ * saved (the debounce window). Without them, deleting the highest-numbered card
+ * then adding one would re-mint the freed id; the next save's `reconcileCards`
+ * would treat the new card as the old note and graft its hand-written body on
+ * (and never delete the old note). Seeding past the reserved ids keeps board
+ * card ids monotonic per session, so a freed id is never reused.
  */
-export const addCard = (map: StoryMap, target: CardTarget): StoryMap => {
+export const addCard = (
+  map: StoryMap,
+  target: CardTarget,
+  reservedIds: readonly StoryMapCardId[] = [],
+): StoryMap => {
   if (!map.activities.includes(target.activity) || !map.slices.includes(target.slice)) return map;
   const card: StoryMapCard = {
-    id: nextStoryMapCardId(map.cards),
+    id: nextStoryMapCardId([...map.cards, ...reservedIds.map((id) => ({ id }))]),
     title: uniqueLabel(
       map.cards.map((c) => c.title),
       "New card",

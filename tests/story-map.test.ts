@@ -726,6 +726,18 @@ describe("addCard / removeCard", () => {
     expect(twice.cards[twice.cards.length - 1].id).toBe("SMC-002");
   });
 
+  it("skips reserved ids so a deleted-but-unsaved id is never re-minted", () => {
+    // base already holds SMC-... none; seed an existing high card, then "delete" it
+    // (drop from cards) while reserving its id — the next add must not reuse it.
+    const withHigh: StoryMap = {
+      ...base,
+      cards: [{ id: "SMC-005", title: "Existing", activity: "Browse", slice: "MVP", tags: [] }],
+    };
+    const afterDelete = removeCard(withHigh, 0); // working list now empty
+    const next = addCard(afterDelete, { activity: "Browse", slice: "MVP" }, ["SMC-005"]);
+    expect(next.cards[next.cards.length - 1].id).toBe("SMC-006");
+  });
+
   it("no-ops (same ref) when the target axis is off the map", () => {
     expect(addCard(base, { activity: "Ghost", slice: "MVP" })).toBe(base);
     expect(addCard(base, { activity: "Browse", slice: "Ghost" })).toBe(base);

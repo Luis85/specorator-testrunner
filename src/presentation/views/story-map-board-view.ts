@@ -234,6 +234,12 @@ export class StoryMapBoardView extends LiveDashboardView {
   private storyMapId: string | null = null;
   private isOpen = false;
   private model: StoryMap | null = null;
+  /**
+   * Every card id seen this session (loaded or freshly minted), never pruned on
+   * delete. Seeds {@link addCard} so a card deleted before the debounce save runs
+   * can't have its id re-minted and its on-disk note grafted onto a new card.
+   */
+  private readonly reservedCardIds = new Set<string>();
   /** The map signature last persisted — the optimistic-concurrency baseline for saves. */
   private baseline = "";
   /** Set when the model has unsaved edits; drained by the serialized save loop. */
@@ -413,6 +419,7 @@ export class StoryMapBoardView extends LiveDashboardView {
       return;
     }
     this.model = found.value;
+    this.reserveCardIds(found.value);
     this.baseline = storyMapSignature(found.value);
     this.paint(container);
   }
@@ -587,9 +594,17 @@ export class StoryMapBoardView extends LiveDashboardView {
     }
     if (kind === "card") {
       const target = cardTargetOf(el);
-      return target !== null ? addCard(this.model, target) : null;
+      if (target === null) return null;
+      const next = addCard(this.model, target, [...this.reservedCardIds]);
+      this.reserveCardIds(next);
+      return next;
     }
     return null;
+  }
+
+  /** Records `map`'s card ids as reserved (monotonic; never reused this session). */
+  private reserveCardIds(map: StoryMap): void {
+    for (const card of map.cards) if (card.id !== undefined) this.reservedCardIds.add(card.id);
   }
 
   /** Applies a `×` removal (activity/slice/step/card), repaints, and saves. */
