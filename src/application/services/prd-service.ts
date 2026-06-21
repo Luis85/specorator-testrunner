@@ -312,10 +312,19 @@ export class DefaultPrdService implements PrdService {
     });
   }
 
-  /** Counts Use Case notes whose `prd-id` frontmatter points at `prdId`. */
-  private async countLinkedUseCases(prdId: PrdId): Promise<Result<number>> {
-    const settings = await this.settingsService.load();
-    const listed = await this.fs.listFilesRecursive(settings.paths.useCasesPath);
+  /**
+   * Counts the `.md` notes under `dir` that `counts` accepts. Fail-closed for a
+   * DESTRUCTIVE delete: unlike findAll's best-effort indexing, an unreadable note
+   * could still carry the anchor being checked, so a read error propagates (and
+   * deletePrd aborts); a missing folder counts as 0. `skip` excludes whole subtrees
+   * (e.g. generated card notes that can't carry the anchor).
+   */
+  private async countNotesUnder(
+    dir: VaultPath,
+    counts: (content: string, path: VaultPath) => boolean,
+    skip?: (path: VaultPath) => boolean,
+  ): Promise<Result<number>> {
+    const listed = await this.fs.listFilesRecursive(dir);
     if (!listed.ok) {
       const messageLC = listed.error.message.toLowerCase();
       if (messageLC.includes("enoent") || messageLC.includes("not found")) return ok(0);
@@ -324,42 +333,36 @@ export class DefaultPrdService implements PrdService {
     let count = 0;
     for (const path of listed.value) {
       if (!String(path).endsWith(".md")) continue;
+      if (skip?.(path)) continue;
       const read = await this.fs.readFile(path);
-      // Unlike findAll's best-effort indexing, this guards a DESTRUCTIVE delete:
-      // a skipped unreadable note could still carry `prd-id: <this>`, so treating
-      // it as unlinked could trash a PRD that a Use Case still points at. Fail
-      // closed — propagate the read error so deletePrd aborts.
       if (!read.ok) return read;
-      const { frontmatter: fm } = parseNote(read.value);
-      if (typeof fm["prd-id"] === "string" && fm["prd-id"].trim() === prdId) count++;
+      if (counts(read.value, path)) count++;
     }
     return ok(count);
+  }
+
+  /** Counts Use Case notes whose `prd-id` frontmatter points at `prdId`. */
+  private async countLinkedUseCases(prdId: PrdId): Promise<Result<number>> {
+    const settings = await this.settingsService.load();
+    return this.countNotesUnder(settings.paths.useCasesPath, (content) => {
+      const { frontmatter: fm } = parseNote(content);
+      return typeof fm["prd-id"] === "string" && fm["prd-id"].trim() === prdId;
+    });
   }
 
   /** Counts Story Map notes whose `product` frontmatter anchors to `prdId`. */
   private async countLinkedStoryMaps(prdId: PrdId): Promise<Result<number>> {
     const settings = await this.settingsService.load();
-    const listed = await this.fs.listFilesRecursive(settings.paths.storyMapsPath);
-    if (!listed.ok) {
-      const messageLC = listed.error.message.toLowerCase();
-      if (messageLC.includes("enoent") || messageLC.includes("not found")) return ok(0);
-      return listed;
-    }
-    let count = 0;
-    for (const path of listed.value) {
-      if (!String(path).endsWith(".md")) continue;
-      const read = await this.fs.readFile(path);
-      // Fail closed (destructive delete): an unreadable map could anchor here.
-      if (!read.ok) return read;
-      // Reuse the Story Map parser so the guard's notion of which product a map
-      // anchors to can't drift from StoryMapService.findAll. It filters non-map
-      // notes (type: story-map) AND applies the same default — a missing/blank
-      // `product` resolves to PRD-000 (ADR-0027), which a raw frontmatter equality
-      // check would miss, letting PRD-000 deletion strand those default-root maps.
-      const map = parseStoryMapNote(read.value, path);
-      if (map?.product === prdId) count++;
-    }
-    return ok(count);
+    // Reuse parseStoryMapNote so the guard can't drift from StoryMapService.findAll:
+    // it filters non-map notes AND applies the ADR-0027 default (a blank `product`
+    // resolves to PRD-000). Skip per-card notes (Story Maps/<map>/cards/SMC-NNN.md,
+    // ADR-0030) — they carry `type: story-map-card`, never a `product` anchor, so an
+    // unreadable card note must not fail-close (and block) deleting an unrelated PRD.
+    return this.countNotesUnder(
+      settings.paths.storyMapsPath,
+      (content, path) => parseStoryMapNote(content, path)?.product === prdId,
+      (path) => String(path).includes("/cards/"),
+    );
   }
 
   private nextId(ids: PrdId[]): PrdId {

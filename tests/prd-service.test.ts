@@ -420,6 +420,33 @@ describe("DefaultPrdService.deletePrd", () => {
     expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
   });
 
+  it("does not fail-close PRD deletion when a generated card note under cards/ is unreadable", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    // A valid map (anchored to the root, not PRD-001) plus an UNREADABLE generated
+    // card note under its cards/ subtree — card notes can't anchor a PRD, so a bad
+    // one must not block deleting an unrelated PRD.
+    fs.files.set(
+      "Story Maps/SM-001-j/SM-001-j.md",
+      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-000", "---", ""].join(
+        "\n",
+      ),
+    );
+    const cardPath = "Story Maps/SM-001-j/cards/SMC-001.md";
+    fs.files.set(cardPath, "unreadable card note");
+    const realRead = fs.readFile.bind(fs);
+    fs.readFile = async (p) =>
+      String(p) === cardPath
+        ? { ok: false as const, error: { code: "INIT_FAILED" as const, message: "EIO card note" } }
+        : realRead(p);
+
+    const result = await service.deletePrd("PRD-001");
+
+    expect(result.ok).toBe(true);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
+  });
+
   it("treats a Story Map with a blank product as anchored to PRD-000, not a sub-PRD", async () => {
     const { service, fs } = build();
     seedRoot(fs);
