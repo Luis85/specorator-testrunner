@@ -217,7 +217,7 @@ export class InitializationWizardModal extends Modal {
     // stack/output, and the validate command diagnoses environment problems.
     error.createEl("p", {
       text:
-        "Check the developer console for details, or run the 'Validate environment' " +
+        "Check the developer console for details, or run the 'Setup — validate environment' " +
         "command to diagnose.",
     });
     new Setting(contentEl)

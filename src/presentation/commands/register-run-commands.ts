@@ -95,47 +95,48 @@ export const registerRunCommands = (plugin: Plugin, deps: TestHubCommandDeps): v
         ).open(),
     );
 
-  // EPIC-007 Test Execution (US-026/027/028/029/030).
+  // EPIC-007 Test Execution (US-026/027/028/029/030). Names grouped `Run — <verb>`
+  // (WS-B3, 01-§3.4); the leading "Run" verb is dropped since the area carries it.
   plugin.addCommand({
     id: "run-demo-test",
-    name: "Run Demo Test",
+    name: "Run — Demo Test",
     callback: () => void deps.runLauncher.launch({ scope: "demo", target: "demo" }),
   });
   plugin.addCommand({
     id: "run-all-tests",
-    name: "Run all tests",
+    name: "Run — all tests",
     callback: () => void deps.runLauncher.launch({ scope: "all", target: "all" }),
   });
   plugin.addCommand({
     id: "run-suite",
-    name: "Run Test Suite…",
+    name: "Run — Test Suite…",
     callback: () => void runSuite(),
   });
   plugin.addCommand({
     id: "run-use-case",
-    name: "Run Use Case…",
+    name: "Run — Use Case…",
     callback: () => void runUseCase(),
   });
   plugin.addCommand({
     id: "run-feature",
-    name: "Run feature…",
+    name: "Run — feature…",
     callback: () => void runFeature(),
   });
   plugin.addCommand({
     id: "cancel-test-run",
-    name: "Cancel Test Run",
+    name: "Run — cancel Test Run",
     callback: () => void deps.runLauncher.cancel(),
   });
   plugin.addCommand({
     id: "open-test-console",
-    name: "Open Test Console",
+    name: "Run — open Test Console",
     callback: () => void deps.workspace.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
   });
 
   // EPIC-008 (US-032 / UC-016): re-run report import + evidence for the last run.
   plugin.addCommand({
     id: "import-report-last-run",
-    name: "Import report for last run",
+    name: "Review — import report for last run",
     callback: () => void importLastRun(),
   });
 };

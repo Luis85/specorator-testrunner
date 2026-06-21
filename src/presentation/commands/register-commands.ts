@@ -262,98 +262,102 @@ export function registerCommands(
 
   plugin.addCommand({
     id: "initialize-test-hub",
-    name: "Initialize Test Hub",
+    name: "Setup — initialize Test Hub",
     callback: () => deps.openWizard(),
   });
-  // Command names follow Obsidian sentence-case; only glossary proper nouns
-  // (Test Hub, Use Case, Test Suite, Test Run, Demo Test, …) and acronyms keep
-  // their capitals.
+  // Palette hygiene (WS-B3, 01-§3.4): every command name is grouped
+  // `<Area> — <verb>` over the domain areas (Plan / Build / Run / Review / Setup /
+  // Help) so commands cluster and read as a family under Obsidian's auto-applied
+  // "Specorator Testrunner:" plugin prefix. Command IDS are unchanged so existing
+  // hotkeys survive. Verb casing stays Obsidian sentence-case; only glossary proper
+  // nouns (Test Hub, Use Case, Test Suite, Test Run, Demo Test, PRD, Story Map, …)
+  // and acronyms (CI) keep their capitals.
   plugin.addCommand({
     id: "validate-environment",
-    name: "Validate environment",
+    name: "Setup — validate environment",
     callback: () => void validateEnvironment(),
   });
   plugin.addCommand({
     id: "repair-installation",
-    name: "Repair installation",
+    name: "Setup — repair installation",
     callback: () => void repairInstallation(),
   });
   plugin.addCommand({
     id: "generate-ci-workflow",
-    name: "Generate CI workflow",
+    name: "Setup — generate CI workflow",
     callback: () => void generateCiWorkflow(),
   });
   plugin.addCommand({
     id: "overwrite-ci-workflow",
-    name: "Overwrite CI workflow",
+    name: "Setup — overwrite CI workflow",
     callback: () => void generateCiWorkflow(true),
   });
   plugin.addCommand({
     id: "check-ci-readiness",
-    name: "Check CI readiness",
+    name: "Setup — check CI readiness",
     callback: () => void checkCiReadiness(),
   });
   // "New …" matches the dashboard quick actions and explorer header buttons.
   plugin.addCommand({
     id: "create-use-case",
-    name: "New Use Case",
+    name: "Build — new Use Case",
     callback: () => deps.openCreateUseCase(),
   });
   plugin.addCommand({
     id: "open-use-cases",
-    name: "Open Use Cases",
+    name: "Build — open Use Cases",
     callback: () => void deps.workspace.openView(USE_CASE_VIEW_TYPE),
   });
   plugin.addCommand({
     id: "create-test-suite",
-    name: "New Test Suite",
+    name: "Run — new Test Suite",
     callback: () => deps.openCreateSuite(),
   });
   plugin.addCommand({
     id: "create-prd",
-    name: "New PRD",
+    name: "Plan — new PRD",
     callback: () => deps.openPrdBuilder(),
   });
   plugin.addCommand({
     id: "create-story-map",
-    name: "New Story Map",
+    name: "Plan — new Story Map",
     callback: () => deps.openStoryMapBuilder(),
   });
   plugin.addCommand({
     id: "open-story-maps",
-    name: "Open Story Maps",
+    name: "Plan — open Story Maps",
     callback: () => void deps.workspace.openView(STORY_MAP_VIEW_TYPE, "sidebar"),
   });
   plugin.addCommand({
     id: "open-test-suites",
-    name: "Open Test Suites",
+    name: "Run — open Test Suites",
     callback: () => void deps.workspace.openView(SUITE_VIEW_TYPE),
   });
   plugin.addCommand({
     id: "open-evidence-explorer",
-    name: "Open Evidence Explorer",
+    name: "Review — open Evidence Explorer",
     callback: () => void deps.workspace.openView(EVIDENCE_EXPLORER_VIEW_TYPE),
   });
   plugin.addCommand({
     id: "generate-feature",
-    name: "Generate feature from Use Case",
+    name: "Build — generate feature from Use Case",
     callback: () => void openGenerateFeature(),
   });
   plugin.addCommand({
     id: "validate-feature",
-    name: "Validate feature",
+    name: "Build — validate feature",
     callback: () => void validateActiveFeature(),
   });
   plugin.addCommand({
     id: "detect-missing-steps",
-    name: "Detect missing steps",
+    name: "Build — detect missing steps",
     callback: () => void detectMissingSteps(),
   });
   // UC-010 / RV-4: explicit user command (NOT auto-on-edit) — detect the
   // active feature's missing steps, then generate non-destructive stubs.
   plugin.addCommand({
     id: "generate-step-definitions",
-    name: "Generate step definitions",
+    name: "Build — generate step definitions",
     callback: () => void generateStepDefinitions(),
   });
 
@@ -362,35 +366,35 @@ export function registerCommands(
   // EPIC-009 Dashboard (UC-018).
   plugin.addCommand({
     id: "open-dashboard",
-    name: "Open dashboard",
+    name: "Review — open dashboard",
     callback: () => void deps.workspace.openView(DASHBOARD_VIEW_TYPE),
   });
 
   // EPIC-011 Documentation (FEAT-024 US-043/044/045, FEAT-025 US-046).
   plugin.addCommand({
     id: "generate-documentation",
-    name: "Generate documentation",
+    name: "Help — generate documentation",
     callback: () => void generateDocumentation(),
   });
   plugin.addCommand({
     id: "open-documentation",
-    name: "Open documentation",
+    name: "Help — open documentation",
     callback: () => void deps.openDocumentation(),
   });
   plugin.addCommand({
     id: "open-user-manual",
-    name: "Open user manual",
+    name: "Help — open user manual",
     callback: () => void deps.openDocumentation("manual"),
   });
   plugin.addCommand({
     id: "open-troubleshooting",
-    name: "Open troubleshooting",
+    name: "Help — open troubleshooting",
     callback: () => void deps.openDocumentation("troubleshooting"),
   });
 
   plugin.addCommand({
     id: "open-guided-tour",
-    name: "Open guided tour",
+    name: "Help — open guided tour",
     callback: () => void deps.workspace.openView(GUIDED_TOUR_VIEW_TYPE, "sidebar"),
   });
 
