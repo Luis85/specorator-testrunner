@@ -5,6 +5,87 @@
  * variables so the plugin adapts to light/dark and custom themes.
  */
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Specorator design tokens (UX redesign — Phase 0 / A1).
+ *
+ * A thin token layer ON TOP of Obsidian's CSS variables. Spacing / radius / status
+ * derive from theme vars (with literal fallbacks) so light / dark / custom themes
+ * still drive them. The ONE deliberate exception is the identity accent: per the
+ * redesign decision (T2, docs/ux-review/00-redesign-plan.md), `--spec-accent`
+ * defaults to a Specorator brand hue (teal) rather than the theme accent. It is a
+ * single token — retune the brand by editing the three accent values below.
+ * `--spec-on-accent` is the text colour for FILLED accent surfaces and is tuned
+ * per theme for contrast (white on the deeper light-mode teal; dark ink on the
+ * brighter dark-mode teal). Colour is never the sole signal — the `[data-status]`
+ * reinforcement contract (border position / text / icon) is preserved.
+ *
+ * Scoped to `body`, NOT `:root`: Obsidian's theme variables (`--text-success`,
+ * `--size-4-*`, `--radius-*`) are defined on `body` / `.theme-*`, so deriving these
+ * tokens at `:root` would resolve the `var()` references out of scope — status colours
+ * would compute invalid and the sizing aliases would fall back to their literals
+ * instead of following the active theme. `body` is the element that carries the theme
+ * vars; the `.theme-light`/`.theme-dark` accent overrides below out-rank it by class.
+ * ───────────────────────────────────────────────────────────────────────────── */
+body {
+  /* Spacing rhythm — one scale, named by intent, mapped to Obsidian sizes. */
+  --spec-space-1: var(--size-4-1, 4px);
+  --spec-space-2: var(--size-4-2, 8px);
+  --spec-space-3: var(--size-4-3, 12px);
+  --spec-space-4: var(--size-4-4, 16px);
+
+  /* Radius. */
+  --spec-radius-chip: var(--radius-s, 4px);
+  --spec-radius-card: var(--radius-m, 8px);
+
+  /* Elevation — the one place shadow values live. */
+  --spec-elev-0: none;
+  --spec-elev-1: 0 1px 2px rgba(0, 0, 0, 0.1);
+  --spec-elev-2: 0 2px 5px rgba(0, 0, 0, 0.28);
+
+  /* Motion. */
+  --spec-motion-fast: 120ms;
+  --spec-ease: ease;
+
+  /* The accent "spine": a left-edge identity cue shared by panels and tiles. */
+  --spec-spine-width: 3px;
+
+  /* Semantic status — alias the colour-blind-safe reinforcement vars in one spot. */
+  --spec-status-pass: var(--text-success);
+  --spec-status-fail: var(--text-error);
+  --spec-status-warn: var(--text-warning, var(--text-muted));
+  --spec-status-idle: var(--text-muted);
+
+  /* Identity accent (T2) — a Specorator brand teal by default, not the theme
+   * accent. Retune the brand here; per-theme contrast overrides follow below.
+   * Light-mode default is teal-700: white-on-accent ≈ 5.4:1, clearing WCAG AA
+   * (4.5:1) for normal-size filled-accent labels (e.g. primary buttons). */
+  --spec-accent: #0f766e;
+  --spec-accent-hover: #115e54;
+  --spec-on-accent: #ffffff;
+}
+
+.theme-light {
+  /* teal-700 / teal-800 — white-on-accent ≈ 5.4:1 (AA for normal text). */
+  --spec-accent: #0f766e;
+  --spec-accent-hover: #115e54;
+  --spec-on-accent: #ffffff;
+}
+
+.theme-dark {
+  /* A brighter teal reads better on dark surfaces; dark ink keeps filled-accent
+   * text legible against it. */
+  --spec-accent: #2dd4bf;
+  --spec-accent-hover: #5eead4;
+  --spec-on-accent: #06201d;
+}
+
+/* Honour reduced-motion for every token-driven transition in one place. */
+@media (prefers-reduced-motion: reduce) {
+  body {
+    --spec-motion-fast: 0ms;
+  }
+}
+
 /* ── KPI tiles (DashboardView, US-037) ───────────────────────────────────── */
 
 .e2e-test-hub-kpi-tiles {
