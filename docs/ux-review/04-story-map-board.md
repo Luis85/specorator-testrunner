@@ -280,10 +280,15 @@ the foundation a 60fps board needs.
   amber=in-progress, slate=planned, red=blocked) with an icon, plus a subtle
   card-edge treatment for `blocked` (a red hairline) and a check affordance for
   `done`. The slice roll-up bar gains a blocked segment.
-- **Resolve the ref to a real wikilink (M1).** Render the ref as the aliased
-  `[[note|UC-NNN]]`, clickable to open the Use Case (reuse the evidence renderer's
-  resolution). A referenced card should also show a tiny "linked" glyph; a
-  reference-less card a "story" glyph — the discovery distinction ADR-0028 cares
+- **Make the ref clickable by BINDING, not by rendering a wikilink string (M1).**
+  **The board is an SVG scene, not Markdown preview** (reviewer catch, Codex 2026-06-21):
+  a literal `[[note|UC-NNN]]` in an SVG `<text>` node is inert — Obsidian won't resolve or
+  make it clickable. Instead, carry a **resolved display label** (the aliased note title,
+  computed via a resolver port — the managed table's existing resolution, exposed purely) and
+  **bind the card/ref node's pointer handler to `openArtifact("UC-NNN")`** (the A4 deep-link
+  port, now available) so the click opens the Use Case. A referenced card should also show a
+  tiny "linked" glyph; a reference-less card a "story" glyph — the discovery distinction
+  ADR-0028 cares
   about.
 - **Light identity layer:** a gentle paper/grain texture or a faint dot-grid
   background for the canvas (storymaps.io's wall feel), slice rows as alternating
@@ -352,7 +357,7 @@ Flag: ★ = keeps the ItemView thin (logic lands in pure modules / a thin adapte
 | R3 | **Focus mode** — frame a Slice/Activity, dim the rest; `f`/Esc keys (C1) | H | M | L | R2 | ★ `frameForSlice/Activity` pure |
 | R4 | **Minimap** overview with draggable viewport rect | M | M | L | R2 | ★ re-renders the same pure specs at scale |
 | R5 | **Bigger cards + type spine + 2-line wrapped titles + status-as-visual-state** (C3, M6) | H | M | L | metrics are pure; check tests | ★ all in `BOARD_METRICS`/scene/CSS |
-| R6 | **Resolve `ref` to a clickable aliased wikilink** on the card (M1) | M | S | L | reuse evidence-renderer resolution | ★ resolution is pure; view binds click |
+| R6 | **Make the card `ref` clickable** — resolved display label + **bind the node to `openArtifact("UC-NNN")`** (A4), NOT a literal `[[ ]]` string (inert in SVG — Codex catch) (M1) | M | S | L | A4 `openArtifact` port; a pure resolver for the display label | ★ resolution pure; view binds the pointer handler |
 | R7 | **Reconcile the two colour systems** — inline swatch cycles Card *Types*; hex override modal-only (M4) | M | S | M (changes a documented P4 behaviour — confirm w/ owner) | — | ★ swap `CARD_PALETTE` for `CARD_TYPES` |
 | R8 | **Board toolbar** (breadcrumb + view controls + add + legend toggle), replacing the hint line (M2, m6) | H | M | L | hosts R2/R3/R9 | view chrome; handlers call pure ops |
 | R9 | **Live legend = filter + type palette**, docked & co-visible (M5) | M | M | L | R1 (filter = re-render), R8 | ★ filter/palette state pure |

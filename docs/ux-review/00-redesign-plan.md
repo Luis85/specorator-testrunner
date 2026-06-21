@@ -27,7 +27,15 @@ implementation subagents. The detail lives in the source reports — cited as `[
   and the **single decided `--spec-accent` brand teal** (T2, §0 — a contrast-tuned, adjustable
   token); A1 implementers ship that literal brand fallback by design. Everything else derives
   from theme vars.
-- eslint forbids `as` casts and `!`; zero raw HTML (`createEl`/`createDiv`).
+- **Render with Obsidian's DOM API** — build UI via `createEl`/`createDiv`/`setText` (the
+  established safe pattern, used throughout `src/presentation`), **never** `innerHTML` or raw
+  HTML strings. (`createEl`/`createDiv` are the APIs to *use*, not avoid.)
+- **TypeScript lint policy** (eslint `strictTypeChecked`, verified in `eslint.config.mjs`):
+  `no-non-null-assertion` bans `!`; `no-explicit-any` bans `any`; `consistent-type-assertions`
+  + the codebase's Result-based style mean **`as` casts are avoided in `src`** (use type guards
+  / Result narrowing). It is *not* a blanket `as` ban — `as const` is fine, and test files relax
+  `no-unsafe-*` (so tests may brand values via `as`). Don't avoid `createEl`/`createDiv` thinking
+  the gate forbids them — it doesn't.
 - Desktop-only. Colour is never the sole signal (the `[data-status]` reinforcement
   contract is preserved and extended).
 
@@ -164,7 +172,7 @@ pure modules it should produce (to keep presentation thin), and its risk.
 |---|---|---|---|
 | **D1 Reconciling board render** | Replace `empty()`+rebuild with the A3 keyed differ so edits don't reset scroll/zoom/hover. **Keystone** for D2. | 04-R1 | Med — hottest path; careful DnD re-wire |
 | **D2 Zoom/pan/focus + minimap** | `panzoom` behind a one-function adapter (mirrors the dnd adapter); fit-to-screen; **focus a Slice/Activity** (camera frame + dim); minimap. The adapter must **own screen→board conversion** (invert the wrapper group's CTM); `toBoardPoint` today reads the **outer** SVG's CTM and must route through the adapter (Codex catch — see 04 corrected). ADR-0029's named remaining phase. | 04-R2/R3/R4 | Med — new runtime dep (anticipated by ADR-0029 P5); coordinate inversion is real work |
-| **D3 Card visual language** | Bigger breathing cards + **type-tinted spine** + 2-line wrapped titles + **status-as-visual-state**; resolve `ref` to a clickable aliased `[[note\|UC-NNN]]`; reconcile the two colour systems (inline swatch cycles **Card Types**; free-text `color` modal-only). | 04-R5/R6/R7 | Low–Med — R7 changes documented P4 behaviour (T-board) |
+| **D3 Card visual language** | Bigger breathing cards + **type-tinted spine** + 2-line wrapped titles + **status-as-visual-state**; make `ref` clickable by **binding the SVG node to `openArtifact("UC-NNN")` (A4) + a resolved display label** — NOT a literal `[[ ]]` string (inert in SVG — Codex catch); reconcile the two colour systems (inline swatch cycles **Card Types**; free-text `color` modal-only). | 04-R5/R6/R7 | Low–Med — R7 changes documented P4 behaviour (T-board); R6 depends on A4 |
 | **D4 Board toolbar + panels** | Persistent toolbar (breadcrumb + view controls + add + legend toggle); **live legend** (filter + type palette); **right-docked card inspector** exposing the card **body** — needs **new card-note body read/write plumbing** (the board model drops the body today; Codex catch — see 04 corrected); **persona identity** (colour/initial chips linking to `PER-NNN`). | 04-R8/R9/R10/R12 | Med |
 | **D5 Board polish** | In-board undo (pure-model snapshot stack); real empty/first-run states + coachmarks; satellite consistency (Settings modal → `Setting` rows; builder board-shape preview); light identity layer (dot-grid, banded slices). | 04-R11/R13/R14/R15 | Low |
 
