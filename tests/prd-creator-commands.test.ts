@@ -62,7 +62,7 @@ describe("Create PRD command", () => {
 
     const createPrdCommand = commands.find((cmd) => cmd.id === "create-prd");
     expect(createPrdCommand).toBeTruthy();
-    expect(createPrdCommand?.name).toBe("New PRD");
+    expect(createPrdCommand?.name).toBe("Plan — new PRD");
   });
 
   it("invoking Create PRD command calls openPrdBuilder", () => {
@@ -89,7 +89,7 @@ describe("Create PRD command", () => {
     // Verify the command has the right structure
     const createPrdCommand = commands.find((cmd) => cmd.id === "create-prd");
     expect(createPrdCommand?.id).toBe("create-prd");
-    expect(createPrdCommand?.name).toBe("New PRD");
+    expect(createPrdCommand?.name).toBe("Plan — new PRD");
     expect(typeof createPrdCommand?.callback).toBe("function");
   });
 });

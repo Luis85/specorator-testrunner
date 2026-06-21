@@ -258,7 +258,8 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
       return {
         code: "RUNNER_MANIFEST_OUTDATED",
         severity: "warning",
-        message: "The .testrunner is outdated (Test Hub version changed) — run Repair to update.",
+        message:
+          "The .testrunner is outdated (Test Hub version changed) — run the 'Setup — repair installation' command to update.",
       };
     }
     // Version is current — flag browser-selection drift (order-insensitive), or a
@@ -269,7 +270,8 @@ export class DefaultEnvironmentValidationService implements EnvironmentValidatio
       return {
         code: "RUNNER_BROWSERS_OUTDATED",
         severity: "warning",
-        message: "The .testrunner browser selection is out of date — run Repair to update.",
+        message:
+          "The .testrunner browser selection is out of date — run the 'Setup — repair installation' command to update.",
       };
     }
     return null;

@@ -3,14 +3,14 @@ import type { TestHubSettings } from "../../domain/settings/settings";
 /**
  * Stable identity for a generated doc. The first three map to the
  * `documentation.opened` payload's `documentType` (TIS §12); `index` is the
- * navigational hub the "Open Documentation" command opens (UC-021/022/023).
+ * navigational hub the "Help — open documentation" command opens (UC-021/022/023).
  */
 export type DocumentationType = "getting-started" | "manual" | "troubleshooting" | "index";
 
 /**
  * A doc's `documentType` as carried by `documentation.opened`. The Event Catalog
  * enum is extended to include `index` (TIS §12 / UC-021,022,023): the navigational
- * hub is the natural default entry point for the "Open Documentation" command, so
+ * hub is the natural default entry point for the "Help — open documentation" command, so
  * it must be openable and a valid event documentType.
  */
 export type OpenableDocumentType = DocumentationType;
@@ -70,14 +70,14 @@ Obsidian.
 
 > Requirements → Specification → Automation → Execution → Evidence → CI
 
-1. **Initialize** the Test Hub (the **Initialize Test Hub** command, or the dashboard's call to action).
+1. **Initialize** the Test Hub (the **Setup — initialize Test Hub** command, or the dashboard's call to action).
 2. **Create a Use Case** and **Generate a Feature** from it.
 3. **Run** a suite, use case, or feature.
 4. **Review evidence** under \`${settings.paths.evidencePath}/\` and the live
    **Test Hub Dashboard**.
 5. **Generate the CI workflow** to run the same suite on every push.
 
-New here? Run the **Open guided tour** command — it walks you through this
+New here? Run the **Help — open guided tour** command — it walks you through this
 whole loop, learning by doing.
 `,
 });
@@ -103,8 +103,8 @@ passing test.
 
 ## Install the runner
 
-The runner is a standalone Node project. Run **Validate Environment** to confirm
-Node.js is available, then let initialization (or **Repair Installation**)
+The runner is a standalone Node project. Run **Setup — validate environment** to confirm
+Node.js is available, then let initialization (or **Setup — repair installation**)
 install dependencies with \`${runner.installCommand}\` and the configured browsers
 with \`${runner.browserInstallCommand}\` (Chromium by default; add Firefox/WebKit in
 Settings → Runner).
@@ -113,14 +113,14 @@ Settings → Runner).
 
 1. Open **Use Cases → UC-001 Open Example Page** to see the demo Use Case.
 2. Open its Feature Specification under \`${paths.featureFilesPath}/\`.
-3. Run **Run Demo Test** to execute it; output streams into the Test Console.
+3. Use **Run — Demo Test** to execute it; output streams into the Test Console.
 
 The demo drives a local static HTML fixture over \`file://\`, so it needs no
 network access and behaves identically in CI.
 
 ## Build your own (Guided Tour)
 
-Run the **Open guided tour** command (or click **Start guided tour** right
+Run the **Help — open guided tour** command (or click **Start guided tour** right
 after initialization). The tour is a sidebar checklist that walks you through
 authoring your own Use Case, Feature, step definitions, Test Suite, run, and
 Evidence — each step completes by itself when you perform the real action,
@@ -162,15 +162,15 @@ The Test Hub turns requirements into executable specifications:
 
 ## How to: create a Use Case
 
-Run **New Use Case**, give it a title, and the plugin writes a \`UC-NNN\` note
-into \`${paths.useCasesPath}/\`. Browse them from the **Open Use Cases** view.
+Run **Build — new Use Case**, give it a title, and the plugin writes a \`UC-NNN\` note
+into \`${paths.useCasesPath}/\`. Browse them from the **Build — open Use Cases** view.
 
 ## How to: generate a Feature
 
-Run **Generate Feature from Use Case**, pick a Use Case, and a Gherkin
+Run **Build — generate feature from Use Case**, pick a Use Case, and a Gherkin
 \`.feature\` scaffold is written under \`${paths.featureFilesPath}/\` and linked
-back to the Use Case. **Validate Feature** checks the Gherkin; **Detect Missing
-Steps** lists step definitions you still need.
+back to the Use Case. **Build — validate feature** checks the Gherkin;
+**Build — detect missing steps** lists step definitions you still need.
 
 ## How to: organize Suites
 
@@ -179,7 +179,7 @@ Initialization creates two suites:
 - **Smoke** — \`@smoke\` critical-path scenarios.
 - **Regression** — \`@regression\` the full regression set (empty until you tag scenarios).
 
-Create more with **New Test Suite** (a tag expression). Tag a Feature
+Create more with **Run — new Test Suite** (a tag expression). Tag a Feature
 \`@wip\` to keep half-built work out of the dashboard roll-up.
 
 ## How to: run tests
@@ -188,24 +188,25 @@ The \`${paths.testRunnerPath}/\` folder is a standalone Node project. Locally it
 with \`${runner.defaultRunCommand}\`; in CI it runs with \`${runner.ciRunCommand}\` —
 identical behavior in both places. Use the commands:
 
-- **Run Demo Test**, **Run All Tests**
-- **Run Suite…**, **Run Use Case…**, **Run Feature…** (pick from a list)
-- **Cancel Test Run** stops the single active run.
+- **Run — Demo Test**, **Run — all tests**
+- **Run — Test Suite…**, **Run — Use Case…**, **Run — feature…** (pick from a list)
+- **Run — cancel Test Run** stops the single active run.
 
-Output streams live into the **Open Test Console** view.
+Output streams live into the **Run — open Test Console** view.
 
 ## How to: review evidence and the dashboard
 
 When a run finishes, its report is imported and a linked **Evidence** note is
-written under \`${paths.evidencePath}/\` (toggle in settings). **Import Report for
-Last Run** re-runs that import. **Open Dashboard** shows live KPI tiles (total /
+written under \`${paths.evidencePath}/\` (toggle in settings).
+**Review — import report for last run** re-runs that import. **Review — open dashboard**
+shows live KPI tiles (total /
 specified / automated / passing / failing) and recent runs.
 
 ## How to: set up CI
 
-Run **Generate CI Workflow** to write a GitHub Actions workflow that installs
-the runner and runs the suite on every push; **Overwrite CI Workflow** replaces
-an existing one. **Check CI Readiness** reports anything still missing.
+Run **Setup — generate CI workflow** to write a GitHub Actions workflow that installs
+the runner and runs the suite on every push; **Setup — overwrite CI workflow** replaces
+an existing one. **Setup — check CI readiness** reports anything still missing.
 
 ## Settings
 
@@ -235,15 +236,15 @@ const buildTroubleshootingDoc = (settings: TestHubSettings): DocumentationFile =
 ## Node.js is not installed
 
 The runner needs **Node.js ${settings.ci.nodeVersion}+**. Install it from
-<https://nodejs.org>, restart Obsidian, and re-run **Validate Environment**.
+<https://nodejs.org>, restart Obsidian, and re-run **Setup — validate environment**.
 
 ## Dependencies or browsers are missing
 
 The runner installs dependencies with \`${runner.installCommand}\` and the
 configured browsers with \`${runner.browserInstallCommand}\` (Chromium by default;
 add Firefox/WebKit in Settings → Runner). The first install downloads the
-browser binaries (~150 MB+ per browser) and can take a few minutes. Run **Repair
-Installation** to re-sync.
+browser binaries (~150 MB+ per browser) and can take a few minutes. Run
+**Setup — repair installation** to re-sync.
 
 ## The demo test cannot find the fixture
 
@@ -259,12 +260,12 @@ surrounding filesystem path matters too.
 
 Reports are written under \`${paths.testRunnerPath}/reports/\` and linked from
 \`${paths.evidencePath}/\`. Confirm a Test Run actually completed before expecting
-evidence, then run **Import Report for Last Run**.
+evidence, then run **Review — import report for last run**.
 
 ## CI is not ready
 
-Run **Check CI Readiness** — it lists what is missing (e.g. a generated
-workflow). Run **Generate CI Workflow** to create one.
+Run **Setup — check CI readiness** — it lists what is missing (e.g. a generated
+workflow). Run **Setup — generate CI workflow** to create one.
 `,
   };
 };

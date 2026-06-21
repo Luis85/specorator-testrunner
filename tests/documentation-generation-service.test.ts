@@ -190,24 +190,24 @@ describe("documentation content builders (US-043/044/045)", () => {
     const guide = byType("getting-started");
     expect(guide).toContain("# Getting Started");
     expect(guide).toContain("Install the runner");
-    expect(guide).toContain("Run Demo Test");
+    expect(guide).toContain("Run — Demo Test");
   });
 
   it("user manual documents the core workflow and commands (US-044)", () => {
     const manual = byType("manual");
     expect(manual).toContain("# User Manual");
-    expect(manual).toContain("New Use Case");
-    expect(manual).toContain("Generate Feature from Use Case");
-    expect(manual).toContain("Open Dashboard");
-    expect(manual).toContain("Generate CI Workflow");
+    expect(manual).toContain("Build — new Use Case");
+    expect(manual).toContain("Build — generate feature from Use Case");
+    expect(manual).toContain("Review — open dashboard");
+    expect(manual).toContain("Setup — generate CI workflow");
   });
 
   it("troubleshooting covers common failure modes (US-045)", () => {
     const guide = byType("troubleshooting");
     expect(guide).toContain("# Troubleshooting");
     expect(guide).toContain("Node.js");
-    // "Repair Installation" wraps across a line in the rendered Markdown.
-    expect(guide.replace(/\s+/g, " ")).toContain("Repair Installation");
+    // "Setup — repair installation" wraps across a line in the rendered Markdown.
+    expect(guide.replace(/\s+/g, " ")).toContain("Setup — repair installation");
   });
 
   it("documentationFileName resolves every type", () => {
@@ -221,7 +221,7 @@ describe("documentation content builders (US-043/044/045)", () => {
     const docs = buildDocumentation(DEFAULT_SETTINGS);
     const gettingStarted = docs.find((doc) => doc.type === "getting-started");
     const index = docs.find((doc) => doc.type === "index");
-    expect(gettingStarted?.content).toContain("Open guided tour");
-    expect(index?.content).toContain("Open guided tour");
+    expect(gettingStarted?.content).toContain("Help — open guided tour");
+    expect(index?.content).toContain("Help — open guided tour");
   });
 });
