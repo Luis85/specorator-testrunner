@@ -10,7 +10,34 @@ import type { VaultPath } from "../../domain/value-objects/identifiers";
 /** Stable id-only file name (cards rename often via the board; keep the path/queue key stable). */
 export const cardFileName = (id: string): string => `${id}.md`;
 
+/**
+ * The card's display title: its own title, else its UC `ref`, else the note id.
+ * Shared by the note's `# ` heading (write) and the parsed `title` (read) so the
+ * two can never disagree — and so a card with no title (allowed when it carries a
+ * ref) still gets a meaningful heading instead of a bare `# ` (which the heading
+ * strip below would otherwise have to special-case).
+ */
+const displayTitle = (title: string, ref: string | undefined, id: string): string =>
+  title.trim() || (ref ?? id);
+
+/**
+ * Recovers the user's body by removing the `# <title>` heading {@link buildCardNote}
+ * prepends (and its blank-line separator). The explicit, line-based inverse of that
+ * prepend: it drops at most the heading line plus one blank line, so — unlike a
+ * `\s`-based regex on a blank heading — it can never run past the heading and eat
+ * real body text.
+ */
+const stripCardHeading = (body: string): string => {
+  const lines = body.split("\n");
+  if (lines[0]?.startsWith("# ")) {
+    lines.shift(); // the generated heading line
+    if (lines[0] === "") lines.shift(); // its blank-line separator, when present
+  }
+  return lines.join("\n").trim();
+};
+
 export const buildCardNote = (c: StoryMapCardNote): string => {
+  const ref = c.ref && isValidUseCaseRef(c.ref) ? c.ref : undefined;
   const fields: Record<string, FrontmatterValue> = {
     type: "story-map-card",
     id: c.id,
@@ -19,7 +46,7 @@ export const buildCardNote = (c: StoryMapCardNote): string => {
     status: c.status,
     points: c.points,
     tags: c.tags.length > 0 ? c.tags : undefined,
-    ref: c.ref && isValidUseCaseRef(c.ref) ? c.ref : undefined,
+    ref,
     color: c.color && c.color.trim() !== "" ? c.color.trim() : undefined,
     activity: c.activity,
     step: c.step && c.step !== "" ? c.step : undefined,
@@ -27,7 +54,9 @@ export const buildCardNote = (c: StoryMapCardNote): string => {
     order: c.order,
     title: c.title,
   };
-  const body = c.body.trim() === "" ? `# ${c.title}\n` : `# ${c.title}\n\n${c.body.trim()}\n`;
+  const heading = displayTitle(c.title, ref, c.id);
+  const trimmed = c.body.trim();
+  const body = trimmed === "" ? `# ${heading}\n` : `# ${heading}\n\n${trimmed}\n`;
   return buildNote(fields, body);
 };
 
@@ -62,14 +91,10 @@ export const parseCardNote = (content: string, path: VaultPath): StoryMapCardNot
     slice: str(fm.slice),
     order: intOrUndef(fm.order) ?? 0,
     // A referenced card may carry a blank title (only reference-less cards require
-    // one — validateCardPlacement). Fall back to its UC `ref`, never the generated
-    // note id, so the board/grid don't surface "SMC-NNN" and a later save doesn't
-    // persist that id as the title (StoryMapCard.title: "falls back to ref").
-    title: str(fm.title) || (ref ?? fm.id),
-    // Strip ONLY the generated heading line. `[ \t]` (not `\s`) so a blank `# `
-    // heading — emitted for a referenced card with no title — can't let the match
-    // run past the newline and eat the blank-line separator + the first body line.
-    body: body.replace(/^#[ \t]+.*\n?/, "").trim(),
+    // one — validateCardPlacement); displayTitle falls it back to the ref (never
+    // the generated note id), matching the heading buildCardNote wrote.
+    title: displayTitle(str(fm.title), ref, fm.id),
+    body: stripCardHeading(body),
     path,
   };
 };

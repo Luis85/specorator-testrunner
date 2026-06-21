@@ -50,6 +50,11 @@ describe("card note content", () => {
     const note = buildCardNote({ ...card, ref: undefined, title: "" });
     expect(parseCardNote(note, card.path)?.title).toBe("SMC-001");
   });
+  it("writes a meaningful heading (the UC ref) for a referenced card with no title", () => {
+    const note = buildCardNote({ ...card, title: "" }); // ref UC-003, no title
+    expect(note).toContain("# UC-003");
+    expect(note).not.toContain("# \n"); // never a bare, blank heading
+  });
   it("preserves the first body line when stripping a blank-title card's `# ` heading", () => {
     // A referenced card with no title emits a blank "# " heading; stripping it
     // must not consume the blank-line separator and the first real body line.
