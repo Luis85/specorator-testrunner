@@ -1164,6 +1164,51 @@ describe("DefaultStoryMapService.saveMap", () => {
     expect(updated?.payload).toMatchObject({ storyMapId: "SM-001", origin: "board-xyz" });
   });
 
+  it("rolls the card notes back to the saved axes when the map-note write fails", async () => {
+    const { service, fs } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
+    const path = "Story Maps/SM-001-j/SM-001-j.md";
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        "product: PRD-000",
+        "activities:",
+        "  - Author spec",
+        "  - Run tests",
+        "slices:",
+        "  - Walking skeleton",
+        "---",
+        "<!-- story-map-grid:start -->",
+        "(empty)",
+        "<!-- story-map-grid:end -->",
+      ].join("\n"),
+    );
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      ref: "UC-040",
+      activity: "Author spec",
+      slice: "Walking skeleton",
+    });
+    const loaded = await service.findById("SM-001");
+    if (!loaded.ok || !loaded.value) return;
+    const moved = moveCard(loaded.value, 0, { activity: "Run tests", slice: "Walking skeleton" });
+    // The map-note write fails AFTER the card reconcile has moved the note's cell.
+    fs.failOn = { path, message: "disk full" };
+
+    const result = await service.saveMap("SM-001", moved);
+
+    expect(result.ok).toBe(false);
+    // The card note is rolled back to its pre-save cell, so it stays on an axis the
+    // (unchanged) map note declares — not stranded off-map at "Run tests".
+    const cardNote = fs.files.get("Story Maps/SM-001-j/cards/SMC-001.md") ?? "";
+    expect(cardNote).toContain("activity: Author spec");
+    expect(cardNote).not.toContain("activity: Run tests");
+  });
+
   it("persists a reordered backbone and slices (full structure), not just cards", async () => {
     const { service, fs } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
     const path = "Story Maps/SM-001-j/SM-001-j.md";

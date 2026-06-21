@@ -817,7 +817,21 @@ export class DefaultStoryMapService implements StoryMapService {
 
       // Persist the on-disk identity (id/path/product/displayOrder) with the
       // board's normalized structure and the re-composed cards.
-      return this.writeMap({ ...onDisk, users, activities, steps, slices, cards }, origin);
+      const written = await this.writeMap(
+        { ...onDisk, users, activities, steps, slices, cards },
+        origin,
+      );
+      if (!written.ok) {
+        // Compensate: the map note still declares the OLD axes, so the just-reconciled
+        // card notes (now at the NEW coordinates, e.g. a renamed activity) would be
+        // hidden as off-map on the next reload and rejected by the all-card placement
+        // guard. Roll the card notes back to their pre-save coordinates so the on-disk
+        // state stays consistent with the unchanged map note — best-effort: a failed
+        // rollback leaves us no worse off than without it.
+        await reconcileCards(this.fs, this.noteWrites, cardsDir, id, onDisk.cards, cards);
+        return written;
+      }
+      return written;
     });
   }
 
