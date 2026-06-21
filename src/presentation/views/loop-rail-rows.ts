@@ -84,27 +84,43 @@ const STAGE_ACTION: Record<LoopRailStage, LoopRailAction> = {
 };
 
 /**
- * Automation statuses that prove the Use Case's step definitions exist. Only the
- * RUN-exercised statuses qualify — a Feature cannot have produced a pass/fail/skip
- * result without its step definitions being in place.
+ * Automation statuses that PROVE the Use Case's step definitions exist. Only the
+ * run-PASSED statuses qualify: `passing` (every scenario passed) and `implemented`
+ * (some passed, none failing). An undefined step ALWAYS imports as `failed`
+ * (`cucumber-json-report-parser` puts `undefined`/`pending`/`ambiguous` in its
+ * `FAILURE_STATUSES`), so a UC that reached `passing`/`implemented` cannot have run
+ * with a missing step definition — those two statuses are sound proof.
  *
- * `planned` is deliberately EXCLUDED. The `missing-steps` gate in
- * `computeAutomationStatus` measures empty **Gherkin** steps in the `.feature`
- * (`scenario.steps.length === 0`), NOT the step-definition stubs in the runner
- * project — the domain never inspects those. So `planned` ("has Gherkin steps, not
- * yet run") is reached the instant Generate Feature writes scenarios, BEFORE any
- * stub exists, and it also persists after stubs are generated but before the first
- * run. The status alone cannot tell those two apart, so the rail takes the
- * conservative reading: at `planned` the Steps node stays the current
- * "Generate step definitions" CTA rather than offering Run against undefined steps
- * (Codex review). generate-steps is non-destructive, so re-running it once stubs
- * exist is a harmless no-op; the header's "Run Use Case" button still runs directly
- * for the stubs-generated-but-not-yet-run case, and the first run advances the rail.
+ * `planned` and `failing` are deliberately EXCLUDED, because neither proves the
+ * step definitions exist:
+ * - `planned` ("has Gherkin steps, not yet run") is reached the instant Generate
+ *   Feature writes scenarios, BEFORE any stub exists. The `missing-steps` gate in
+ *   `computeAutomationStatus` measures empty **Gherkin** steps in the `.feature`
+ *   (`scenario.steps.length === 0`), NOT the runner project's step-definition stubs,
+ *   which the domain never inspects.
+ * - `failing` can come straight from missing stubs: bddgen exits 0 while printing
+ *   undefined steps, and the importer maps those undefined steps to `failed`, so a
+ *   run with no step definitions lands on `failing` — indistinguishable from a
+ *   genuine assertion failure on defined steps (Codex review).
+ *
+ * Since the status alone can't tell a missing-steps `failing` from a defined-but-
+ * failing one, the rail takes the conservative reading (matching its `planned`
+ * handling): at `planned`/`failing` the Steps node stays the current
+ * "Generate step definitions" CTA. generate-steps is non-destructive (a no-op once
+ * stubs exist) and the header's "Run Use Case" button still runs directly, so the
+ * redundant CTA costs nothing; a `passing`/`implemented` run advances the rail.
+ *
+ * Known limitation (accepted): `automationStatus` is derived from the UC's
+ * frontmatter `featureFiles` (TraceabilityService), while the rail derives Feature
+ * *presence* from the ADR-0012 filename listing. An orphan Feature (filename matches
+ * `UC-NNN-` but is absent from frontmatter) therefore counts for presence but not
+ * for this status, so the rail can sit on the Generate-steps CTA until the UC's
+ * forward link is repaired. The CTA is non-destructive and the header Run button
+ * still works, so this degrades gracefully rather than dead-ending.
  */
 const STEPS_DEFINED_STATUSES: ReadonlySet<AutomationStatus> = new Set<AutomationStatus>([
   "implemented",
   "passing",
-  "failing",
 ]);
 
 /**

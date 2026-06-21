@@ -63,11 +63,12 @@ describe("loopCapabilitiesFor", () => {
     expect(caps.stepsDefined).toBe(false);
   });
 
-  it.each<AutomationStatus>(["implemented", "passing", "failing"])(
+  it.each<AutomationStatus>(["implemented", "passing"])(
     "treats %s automation as steps-defined when a Feature exists",
     (automationStatus) => {
-      // Only the RUN-exercised statuses prove the step definitions exist — a
-      // Feature can't have recorded a result without its steps in place.
+      // Only the run-PASSED statuses prove the step definitions exist: an undefined
+      // step always imports as `failed`, so a UC that reached passing/implemented
+      // cannot have run with a missing step definition.
       const caps = loopCapabilitiesFor(
         useCase({ featureFiles: [vp("Features/UC-001-happy.feature")], automationStatus }),
       );
@@ -75,18 +76,18 @@ describe("loopCapabilitiesFor", () => {
     },
   );
 
-  it("treats `planned` automation as steps-NOT-defined even with a Feature", () => {
-    // `planned` ("has Gherkin steps, not yet run") can't distinguish a freshly
-    // generated Feature (no stubs) from stubs-generated-but-unrun, so the rail
-    // takes the conservative reading and keeps the Generate-steps CTA visible.
-    const caps = loopCapabilitiesFor(
-      useCase({
-        featureFiles: [vp("Features/UC-001-happy.feature")],
-        automationStatus: "planned",
-      }),
-    );
-    expect(caps.stepsDefined).toBe(false);
-  });
+  it.each<AutomationStatus>(["planned", "failing"])(
+    "treats `%s` automation as steps-NOT-defined even with a Feature",
+    (automationStatus) => {
+      // Neither proves stubs exist: `planned` is reached before any stub is written,
+      // and `failing` can come straight from missing stubs (undefined steps import
+      // as failed). The rail conservatively keeps the Generate-steps CTA for both.
+      const caps = loopCapabilitiesFor(
+        useCase({ featureFiles: [vp("Features/UC-001-happy.feature")], automationStatus }),
+      );
+      expect(caps.stepsDefined).toBe(false);
+    },
+  );
 
   it("does not report steps-defined without a Feature, even if status moved on", () => {
     // A defensive guard: status alone can't imply steps when there's no Feature.
@@ -201,6 +202,22 @@ describe("projectLoopRail", () => {
     const rail = projectLoopRail(uc);
     expect(rail.currentStage).toBe("steps");
     expect(rail.currentAction).toBe("generate-steps");
+  });
+
+  it("keeps Steps current at `failing` even with a recorded run — stubs may be missing", () => {
+    // A run with undefined steps imports as `failed`, so `failing` doesn't prove
+    // the stubs exist. Even though the run is recorded (Run reads done), the rail
+    // conservatively offers Generate steps, not Run, as the recovery step.
+    const uc = useCase({
+      featureFiles: [vp("Features/UC-001-happy.feature")],
+      automationStatus: "failing",
+      lastTestRun: { runId: "RUN-2", status: "failed", date: "2026-06-21" },
+    });
+    const rail = projectLoopRail(uc);
+    expect(rail.currentStage).toBe("steps");
+    expect(rail.currentAction).toBe("generate-steps");
+    // The run capability is still reported truthfully on its own node.
+    expect(rail.nodes.find((n) => n.stage === "run")?.state).toBe("done");
   });
 
   it("marks the Suite node done when the Use Case lists a suite (informational)", () => {
