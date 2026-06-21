@@ -2,6 +2,7 @@ import type { SpecificationService } from "../../application/services/specificat
 import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { RunLauncher } from "../run/run-launcher";
+import { appendLinkButtonCell } from "./link-button-cell";
 import { renderListHeader } from "./list-header";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
 import { featureCountCell, projectUseCaseRows } from "./use-case-rows";
@@ -87,13 +88,10 @@ export const renderUseCaseDashboardBody = async (
     // Wave D: the id opens the Use Case detail view (Feature Specifications +
     // authoring/testing actions); raw note access stays a separate "Note"
     // link in its own column.
-    const open = tr.createEl("td").createEl("button", {
+    appendLinkButtonCell(tr, {
       text: row.id,
-      cls: "e2e-test-hub-link-button",
-      attr: { "aria-label": `Open Use Case ${row.id} detail` },
-    });
-    open.addEventListener("click", () => {
-      deps.onOpenDetail(row.id);
+      ariaLabel: `Open Use Case ${row.id} detail`,
+      onClick: () => deps.onOpenDetail(row.id),
     });
     tr.createEl("td", { text: row.title });
     tr.createEl("td", { text: row.status });
@@ -113,13 +111,10 @@ export const renderUseCaseDashboardBody = async (
     });
     if (featuresCell.tooltip !== null) featuresTd.setAttr("title", featuresCell.tooltip);
     if (featuresCell.status !== null) featuresTd.dataset.status = featuresCell.status;
-    const note = tr.createEl("td").createEl("button", {
+    appendLinkButtonCell(tr, {
       text: "Note",
-      cls: "e2e-test-hub-link-button",
-      attr: { "aria-label": `Open the ${row.id} note` },
-    });
-    note.addEventListener("click", () => {
-      void openOrNotice(deps.workspace, row.path);
+      ariaLabel: `Open the ${row.id} note`,
+      onClick: () => void openOrNotice(deps.workspace, row.path),
     });
     // Per-row Run button (Wave B): launches a use-case-scoped run via the
     // shared launcher, which reveals the Test Console first.

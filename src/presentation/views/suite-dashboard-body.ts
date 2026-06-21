@@ -2,6 +2,7 @@ import type { FeatureInsightService } from "../../application/services/feature-i
 import type { SuiteService } from "../../application/services/suite-service";
 import type { RunLauncher } from "../run/run-launcher";
 import { suiteTarget, type NavigationTarget } from "../navigation/navigation-target";
+import { appendLinkButtonCell } from "./link-button-cell";
 import { renderListHeader } from "./list-header";
 import { renderLoadError } from "./modal-helpers";
 import { projectSuiteRows, scenarioCountCell } from "./suite-rows";
@@ -81,13 +82,10 @@ export const renderSuiteDashboardBody = async (
   const body = table.createEl("tbody");
   for (const row of rows) {
     const tr = body.createEl("tr");
-    const open = tr.createEl("td").createEl("button", {
+    appendLinkButtonCell(tr, {
       text: row.name,
-      cls: "e2e-test-hub-link-button",
-      attr: { "aria-label": `Open Test Suite ${row.name}` },
-    });
-    open.addEventListener("click", () => {
-      deps.navigate(suiteTarget(row.path));
+      ariaLabel: `Open Test Suite ${row.name}`,
+      onClick: () => deps.navigate(suiteTarget(row.path)),
     });
     tr.createEl("td", { text: row.id });
     tr.createEl("td", { text: row.tagExpression });

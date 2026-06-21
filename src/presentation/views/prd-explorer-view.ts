@@ -7,7 +7,9 @@ import { renderPrdExplorerBody } from "./prd-explorer-body";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { type NavigationTarget } from "../navigation/navigation-target";
 
-export { buildPrdTree, type PrdTreeNode } from "./prd-explorer-body";
+// `buildPrdTree` is re-exported because tests/prd-tree.test.ts imports it from
+// this module (its historical home); the tree types live with the body now.
+export { buildPrdTree } from "./prd-explorer-body";
 
 export const PRD_VIEW_TYPE = "e2e-test-hub-prds";
 
