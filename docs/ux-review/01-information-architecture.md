@@ -162,7 +162,7 @@ Replace the three parallel onboarding affordances (C3) with **one** state machin
 
 ### 3.6 Light Specorator identity for recognition
 
-Introduce a single accent token (one CSS var layered over Obsidian's `--interactive-accent`) plus a compact wordmark in the hub identity bar and a consistent per-section icon set (reuse existing Lucide icons: `git-fork` Plan, `file-check` Build, `terminal`/`play` Run, `gauge`/`clipboard` Review). Sections, breadcrumbs, and the rail all draw from the same icon+accent vocabulary so the user learns the map once. Stays theme-native; no hard-coded colors.
+Introduce a single accent token plus a compact wordmark in the hub identity bar and a consistent per-section icon set (reuse existing Lucide icons: `git-fork` Plan, `file-check` Build, `terminal`/`play` Run, `gauge`/`clipboard` Review). Sections, breadcrumbs, and the rail all draw from the same icon+accent vocabulary so the user learns the map once. **Use the decided brand token, not the theme accent** (this report's earlier "layered over `--interactive-accent` / no hard-coded colors" framing is **superseded** by §0/T2 in `00-redesign-plan.md`): the identity bar draws `--spec-accent`, which **defaults to the Specorator brand teal** (as shipped in A1), not the user's theme accent. The B1 identity bar must consume `--spec-accent`, so the hub and the Phase-0 tokens ship the *same* default.
 
 ### 3.7 Rationalize the ribbon
 

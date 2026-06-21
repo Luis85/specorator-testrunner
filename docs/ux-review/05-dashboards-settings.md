@@ -190,7 +190,16 @@ Restructure `render()` into a clear above-the-fold hero and a deferable below-th
 - **Health hero (new, top).** One large card answering "is my product green?": a big
   **pass-rate ring/bar** over the **automated Use Cases** (`passing ÷ automatedUseCases`,
   `@wip` already excluded upstream), the timestamp of the last run, and a one-line verdict
-  ("12 of 16 automated Use Cases passing · 2 failing · 2 in progress"). **Choose the
+  ("12 of 16 automated Use Cases passing · 2 failing · 2 in progress"). **The "last run"
+  verdict needs a run-history source, not the dashboard snapshot** (reviewer catch, Codex
+  2026-06-21): `projectDashboardSnapshot()` builds `recentRuns` only from each UC's
+  `lastTestRun` (`traceability-service.ts:117-126`), which is written *only* when evidence
+  links back to Use Cases (`evidence-generation-service.ts:185-206`), and **errored runs are
+  skipped** by post-run import (`post-run-coordinator.ts:194-196`). So if the latest run fails
+  to spawn or produces no linked evidence, the hero would report the previous evidence-linked
+  run as "latest". Source the last-run verdict from the **run-history / test-execution** layer
+  (which sees every terminal run, incl. errors/cancels — RUN-ids per ADR-0018), or drop the
+  last-run line from R1. **Choose the
   denominator deliberately** (reviewer catch, Codex 2026-06-21): `passing ÷ (passing+failing)`
   is only a *terminal* pass/fail rate — it silently drops `implemented` UCs (scenarios ran
   but not fully green), which the KPI model (`projectDashboardSnapshot`, ADR-0017) counts as
@@ -281,7 +290,7 @@ feature is invisible.
 
 | # | Recommendation | Impact | Effort | Risk | Dependencies |
 |---|---|---|---|---|---|
-| R1 | Health hero card leading the hub (pass-rate, last-run verdict; **no env label** unless a run-environment dimension is added first — §3.1 caveat) | H | M | Low | Snapshot already provides counts; new projection in `dashboard-rows` |
+| R1 | Health hero card leading the hub (pass-rate over `automatedUseCases`; **no env label** and **last-run verdict from run-history, not the snapshot's evidence-linked `lastTestRun`** — §3.1 caveats) | H | M | Low–Med | Snapshot provides the pass/fail counts; the **last-run verdict needs a run-history/test-execution source** (snapshot `lastTestRun` skips errored/evidence-less runs) |
 | R2 | KPI funnel with denominators/%/bars + Failing-only-when-`>0` | H | M | Low | Pure projection change; CSS |
 | R3 | Make KPI tiles real filters (widen `DashboardNavTarget`, honour filter in UC explorer) | H | M | Med | Cross-surface: Use Cases explorer must accept a filter (coordinate with explorer owner) |
 | R4 | Reorder hub: health/actions/KPIs/runs first; docs+onboarding deferred to footer/empty-state | H | L | Low | None |
