@@ -142,7 +142,7 @@ pure modules it should produce (to keep presentation thin), and its risk.
 |---|---|---|---|
 | **B1 Test Hub home shell** | One hub leaf with a persistent **Plan/Build/Run/Review** section rail hosting existing view bodies; demote explorers from top-level peers. Rail model is a pure projection. | 01-R1; 03-R9 | **High** — Obsidian leaf/workspace-restore; needs an ADR |
 | **B2 Onboarding orchestrator** | One state machine ("the single next action") in a docked, never-occluded rail; retire the `Get started` panel + tour CTA banner duplication; wizard scaffolds, rail teaches. **Needs a NEW pure `projectOnboarding(initState, ucCount, tourState)`** — the tour service alone lacks init-state + UC-count, so retiring dashboard onboarding on it would lose the fresh-vault next action (Codex catch — see 01 corrected). | 01-R3 | Med — first-run behaviour change; keep tour event wiring intact |
-| **B3 Command + ribbon hygiene** | Prefix/group commands `Test Hub: <Area> — <verb>` (ids unchanged); reduce ribbon to one "Open Test Hub" icon; fix the stale comment. | 01-R5/R6 | Low |
+| **B3 Command + ribbon hygiene** | Prefix/group commands `Test Hub: <Area> — <verb>` (ids unchanged) — independent, ship early. **Ribbon reduction to one "Open Test Hub" icon depends on B1** (else PRD/Story Maps become palette-only — Codex catch); fix the stale comment with it. | 01-R5/R6 | Low; ribbon half gated on B1 |
 | **B4 Wire the graph** | Apply A4 everywhere: PRD→UC, board card→UC, UC→Story Map board, breadcrumb→specific PRD, Evidence↔Run↔Suite. | 01-R2; 04-R6 | Low–Med |
 
 ### Phase 2 — Core authoring loop *(parallel with Phases 3–4 after foundations)*
@@ -152,7 +152,7 @@ pure modules it should produce (to keep presentation thin), and its risk.
 | **C1 Loop rail / forward momentum** | A 5-node next-step spine (Use Case · Feature · Steps · Suite · Run) on every authoring surface; create-UC opens the **detail cockpit**, not the raw note; ▶ Run in the Feature editor toolbar. | 03-R1 | Low — additive, reuses existing services |
 | **C2 Pending Steps panel** | First-class surface listing undefined steps; "Generate stub" + **open the step file at the inserted stub**; merge detect+generate into one "Steps" action; progress bar. | 03-R2 | Med — needs a `.testrunner` open-at-line path |
 | **C3 Run view** | Reframe the console as a Run view: per-scenario live results, progress (N of M), **environment chip**, inline evidence, **re-run failed only**, raw log behind a disclosure. NB: re-run-failed needs a **new failure-set execution scope** — today `ExecutionScope` is only `use-case\|feature\|suite\|all\|demo` and `RunLauncher` forwards one scope/target, so this requires runner-command/scope/event/evidence work, not just reusing existing plumbing (Codex catch — see 03 corrected). | 03-R3/R4/R5 | Med–High — gated by T4 (per-scenario events) + a new failure-set scope |
-| **C4 Tag-expression builder** | Vault-wide tag palette + operator buttons + live "Matches N" in the suite modal; "Included in N suites" under editor scenarios; a lightweight Tag glossary. | 03-R6 | Low — reuses `listKnownTags`/`scenarioCounter` |
+| **C4 Tag-expression builder** | Vault-wide tag palette + operator buttons + live "Matches N" in the suite modal; "Included in N suites" under editor scenarios; a lightweight Tag glossary. NB: "in N suites" needs a **new per-scenario suite-membership projection** (not `scenarioCounter`, which is a corpus aggregate — Codex catch). | 03-R6 | Low for the builder; Med for the membership badge |
 | **C5 Rename-identity protection** | Intercept a history-dropping scenario rename with an inline confirm. Soften copy to "has recorded history" **or** add a history-count API — an exact count isn't available today (`ScenarioHistoryService` caps `recent` at history depth; Codex catch — see 03 corrected). | 03-R7 | Med — editor commit is fire-and-forget on blur |
 
 ### Phase 3 — Story Map board *(parallel; the marquee canvas)*
@@ -174,9 +174,11 @@ pure modules it should produce (to keep presentation thin), and its risk.
 | **E3 Settings IA** | Advanced/collapsible vault paths; explicit **Danger zone** for Reset; environments as summary cards that expand; auth column headers/caption. | 05-R6/R10 | Low |
 | **E4 Runs & live feedback** | Richer recent-runs (counts, env, duration, re-run, friendly label); "updated just now" live-refresh feedback. | 05-R8/R11 | Med (needs run summary to carry counts/env/duration) |
 
-**Dependency spine:** `A1 → A2 → A3/A4 → B1` ; `A3 → D1 → D2` ; `A2/A4` underpin every
-Phase 2–4 surface. After Phase 0–1, **Phases 2, 3, 4 run in parallel** (different surfaces,
-shared vocabulary).
+**Dependency spine:** `A1 → A2 → A3/A4 → B1` ; `A3 → D1 → D2` ; `B1 → E1` (both own
+`DashboardView.render()` — E1 builds on the shell, never parallel to it) ; `B1 → B3 ribbon
+half` ; `A2/A4` underpin every Phase 2–4 surface. After Phase 0–1, the **board track (D…)**
+parallelizes with the **hub track (B1→E1)** and the **loop track (C…)** — but workstreams
+that share a surface (notably B1/E1 on the dashboard) stay under one owner.
 
 ---
 
@@ -229,11 +231,20 @@ WS starts.
    status-chip → A3 primitives (confirm/validation/reconciling-render) → A4 deep-link port.
    *Visible identity, zero structural risk; every later WS builds on it.*
 2. **Increment 2 — Navigability (Phase 1, subset b of T1):** B4 wire the graph + B3
-   command/ribbon hygiene + B2 onboarding orchestrator + the **loop rail** (C1). *Delivers
-   "forward momentum" and a navigable graph before the heavier shell.*
-3. **Increment 3 — The bets, in parallel:** B1 hub shell (Phase 1a) **‖** D1→D2 board
-   reconciling-render + zoom/pan/focus **‖** E1 health hero + KPI funnel. *Each on its own
-   branch/subagent; foundations make them non-colliding.*
+   **command renames only** + B2 onboarding orchestrator + the **loop rail** (C1). *Delivers
+   "forward momentum" and a navigable graph before the heavier shell.* **NB (Codex catch):
+   defer the ribbon reduction half of B3** — removing the PRD/Story Map ribbon icons before
+   the hub rail exists (B1) would strand Story Maps in palette-only access, since the
+   dashboard has no Story Maps quick action today. Ribbon demotion moves to Increment 3,
+   after B1.
+3. **Increment 3 — The bets:** B1 hub shell (Phase 1a) **then** E1 health hero + KPI funnel
+   **on top of it**, in parallel with D1→D2 board reconciling-render + zoom/pan/focus. **NB
+   (Codex catch): E1 must NOT run parallel to B1** — both own `DashboardView.render()` (B1
+   replaces that home with the shell/rail; E1 reorders its content), so E1 sequences *after*
+   B1's shell contract (or under one owner) to avoid the hero landing in the superseded
+   dashboard. The board track (D1→D2) is a genuinely separate surface and parallelizes
+   safely; the ribbon-reduction half of B3 also lands here once B1 exists. *Foundations make
+   the non-overlapping tracks non-colliding.*
 
 Lower-risk polish (C2/C4/C5, D3/D4/D5, E2/E3/E4) slots in alongside as capacity allows.
 
