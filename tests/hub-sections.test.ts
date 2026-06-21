@@ -69,17 +69,19 @@ describe("HUB_SECTION_DESCRIPTORS", () => {
     expect(leavesOf("overview")).toEqual([]);
   });
 
-  it("hosts the plan roadmap + story-map list as bodies and the board as a leaf", () => {
+  it("hosts the plan roadmap + story-map list as bodies; the board opens per-row, not as section content", () => {
     expect(bodiesOf("plan")).toEqual(["prd-roadmap", "story-maps"]);
-    expect(leavesOf("plan")).toEqual(["e2e-test-hub-story-map-board"]);
+    // A specific board is id-targeted — reached via the B4 navigate port from a
+    // story-maps row, NOT a bare-viewType section leaf (Codex review).
+    expect(leavesOf("plan")).toEqual([]);
   });
 
-  it("hosts the build use-case list as a body and the use-case detail as a leaf", () => {
+  it("hosts the build use-case list as a body; the detail opens per-row, not as section content", () => {
     expect(bodiesOf("build")).toEqual(["use-cases"]);
-    expect(leavesOf("build")).toEqual(["e2e-test-hub-use-case-detail"]);
+    expect(leavesOf("build")).toEqual([]);
   });
 
-  it("hosts the run suites list as a body and the test console as a leaf", () => {
+  it("hosts the run suites list as a body and the Test Console as a no-state section leaf", () => {
     expect(bodiesOf("run")).toEqual(["suites"]);
     expect(leavesOf("run")).toEqual(["e2e-test-hub-console"]);
   });

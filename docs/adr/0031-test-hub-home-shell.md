@@ -33,12 +33,18 @@ KPI funnel + recent runs (the full health hero is a later E1 increment).
 
 Each section hosts content (`hub-sections.ts` `contents` map):
 - **overview** — KPI/health summary + recent runs (in-hub bodies).
-- **plan** — PRD roadmap + Story Map list (in-hub bodies); opening a specific
-  Story Map *board* is a leaf.
-- **build** — Use Cases list (in-hub body); opening a specific Use Case detail is
-  a leaf.
-- **run** — Test Suites list (in-hub body); Open Test Console is a leaf.
+- **plan** — PRD roadmap + Story Map list (in-hub bodies).
+- **build** — Use Cases list (in-hub body).
+- **run** — Test Suites list (in-hub body); Open Test Console is a section leaf.
 - **review** — Evidence list (in-hub body).
+
+A section's `contents` lists only what it renders statically: in-hub bodies, plus
+the **no-required-state** Test Console as a `leaf` content ref. The id-TARGETED
+leaves — a specific Story Map *board* or Use Case *detail* — are **not** section
+contents: they open **per row** from the `story-maps` / `use-cases` bodies via the
+B4 navigate port (`navigate({ kind: "artifact", id })`), which resolves the id to a
+leaf carrying the required `{ storyMapId }` / `{ useCaseId }` state. Modelling them
+as a bare `viewType` would open an untargeted, empty leaf.
 
 Section icons (Lucide, 01-§3.6): overview `layout-dashboard`, plan `git-fork`,
 build `file-check`, run `play`, review `gauge`. The brand `--spec-accent` token

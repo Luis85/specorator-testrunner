@@ -39,19 +39,27 @@ export type HubBodyId =
   | "evidence";
 
 /**
- * The leaf view types a section can route OUT to via the B4 navigate port. Plain
- * string constants so this module stays dependency-light and pure (PR1 does not
- * import the view modules); the strings mirror the views' own `*_VIEW_TYPE`.
+ * The no-required-state leaf a section opens as a section-level action — only the
+ * Test Console qualifies (a singleton sidebar companion opened with no target).
+ * Plain string constant mirroring the view's own `*_VIEW_TYPE`, so this module
+ * stays dependency-light and pure.
+ *
+ * The id-TARGETED leaves — a specific Story Map board, a specific Use Case detail —
+ * are deliberately NOT section contents. They open PER ROW from the `story-maps` /
+ * `use-cases` bodies via the B4 navigate port (`navigate({ kind: "artifact", id })`),
+ * which resolves the id to a leaf carrying the required `{ storyMapId }` /
+ * `{ useCaseId }` state. Listing them here as a bare `viewType` would open an
+ * untargeted, empty board/detail (Codex review).
  */
-const STORY_MAP_BOARD_LEAF = "e2e-test-hub-story-map-board";
-const USE_CASE_DETAIL_LEAF = "e2e-test-hub-use-case-detail";
 const TEST_CONSOLE_LEAF = "e2e-test-hub-console";
 
 /**
  * One piece of content a section hosts — a discriminated union the (later) view
  * maps to either an in-hub body render or a navigate-out leaf:
  * - `section-body` → render the named {@link HubBodyId} inside the hub leaf;
- * - `leaf` → open `viewType` as its own workspace leaf via the navigate port.
+ * - `leaf` → open `viewType` as its own workspace leaf, for a NO-STATE surface
+ *   (the Test Console). Id-targeted leaves (board/detail) are reached per-row via
+ *   the B4 navigate port instead — see the {@link TEST_CONSOLE_LEAF} note.
  */
 export type HubContentRef =
   | { kind: "section-body"; body: HubBodyId }
@@ -78,8 +86,9 @@ const leaf = (viewType: string): HubContentRef => ({ kind: "leaf", viewType });
 
 /**
  * The static descriptor for every rail section. List surfaces are in-hub bodies;
- * a specific Story Map board, Use Case detail, and the Test Console stay leaves
- * opened via the B4 navigate port (ADR-0031 demotion strategy).
+ * the Test Console stays a no-state leaf opened as a section action. A specific
+ * Story Map board / Use Case detail is NOT listed here — those open per-row from
+ * their list body via the B4 navigate port (ADR-0031 demotion strategy).
  */
 export const HUB_SECTION_DESCRIPTORS: Record<HubSectionId, HubSectionDescriptor> = {
   overview: {
@@ -94,14 +103,14 @@ export const HUB_SECTION_DESCRIPTORS: Record<HubSectionId, HubSectionDescriptor>
     label: "Plan",
     icon: "git-fork",
     ariaLabel: "Plan — PRD roadmap and Story Maps",
-    contents: [body("prd-roadmap"), body("story-maps"), leaf(STORY_MAP_BOARD_LEAF)],
+    contents: [body("prd-roadmap"), body("story-maps")],
   },
   build: {
     id: "build",
     label: "Build",
     icon: "file-check",
     ariaLabel: "Build — Use Cases",
-    contents: [body("use-cases"), leaf(USE_CASE_DETAIL_LEAF)],
+    contents: [body("use-cases")],
   },
   run: {
     id: "run",
