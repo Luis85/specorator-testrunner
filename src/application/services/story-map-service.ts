@@ -809,10 +809,23 @@ export class DefaultStoryMapService implements StoryMapService {
         onDisk.cards,
       );
       if (!reconciled.ok) return reconciled;
+      // Any post-reconcile failure leaves the card notes at the NEW coordinates (e.g.
+      // a renamed activity) while the map note still declares the OLD axes, so the
+      // next reload would hide them as off-map and the placement guard would reject
+      // later writes. Roll the card notes back to their pre-save coordinates on any
+      // such failure so the on-disk state stays consistent with the unchanged map
+      // note (mirrors writeCards) — best-effort: a failed rollback is no worse off.
+      const rollbackCards = async (): Promise<void> => {
+        const current = await loadCards(this.fs, cardsDir, id);
+        await reconcileCards(this.fs, this.noteWrites, cardsDir, id, onDisk.cards, current);
+      };
       // Fail closed (see writeCards): a transient reload failure after the notes
       // are on disk must abort, not persist a grid that silently drops cards.
       const reloaded = await reloadCards(this.fs, cardsDir, id);
-      if (!reloaded.ok) return reloaded;
+      if (!reloaded.ok) {
+        await rollbackCards();
+        return reloaded;
+      }
       const cards = reloaded.value;
 
       // Materialize a shared persona note per (normalized) user name (best-effort;
@@ -826,13 +839,7 @@ export class DefaultStoryMapService implements StoryMapService {
         origin,
       );
       if (!written.ok) {
-        // Compensate: the map note still declares the OLD axes, so the just-reconciled
-        // card notes (now at the NEW coordinates, e.g. a renamed activity) would be
-        // hidden as off-map on the next reload and rejected by the all-card placement
-        // guard. Roll the card notes back to their pre-save coordinates so the on-disk
-        // state stays consistent with the unchanged map note — best-effort: a failed
-        // rollback leaves us no worse off than without it.
-        await reconcileCards(this.fs, this.noteWrites, cardsDir, id, onDisk.cards, cards);
+        await rollbackCards();
         return written;
       }
       return written;
