@@ -222,9 +222,15 @@ Restructure `render()` into a clear above-the-fold hero and a deferable below-th
   (`use-cases:all` | `use-cases:failing` | `use-cases:unspecified` | …) and pass a filter the
   Use Cases explorer honours. All projection logic stays in `dashboard-rows.ts` (testable),
   the view stays thin.
-- **Add a delta vs. last run** ("Passing 12 ▲1") — the snapshot already re-aggregates on
-  `testrun.completed`; storing the prior snapshot in the projection layer makes trend a pure
-  computation.
+- **Add a delta vs. last run** ("Passing 12 ▲1"). **A delta needs a DURABLE prior value, not
+  the projection layer** (reviewer catch, Codex 2026-06-21): `projectDashboard(snapshot)`
+  receives only the current `DashboardSnapshot`, and the view rebuilds it from
+  `TraceabilityService.snapshot()` on every render — so an in-memory "prior snapshot" is gone
+  after an Obsidian reload (and absent the first render after open). Either **persist a
+  previous-snapshot / KPI-history source** (e.g. a small stored last-snapshot the projection
+  diffs against), or **explicitly scope the delta to live-session-only feedback** (show it
+  only when a `testrun.completed` fired this session, hide it otherwise). Pick one — don't
+  imply a free in-memory diff.
 
 ### 3.3 PRD explorer + builder
 
