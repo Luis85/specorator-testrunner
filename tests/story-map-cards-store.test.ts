@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { loadCards, reconcileCards } from "../src/application/services/story-map-cards-store";
+import {
+  loadCards,
+  reconcileCards,
+  reloadCards,
+} from "../src/application/services/story-map-cards-store";
 import { buildCardNote, cardFileName } from "../src/application/content/story-map-card-content";
 import type { StoryMapCard } from "../src/domain/entities/story-map";
 import type { StoryMapCardNote } from "../src/domain/entities/story-map-card";
@@ -70,6 +74,56 @@ describe("loadCards", () => {
     const cards = await loadCards(fs, CARDS_DIR, MAP_ID);
 
     expect(cards.map((c) => c.title)).toEqual(["mine"]);
+  });
+});
+
+describe("reloadCards (fail-closed write-path reload)", () => {
+  it("returns the cards on success", async () => {
+    const fs = new FakeVaultFileSystem();
+    seedNote(fs, cardNote({ id: "SMC-001", title: "a", order: 0 }));
+    seedNote(fs, cardNote({ id: "SMC-002", title: "b", order: 1 }));
+
+    const result = await reloadCards(fs, CARDS_DIR, MAP_ID);
+
+    expect(result.ok && result.value.map((c) => c.title)).toEqual(["a", "b"]);
+  });
+
+  it("treats a genuinely-missing cards/ folder as no cards (ok empty)", async () => {
+    const fs = new FakeVaultFileSystem();
+    fs.listFilesRecursive = async () => ({
+      ok: false,
+      error: { code: "RUNNER_MISSING_FILE", message: "ENOENT" },
+    });
+
+    const result = await reloadCards(fs, CARDS_DIR, MAP_ID);
+
+    expect(result.ok && result.value).toEqual([]);
+  });
+
+  it("fails closed on a transient list error (not a missing folder)", async () => {
+    const fs = new FakeVaultFileSystem();
+    fs.listFilesRecursive = async () => ({
+      ok: false,
+      error: { code: "INIT_FAILED", message: "vault indexing in progress" },
+    });
+
+    const result = await reloadCards(fs, CARDS_DIR, MAP_ID);
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("fails closed when a listed card note can't be read", async () => {
+    const fs = new FakeVaultFileSystem();
+    seedNote(fs, cardNote({ id: "SMC-001", title: "a" }));
+    const original = fs.readFile.bind(fs);
+    fs.readFile = async (p: VaultPath) =>
+      String(p).endsWith("SMC-001.md")
+        ? { ok: false as const, error: { code: "INIT_FAILED" as const, message: "disk" } }
+        : original(p);
+
+    const result = await reloadCards(fs, CARDS_DIR, MAP_ID);
+
+    expect(result.ok).toBe(false);
   });
 });
 

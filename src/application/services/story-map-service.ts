@@ -24,7 +24,7 @@ import {
   type StoryMapStatus,
   type StoryMapStep,
 } from "../../domain/entities/story-map";
-import { loadCards, reconcileCards } from "./story-map-cards-store";
+import { loadCards, reconcileCards, reloadCards } from "./story-map-cards-store";
 import type { PersonaService } from "./persona-service";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
@@ -731,7 +731,11 @@ export class DefaultStoryMapService implements StoryMapService {
       map.cards,
     );
     if (!reconciled.ok) return reconciled;
-    const composed = { ...map, cards: await loadCards(this.fs, cardsDir, map.id) };
+    // Fail closed: the notes are on disk now, so a transient reload failure must
+    // abort rather than regenerate the grid (and republish the board) without them.
+    const reloaded = await reloadCards(this.fs, cardsDir, map.id);
+    if (!reloaded.ok) return reloaded;
+    const composed = { ...map, cards: reloaded.value };
     const read = await this.fs.readFile(map.path);
     if (!read.ok) return read;
     const noteNames = await this.resolveNoteNames(composed);
@@ -798,7 +802,11 @@ export class DefaultStoryMapService implements StoryMapService {
         onDisk.cards,
       );
       if (!reconciled.ok) return reconciled;
-      const cards = await loadCards(this.fs, cardsDir, id);
+      // Fail closed (see writeCards): a transient reload failure after the notes
+      // are on disk must abort, not persist a grid that silently drops cards.
+      const reloaded = await reloadCards(this.fs, cardsDir, id);
+      if (!reloaded.ok) return reloaded;
+      const cards = reloaded.value;
 
       // Materialize a shared persona note per (normalized) user name (best-effort;
       // ADR-0030) so a user added via the board becomes its own note too.

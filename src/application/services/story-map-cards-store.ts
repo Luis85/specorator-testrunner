@@ -9,7 +9,7 @@ import {
   type StoryMapCardNote,
 } from "../../domain/entities/story-map-card";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
-import { ok, type Result } from "../../shared/result/result";
+import { err, ok, type Result } from "../../shared/result/result";
 import { KeyedSerialQueue } from "../../shared/async/serial-queue";
 import { joinVaultPath } from "../../shared/utils/vault-path";
 
@@ -80,6 +80,35 @@ export const loadCards = async (
     .filter((note) => note.map === mapId) // defensive against stray notes
     .map(noteToCard)
     .sort(byCellThenOrder);
+};
+
+/**
+ * Reloads the cards under `cardsDir` for a WRITE path — fails closed. Unlike
+ * {@link loadCards} (best-effort, for reads), a list or per-note read failure is
+ * an error here, not an empty/partial list: after a successful `reconcileCards`
+ * the notes are safely on disk, so a transient vault I/O or indexing failure must
+ * abort the write rather than regenerate the managed grid (and republish the live
+ * board) from a model that silently drops cards. A genuinely-missing `cards/`
+ * folder is the one benign case (the map legitimately has no cards) → ok([]).
+ */
+export const reloadCards = async (
+  fs: VaultFileSystem,
+  cardsDir: VaultPath,
+  mapId: string,
+): Promise<Result<StoryMapCard[]>> => {
+  const listed = await fs.listFilesRecursive(cardsDir);
+  if (!listed.ok) {
+    return listed.error.code === "RUNNER_MISSING_FILE" ? ok([]) : err(listed.error);
+  }
+  const cards: StoryMapCard[] = [];
+  for (const path of listed.value) {
+    if (!path.endsWith(".md")) continue;
+    const read = await fs.readFile(path);
+    if (!read.ok) return err(read.error);
+    const note = parseCardNote(read.value, path);
+    if (note?.map === mapId) cards.push(noteToCard(note));
+  }
+  return ok(cards.sort(byCellThenOrder));
 };
 
 /** A model card resolved to a concrete id + its 0-based index within its cell. */

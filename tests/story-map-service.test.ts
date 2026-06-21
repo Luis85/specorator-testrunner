@@ -773,6 +773,29 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     return path;
   };
 
+  it("fails closed (no update event) when the post-reconcile reload can't list the cards", async () => {
+    const { service, fs, types } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
+    seedNote(fs);
+    // A transient vault list failure (not a missing folder) during the reload —
+    // the card-notes are on disk, so the write must abort rather than republish
+    // the board from a model that silently dropped them.
+    fs.listFilesRecursive = async () => ({
+      ok: false,
+      error: { code: "INIT_FAILED", message: "vault indexing in progress" },
+    });
+
+    const result = await service.addCard("SM-001", {
+      ref: "UC-040",
+      title: "Run the suite",
+      activity: "Author spec",
+      slice: "Next",
+      tags: [],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(types()).not.toContain("storymap.updated");
+  });
+
   it("adds a card: writes a new card-note, regenerates the grid block, emits storymap.updated", async () => {
     const { service, fs, types } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
     const path = seedNote(fs);
