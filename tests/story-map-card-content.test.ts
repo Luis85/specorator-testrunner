@@ -41,6 +41,15 @@ describe("card note content", () => {
     expect(note).not.toContain("points:");
     expect(note).not.toContain("tags:");
   });
+  it("falls back a referenced card's blank title to its UC ref, never the note id", () => {
+    const note = buildCardNote({ ...card, title: "" }); // ref UC-003, no title
+    const parsed = parseCardNote(note, card.path);
+    expect(parsed?.title).toBe("UC-003");
+  });
+  it("falls back a reference-less blank title to the note id (last resort)", () => {
+    const note = buildCardNote({ ...card, ref: undefined, title: "" });
+    expect(parseCardNote(note, card.path)?.title).toBe("SMC-001");
+  });
   it("rejects a non-card note and falls back an out-of-set card_type", () => {
     expect(parseCardNote("---\ntype: note\n---\n", card.path)).toBeNull();
     const bad = buildCardNote(card).replace("card_type: task", "card_type: epic");

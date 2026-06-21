@@ -47,11 +47,12 @@ export const parseCardNote = (content: string, path: VaultPath): StoryMapCardNot
   const arr = (v: string | string[] | undefined): string[] =>
     Array.isArray(v) ? v : typeof v === "string" && v !== "" ? [v] : [];
   const step = typeof fm.step === "string" && fm.step !== "" ? fm.step : undefined;
+  const ref = typeof fm.ref === "string" && isValidUseCaseRef(fm.ref) ? fm.ref : undefined;
   return {
     id: fm.id,
     map: str(fm.map),
     cardType: isCardType(fm.card_type) ? fm.card_type : "task",
-    ref: typeof fm.ref === "string" && isValidUseCaseRef(fm.ref) ? fm.ref : undefined,
+    ref,
     status: isCardStatus(fm.status) ? fm.status : undefined,
     points: intOrUndef(fm.points),
     tags: arr(fm.tags),
@@ -60,7 +61,11 @@ export const parseCardNote = (content: string, path: VaultPath): StoryMapCardNot
     step,
     slice: str(fm.slice),
     order: intOrUndef(fm.order) ?? 0,
-    title: str(fm.title) || fm.id,
+    // A referenced card may carry a blank title (only reference-less cards require
+    // one — validateCardPlacement). Fall back to its UC `ref`, never the generated
+    // note id, so the board/grid don't surface "SMC-NNN" and a later save doesn't
+    // persist that id as the title (StoryMapCard.title: "falls back to ref").
+    title: str(fm.title) || (ref ?? fm.id),
     body: body.replace(/^#\s+.*\n?/, "").trim(),
     path,
   };
