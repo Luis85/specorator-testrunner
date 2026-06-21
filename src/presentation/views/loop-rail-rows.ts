@@ -84,12 +84,17 @@ const STAGE_ACTION: Record<LoopRailStage, LoopRailAction> = {
 };
 
 /**
- * Automation statuses that prove the Use Case's step definitions exist: once a
- * Feature's steps are implemented (or have run), the automation roll-up leaves
- * `missing-steps` behind. `not-planned`/`planned`/`missing-steps` mean steps are
- * still undefined (US-057, ADR-0017).
+ * Automation statuses that prove the Use Case's step definitions exist. Per the
+ * ADR-0017 `computeAutomationStatus` table the roll-up only leaves `missing-steps`
+ * once every Feature's steps are defined — so **`planned` already means the steps
+ * are written** (the UC has Features and passed the `missing-steps` gate, but
+ * nothing has run yet), as do `implemented`/`passing`/`failing` (exercised). Only
+ * `not-planned` (no Features) and `missing-steps` (undefined steps) mean the steps
+ * are not yet defined. (Omitting `planned` left the rail stuck on "Generate step
+ * definitions" after stubs were generated but before the first run — Codex review.)
  */
 const STEPS_DEFINED_STATUSES: ReadonlySet<AutomationStatus> = new Set<AutomationStatus>([
+  "planned",
   "implemented",
   "passing",
   "failing",
@@ -109,10 +114,16 @@ export interface LoopCapabilities {
 }
 
 /**
- * Derives the loop capabilities from a Use Case. Steps are "defined" only when
- * the Use Case actually has a Feature AND its automation status has moved past
- * `missing-steps`; a run counts when there is a recorded last run or evidence
- * (the loop's last hop). Pure.
+ * Derives the loop capabilities from a Use Case. Steps are "defined" once the UC
+ * has a Feature AND its automation status has moved past `missing-steps`; a run
+ * counts when there is a recorded last run or evidence (the loop's last hop).
+ *
+ * `inSuite` is **best-effort and informational only** — it reads the `suites`
+ * frontmatter, but Test Suite membership is by **Tag Expression** and
+ * `SuiteService.create` does not append the suite id to a Use Case, so this stays
+ * `false` for suites created through the normal flow. The rail therefore treats
+ * Suite as an OPTIONAL node that never gates Run (a Use Case can be run directly
+ * by UC scope without belonging to any Suite — Codex review). Pure.
  */
 export const loopCapabilitiesFor = (useCase: UseCase): LoopCapabilities => {
   const hasFeature = useCase.featureFiles.length > 0;
@@ -122,6 +133,20 @@ export const loopCapabilitiesFor = (useCase: UseCase): LoopCapabilities => {
     inSuite: useCase.suites.length > 0,
     hasRun: useCase.lastTestRun !== undefined || useCase.evidence.length > 0,
   };
+};
+
+/**
+ * Which stages must be completed in order before the loop can advance. **Suite is
+ * optional** (see {@link loopCapabilitiesFor}) — it renders in the spine but never
+ * becomes the blocking `current` step, so Run is reachable as soon as the steps
+ * are defined, regardless of suite membership.
+ */
+const STAGE_REQUIRED: Record<LoopRailStage, boolean> = {
+  "use-case": true,
+  feature: true,
+  steps: true,
+  suite: false,
+  run: true,
 };
 
 /** Whether a given stage's capability is satisfied. The Use Case always exists. */
@@ -144,14 +169,20 @@ const stageDone = (stage: LoopRailStage, caps: LoopCapabilities): boolean => {
  * The loop rail for a Use Case: the ordered five-node spine with each node marked
  * `done` / `current` / `todo`, and the `current` node carrying the next action.
  *
- * `current` is the FIRST not-done stage (the next obvious step); every later
- * stage is `todo`. A fully-complete loop has no current node and no action — the
- * spine reads all-done. Pure: derives entirely from the Use Case entity.
+ * `current` is the FIRST not-done **required** stage (the next obvious step);
+ * the optional Suite stage is skipped when choosing `current` so it never blocks
+ * Run. Every other not-done stage is `todo`. A fully-complete loop (all required
+ * stages done) has no current node and no action. Pure: derives entirely from the
+ * Use Case entity.
  */
 export const projectLoopRail = (useCase: UseCase): LoopRail => {
   const caps = loopCapabilitiesFor(useCase);
   const doneByStage = LOOP_RAIL_STAGES.map((stage) => stageDone(stage, caps));
-  const currentIndex = doneByStage.findIndex((done) => !done);
+  // The next step is the first not-done REQUIRED stage; the optional Suite stage
+  // is never `current`, so a missing/undetectable suite can't strand the rail.
+  const currentIndex = doneByStage.findIndex(
+    (done, index) => !done && STAGE_REQUIRED[LOOP_RAIL_STAGES[index]],
+  );
 
   const nodes: LoopRailNode[] = LOOP_RAIL_STAGES.map((stage, index) => {
     const isCurrent = index === currentIndex;

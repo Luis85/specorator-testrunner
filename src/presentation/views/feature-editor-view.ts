@@ -259,6 +259,11 @@ export class FeatureEditorView extends TextFileView {
       new Notice("Open a .feature file before running it.");
       return;
     }
+    // Flush the debounced write FIRST: the runner snapshots and executes the
+    // `.feature` from disk, so a run fired right after an edit/blur (before the
+    // debounced `requestSave` lands) would otherwise execute stale Gherkin while
+    // the editor shows the new content (Codex review).
+    await this.save();
     await this.deps.runLauncher.launch({ scope: "feature", target: this.file.path });
   }
 
@@ -275,6 +280,9 @@ export class FeatureEditorView extends TextFileView {
     const resultEl = this.ensureValidateResultEl();
     renderChecklist(resultEl, [{ status: "pending", icon: "…", text: "Validating…" }]);
     const path: VaultPath = unsafeVaultPath(this.file.path);
+    // Flush the debounced write so validation reads the on-screen content from
+    // disk, not a stale snapshot (same reason as runFeature — Codex review).
+    await this.save();
     const rows = await validateFeatureOutcome(this.deps.specifications, path);
     // A re-render (an external change, a mode toggle) may have detached the
     // result area while we awaited — writing into it would be invisible.

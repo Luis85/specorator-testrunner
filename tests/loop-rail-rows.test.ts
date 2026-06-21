@@ -4,9 +4,19 @@ import {
   LOOP_RAIL_STAGES,
   loopCapabilitiesFor,
   projectLoopRail,
+  type LoopRail,
   type LoopRailStage,
 } from "../src/presentation/views/loop-rail-rows";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
+
+/** A recorded passing run, shared by the loop-closing cases. */
+const PASSED_RUN = { runId: "RUN-1", status: "passed", date: "2026-06-21" } as const;
+
+/** Asserts the rail has advanced past every required stage (no next action). */
+const expectLoopClosed = (rail: LoopRail): void => {
+  expect(rail.currentStage).toBeNull();
+  expect(rail.currentAction).toBeNull();
+};
 
 const useCase = (over: Partial<UseCase> = {}): UseCase => ({
   id: "UC-001",
@@ -53,9 +63,11 @@ describe("loopCapabilitiesFor", () => {
     expect(caps.stepsDefined).toBe(false);
   });
 
-  it.each<AutomationStatus>(["implemented", "passing", "failing"])(
+  it.each<AutomationStatus>(["planned", "implemented", "passing", "failing"])(
     "treats %s automation as steps-defined when a Feature exists",
     (automationStatus) => {
+      // `planned` counts: it means the steps are written (past the missing-steps
+      // gate) but nothing has run yet — the rail must advance off Steps.
       const caps = loopCapabilitiesFor(
         useCase({ featureFiles: [vp("Features/UC-001-happy.feature")], automationStatus }),
       );
@@ -74,11 +86,7 @@ describe("loopCapabilitiesFor", () => {
   });
 
   it("reports a run from a recorded last run", () => {
-    const caps = loopCapabilitiesFor(
-      useCase({
-        lastTestRun: { runId: "RUN-1", status: "passed", date: "2026-06-21" },
-      }),
-    );
+    const caps = loopCapabilitiesFor(useCase({ lastTestRun: PASSED_RUN }));
     expect(caps.hasRun).toBe(true);
   });
 
@@ -133,40 +141,69 @@ describe("projectLoopRail", () => {
     );
   });
 
-  it("advances current to Suite once steps are defined", () => {
+  it("advances current to Run once steps are defined — Suite is optional and never blocks", () => {
+    // Steps defined but NOT in any Suite (suite membership is by tag and not
+    // reflected on the entity). The rail must skip the optional Suite node and
+    // make Run the next step, not strand the user on "Create suite".
     const uc = useCase({
       featureFiles: [vp("Features/UC-001-happy.feature")],
       automationStatus: "implemented",
-    });
-    const rail = projectLoopRail(uc);
-    expect(rail.currentStage).toBe("suite");
-    expect(rail.currentAction).toBe("create-suite");
-  });
-
-  it("advances current to Run once the Use Case is in a Suite", () => {
-    const uc = useCase({
-      featureFiles: [vp("Features/UC-001-happy.feature")],
-      automationStatus: "implemented",
-      suites: ["SUITE-smoke"],
     });
     const rail = projectLoopRail(uc);
     expect(rail.currentStage).toBe("run");
     expect(rail.currentAction).toBe("run");
     expect(rail.nodes.find((n) => n.stage === "run")?.actionLabel).toBe("Run");
+    // The optional Suite node is never `current` and never carries an action.
+    const suite = rail.nodes.find((n) => n.stage === "suite");
+    expect(suite?.state).not.toBe("current");
+    expect(suite?.action).toBeNull();
+  });
+
+  it("Run is reachable from `planned` (steps generated, not yet run)", () => {
+    const uc = useCase({
+      featureFiles: [vp("Features/UC-001-happy.feature")],
+      automationStatus: "planned",
+    });
+    expect(projectLoopRail(uc).currentStage).toBe("run");
+  });
+
+  it("marks the Suite node done when the Use Case lists a suite (informational)", () => {
+    const uc = useCase({
+      featureFiles: [vp("Features/UC-001-happy.feature")],
+      automationStatus: "implemented",
+      suites: ["SUITE-smoke"],
+    });
+    const rail = projectLoopRail(uc);
+    expect(rail.nodes.find((n) => n.stage === "suite")?.state).toBe("done");
+    expect(rail.currentStage).toBe("run"); // still Run; suite never gates it
   });
 
   it("closes the loop (no current, no action) once everything is done", () => {
-    const uc = useCase({
-      featureFiles: [vp("Features/UC-001-happy.feature")],
-      automationStatus: "passing",
-      suites: ["SUITE-smoke"],
-      lastTestRun: { runId: "RUN-1", status: "passed", date: "2026-06-21" },
-    });
-    const rail = projectLoopRail(uc);
-    expect(rail.currentStage).toBeNull();
-    expect(rail.currentAction).toBeNull();
+    const rail = projectLoopRail(
+      useCase({
+        featureFiles: [vp("Features/UC-001-happy.feature")],
+        automationStatus: "passing",
+        suites: ["SUITE-smoke"],
+        lastTestRun: PASSED_RUN,
+      }),
+    );
+    expectLoopClosed(rail);
     expect(rail.nodes.every((n) => n.state === "done")).toBe(true);
     expect(rail.nodes.every((n) => n.action === null)).toBe(true);
+  });
+
+  it("closes the required loop even without a Suite (Suite is optional)", () => {
+    // no `suites` — membership is by tag and not reflected on the entity
+    const rail = projectLoopRail(
+      useCase({
+        featureFiles: [vp("Features/UC-001-happy.feature")],
+        automationStatus: "passing",
+        lastTestRun: PASSED_RUN,
+      }),
+    );
+    expectLoopClosed(rail);
+    // The optional Suite node reads not-done but never reopens the loop.
+    expect(rail.nodes.find((n) => n.stage === "suite")?.state).toBe("todo");
   });
 
   it("current is the FIRST not-done stage; each node still reflects its own true capability", () => {
