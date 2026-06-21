@@ -15,6 +15,7 @@ import {
   FakeChildProcessRunner,
   FakeDataStore,
   recordingEventBus,
+  serviceHarness,
 } from "./fakes";
 
 const ENV = { HOME: "/home/u" };
@@ -22,12 +23,7 @@ const ENV = { HOME: "/home/u" };
 const build = (env: Record<string, string | undefined> = ENV) => {
   const absoluteFs = new FakeAbsoluteFileSystem();
   const childProcess = new FakeChildProcessRunner();
-  const { bus, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { bus, types, settings } = serviceHarness();
   const service = new DefaultEnvironmentValidationService(
     settings,
     childProcess,

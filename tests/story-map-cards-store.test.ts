@@ -10,7 +10,8 @@ import type { StoryMapCardNote } from "../src/domain/entities/story-map-card";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { joinVaultPath } from "../src/shared/utils/vault-path";
 import { KeyedSerialQueue } from "../src/shared/async/serial-queue";
-import { FakeVaultFileSystem } from "./fakes";
+import { appError } from "../src/shared/errors/errors";
+import { FakeVaultFileSystem, failReadAt } from "./fakes";
 
 const CARDS_DIR = "Story Maps/SM-001-x/cards" as VaultPath;
 const MAP_ID = "SM-001";
@@ -115,11 +116,7 @@ describe("reloadCards (fail-closed write-path reload)", () => {
   it("fails closed when a listed card note can't be read", async () => {
     const fs = new FakeVaultFileSystem();
     seedNote(fs, cardNote({ id: "SMC-001", title: "a" }));
-    const original = fs.readFile.bind(fs);
-    fs.readFile = async (p: VaultPath) =>
-      String(p).endsWith("SMC-001.md")
-        ? { ok: false as const, error: { code: "INIT_FAILED" as const, message: "disk" } }
-        : original(p);
+    failReadAt(fs, (p) => String(p).endsWith("SMC-001.md"), appError("INIT_FAILED", "disk"));
 
     const result = await reloadCards(fs, CARDS_DIR, MAP_ID);
 
@@ -278,11 +275,7 @@ describe("reconcileCards", () => {
     const fs = new FakeVaultFileSystem();
     const queue = new KeyedSerialQueue();
     seedNote(fs, cardNote({ id: "SMC-005", title: "t", body: "Precious hand-written body." }));
-    const original = fs.readFile.bind(fs);
-    fs.readFile = async (p: VaultPath) =>
-      String(p).endsWith("SMC-005.md")
-        ? { ok: false as const, error: { code: "INIT_FAILED" as const, message: "indexing" } }
-        : original(p);
+    failReadAt(fs, (p) => String(p).endsWith("SMC-005.md"), appError("INIT_FAILED", "indexing"));
     const existing = [modelCard({ id: "SMC-005", title: "t" })];
     const model = [modelCard({ id: "SMC-005", title: "t updated" })];
 

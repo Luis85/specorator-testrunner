@@ -10,16 +10,14 @@ import { DefaultUseCaseService } from "../src/application/services/use-case-serv
 import { buildSuiteNote } from "../src/application/content/default-suites";
 import { buildNote } from "../src/shared/utils/frontmatter";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import type { DomainEventType } from "../src/domain/events/domain-event";
 import {
   FakeAbsoluteFileSystem,
   FakeChildProcessRunner,
-  FakeDataStore,
   FakePrdLookup,
   FakeVaultFileSystem,
-  recordingEventBus,
+  serviceHarness,
   silentLogger,
 } from "./fakes";
 
@@ -33,13 +31,7 @@ const waitForActive = async (service: TestExecutionService): Promise<void> => {
 const FIXED_NOW = new Date("2026-06-01T10:00:00.000Z");
 
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus, events, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, events, types, settings } = serviceHarness();
   const suiteService = new DefaultSuiteService(settings, fs, bus);
   const useCaseService = new DefaultUseCaseService(
     settings,
@@ -758,13 +750,7 @@ describe("DefaultTestExecutionService", () => {
     // A settings dependency whose load() REJECTS — the class of fault
     // (adapter bug, corrupted store) that previously escaped the try/finally
     // with no terminal event, leaving the console "running" forever.
-    const fs = new FakeVaultFileSystem();
-    const { bus, types } = recordingEventBus();
-    const settings = new DefaultSettingsService(
-      new FakeDataStore(),
-      new DefaultPathSafetyPolicy(),
-      bus,
-    );
+    const { fs, bus, types, settings } = serviceHarness();
     // Deliberately a prototype-less spread: only `load` is reached before the
     // service under test fails, and it must reject.
     const brokenSettings = {
@@ -831,16 +817,13 @@ describe("DefaultTestExecutionService", () => {
     // runEnv() must still emit TESTRUNNER_BROWSERS (a global runner setting
     // independent of the SUT environment) so the generated playwright config
     // uses the correct browser list rather than falling back to chromium.
-    const { bus, events, types } = recordingEventBus();
-    const store = new FakeDataStore({
+    const { fs, bus, events, types, settings } = serviceHarness({
       sut: {
         active: "nonexistent-env",
         environments: { demo: { baseUrl: "file://./demo.html" } },
       },
       runner: { browsers: ["firefox", "webkit"] },
     });
-    const settings = new DefaultSettingsService(store, new DefaultPathSafetyPolicy(), bus);
-    const fs = new FakeVaultFileSystem();
     const suiteService = new DefaultSuiteService(settings, fs, bus);
     const useCaseService = new DefaultUseCaseService(
       settings,

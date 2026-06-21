@@ -1,18 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DefaultDemoContentService } from "../src/application/services/demo-content-service";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DEMO_FEATURE_CONTENT, DEMO_USE_CASE_ID } from "../src/application/content/demo-content";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus } from "./fakes";
+import { serviceHarness } from "./fakes";
 
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus, events, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, events, types, settings } = serviceHarness();
   const service = new DefaultDemoContentService(settings, fs, bus);
   return { service, fs, events, types };
 };

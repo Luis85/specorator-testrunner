@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DefaultPrdService } from "../src/application/services/prd-service";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import { FakeVaultFileSystem, serviceHarness, silentLogger } from "./fakes";
 
 /**
  * Cross-service serialization (ADR-0026): UseCaseService.assignToPrd routes its
@@ -14,13 +12,7 @@ import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } f
  * contract (the real composition-root wiring).
  */
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, settings } = serviceHarness();
   const prdService = new DefaultPrdService(settings, fs, bus, silentLogger);
   const useCaseService = new DefaultUseCaseService(settings, fs, bus, silentLogger, prdService);
   return { fs, prdService, useCaseService };
