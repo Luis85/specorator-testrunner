@@ -380,6 +380,66 @@ describe("DefaultSpecificationService.listStepPatterns", () => {
   });
 });
 
+describe("DefaultSpecificationService.allStepsDefined", () => {
+  const FEATURE = vp("Specifications/features/UC-001-happy-path.feature");
+  const ONE_STEP = "Feature: Happy\n  Scenario: S\n    Given a step\n";
+  const defineStep = (fs: FakeVaultFileSystem, expression: string): void => {
+    fs.files.set(
+      ".testrunner/src/steps/demo.steps.ts",
+      `import { Given } from "@cucumber/cucumber";\nGiven("${expression}", async function () {});\n`,
+    );
+  };
+
+  it("returns false for an empty Feature set (nothing proven)", async () => {
+    const { service, fs } = build();
+    defineStep(fs, "a step");
+    expect(await service.allStepsDefined([])).toBe(false);
+  });
+
+  it("is true when every Gherkin step has a matching step definition", async () => {
+    const { service, fs } = build();
+    fs.files.set(FEATURE, ONE_STEP);
+    defineStep(fs, "a step");
+    expect(await service.allStepsDefined([FEATURE])).toBe(true);
+  });
+
+  it("is false when a step has no matching definition", async () => {
+    const { service, fs } = build();
+    fs.files.set(FEATURE, ONE_STEP);
+    defineStep(fs, "a totally different step");
+    expect(await service.allStepsDefined([FEATURE])).toBe(false);
+  });
+
+  it("is false when there are no step definitions at all", async () => {
+    const { service, fs } = build();
+    fs.files.set(FEATURE, ONE_STEP);
+    expect(await service.allStepsDefined([FEATURE])).toBe(false);
+  });
+
+  it("is false when a Feature is unreadable (coverage can't be proven)", async () => {
+    const { service, fs } = build();
+    defineStep(fs, "a step");
+    // FEATURE was never written to the fake fs.
+    expect(await service.allStepsDefined([FEATURE])).toBe(false);
+  });
+
+  it("is false when the Features declare no steps", async () => {
+    const { service, fs } = build();
+    fs.files.set(FEATURE, "Feature: Empty\n  Scenario: S\n");
+    defineStep(fs, "a step");
+    expect(await service.allStepsDefined([FEATURE])).toBe(false);
+  });
+
+  it("requires EVERY Feature's steps across the set to be defined", async () => {
+    const { service, fs } = build();
+    const other = vp("Specifications/features/UC-001-second.feature");
+    fs.files.set(FEATURE, ONE_STEP);
+    fs.files.set(other, "Feature: Second\n  Scenario: S\n    Given another step\n");
+    defineStep(fs, "a step"); // covers FEATURE but not `another step`
+    expect(await service.allStepsDefined([FEATURE, other])).toBe(false);
+  });
+});
+
 describe("parseBddgenMissingSteps", () => {
   it("extracts two missing step texts from the real bddgen format", () => {
     const stdout = `Missing step definitions: 2

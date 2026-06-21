@@ -355,7 +355,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private openCreateUseCase(): void {
     new CreateUseCaseModal(this.app, {
       useCaseService: this.useCaseService,
-      workspace: this.workspaceAdapter,
+      // C1: open the detail cockpit for the new Use Case (forward momentum),
+      // not the raw note — the cockpit hosts the loop rail's next step.
+      openUseCaseDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
     }).open();
   }
 

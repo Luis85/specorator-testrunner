@@ -1,7 +1,10 @@
 import type { WorkspaceLeaf } from "obsidian";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
-import type { SpecificationService } from "../../application/services/specification-service";
+import type {
+  FeatureFileEntry,
+  SpecificationService,
+} from "../../application/services/specification-service";
 import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { StepDefinitionService } from "../../application/services/step-definition-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
@@ -11,9 +14,11 @@ import type { UseCase } from "../../domain/entities/use-case";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import type { EventBus } from "../../shared/event-bus/event-bus";
+import type { Result } from "../../shared/result/result";
 import type { RunLauncher } from "../run/run-launcher";
-import { type ChecklistRow, renderChecklist } from "./checklist";
+import { checklistRow, type ChecklistRow, renderChecklist } from "./checklist";
 import { EditUseCaseModal } from "./edit-use-case-modal";
+import { type LoopRailAction, projectLoopRail, renderLoopRail } from "./loop-rail-rows";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { openOrNotice, renderEmptyState, renderLoadError } from "./modal-helpers";
 import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
@@ -92,7 +97,7 @@ export interface UseCaseDetailDeps {
   storyMapService: Pick<StoryMapService, "findAll">;
   specificationService: Pick<
     SpecificationService,
-    "listFeatures" | "validate" | "detectMissingSteps"
+    "listFeatures" | "validate" | "detectMissingSteps" | "allStepsDefined"
   >;
   stepDefinitionService: Pick<StepDefinitionService, "generate">;
   // Wave F insight: per-Feature health (scenario count, @wip work, the
@@ -108,6 +113,10 @@ export interface UseCaseDetailDeps {
   // the command palette's logic (no generation logic is duplicated here). The
   // `onGenerated` callback lets the view refresh once the Feature lands.
   openGenerateFeature: (useCase: UseCase, onGenerated: () => void) => void;
+  // WS-C1 loop rail: the "Create suite" next-step action opens the existing
+  // create-Suite flow (the rail reuses the same modal the dashboard/explorer
+  // open — no suite-creation logic is duplicated here).
+  openCreateSuite: () => void;
   // WS-A4 deep-link port: the PRD breadcrumb opens the SPECIFIC parent PRD
   // (01-§3.2) instead of the PRD explorer — one id-keyed navigation path.
   openArtifact: (id: string) => void;
@@ -232,8 +241,29 @@ export class UseCaseDetailView extends LiveDashboardView {
     const maps = await this.deps.storyMapService.findAll();
     const backlinks = maps.ok ? storyMapBacklinks(useCase.id, maps.value) : [];
 
-    this.renderHeader(container, useCase, prdTitleById, backlinks);
-    await this.renderFeatures(container, useCase);
+    // The loop rail reflects the UC's FRONTMATTER-linked Features — the SAME source
+    // the UC-scoped Run (useCaseScopeCommand) and the automation status both use — so
+    // its readiness, Run, and generate-steps never diverge from what a UC run actually
+    // executes (Codex review). Orphan `.feature` files (matching the UC-NNN- filename
+    // but not yet linked in frontmatter) still appear in the Feature list below with
+    // their own per-row Run/Generate actions, so they stay reachable until the forward
+    // link is repaired — the rail just doesn't speak for them.
+    const railPaths = useCase.featureFiles;
+    // The "steps defined" signal: the static step-definition coverage check (no bddgen
+    // spawn, no side effects — safe on every render). We deliberately do NOT OR in
+    // `automationStatus === "passing"`: a scenario's history key is `featurePath::name`
+    // (not step content), so a scenario edited to add an undefined step keeps its prior
+    // `passed` result and would derive a STALE `passing`, falsely closing the rail past
+    // the new missing step (Codex review). The heuristic's only failure is over-reporting
+    // missing for unmodeled Cucumber constructs — the SAFE direction (a non-destructive
+    // Generate-steps CTA, never a false close), the same limitation the Feature Editor has.
+    const stepsDefined = await this.deps.specificationService.allStepsDefined(railPaths);
+
+    // The Feature list shows every `.feature` on disk for this UC (filename listing), so
+    // an unlinked orphan is still visible and actionable per-row.
+    const listed = await this.deps.specificationService.listFeatures();
+    this.renderHeader(container, useCase, prdTitleById, backlinks, railPaths, stepsDefined);
+    this.renderFeatures(container, useCase, listed);
   }
 
   private renderHeader(
@@ -241,8 +271,15 @@ export class UseCaseDetailView extends LiveDashboardView {
     useCase: UseCase,
     prdTitleById: Map<string, string>,
     backlinks: StoryMapBacklink[],
+    featurePaths: VaultPath[],
+    stepsDefined: boolean,
   ): void {
     const header = projectUseCaseHeader(useCase);
+
+    // WS-C1 loop rail: the forward-momentum spine above everything else. It
+    // reads the next obvious step off the Use Case's current capabilities and
+    // routes its live button to the SAME services/flows the buttons below use.
+    this.renderLoopRail(container, useCase, featurePaths, stepsDefined);
 
     const headerEl = container.createDiv({ cls: "e2e-test-hub-uc-detail-header" });
     // Breadcrumb back to the explorer (entry-point review): the healthy detail
@@ -313,6 +350,74 @@ export class UseCaseDetailView extends LiveDashboardView {
   }
 
   /**
+   * Renders the WS-C1 loop rail (03-§3.1): the five-node next-step spine. The
+   * pure {@link projectLoopRail} decides done/current/todo + the next action from
+   * the Use Case alone; this thin render wires the current node's button to the
+   * existing flows so nothing is reinvented. The view's own REFRESH_ON
+   * subscriptions re-render the rail as the artifact gains each capability.
+   */
+  private renderLoopRail(
+    container: HTMLElement,
+    useCase: UseCase,
+    featurePaths: VaultPath[],
+    stepsDefined: boolean,
+  ): void {
+    const wrap = container.createDiv();
+    const rail = wrap.createDiv();
+    // A persistent result area below the rail for the generate-steps outcome
+    // (the rail's only inline-reporting action); :empty CSS hides it until used.
+    const resultEl = wrap.createDiv({
+      cls: "e2e-test-hub-uc-detail-feature-result",
+      attr: { "aria-live": "polite" },
+    });
+    // `featurePaths` is both the feature-presence count and the generate-steps
+    // targets; `stepsDefined` is the static step-definition coverage signal.
+    const facts = { featureCount: featurePaths.length, stepsDefined };
+    renderLoopRail(rail, projectLoopRail(useCase, facts), (action) =>
+      this.runLoopAction(action, useCase, featurePaths, resultEl),
+    );
+  }
+
+  /**
+   * Dispatches a loop-rail next-step action to the SAME services/flows the
+   * detail view's per-row buttons use (no run/generate/suite logic is forked):
+   * Feature → the generate-Feature flow; Steps → generate step definitions for
+   * EVERY one of the Use Case's Features; Suite → the create-Suite modal; Run → a
+   * Use Case-scoped run through the shared launcher.
+   */
+  // Untested view dispatch — its CRAP score is high only because views are
+  // unit-test-exempt (AGENTS.md, 0 coverage); the per-action routing is a flat
+  // switch (cyclomatic 6), not logic density. The action MODEL is tested in
+  // loop-rail-rows.test.ts; this just wires each to an existing flow.
+  // fallow-ignore-next-line complexity
+  private runLoopAction(
+    action: Exclude<LoopRailAction, null>,
+    useCase: UseCase,
+    featurePaths: VaultPath[],
+    resultEl: HTMLElement,
+  ): void {
+    switch (action) {
+      case "generate-feature":
+        this.deps.openGenerateFeature(useCase, () => void this.live.schedule());
+        return;
+      case "generate-steps":
+        // The Steps node only surfaces once a Feature exists; generate against
+        // EVERY Feature the UC owns (not just the first) so a multi-Feature Use
+        // Case actually advances off Steps, reusing the per-row orchestration and
+        // rendering each outcome inline. A refresh follows once the steps land
+        // (the event also fires) so the rail re-projects.
+        void this.generateStepsForAll(featurePaths, resultEl);
+        return;
+      case "create-suite":
+        this.deps.openCreateSuite();
+        return;
+      case "run":
+        void this.deps.runLauncher.launch({ scope: "use-case", target: useCase.id });
+        return;
+    }
+  }
+
+  /**
    * Renders the Domain › PRD breadcrumb above the title. The PRD segment is a
    * link-button opening the SPECIFIC parent PRD through the deep-link port
    * (WS-A4, 01-§3.2); nothing renders when the Use Case has neither a domain nor
@@ -365,11 +470,14 @@ export class UseCaseDetailView extends LiveDashboardView {
     });
   }
 
-  private async renderFeatures(container: HTMLElement, useCase: UseCase): Promise<void> {
+  private renderFeatures(
+    container: HTMLElement,
+    useCase: UseCase,
+    listed: Result<FeatureFileEntry[]>,
+  ): void {
     const section = container.createDiv({ cls: "e2e-test-hub-uc-detail-features" });
     section.createEl("h3", { text: "Feature Specifications" });
 
-    const listed = await this.deps.specificationService.listFeatures();
     if (!listed.ok) {
       // Recoverable dead-end: offer a retry instead of a bare terminal message.
       renderLoadError(
@@ -513,6 +621,40 @@ export class UseCaseDetailView extends LiveDashboardView {
         featurePath,
       ),
     );
+  }
+
+  /**
+   * The loop rail's Steps action: generate step definitions for EVERY Feature the
+   * Use Case owns, not just the first, so a multi-Feature UC actually advances off
+   * Steps (Codex review). Each Feature reuses the same per-row orchestration
+   * ({@link generateStepDefinitions}'s outcome); the inline result aggregates them,
+   * labelling each Feature when there is more than one so the report stays legible.
+   * A single-Feature UC reads exactly as the per-row generate did.
+   */
+  private async generateStepsForAll(
+    featurePaths: VaultPath[],
+    resultEl: HTMLElement,
+  ): Promise<void> {
+    if (featurePaths.length === 1) {
+      // The common case: identical to the per-row generate (no Feature headers).
+      await this.generateStepDefinitions(featurePaths[0], resultEl);
+      return;
+    }
+    this.renderChecklist(resultEl, [
+      { status: "pending", icon: "…", text: "Generating step definitions…" },
+    ]);
+    const rows: ChecklistRow[] = [];
+    for (const featurePath of featurePaths) {
+      rows.push(checklistRow("info", featurePath));
+      rows.push(
+        ...(await generateStepDefinitionsOutcome(
+          this.deps.specificationService,
+          this.deps.stepDefinitionService,
+          featurePath,
+        )),
+      );
+    }
+    this.renderChecklist(resultEl, rows);
   }
 
   /** Replaces a feature's result container with the given checklist rows. */

@@ -232,6 +232,100 @@ body {
   text-align: center;
 }
 
+/* ── Loop rail (WS-C1, 03-§3.1) ──────────────────────────────────────────────
+ * The forward-momentum spine at the top of the authoring surfaces: a five-node
+ * progress indicator (Use Case · Feature · Steps · Suite · Run) that lights up
+ * as the Use Case gains each capability, with the CURRENT node a live button.
+ * Token discipline (03-§3.7): semantic --spec-status-* carries node STATE
+ * (done/current/todo), while the brand --spec-accent is reserved for chrome —
+ * the active node's marker + its live CTA button. */
+.spec-loop-rail {
+  margin: 0 0 var(--spec-space-3);
+}
+
+.spec-loop-rail-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spec-space-2);
+  padding: var(--spec-space-2) var(--spec-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-left: var(--spec-spine-width) solid var(--spec-accent);
+  border-radius: var(--spec-radius-card);
+  background-color: var(--background-secondary);
+}
+
+.spec-loop-rail-node {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spec-space-2);
+}
+
+.spec-loop-rail-label {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* A done node reads in the pass colour with a filled marker; the current node
+ * draws the brand accent (chrome); a todo node stays muted. The label spells the
+ * stage out, so colour is never the only signal. */
+.spec-loop-rail-node[data-state="done"] .spec-loop-rail-label {
+  color: var(--spec-status-pass);
+}
+
+.spec-loop-rail-node[data-state="current"] .spec-loop-rail-label {
+  color: var(--spec-accent);
+  font-weight: var(--font-semibold, 600);
+}
+
+.spec-loop-rail-label::before {
+  content: "○ ";
+}
+
+.spec-loop-rail-node[data-state="done"] .spec-loop-rail-label::before {
+  content: "● ";
+}
+
+.spec-loop-rail-node[data-state="current"] .spec-loop-rail-label::before {
+  content: "◉ ";
+}
+
+/* The connector segment between nodes — the visible "spine". A done segment is
+ * solid accent; an incomplete one is a muted hairline. */
+.spec-loop-rail-connector {
+  flex: 0 0 auto;
+  width: var(--spec-space-4, 16px);
+  height: 2px;
+  background-color: var(--background-modifier-border);
+}
+
+.spec-loop-rail-connector[data-state="done"] {
+  background-color: var(--spec-accent);
+}
+
+/* The current node's live CTA — the brand accent on chrome (a primary button). */
+.spec-loop-rail-action {
+  padding: var(--spec-space-1, 4px) var(--spec-space-2);
+  border: none;
+  border-radius: var(--spec-radius-chip);
+  background-color: var(--spec-accent);
+  color: var(--spec-on-accent);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  transition: background-color var(--spec-motion-fast) var(--spec-ease);
+}
+
+.spec-loop-rail-action:hover {
+  background-color: var(--spec-accent-hover);
+}
+
+.spec-loop-rail-action:focus-visible {
+  outline: 2px solid var(--spec-accent);
+  outline-offset: 2px;
+}
+
 /* ── KPI tiles (DashboardView, US-037) ───────────────────────────────────── */
 
 .e2e-test-hub-kpi-tiles {
@@ -997,7 +1091,24 @@ body {
 
 .e2e-test-hub-feature-editor-toolbar {
   display: flex;
+  align-items: center;
   gap: var(--size-2-2);
+  margin-bottom: var(--size-4-2);
+}
+
+/* WS-C1 forward affordances (▶ Run / ✓ Validate) sit at the toolbar's far end,
+ * pushed right so the mode toggles (Structured/Raw) stay grouped on the left. */
+.e2e-test-hub-feature-editor-toolbar-forward {
+  display: flex;
+  gap: var(--size-2-2);
+  margin-left: auto;
+}
+
+.e2e-test-hub-feature-editor-validate-result:empty {
+  display: none;
+}
+
+.e2e-test-hub-feature-editor-validate-result {
   margin-bottom: var(--size-4-2);
 }
 

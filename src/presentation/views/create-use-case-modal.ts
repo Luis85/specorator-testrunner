@@ -1,11 +1,13 @@
 import { type App, Modal, Notice, Setting } from "obsidian";
-import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { UseCaseService } from "../../application/services/use-case-service";
-import { descriptionField, openOrNotice, submitOnEnter } from "./modal-helpers";
+import { descriptionField, submitOnEnter } from "./modal-helpers";
 
 export interface CreateUseCaseDeps {
   useCaseService: UseCaseService;
-  workspace: WorkspacePort;
+  // WS-C1 (03-§3.1): a new Use Case opens the detail COCKPIT — where the next
+  // step (Generate feature) lives — not the raw note, which dead-ends the loop.
+  // The raw note stays one click away ("Open note" in the detail header).
+  openUseCaseDetail: (useCaseId: string) => void;
 }
 
 /** Prompts for a Use Case title/description and creates it (US-015, UC-004). */
@@ -76,6 +78,9 @@ export class CreateUseCaseModal extends Modal {
     }
     new Notice(`Created ${result.value.id}.`);
     this.close();
-    await openOrNotice(this.deps.workspace, result.value.path);
+    // Forward momentum (C1): land in the detail cockpit so the loop rail's next
+    // step (Generate feature) is right there, instead of dead-ending on the raw
+    // note. The raw note stays reachable via the detail header's "Open note".
+    this.deps.openUseCaseDetail(result.value.id);
   }
 }
