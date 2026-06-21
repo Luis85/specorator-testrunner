@@ -86,6 +86,152 @@ body {
   }
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Specorator component library (UX redesign — Phase 0 / A2).
+ *
+ * Canonical `spec-*` primitives built ON TOP of the A1 tokens above. Each one
+ * replaces a cluster of near-identical feature-local copies (see
+ * docs/ux-review/02-design-system.md §3.3). Views opt in by adding the
+ * `spec-*` class; feature-local classes stay as hooks for layout/sub-element
+ * rules, but the shared surface/recipe lives here ONCE.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/* Panel — the canonical card surface (replaces the five bordered-panel copies:
+ * init-cta, onboarding, env-block, prd-roadmap, story-map-card — 02-H3). The
+ * transparent accent "spine" on the left edge lights to --spec-accent on hover
+ * and the panel lifts with --spec-elev-1, the house identity motif (§3.2). */
+.spec-panel {
+  padding: var(--spec-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-left: var(--spec-spine-width) solid transparent;
+  border-radius: var(--spec-radius-card);
+  background-color: var(--background-secondary);
+  transition:
+    border-color var(--spec-motion-fast) var(--spec-ease),
+    box-shadow var(--spec-motion-fast) var(--spec-ease);
+}
+
+.spec-panel:hover {
+  border-left-color: var(--spec-accent);
+  box-shadow: var(--spec-elev-1);
+}
+
+/* Status pill — ONE chip (replaces uc-detail-status, prd-status,
+ * story-map-status — 02-H2). Bordered-uppercase canonical look (§3.3). The
+ * [data-status] reinforcement contract is non-negotiable: the pill text always
+ * spells the status out, so colour is never the only signal. Two status
+ * vocabularies share the one chip — planning (active/deprecated) and Use Case
+ * detail (passing/verified/automated/failing/missing-steps). */
+.spec-pill {
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 var(--spec-space-2);
+  border-radius: var(--spec-radius-chip);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.spec-pill[data-status="active"],
+.spec-pill[data-status="passing"],
+.spec-pill[data-status="verified"],
+.spec-pill[data-status="automated"] {
+  color: var(--spec-status-pass);
+  border-color: var(--spec-status-pass);
+}
+
+.spec-pill[data-status="failing"] {
+  color: var(--spec-status-fail);
+  border-color: var(--spec-status-fail);
+}
+
+.spec-pill[data-status="missing-steps"] {
+  color: var(--spec-status-warn);
+  border-color: var(--spec-status-warn);
+}
+
+.spec-pill[data-status="deprecated"] {
+  color: var(--spec-status-idle);
+  text-decoration: line-through;
+}
+
+/* Focus ring — the single keyboard-affordance rule body (replaces the ~12 copied
+ * :focus-visible blocks — 02-H4). New surfaces opt in with the `.spec-focusable`
+ * utility; the existing plugin controls are routed through the one shared
+ * selector list below so the ring is declared ONCE (drift-proof). The board's
+ * SVG groups keep their own tighter 1px-offset variant (see further down),
+ * corrected to draw --spec-accent. */
+.spec-focusable:focus-visible,
+.e2e-test-hub-link-button:focus-visible,
+.e2e-test-hub-doc-button:focus-visible,
+.e2e-test-hub-settings-inline-button:focus-visible,
+.e2e-test-hub-console-action:focus-visible,
+.e2e-test-hub-run-button:focus-visible,
+.e2e-test-hub-env-badge.is-switchable:focus-visible,
+.e2e-test-hub-quick-button:focus-visible,
+.e2e-test-hub-kpi-tile:focus-visible,
+.e2e-test-hub-onboarding-button:focus-visible,
+.e2e-test-hub-story-map-card-title:focus-visible,
+.e2e-test-hub-story-map-action:focus-visible {
+  outline: 2px solid var(--spec-accent);
+  outline-offset: 2px;
+  border-radius: var(--spec-radius-chip);
+}
+
+/* Banner — ONE status banner (replaces the console banner + feature-editor
+ * banner — 02-M5). [data-status] drives the left-border + tint. The failed /
+ * errored states deliberately avoid --background-modifier-error (a saturated
+ * red that renders --text-error red-on-red); the red-on-red fix is preserved. */
+.spec-banner {
+  padding: var(--spec-space-2) var(--spec-space-3);
+  margin: var(--spec-space-2) 0;
+  border-radius: var(--spec-radius-chip);
+  border-left: 4px solid var(--background-modifier-border);
+  font-weight: var(--font-semibold, 600);
+  background-color: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+.spec-banner[data-status="warning"] {
+  border-left-color: var(--spec-status-warn);
+  color: var(--spec-status-warn);
+}
+
+.spec-banner[data-status="running"],
+.spec-banner[data-status="queued"] {
+  background-color: var(--background-modifier-border);
+  border-left-color: var(--spec-status-idle);
+  color: var(--text-normal);
+}
+
+.spec-banner[data-status="passed"] {
+  background-color: var(--background-modifier-success);
+  border-left-color: var(--spec-status-pass);
+  color: var(--spec-status-pass);
+}
+
+.spec-banner[data-status="failed"],
+.spec-banner[data-status="errored"] {
+  background-color: var(--background-secondary);
+  border-left-color: var(--spec-status-fail);
+  color: var(--spec-status-fail);
+}
+
+.spec-banner[data-status="cancelled"] {
+  background-color: var(--background-secondary-alt);
+  border-left-color: var(--spec-status-warn);
+  color: var(--text-muted);
+}
+
+/* Empty state — the muted, centred placeholder for "nothing here yet" surfaces,
+ * the visual sibling of renderLoadError (02-R9). Rendered by renderEmptyState(). */
+.spec-empty {
+  margin: var(--spec-space-4) 0;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+}
+
 /* ── KPI tiles (DashboardView, US-037) ───────────────────────────────────── */
 
 .e2e-test-hub-kpi-tiles {
@@ -215,12 +361,6 @@ body {
   text-decoration: underline;
 }
 
-.e2e-test-hub-link-button:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-s, 4px);
-}
-
 /* ── Documentation actions (DashboardView, AC-016) ────────────────────────── */
 
 .e2e-test-hub-doc-actions {
@@ -234,50 +374,12 @@ body {
   cursor: pointer;
 }
 
-/* Keyboard focus ring matching .e2e-test-hub-link-button:focus-visible, so
- * tabbing through the documentation actions is visibly tracked. */
-.e2e-test-hub-doc-button:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-s, 4px);
-}
-
 /* ── Test Console (TestConsoleView, US-030 / UC-015) ──────────────────────── */
 
-.e2e-test-hub-console-banner {
-  padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
-  margin: var(--size-4-2, 8px) 0;
-  border-radius: var(--radius-s, 4px);
-  border-left: 4px solid var(--background-modifier-border);
-  font-weight: var(--font-semibold, 600);
-  background-color: var(--background-secondary);
-  color: var(--text-normal);
-}
-
-/* Status-driven banner colours. `statusModifier` sets dataset.status to the raw
- * TestRunStatus, so these values mirror that union exactly. */
-.e2e-test-hub-console-banner[data-status="running"],
-.e2e-test-hub-console-banner[data-status="queued"] {
-  background-color: var(--background-modifier-border);
-  border-left-color: var(--text-muted);
-  color: var(--text-normal);
-}
-
-.e2e-test-hub-console-banner[data-status="passed"] {
-  background-color: var(--background-modifier-success);
-  border-left-color: var(--text-success);
-  color: var(--text-success);
-}
-
-/* NOT --background-modifier-error: that's a saturated red, and --text-error on
- * it is red-on-red — the failed-run banner rendered as an unreadable solid
- * block (testvault demo run). Same fix as .e2e-test-hub-error. */
-.e2e-test-hub-console-banner[data-status="failed"],
-.e2e-test-hub-console-banner[data-status="errored"] {
-  background-color: var(--background-secondary);
-  border-left-color: var(--text-error);
-  color: var(--text-error);
-}
+/* The console banner surface + its [data-status] states (running/queued/passed/
+ * failed/errored/cancelled, mirroring the raw TestRunStatus that statusModifier
+ * sets) now render via the canonical .spec-banner. The red-on-red fix for
+ * failed/errored lives there. Only the hint line below stays console-local. */
 
 /* Actionable guidance under the terminal banner headline (e.g. undefined
  * steps -> generate step definitions). Normal text colour: it's advice, not
@@ -287,12 +389,6 @@ body {
   color: var(--text-normal);
   font-size: var(--font-ui-small, 0.875rem);
   font-weight: var(--font-normal, 400);
-}
-
-.e2e-test-hub-console-banner[data-status="cancelled"] {
-  background-color: var(--background-secondary-alt);
-  border-left-color: var(--text-warning, var(--text-muted));
-  color: var(--text-muted);
 }
 
 .e2e-test-hub-console-output {
@@ -375,12 +471,11 @@ body {
 
 /* One bordered block per SUT environment (ADR-0013): name + remove button,
  * base URL, and the auth env-var editor. */
+/* Surface comes from .spec-panel; only the env-block's own margin + horizontal
+ * padding (its rows supply their own vertical rhythm) stay here. */
 .e2e-test-hub-env-block {
   margin: var(--size-4-2, 8px) 0 var(--size-4-4, 16px);
   padding: 0 var(--size-4-3, 12px);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m, 8px);
-  background-color: var(--background-secondary);
 }
 
 /* Auth env-var rows are KEY + VALUE inputs + a remove button; the Setting's
@@ -470,14 +565,6 @@ body {
   margin-top: var(--size-4-1, 4px);
 }
 
-/* Keyboard focus ring matching .e2e-test-hub-link-button:focus-visible, so the
- * settings actions keep :focus-visible parity with the other plugin buttons. */
-.e2e-test-hub-settings-inline-button:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-s, 4px);
-}
-
 /* ── Test Console toolbar / run controls (Wave B, US-030 / UC-015) ─────────────
  * A header toolbar above the output lets a normal user start, watch, and cancel
  * a Test Run without leaving the panel for the command palette. Buttons reuse
@@ -520,14 +607,6 @@ body {
   height: var(--icon-s, 16px);
 }
 
-/* Keyboard focus ring matching .e2e-test-hub-link-button:focus-visible, so the
- * console actions keep :focus-visible parity with the other plugin buttons. */
-.e2e-test-hub-console-action:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-s, 4px);
-}
-
 /* Run metadata line: scope/target + live elapsed timer while active, last
  * run's outcome when idle, empty-state copy before the first run. Muted by
  * default; [data-status] tints it to mirror the banner's TestRunStatus. */
@@ -563,12 +642,6 @@ body {
   padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
 }
 
-.e2e-test-hub-run-button:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-s, 4px);
-}
-
 /* ── Dashboard hub (DashboardView, Wave C) ────────────────────────────────────
  * The Dashboard is the home/hub a user lands on: a quick-action bar, an active-
  * environment badge + switcher, navigable KPI tiles, and clickable recent-run
@@ -577,6 +650,8 @@ body {
  * present; colour is reinforcement only). */
 
 /* Initialize CTA shown when the hub isn't set up yet (snapshot fails). */
+/* Surface comes from .spec-panel; the init CTA overrides padding to the larger
+ * 16px and adds its own column layout. */
 .e2e-test-hub-init-cta {
   display: flex;
   flex-direction: column;
@@ -584,9 +659,6 @@ body {
   gap: var(--size-4-3, 12px);
   padding: var(--size-4-4, 16px);
   margin: var(--size-4-4, 16px) 0;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m, 8px);
-  background-color: var(--background-secondary);
 }
 
 .e2e-test-hub-init-cta-text {
@@ -622,11 +694,6 @@ body {
   background-color: var(--background-modifier-hover);
 }
 
-.e2e-test-hub-env-badge.is-switchable:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
 /* Quick-action bar (Wave C §1): Create / Run / Open groups, scannable. */
 .e2e-test-hub-quick-actions {
   display: flex;
@@ -658,12 +725,6 @@ body {
   cursor: pointer;
 }
 
-.e2e-test-hub-quick-button:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-s, 4px);
-}
-
 /* KPI tiles are <button>s in the hub (Wave C §4): reset button chrome but keep
  * the tile look from the .e2e-test-hub-kpi-tile rules above, and add a clear
  * keyboard-focus affordance since they navigate to the Use Cases explorer. */
@@ -675,11 +736,6 @@ body {
 
 .e2e-test-hub-kpi-tile:hover {
   background-color: var(--background-modifier-hover);
-}
-
-.e2e-test-hub-kpi-tile:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
 }
 
 /* Clickable recent-run rows (Wave C §3): rows that link to an Evidence note get
@@ -698,12 +754,11 @@ body {
  * the shipped demo, open the Getting Started guide — each with a one-line
  * explanation. Reuses the Obsidian vars + the :focus-visible parity the rest
  * of the plugin's buttons keep; it disappears once a Use Case exists. */
+/* Surface comes from .spec-panel; onboarding overrides padding to 16px and sets
+ * its own vertical margin. */
 .e2e-test-hub-onboarding {
   padding: var(--size-4-4, 16px);
   margin: var(--size-4-3, 12px) 0;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m, 8px);
-  background-color: var(--background-secondary);
 }
 
 .e2e-test-hub-onboarding h3 {
@@ -726,12 +781,6 @@ body {
 
 .e2e-test-hub-onboarding-button {
   cursor: pointer;
-}
-
-.e2e-test-hub-onboarding-button:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-s, 4px);
 }
 
 /* One-line explanation under each step button. */
@@ -765,29 +814,8 @@ body {
   margin-bottom: var(--size-4-2, 8px);
 }
 
-/* Status / automation-status pills. Default to muted; [data-status] tints them
- * with the same vocabulary the dashboard KPI tiles + run cells use. */
-.e2e-test-hub-uc-detail-status {
-  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
-  border-radius: var(--radius-s, 4px);
-  background-color: var(--background-secondary);
-  color: var(--text-muted);
-  font-size: var(--font-ui-small, 0.875rem);
-}
-
-.e2e-test-hub-uc-detail-status[data-status="passing"],
-.e2e-test-hub-uc-detail-status[data-status="verified"],
-.e2e-test-hub-uc-detail-status[data-status="automated"] {
-  color: var(--text-success);
-}
-
-.e2e-test-hub-uc-detail-status[data-status="failing"] {
-  color: var(--text-error);
-}
-
-.e2e-test-hub-uc-detail-status[data-status="missing-steps"] {
-  color: var(--text-warning, var(--text-muted));
-}
+/* Status / automation-status pills now render via the canonical .spec-pill (its
+ * [data-status] vocabulary covers passing/verified/automated/failing/missing-steps). */
 
 .e2e-test-hub-uc-detail-actions {
   display: flex;
@@ -799,9 +827,8 @@ body {
   margin-top: var(--size-4-4, 16px);
 }
 
-.e2e-test-hub-uc-detail-empty {
-  color: var(--text-muted);
-}
+/* The Use Case detail's "no Feature Specifications yet" placeholder now renders
+ * via the canonical .spec-empty (renderEmptyState). */
 
 /* One Feature Specification card: name + actions on top, the inline result area
  * (validate / detect / generate) below. */
@@ -974,13 +1001,8 @@ body {
   margin-bottom: var(--size-4-2);
 }
 
-.e2e-test-hub-feature-editor-banner {
-  padding: var(--size-4-2);
-  margin-bottom: var(--size-4-2);
-  border-radius: var(--radius-s);
-  background-color: var(--background-secondary);
-  color: var(--text-warning);
-}
+/* The feature-editor's "structured editing unavailable" warning now renders via
+ * the canonical .spec-banner with data-status="warning". */
 
 .e2e-test-hub-feature-editor-raw {
   width: 100%;
@@ -1101,26 +1123,7 @@ body {
   padding: var(--size-2-1, 4px) 0;
 }
 
-/* Status pill — text always present, so colour is never the only signal. */
-.e2e-test-hub-prd-status {
-  font-size: var(--font-ui-smaller);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0 var(--size-2-2, 6px);
-  border-radius: var(--radius-s, 4px);
-  border: 1px solid var(--background-modifier-border);
-  color: var(--text-muted);
-}
-
-.e2e-test-hub-prd-status[data-status="active"] {
-  color: var(--text-success);
-  border-color: var(--text-success);
-}
-
-.e2e-test-hub-prd-status[data-status="deprecated"] {
-  color: var(--text-muted);
-  text-decoration: line-through;
-}
+/* PRD status pill now renders via the canonical .spec-pill (active/deprecated). */
 
 /* Use Case detail breadcrumb (Domain › PRD). */
 .e2e-test-hub-uc-prd-breadcrumb {
@@ -1134,10 +1137,8 @@ body {
 }
 
 /* Dashboard PRD & roadmap card. */
+/* Surface comes from .spec-panel; only the roadmap's bottom margin stays. */
 .e2e-test-hub-prd-roadmap {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m, 8px);
-  padding: var(--size-4-3, 12px);
   margin-bottom: var(--size-4-4, 16px);
 }
 
@@ -1181,24 +1182,18 @@ body {
   margin: 0 0 var(--size-2-3, 8px);
 }
 
-/* Per-map card: padded, bordered, hover-interactive. */
+/* Per-map card: hover-interactive surface from .spec-panel (the accent spine +
+ * elevation come from there); only the card's column layout and the extra
+ * background-shift on hover stay local. */
 .e2e-test-hub-story-map-card {
   display: flex;
   flex-direction: column;
   gap: var(--size-2-3, 8px);
-  padding: var(--size-4-3, 12px);
-  border: 1px solid var(--background-modifier-border);
-  border-left: 2px solid transparent;
-  border-radius: var(--radius-m, 8px);
-  background: var(--background-secondary);
-  transition:
-    background 0.12s ease,
-    border-color 0.12s ease;
+  transition: background var(--spec-motion-fast) var(--spec-ease);
 }
 
 .e2e-test-hub-story-map-card:hover {
   background: var(--background-modifier-hover);
-  border-left-color: var(--interactive-accent);
 }
 
 /* Title row: prominent title (opens board) + status pill on the right. */
@@ -1223,12 +1218,6 @@ body {
 
 .e2e-test-hub-story-map-card-title:hover {
   color: var(--text-accent);
-}
-
-.e2e-test-hub-story-map-card-title:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-  border-radius: var(--radius-s, 4px);
 }
 
 /* Meta row: id + product anchor + count chips, all muted/small. */
@@ -1296,35 +1285,11 @@ body {
   color: var(--text-normal);
 }
 
-.e2e-test-hub-story-map-action:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
 .e2e-test-hub-story-map-action.e2e-test-hub-story-map-action-danger:hover {
   color: var(--text-error);
 }
 
-/* Status pill — text always present, so colour is never the only signal. */
-.e2e-test-hub-story-map-status {
-  font-size: var(--font-ui-smaller);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0 var(--size-2-2, 6px);
-  border-radius: var(--radius-s, 4px);
-  border: 1px solid var(--background-modifier-border);
-  color: var(--text-muted);
-}
-
-.e2e-test-hub-story-map-status[data-status="active"] {
-  color: var(--text-success);
-  border-color: var(--text-success);
-}
-
-.e2e-test-hub-story-map-status[data-status="deprecated"] {
-  color: var(--text-muted);
-  text-decoration: line-through;
-}
+/* Story Map status pill now renders via the canonical .spec-pill (active/deprecated). */
 
 /* Builder/card-manager add-item rows. */
 .story-map-items,
@@ -1597,13 +1562,17 @@ body {
   cursor: text;
 }
 
-/* Keyboard focus rings (UX-4): cards + headers are tabbable and operable. */
+/* Keyboard focus rings (UX-4): cards + headers are tabbable and operable. These
+ * are SVG groups, not HTML controls, so they keep their own tighter 1px offset
+ * (and border-radius is a no-op on <g>) rather than the .spec-focusable utility.
+ * The drift is corrected: the ring now draws --spec-accent (the shared focus
+ * colour), not the old --text-accent. */
 .sm-board-card-group:focus-visible,
 .sm-board-activity:focus-visible,
 .sm-board-slice:focus-visible,
 .sm-board-step:focus-visible,
 .sm-board-user-card:focus-visible {
-  outline: 2px solid var(--text-accent);
+  outline: 2px solid var(--spec-accent);
   outline-offset: 1px;
 }
 

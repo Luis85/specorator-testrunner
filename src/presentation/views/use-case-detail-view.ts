@@ -15,7 +15,7 @@ import { type ChecklistRow } from "../settings/settings-rows";
 import type { RunLauncher } from "../run/run-launcher";
 import { EditUseCaseModal } from "./edit-use-case-modal";
 import { LiveDashboardView } from "./live-dashboard-view";
-import { openOrNotice, renderLoadError } from "./modal-helpers";
+import { openOrNotice, renderEmptyState, renderLoadError } from "./modal-helpers";
 import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
 import { PRD_VIEW_TYPE } from "./prd-explorer-view";
 import {
@@ -258,12 +258,12 @@ export class UseCaseDetailView extends LiveDashboardView {
 
     const meta = headerEl.createDiv({ cls: "e2e-test-hub-uc-detail-meta" });
     const status = meta.createSpan({
-      cls: "e2e-test-hub-uc-detail-status",
+      cls: "spec-pill",
       text: `Status: ${header.status}`,
     });
     status.dataset.status = header.status;
     const automation = meta.createSpan({
-      cls: "e2e-test-hub-uc-detail-status",
+      cls: "spec-pill",
       text: `Automation: ${header.automationStatus}`,
     });
     automation.dataset.status = header.automationStatus;
@@ -379,10 +379,10 @@ export class UseCaseDetailView extends LiveDashboardView {
 
     const rows = projectFeatureRows(useCase.id, listed.value);
     if (rows.length === 0) {
-      section.createEl("p", {
-        cls: "e2e-test-hub-uc-detail-empty",
-        text: "No Feature Specifications yet. Generate one to make this Use Case executable.",
-      });
+      renderEmptyState(
+        section,
+        "No Feature Specifications yet. Generate one to make this Use Case executable.",
+      );
       return;
     }
 

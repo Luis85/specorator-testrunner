@@ -156,7 +156,7 @@ export class TestConsoleView extends ItemView {
       attr: { "aria-live": "polite" },
     });
     this.banner = container.createEl("div", {
-      cls: "e2e-test-hub-console-banner",
+      cls: "spec-banner",
       attr: { "aria-live": "polite" },
     });
     // role="log" (NOT aria-live): a log implies polite, additions-only live

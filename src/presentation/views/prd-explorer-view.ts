@@ -5,7 +5,7 @@ import type { UseCaseService } from "../../application/services/use-case-service
 import type { Prd } from "../../domain/entities/prd";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
-import { openOrNotice, renderLoadError } from "./modal-helpers";
+import { openOrNotice, renderEmptyState, renderLoadError } from "./modal-helpers";
 import { LiveDashboardView } from "./live-dashboard-view";
 
 export const PRD_VIEW_TYPE = "e2e-test-hub-prds";
@@ -111,9 +111,10 @@ export class PrdExplorerView extends LiveDashboardView {
     }
 
     if (prds.value.length === 0) {
-      container.createEl("p", {
-        text: "No PRDs yet. Create PRD-000 (the product vision) to get started.",
-      });
+      renderEmptyState(
+        container,
+        "No PRDs yet. Create PRD-000 (the product vision) to get started.",
+      );
       return;
     }
 
@@ -136,7 +137,7 @@ export class PrdExplorerView extends LiveDashboardView {
 
     row.createEl("span", {
       text: node.prd.status,
-      cls: "e2e-test-hub-prd-status",
+      cls: "spec-pill",
       attr: { "data-status": node.prd.status },
     });
 

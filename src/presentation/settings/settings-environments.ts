@@ -89,7 +89,7 @@ export class SutEnvironmentSection {
     return {
       type: "group",
       heading: isActive ? `${name} (active)` : name,
-      cls: "e2e-test-hub-env-block",
+      cls: "spec-panel e2e-test-hub-env-block",
       items: [
         {
           name: "Base URL",
