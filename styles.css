@@ -1317,13 +1317,18 @@
 
 .sm-board-card-title {
   font-weight: 600;
+  /* Card fills are light pastels (CARD_TYPE_COLORS) in BOTH themes, so the title
+     uses fixed dark ink for contrast rather than the theme text colour (which is
+     near-white in the dark theme and would vanish on a pastel card). */
+  fill: var(--sm-card-ink, #1a1a22);
   /* Let pointer hits fall through the title text to the draggable card rect. */
   pointer-events: none;
 }
 
 .sm-board-card-ref {
-  fill: var(--text-muted);
+  fill: var(--sm-card-ink-muted, rgba(26, 26, 34, 0.62));
   font-size: 10px;
+  font-weight: 500;
   pointer-events: none;
 }
 
