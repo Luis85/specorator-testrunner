@@ -365,6 +365,30 @@ describe("reconcileCards", () => {
     expect(fs.files.has(String(joinVaultPath(CARDS_DIR, "SMC-001.md")))).toBe(false);
   });
 
+  it("keeps each duplicate-id card's OWN note and body when one is dropped (no body mixing)", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    const pathA = joinVaultPath(CARDS_DIR, "SMC-001.md");
+    const pathB = joinVaultPath(CARDS_DIR, "SMC-001-copy.md");
+    seedNote(fs, cardNote({ id: "SMC-001", title: "A", body: "Body of A.", path: pathA }));
+    seedNote(fs, cardNote({ id: "SMC-001", title: "B", body: "Body of B.", path: pathB }));
+    const existing = await loadCards(fs, CARDS_DIR, MAP_ID); // 2 cards, same id, distinct notePaths
+    // The board keeps the card loaded from pathA (notePath preserved on the model) and
+    // drops B.
+    const keptA = existing.find((c) => String(c.notePath) === String(pathA));
+    expect(keptA).toBeDefined();
+    if (!keptA) return;
+
+    await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, [keptA], existing);
+
+    // A's note survives with A's OWN body; B's note is removed — A's title never lands
+    // on top of B's body.
+    expect(fs.files.has(String(pathA))).toBe(true);
+    expect(fs.files.get(String(pathA))).toContain("Body of A.");
+    expect(fs.files.get(String(pathA))).not.toContain("Body of B.");
+    expect(fs.files.has(String(pathB))).toBe(false);
+  });
+
   it("updates order frontmatter when two cards in a cell are reordered", async () => {
     const fs = new FakeVaultFileSystem();
     const queue = new KeyedSerialQueue();

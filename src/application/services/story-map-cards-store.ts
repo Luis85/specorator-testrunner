@@ -290,7 +290,11 @@ const writeDesiredCards = async (
 ): Promise<Result<Set<string>>> => {
   const writtenPaths = new Set<string>();
   for (const card of desired) {
-    const path = cardPath(card.id, paths, cardsDir);
+    // Route to the card's OWN loaded note path first, so two cards that share an
+    // id (a duplicated/hand-edited note) write to their respective occurrences and
+    // each keeps its own body — the id→path map collapses duplicates to one path.
+    // Fall back to that map (renamed notes) then the canonical cards/<id>.md (new).
+    const path = card.card.notePath ?? cardPath(card.id, paths, cardsDir);
     const written = await queue.run(String(path), () => upsertCard(fs, mapId, card, path));
     if (!written.ok) return written;
     writtenPaths.add(String(path));
