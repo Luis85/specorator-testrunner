@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestHubSettingTab } from "../src/presentation/settings/settings-tab";
 import type { SettingsHost, SettingsTabServices } from "../src/presentation/settings/settings-tab";
-import { markDestructive } from "../src/presentation/settings/settings-shared";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import { ok, err } from "../src/shared/result/result";
 import { PluginSettingTab } from "./__stubs__/obsidian";
@@ -128,27 +127,8 @@ describe("TestHubSettingTab.display()", () => {
   });
 });
 
-describe("markDestructive()", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  type Button = Parameters<typeof markDestructive>[0];
-
-  it("uses setDestructive() when present (Obsidian 1.13+)", () => {
-    const setDestructive = vi.fn();
-    const setWarning = vi.fn();
-    markDestructive({ setDestructive, setWarning } as unknown as Button);
-    expect(setDestructive).toHaveBeenCalledOnce();
-    expect(setWarning).not.toHaveBeenCalled();
-  });
-
-  it("falls back to setWarning() on pre-1.13 builds without setDestructive()", () => {
-    const setWarning = vi.fn();
-    markDestructive({ setWarning } as unknown as Button);
-    expect(setWarning).toHaveBeenCalledOnce();
-  });
-});
+// markDestructive() moved to confirm-action.ts (the destructive-confirm
+// primitive's home); its unit tests live in tests/confirm-action.test.ts.
 
 // ── Browser matrix (US-055) ────────────────────────────────────────────────
 

@@ -15,13 +15,12 @@ import {
 } from "./settings-rows";
 import {
   actionWithResultRow,
-  CONFIRM_DISARM_MS,
   errorText,
-  markDestructive,
   renderChecklist,
   runButtonAction,
   type SettingsSectionContext,
 } from "./settings-shared";
+import { buttonComponentControl, wireConfirmAction } from "../views/confirm-action";
 
 /**
  * The "Maintenance" (validate / repair / reset) and "Continuous integration"
@@ -86,25 +85,22 @@ export class MaintenanceSection {
    * button is warning-styled from the start — reset is always destructive.
    */
   private wireResetButton(button: ButtonComponent): void {
-    button.setButtonText("Reset");
-    markDestructive(button);
-    let armed = false;
-    let disarmTimer = 0;
-    button.onClick(() => {
-      if (!armed) {
-        armed = true;
-        button.setButtonText("Reset — click again to confirm");
-        window.clearTimeout(disarmTimer);
-        disarmTimer = window.setTimeout(() => {
-          armed = false;
-          button.setButtonText("Reset");
-        }, CONFIRM_DISARM_MS);
-        // Track it so a re-render / tab close clears it (no orphaned fire).
-        this.ctx.registerTimeout(disarmTimer);
-        return;
-      }
-      window.clearTimeout(disarmTimer);
-      void this.runReset(button);
+    // Two-click confirm (shared primitive). `destructiveWhenIdle: true` — reset
+    // is always dangerous, so the button is warning-styled from the start and
+    // stays styled when it disarms back to "Reset".
+    wireConfirmAction(buttonComponentControl(button), {
+      config: {
+        idleLabel: "Reset",
+        armedLabel: "Reset — click again to confirm",
+        destructiveWhenIdle: true,
+      },
+      onConfirm: () => void this.runReset(button),
+      // Track the disarm timer so a re-render / tab close clears it.
+      scheduleDisarm: (run, ms) => {
+        const handle = window.setTimeout(run, ms);
+        this.ctx.registerTimeout(handle);
+        return () => window.clearTimeout(handle);
+      },
     });
   }
 

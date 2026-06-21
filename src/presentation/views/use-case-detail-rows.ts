@@ -12,7 +12,7 @@ import type {
 } from "../../application/services/step-definition-service";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
-import { type ChecklistRow, checklistRow } from "../settings/settings-rows";
+import { type ChecklistRow, checklistRow } from "./checklist";
 
 /**
  * The Use Case → (Domain ›) PRD breadcrumb label. Empty when the Use Case has

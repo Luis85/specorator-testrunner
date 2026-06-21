@@ -5,6 +5,7 @@ import type { UseCaseService } from "../../application/services/use-case-service
 import type { Prd } from "../../domain/entities/prd";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
+import { buttonElementControl, wireConfirmAction } from "./confirm-action";
 import { openOrNotice, renderEmptyState, renderLoadError } from "./modal-helpers";
 import { LiveDashboardView } from "./live-dashboard-view";
 
@@ -152,13 +153,23 @@ export class PrdExplorerView extends LiveDashboardView {
     // The root PRD anchors the tree and is never deletable (the service also
     // refuses it); only offer Delete on sub-PRDs.
     if (node.prd.parentPrdId !== undefined) {
-      row
-        .createEl("button", {
-          text: "Delete",
-          cls: "e2e-test-hub-link-button",
-          attr: { "aria-label": `Delete PRD ${node.prd.id}` },
-        })
-        .addEventListener("click", () => void this.deletePrd(node.prd));
+      const deleteButton = row.createEl("button", {
+        text: "Delete",
+        cls: "e2e-test-hub-link-button",
+        attr: { "aria-label": `Delete PRD ${node.prd.id}` },
+      });
+      // 05-M3 safety fix: gate the (previously immediate) delete behind the same
+      // two-click arm/disarm confirm the rest of the app uses for destructive
+      // actions. Disarms on blur too, since a tree row is easy to tab away from.
+      wireConfirmAction(buttonElementControl(deleteButton), {
+        config: {
+          idleLabel: "Delete",
+          armedLabel: "Delete — click again to confirm",
+          destructiveWhenIdle: false,
+        },
+        onConfirm: () => void this.deletePrd(node.prd),
+        disarmOnBlur: true,
+      });
     }
 
     if (node.children.length > 0) {
