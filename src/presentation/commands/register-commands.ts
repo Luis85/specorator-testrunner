@@ -228,7 +228,10 @@ export function registerCommands(
       new Notice(`CI workflow written to ${result.value.path}.`);
     } else if (!overwriteExisting && result.error.details?.path) {
       // The file exists; make the documented overwrite flow reachable (UC-019).
-      new Notice(`${result.error.message} Use "Overwrite CI workflow" to replace it.`, 10000);
+      new Notice(
+        `${result.error.message} Use "Setup — overwrite CI workflow" to replace it.`,
+        10000,
+      );
     } else {
       new Notice(`Could not generate CI workflow: ${result.error.message}`, 10000);
     }
