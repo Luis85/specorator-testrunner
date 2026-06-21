@@ -356,15 +356,17 @@ export class DefaultPrdService implements PrdService {
     const root = String(settings.paths.storyMapsPath);
     // Reuse parseStoryMapNote so the guard can't drift from StoryMapService.findAll:
     // it filters non-map notes AND applies the ADR-0027 default (a blank `product`
-    // resolves to PRD-000). Skip per-card notes (<map>/cards/SMC-NNN.md, ADR-0030) —
-    // they carry `type: story-map-card`, never a `product` anchor, so an unreadable
-    // card note must not fail-close (and block) deleting an unrelated PRD. Match the
-    // cards/ segment RELATIVE to the maps root (not an absolute substring) so a
-    // storyMapsPath that itself contains a `cards` segment still keeps its map notes.
+    // resolves to PRD-000). Skip per-card notes (ADR-0030) WITHOUT reading them (so
+    // an unreadable card note can't fail-close the delete), but only at their exact
+    // generated location — `<map>/cards/<file>` relative to the maps root — so a map
+    // note under a differently-structured or top-level `cards` folder is still scanned.
     return this.countNotesUnder(
       settings.paths.storyMapsPath,
       (content, path) => parseStoryMapNote(content, path)?.product === prdId,
-      (path) => String(path).slice(root.length).includes("/cards/"),
+      (path) => {
+        const rel = String(path).slice(root.length).replace(/^\/+/, "").split("/");
+        return rel.length === 3 && rel[1] === "cards";
+      },
     );
   }
 

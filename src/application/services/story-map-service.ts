@@ -8,6 +8,7 @@ import {
   replaceStoryMapHeading,
   storyMapFolderName,
 } from "../content/story-map-content";
+import { parseCardNote } from "../content/story-map-card-content";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { SettingsService } from "./settings-service";
 import {
@@ -460,7 +461,12 @@ export class DefaultStoryMapService implements StoryMapService {
       // cleanupCardNotes skips the still-present map note; OTHER siblings are kept.
       const mapNote = target.value;
       const folder = parentVaultPath(mapNote.path);
-      const cleaned = await this.cleanupCardNotes(folder, mapNote.path, this.cardsDirOf(mapNote));
+      const cleaned = await this.cleanupCardNotes(
+        folder,
+        mapNote.path,
+        this.cardsDirOf(mapNote),
+        mapNote.id,
+      );
       if (!cleaned.ok) return cleaned;
       const preservedFiles = cleaned.value;
       const deleted = await this.fs.deleteFile(mapNote.path);
@@ -489,6 +495,7 @@ export class DefaultStoryMapService implements StoryMapService {
     folder: VaultPath,
     mapNotePath: VaultPath,
     cardsDir: VaultPath,
+    mapId: string,
   ): Promise<Result<number>> {
     const cardsPrefix = `${String(cardsDir)}/`;
     const listed = await this.fs.listFilesRecursive(folder);
@@ -503,14 +510,26 @@ export class DefaultStoryMapService implements StoryMapService {
     let preserved = 0;
     for (const sibling of listed.value) {
       if (sibling === mapNotePath) continue;
-      if (!String(sibling).startsWith(cardsPrefix)) {
+      // Delete ONLY this map's generated card notes under cards/. A pre-existing
+      // cards/ folder (which the create rollback preserves) may hold unrelated notes
+      // or attachments; anything else — outside cards/, unreadable, unparsable, or a
+      // foreign map's note — is preserved, not deleted: a destructive delete must not
+      // trash a file it can't positively identify as this map's generated note.
+      const underCards = String(sibling).startsWith(cardsPrefix);
+      if (underCards && (await this.isOwnCardNote(sibling, mapId))) {
+        const removed = await this.fs.deleteFile(sibling);
+        if (!removed.ok) return removed;
+      } else {
         preserved++;
-        continue;
       }
-      const removed = await this.fs.deleteFile(sibling);
-      if (!removed.ok) return removed;
     }
     return ok(preserved);
+  }
+
+  /** True only if `path` reads + parses as a `type: story-map-card` note for `mapId`. */
+  private async isOwnCardNote(path: VaultPath, mapId: string): Promise<boolean> {
+    const read = await this.fs.readFile(path);
+    return read.ok && parseCardNote(read.value, path)?.map === mapId;
   }
 
   /**

@@ -448,6 +448,25 @@ describe("DefaultPrdService.deletePrd", () => {
     expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
   });
 
+  it("counts a map note under a top-level 'cards' folder (only <map>/cards/ is skipped)", async () => {
+    const { service, fs } = build();
+    seedRoot(fs);
+    seedSub(fs);
+    // A map note the user placed under a top-level "cards" folder — NOT the generated
+    // <map>/cards/ child — must still count as an anchor.
+    fs.files.set(
+      "Story Maps/cards/SM-001-j.md",
+      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-001", "---", ""].join(
+        "\n",
+      ),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+
+    expect(result.ok).toBe(false);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(true);
+  });
+
   it("still counts map notes as anchors when storyMapsPath is nested under a 'cards' segment", async () => {
     // A storyMapsPath that itself contains a `cards` segment: the card-note skip must
     // be RELATIVE to the maps root, else every map-note path matches and the guard

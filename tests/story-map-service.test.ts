@@ -500,6 +500,34 @@ describe("DefaultStoryMapService.deleteStoryMap", () => {
     });
   });
 
+  it("deletes only THIS map's card notes under a pre-existing cards/, preserving the rest", async () => {
+    const { service, fs } = build();
+    seed(fs); // map SM-001 note
+    // A pre-existing cards/ folder holding: this map's generated note, a note from a
+    // DIFFERENT map (a prior map that reused this path), and an unrelated user file.
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      activity: "A",
+      slice: "S",
+    });
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-009",
+      map: "SM-OLD",
+      activity: "A",
+      slice: "S",
+    });
+    fs.files.set("Story Maps/SM-001-j/cards/notes.md", "user scratch — not a card note");
+
+    const result = await service.deleteStoryMap("SM-001");
+
+    expect(result.ok).toBe(true);
+    // This map's card note is removed; the foreign-map note and the unrelated file survive.
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-001.md")).toBe(false);
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-009.md")).toBe(true);
+    expect(fs.files.has("Story Maps/SM-001-j/cards/notes.md")).toBe(true);
+  });
+
   it("refuses to delete a map that does not exist", async () => {
     const { service } = build();
     const result = await service.deleteStoryMap("SM-404");
