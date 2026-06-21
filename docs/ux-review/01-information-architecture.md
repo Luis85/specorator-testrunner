@@ -137,7 +137,7 @@ Wire the data graph that already exists into click-through navigation, both dire
 - UC-detail PRD breadcrumb → open the **specific** PRD, not the PRD explorer (`use-case-detail-view.ts:340`).
 - Story Map Board card → open the referenced **Use Case detail** (the board already resolves `UC-NNN` refs; expose them as links).
 - UC-detail Story Map backlinks → open the **Story Map Board** at that card.
-- Evidence note ↔ Run ↔ the Suite/Use Case that produced it (Run scope is already known to the launcher, `run-launcher.ts:100`).
+- Evidence note ↔ Run ↔ the Suite/Use Case that produced it. **Note (Codex catch): Evidence/Run are NOT id-resolvable like PRD/UC/SM** — Evidence is addressed by `VaultPath` (`TraceabilityRecord.evidence: VaultPath[]`) and `RunHistoryService` has only `list()` (no `findById`). So the nav target is a **discriminated union** (`{kind:"evidence", path}` / `{kind:"run", runId}` alongside `{kind:"artifact", id}`), and "open the run behind this evidence" needs a run/evidence lookup added — it is not free from `openArtifact(id)` alone.
 
 Standardize on **one** `openLinkText`/`openArtifact(id)` navigation port so every node links the same way (today links are ad-hoc `openView` calls with no target id for PRD/Story Map).
 
@@ -175,7 +175,7 @@ Reduce to **one** ribbon icon: "Open Test Hub" (the home shell). Everything else
 | # | Recommendation | Impact | Effort | Risk | Dependencies |
 | --- | --- | --- | --- | --- | --- |
 | R1 | Build the **Test Hub home shell** with a persistent left-rail over Plan/Build/Run/Review sections; demote explorers from top-level peers | H | H | Layout churn; Obsidian leaf/workspace-restore edge cases | Pure rail/section model (mirror `dashboard-rows`); ADR-0029 thin-shell |
-| R2 | **Deep-link the artifact graph** (PRD→UC, board card→UC, breadcrumb→specific PRD, UC→Story Map board, Evidence↔Run↔Suite) via one `openArtifact(id)` port | H | M | Stale/renamed-id dead-ends (handle like UC-detail not-found) | Artifact id resolution in services (`prdService`, `storyMapService` already expose `findById`/`findAll`) |
+| R2 | **Deep-link the artifact graph** (PRD→UC, board card→UC, breadcrumb→specific PRD, UC→Story Map board via id; Evidence↔Run↔Suite via path/run-id) through a deep-link port with a **discriminated-union target** (id / evidence-path / run-id — Codex catch), not id-only | H | M | Stale/renamed-id dead-ends (handle like UC-detail not-found); Evidence/Run need path/run-id targets | `findById`/`findAll` for PRD/UC/SM; a run/evidence lookup for the Evidence↔Run hop |
 | R3 | **Single onboarding orchestrator** + docked rail; retire `Get started` panel + tour CTA banner duplication | H | M | Behavior change to first-run; tour event wiring must stay intact | **new** pure `projectOnboarding(initState, ucCount, tourState)` (the tour service alone lacks init-state + UC-count — Codex catch); `guided-tour-service` state; R1 shell to host the rail |
 | R4 | **Universal breadcrumbs** via pure `breadcrumbFor()` on every node | M | M | Low (additive) | R2 deep-linking; hierarchy lookups |
 | R5 | **Group & prefix commands** (`Test Hub: <Area> — <verb>`), normalize casing | M | L | Command-id churn (keep ids stable, change names only) | None (names only; ids in `register-commands.ts` unchanged) |
