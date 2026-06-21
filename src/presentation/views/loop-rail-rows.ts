@@ -84,17 +84,24 @@ const STAGE_ACTION: Record<LoopRailStage, LoopRailAction> = {
 };
 
 /**
- * Automation statuses that prove the Use Case's step definitions exist. Per the
- * ADR-0017 `computeAutomationStatus` table the roll-up only leaves `missing-steps`
- * once every Feature's steps are defined — so **`planned` already means the steps
- * are written** (the UC has Features and passed the `missing-steps` gate, but
- * nothing has run yet), as do `implemented`/`passing`/`failing` (exercised). Only
- * `not-planned` (no Features) and `missing-steps` (undefined steps) mean the steps
- * are not yet defined. (Omitting `planned` left the rail stuck on "Generate step
- * definitions" after stubs were generated but before the first run — Codex review.)
+ * Automation statuses that prove the Use Case's step definitions exist. Only the
+ * RUN-exercised statuses qualify — a Feature cannot have produced a pass/fail/skip
+ * result without its step definitions being in place.
+ *
+ * `planned` is deliberately EXCLUDED. The `missing-steps` gate in
+ * `computeAutomationStatus` measures empty **Gherkin** steps in the `.feature`
+ * (`scenario.steps.length === 0`), NOT the step-definition stubs in the runner
+ * project — the domain never inspects those. So `planned` ("has Gherkin steps, not
+ * yet run") is reached the instant Generate Feature writes scenarios, BEFORE any
+ * stub exists, and it also persists after stubs are generated but before the first
+ * run. The status alone cannot tell those two apart, so the rail takes the
+ * conservative reading: at `planned` the Steps node stays the current
+ * "Generate step definitions" CTA rather than offering Run against undefined steps
+ * (Codex review). generate-steps is non-destructive, so re-running it once stubs
+ * exist is a harmless no-op; the header's "Run Use Case" button still runs directly
+ * for the stubs-generated-but-not-yet-run case, and the first run advances the rail.
  */
 const STEPS_DEFINED_STATUSES: ReadonlySet<AutomationStatus> = new Set<AutomationStatus>([
-  "planned",
   "implemented",
   "passing",
   "failing",

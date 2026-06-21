@@ -63,17 +63,30 @@ describe("loopCapabilitiesFor", () => {
     expect(caps.stepsDefined).toBe(false);
   });
 
-  it.each<AutomationStatus>(["planned", "implemented", "passing", "failing"])(
+  it.each<AutomationStatus>(["implemented", "passing", "failing"])(
     "treats %s automation as steps-defined when a Feature exists",
     (automationStatus) => {
-      // `planned` counts: it means the steps are written (past the missing-steps
-      // gate) but nothing has run yet — the rail must advance off Steps.
+      // Only the RUN-exercised statuses prove the step definitions exist — a
+      // Feature can't have recorded a result without its steps in place.
       const caps = loopCapabilitiesFor(
         useCase({ featureFiles: [vp("Features/UC-001-happy.feature")], automationStatus }),
       );
       expect(caps.stepsDefined).toBe(true);
     },
   );
+
+  it("treats `planned` automation as steps-NOT-defined even with a Feature", () => {
+    // `planned` ("has Gherkin steps, not yet run") can't distinguish a freshly
+    // generated Feature (no stubs) from stubs-generated-but-unrun, so the rail
+    // takes the conservative reading and keeps the Generate-steps CTA visible.
+    const caps = loopCapabilitiesFor(
+      useCase({
+        featureFiles: [vp("Features/UC-001-happy.feature")],
+        automationStatus: "planned",
+      }),
+    );
+    expect(caps.stepsDefined).toBe(false);
+  });
 
   it("does not report steps-defined without a Feature, even if status moved on", () => {
     // A defensive guard: status alone can't imply steps when there's no Feature.
@@ -177,12 +190,17 @@ describe("projectLoopRail", () => {
     expect(suite?.action).toBeNull();
   });
 
-  it("Run is reachable from `planned` (steps generated, not yet run)", () => {
+  it("keeps Steps current at `planned` — status can't prove the stubs exist yet", () => {
+    // `planned` is reached the instant Generate Feature writes scenarios, before
+    // any step-definition stub exists; the rail keeps offering Generate steps
+    // rather than Run against undefined steps (it advances once a run records).
     const uc = useCase({
       featureFiles: [vp("Features/UC-001-happy.feature")],
       automationStatus: "planned",
     });
-    expect(projectLoopRail(uc).currentStage).toBe("run");
+    const rail = projectLoopRail(uc);
+    expect(rail.currentStage).toBe("steps");
+    expect(rail.currentAction).toBe("generate-steps");
   });
 
   it("marks the Suite node done when the Use Case lists a suite (informational)", () => {
