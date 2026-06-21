@@ -510,26 +510,31 @@ export class DefaultStoryMapService implements StoryMapService {
     let preserved = 0;
     for (const sibling of listed.value) {
       if (sibling === mapNotePath) continue;
-      // Delete ONLY this map's generated card notes under cards/. A pre-existing
-      // cards/ folder (which the create rollback preserves) may hold unrelated notes
-      // or attachments; anything else — outside cards/, unreadable, unparsable, or a
-      // foreign map's note — is preserved, not deleted: a destructive delete must not
-      // trash a file it can't positively identify as this map's generated note.
-      const underCards = String(sibling).startsWith(cardsPrefix);
-      if (underCards && (await this.isOwnCardNote(sibling, mapId))) {
-        const removed = await this.fs.deleteFile(sibling);
-        if (!removed.ok) return removed;
-      } else {
-        preserved++;
+      if (!String(sibling).startsWith(cardsPrefix)) {
+        preserved++; // outside cards/: a user attachment — never touched
+        continue;
       }
+      const outcome = await this.cleanupCardSibling(sibling, mapId);
+      if (!outcome.ok) return outcome;
+      if (outcome.value) preserved++;
     }
     return ok(preserved);
   }
 
-  /** True only if `path` reads + parses as a `type: story-map-card` note for `mapId`. */
-  private async isOwnCardNote(path: VaultPath, mapId: string): Promise<boolean> {
+  /**
+   * Handles one file under the generated `cards/` subtree during a Story Map delete.
+   * Deletes it when it parses as THIS map's card note; reports it preserved (`true`)
+   * when it reads but is a foreign/non-card file (a prior map's note or a user file —
+   * a destructive delete must not trash it); and FAILS CLOSED on a read error, so
+   * deleteStoryMap aborts with the map note intact (retryable) rather than orphaning
+   * an unidentifiable generated note for a future map to re-adopt.
+   */
+  private async cleanupCardSibling(path: VaultPath, mapId: string): Promise<Result<boolean>> {
     const read = await this.fs.readFile(path);
-    return read.ok && parseCardNote(read.value, path)?.map === mapId;
+    if (!read.ok) return read; // fail closed
+    if (parseCardNote(read.value, path)?.map !== mapId) return ok(true); // foreign/non-card: preserved
+    const removed = await this.fs.deleteFile(path);
+    return removed.ok ? ok(false) : removed;
   }
 
   /**

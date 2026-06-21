@@ -528,6 +528,31 @@ describe("DefaultStoryMapService.deleteStoryMap", () => {
     expect(fs.files.has("Story Maps/SM-001-j/cards/notes.md")).toBe(true);
   });
 
+  it("fails closed (leaving the map note) when a card note under cards/ is unreadable", async () => {
+    const { service, fs } = build();
+    seed(fs); // map SM-001 note
+    seedCardNote(fs, "Story Maps/SM-001-j", {
+      id: "SMC-001",
+      map: "SM-001",
+      activity: "A",
+      slice: "S",
+    });
+    const cardPath = "Story Maps/SM-001-j/cards/SMC-001.md";
+    const realRead = fs.readFile.bind(fs);
+    fs.readFile = async (p) =>
+      String(p) === cardPath
+        ? { ok: false as const, error: { code: "INIT_FAILED" as const, message: "EIO card note" } }
+        : realRead(p);
+
+    const result = await service.deleteStoryMap("SM-001");
+
+    // The unreadable generated note isn't orphaned — the delete fails closed and the
+    // map note survives, so it stays retryable.
+    expect(result.ok).toBe(false);
+    expect(fs.files.has("Story Maps/SM-001-j/SM-001-j.md")).toBe(true);
+    expect(fs.files.has(cardPath)).toBe(true);
+  });
+
   it("refuses to delete a map that does not exist", async () => {
     const { service } = build();
     const result = await service.deleteStoryMap("SM-404");
