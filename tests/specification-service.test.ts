@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import {
   DefaultSpecificationService,
@@ -7,7 +6,6 @@ import {
 } from "../src/application/services/specification-service";
 import { parseFeature } from "../src/application/content/gherkin";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
@@ -15,10 +13,9 @@ import { buildNote } from "../src/shared/utils/frontmatter";
 import {
   FakeAbsoluteFileSystem,
   FakeChildProcessRunner,
-  FakeDataStore,
   FakePrdLookup,
   FakeVaultFileSystem,
-  recordingEventBus,
+  serviceHarness,
   silentLogger,
 } from "./fakes";
 
@@ -49,15 +46,9 @@ const build = (
   dataSeed?: Record<string, unknown>,
   opts?: { activeRunId?: () => string | null },
 ) => {
-  const fs = new FakeVaultFileSystem();
   const absoluteFs = new FakeAbsoluteFileSystem();
   const childProcess = new FakeChildProcessRunner();
-  const { bus, events, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(dataSeed),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, events, types, settings } = serviceHarness(dataSeed);
   const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup());
   const service = new DefaultSpecificationService(
     settings,

@@ -8,19 +8,11 @@ import {
   DEMO_USE_CASE_TITLE,
 } from "../../src/application/content/demo-content";
 import { parseFeature } from "../../src/application/content/gherkin";
-import { DefaultSettingsService } from "../../src/application/services/settings-service";
 import { DefaultSuiteService } from "../../src/application/services/suite-service";
 import { DefaultUseCaseService } from "../../src/application/services/use-case-service";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/settings";
-import { DefaultPathSafetyPolicy } from "../../src/domain/policies/path-safety-policy";
 import { joinVaultPath } from "../../src/shared/utils/vault-path";
-import {
-  FakeDataStore,
-  FakePrdLookup,
-  FakeVaultFileSystem,
-  recordingEventBus,
-  silentLogger,
-} from "../fakes";
+import { FakePrdLookup, serviceHarness, silentLogger } from "../fakes";
 
 /**
  * US-049 — Validate Demo Scenario (FEAT-028, UC-001).
@@ -39,13 +31,7 @@ import {
 const FEATURE_PATH = joinVaultPath(DEFAULT_SETTINGS.paths.featureFilesPath, DEMO_FEATURE_FILE_NAME);
 
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, settings } = serviceHarness();
   const useCases = new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup());
   const suites = new DefaultSuiteService(settings, fs, bus);
   return { fs, useCases, suites };

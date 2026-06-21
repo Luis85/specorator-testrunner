@@ -1,22 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultStepDefinitionService } from "../src/application/services/step-definition-service";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import { serviceHarness, silentLogger } from "./fakes";
 
 const STEPS_DIR = ".testrunner/src/steps";
 const FEATURE = vp("Specifications/features/UC-001-demo.feature");
 const STEP_FILE = `${STEPS_DIR}/UC-001-demo.steps.ts`;
 
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus, events, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, events, types, settings } = serviceHarness();
   const service = new DefaultStepDefinitionService(settings, fs, bus, silentLogger);
   return { service, fs, events, types };
 };

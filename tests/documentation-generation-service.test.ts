@@ -5,14 +5,12 @@ import {
   documentationFileName,
 } from "../src/application/content/documentation-content";
 import { DefaultDocumentationGenerationService } from "../src/application/services/documentation-generation-service";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
 import type { WorkspacePort } from "../src/application/ports/workspace-port";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { ok, type Result } from "../src/shared/result/result";
 import { joinVaultPath } from "../src/shared/utils/vault-path";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus } from "./fakes";
+import { serviceHarness } from "./fakes";
 
 const DOCS = DEFAULT_SETTINGS.paths.documentationPath;
 
@@ -35,13 +33,7 @@ class FakeWorkspace implements WorkspacePort {
 }
 
 const makeService = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus, events, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, events, types, settings } = serviceHarness();
   const workspace = new FakeWorkspace();
   const service = new DefaultDocumentationGenerationService(settings, fs, bus, workspace);
   return { service, fs, events, types, workspace };

@@ -320,6 +320,20 @@ describe("DefaultPrdService.deletePrd", () => {
         "",
       ].join("\n"),
     );
+  /** Seeds a `type: story-map` note at `path`, anchored to `product` (omitted → blank). */
+  const seedMapNote = (fs: FakeVaultFileSystem, path: string, product?: string) =>
+    fs.files.set(
+      path,
+      [
+        "---",
+        "id: SM-001",
+        "type: story-map",
+        "title: J",
+        ...(product === undefined ? [] : [`product: ${product}`]),
+        "---",
+        "",
+      ].join("\n"),
+    );
 
   it("deletes a leaf sub-PRD note and emits prd.deleted", async () => {
     const { service, fs, types, events } = build();
@@ -421,12 +435,7 @@ describe("DefaultPrdService.deletePrd", () => {
     // A valid map (anchored to the root, not PRD-001) plus an UNREADABLE generated
     // card note under its cards/ subtree — card notes can't anchor a PRD, so a bad
     // one must not block deleting an unrelated PRD.
-    fs.files.set(
-      "Story Maps/SM-001-j/SM-001-j.md",
-      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-000", "---", ""].join(
-        "\n",
-      ),
-    );
+    seedMapNote(fs, "Story Maps/SM-001-j/SM-001-j.md", "PRD-000");
     const cardPath = "Story Maps/SM-001-j/cards/SMC-001.md";
     fs.files.set(cardPath, "unreadable card note");
     failReadAt(fs, cardPath, appError("INIT_FAILED", "EIO card note"));
@@ -443,12 +452,7 @@ describe("DefaultPrdService.deletePrd", () => {
     seedSub(fs);
     // A map note the user placed under a top-level "cards" folder — NOT the generated
     // <map>/cards/ child — must still count as an anchor.
-    fs.files.set(
-      "Story Maps/cards/SM-001-j.md",
-      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-001", "---", ""].join(
-        "\n",
-      ),
-    );
+    seedMapNote(fs, "Story Maps/cards/SM-001-j.md", "PRD-001");
 
     const result = await service.deletePrd("PRD-001");
 
@@ -468,12 +472,7 @@ describe("DefaultPrdService.deletePrd", () => {
     const service = new DefaultPrdService(settings, fs, bus, silentLogger);
     seedRoot(fs);
     seedSub(fs);
-    fs.files.set(
-      "Planning/cards/Story Maps/SM-001-j/SM-001-j.md",
-      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-001", "---", ""].join(
-        "\n",
-      ),
-    );
+    seedMapNote(fs, "Planning/cards/Story Maps/SM-001-j/SM-001-j.md", "PRD-001");
 
     const result = await service.deletePrd("PRD-001");
 
@@ -489,10 +488,7 @@ describe("DefaultPrdService.deletePrd", () => {
     // A map with an omitted/blank `product` resolves to PRD-000 (ADR-0027 default),
     // so it anchors the root — it must NOT over-block deleting an unrelated sub-PRD.
     // The guard reuses parseStoryMapNote so this default can't drift from findAll.
-    fs.files.set(
-      "Story Maps/SM-001-j/SM-001-j.md",
-      ["---", "id: SM-001", "type: story-map", "title: J", "---", ""].join("\n"),
-    );
+    seedMapNote(fs, "Story Maps/SM-001-j/SM-001-j.md");
 
     const result = await service.deletePrd("PRD-001");
     expect(result.ok).toBe(true);

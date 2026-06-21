@@ -1,19 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultSuiteService } from "../src/application/services/suite-service";
 import { buildSuiteNote } from "../src/application/content/default-suites";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { buildNote } from "../src/shared/utils/frontmatter";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus } from "./fakes";
+import { serviceHarness } from "./fakes";
 
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, types, settings } = serviceHarness();
   const service = new DefaultSuiteService(settings, fs, bus);
   return { service, fs, types };
 };

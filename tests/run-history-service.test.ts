@@ -3,12 +3,10 @@ import {
   DefaultRunHistoryService,
   type RunHistoryEntry,
 } from "../src/application/services/run-history-service";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
 import { err } from "../src/shared/result/result";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import { FakeVaultFileSystem, serviceHarness, silentLogger } from "./fakes";
 
 const ROOT = "Test Evidence";
 
@@ -37,13 +35,7 @@ const seed = (fs: FakeVaultFileSystem, partition: string, content = evidenceNote
 };
 
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, settings } = serviceHarness();
   const service = new DefaultRunHistoryService(settings, fs, silentLogger);
   return { service, fs };
 };

@@ -28,6 +28,7 @@ import {
   FakeTemplateWriter,
   FakeVaultFileSystem,
   recordingEventBus,
+  serviceHarness,
   silentLogger,
 } from "./fakes";
 
@@ -36,12 +37,7 @@ const build = () => {
   const childProcess = new FakeChildProcessRunner();
   const templates = new FakeTemplateWriter();
   const commandSafety = new DefaultCommandSafetyPolicy();
-  const { bus, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { bus, types, settings } = serviceHarness();
   const runnerInstall = new DefaultRunnerInstallationService(
     templates,
     childProcess,

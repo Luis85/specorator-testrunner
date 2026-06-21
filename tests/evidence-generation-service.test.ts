@@ -5,22 +5,14 @@ import {
   wikilinkAlias,
 } from "../src/application/services/evidence-generation-service";
 import type { ImportedReport } from "../src/application/services/report-import-service";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
 import { buildUseCaseNote } from "../src/application/content/use-case-content";
 import { parseScenarioEvidenceBlock } from "../src/application/content/scenario-evidence-block";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { TestRun } from "../src/domain/entities/test-run";
 import type { UseCase } from "../src/domain/entities/use-case";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { parseFrontmatter } from "../src/shared/utils/frontmatter";
-import {
-  FakeDataStore,
-  FakePrdLookup,
-  FakeVaultFileSystem,
-  recordingEventBus,
-  silentLogger,
-} from "./fakes";
+import { FakePrdLookup, FakeVaultFileSystem, serviceHarness, silentLogger } from "./fakes";
 
 const EVIDENCE_PATH = vp("Test Evidence/2026/05/RUN-2026-05-31-100000/summary.md");
 const FIXED_NOW = new Date("2026-05-31T10:05:00.000Z");
@@ -66,13 +58,7 @@ const seedUseCase = (fs: FakeVaultFileSystem, id = "UC-001"): void => {
 };
 
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus, events, types } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, events, types, settings } = serviceHarness();
   const useCaseService = new DefaultUseCaseService(
     settings,
     fs,
