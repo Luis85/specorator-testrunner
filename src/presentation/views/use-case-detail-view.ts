@@ -11,8 +11,8 @@ import type { UseCase } from "../../domain/entities/use-case";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import type { EventBus } from "../../shared/event-bus/event-bus";
-import { type ChecklistRow } from "../settings/settings-rows";
 import type { RunLauncher } from "../run/run-launcher";
+import { type ChecklistRow, renderChecklist } from "./checklist";
 import { EditUseCaseModal } from "./edit-use-case-modal";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { openOrNotice, renderEmptyState, renderLoadError } from "./modal-helpers";
@@ -522,15 +522,8 @@ export class UseCaseDetailView extends LiveDashboardView {
     // event can trigger a full re-render in that window — detaching THIS
     // container and replacing it with a fresh one. Writing into the detached
     // node would render the outcome invisibly, so skip it; the freshly rendered
-    // row is ready for a re-click.
+    // row is ready for a re-click. Past that guard the shared primitive writes.
     if (!container.isConnected) return;
-    container.empty();
-    for (const row of rows) {
-      const el = container.createDiv({
-        cls: "e2e-test-hub-settings-check-row",
-        text: `${row.icon} ${row.text}`,
-      });
-      el.dataset.status = row.status;
-    }
+    renderChecklist(container, rows);
   }
 }

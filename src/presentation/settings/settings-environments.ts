@@ -12,12 +12,8 @@ import {
 import type { SutEnvironment, TestHubSettings } from "../../domain/settings/settings";
 import { AddEnvironmentModal } from "./add-environment-modal";
 import { type AuthVarPair, buildAuthEnv, settingsErrorMessages } from "./settings-rows";
-import {
-  CONFIRM_DISARM_MS,
-  markDestructive,
-  PERSIST_DEBOUNCE_MS,
-  type SettingsSectionContext,
-} from "./settings-shared";
+import { PERSIST_DEBOUNCE_MS, type SettingsSectionContext } from "./settings-shared";
+import { buttonComponentControl, wireConfirmAction } from "../views/confirm-action";
 
 /** Message for both the disabled-button tooltip and the late-click guard. */
 const ACTIVE_ENV_REMOVE_BLOCKED =
@@ -237,28 +233,23 @@ export class SutEnvironmentSection {
       button.buttonEl.setAttribute("aria-label", ACTIVE_ENV_REMOVE_BLOCKED);
       return;
     }
-    // Two-click confirm: the first click arms the button (warning style + new
-    // label), the second within CONFIRM_DISARM_MS removes; the armed state
-    // auto-disarms so a stray click can't linger as a hidden footgun.
-    let armed = false;
-    let disarmTimer = 0;
-    button.onClick(() => {
-      if (!armed) {
-        armed = true;
-        markDestructive(button);
-        button.setButtonText("Remove — click again to confirm");
-        window.clearTimeout(disarmTimer);
-        disarmTimer = window.setTimeout(() => {
-          armed = false;
-          button.setButtonText("Remove environment");
-          button.buttonEl.removeClass("mod-warning");
-        }, CONFIRM_DISARM_MS);
-        // Track it so a re-render / tab close clears it (no orphaned fire).
-        this.ctx.registerTimeout(disarmTimer);
-        return;
-      }
-      window.clearTimeout(disarmTimer);
-      void this.removeEnvironment(name);
+    // Two-click confirm (shared primitive): the first click arms the button
+    // (warning style + new label), the second within CONFIRM_DISARM_MS removes;
+    // the armed state auto-disarms so a stray click can't linger as a footgun.
+    // `destructiveWhenIdle: false` keeps the button benign-looking until armed.
+    wireConfirmAction(buttonComponentControl(button), {
+      config: {
+        idleLabel: "Remove environment",
+        armedLabel: "Remove — click again to confirm",
+        destructiveWhenIdle: false,
+      },
+      onConfirm: () => void this.removeEnvironment(name),
+      // Track the disarm timer so a re-render / tab close clears it.
+      scheduleDisarm: (run, ms) => {
+        const handle = window.setTimeout(run, ms);
+        this.ctx.registerTimeout(handle);
+        return () => window.clearTimeout(handle);
+      },
     });
   }
 

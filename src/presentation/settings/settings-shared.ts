@@ -1,12 +1,13 @@
 import type { App, ButtonComponent, Setting, SettingGroupItem } from "obsidian";
 
+import { renderChecklist } from "../views/checklist";
 import type { EnvironmentValidationService } from "../../application/services/environment-validation-service";
 import type { MaintenanceService } from "../../application/services/maintenance-service";
 import type { PipelineGenerationService } from "../../application/services/pipeline-generation-service";
 import type { RunnerInstallationService } from "../../application/services/runner-installation-service";
 import type { TestHubSettings } from "../../domain/settings/settings";
 import type { Result } from "../../shared/result/result";
-import { type ChecklistRow, checklistRow } from "./settings-rows";
+import { checklistRow } from "./settings-rows";
 
 /** What the settings tab needs from the plugin to read/persist settings. */
 export interface SettingsHost {
@@ -53,27 +54,15 @@ export interface SettingsSectionContext {
 /** How long to wait after the last keystroke before persisting (PRES-M1). */
 export const PERSIST_DEBOUNCE_MS = 600;
 
-/** How long a "… — click again to confirm" stays armed before reverting. */
-export const CONFIRM_DISARM_MS = 4000;
+/**
+ * Re-exported from the canonical checklist primitive so the settings tab + its
+ * extracted sections keep importing the one DOM writer from here
+ * ({@link import("../views/checklist")} owns it).
+ */
+export { renderChecklist };
 
 export const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
-
-/**
- * Styles a button as destructive across Obsidian versions. `setDestructive()`
- * is the 1.13 API; pre-1.13 builds only have the (now-deprecated)
- * `setWarning()`. Both are reached through a narrowed cast — so neither the
- * missing-method crash on pre-1.13 nor the no-deprecated lint on `setWarning()`
- * can bite — and both add the `mod-warning` class the disarm paths remove.
- */
-export const markDestructive = (button: ButtonComponent): void => {
-  const styler = button as unknown as {
-    setDestructive?: () => void;
-    setWarning?: () => void;
-  };
-  if (typeof styler.setDestructive === "function") styler.setDestructive();
-  else if (typeof styler.setWarning === "function") styler.setWarning();
-};
 
 /**
  * Builds a button row whose async action reports into a checklist container
@@ -123,17 +112,5 @@ export const runButtonAction = async (
     renderChecklist(resultEl, [checklistRow("error", `${catchPrefix}${errorText(error)}`)]);
   } finally {
     button.setDisabled(false);
-  }
-};
-
-/** Replaces a result container's content with the given checklist rows. */
-export const renderChecklist = (container: HTMLElement, rows: ChecklistRow[]): void => {
-  container.empty();
-  for (const row of rows) {
-    const el = container.createDiv({
-      cls: "e2e-test-hub-settings-check-row",
-      text: `${row.icon} ${row.text}`,
-    });
-    el.dataset.status = row.status;
   }
 };

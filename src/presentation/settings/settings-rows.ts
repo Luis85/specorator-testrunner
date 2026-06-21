@@ -4,39 +4,19 @@ import type {
 } from "../../application/services/environment-validation-service";
 import type { RepairResult } from "../../application/services/maintenance-service";
 import type { AppError } from "../../shared/errors/errors";
+import { type ChecklistRow, checklistRow } from "../views/checklist";
 
 /**
  * Pure view-model shaping for the settings tab's inline result/error surfaces
  * (Wave A), mirroring how dashboard-rows / suite-rows keep projections
  * unit-testable and free of Obsidian APIs. The tab renders these rows verbatim.
+ *
+ * The `ChecklistRow` view-model + ✓/✗/!/–/… vocabulary now live in the canonical
+ * {@link import("../views/checklist")} primitive (shared with the wizard, the
+ * Use Case detail view, and future surfaces); they are re-exported here so the
+ * settings importers that referenced them keep resolving.
  */
-
-/** Visual status of one inline checklist row; styles.css colours by it. */
-export type ChecklistStatus = "ok" | "error" | "warning" | "info" | "pending";
-
-export interface ChecklistRow {
-  icon: string;
-  text: string;
-  status: ChecklistStatus;
-}
-
-/**
- * Same icon vocabulary as the initialization wizard's progress rows
- * (✓ done / ✗ failed / – skipped / … running), so the two surfaces read alike.
- */
-const STATUS_ICONS: Record<ChecklistStatus, string> = {
-  ok: "✓",
-  error: "✗",
-  warning: "!",
-  info: "–",
-  pending: "…",
-};
-
-export const checklistRow = (status: ChecklistStatus, text: string): ChecklistRow => ({
-  status,
-  text,
-  icon: STATUS_ICONS[status],
-});
+export { type ChecklistRow, checklistRow };
 
 /**
  * Maps a runner validation result to checklist rows: a single ✓ row when the
