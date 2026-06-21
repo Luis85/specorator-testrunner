@@ -329,6 +329,25 @@ describe("reconcileCards", () => {
     );
   });
 
+  it("removes a duplicate-id note from disk when one of two same-id cards is dropped", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    // Two files under cards/ carry the same id SMC-001 (a user-duplicated note).
+    const pathA = joinVaultPath(CARDS_DIR, "SMC-001.md");
+    const pathB = joinVaultPath(CARDS_DIR, "SMC-001-copy.md");
+    seedNote(fs, cardNote({ id: "SMC-001", title: "A", path: pathA }));
+    seedNote(fs, cardNote({ id: "SMC-001", title: "B", path: pathB }));
+    const existing = await loadCards(fs, CARDS_DIR, MAP_ID); // 2 cards, same id, distinct paths
+    expect(existing).toHaveLength(2);
+    const model = [modelCard({ id: "SMC-001", title: "A" })]; // board keeps only ONE
+
+    await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, model, existing);
+
+    // Exactly one SMC-001 file remains — the dropped duplicate no longer reappears.
+    const remaining = [pathA, pathB].filter((p) => fs.files.has(String(p)));
+    expect(remaining).toHaveLength(1);
+  });
+
   it("updates order frontmatter when two cards in a cell are reordered", async () => {
     const fs = new FakeVaultFileSystem();
     const queue = new KeyedSerialQueue();

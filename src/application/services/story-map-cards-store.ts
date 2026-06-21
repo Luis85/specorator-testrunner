@@ -278,7 +278,8 @@ const cardPath = (
   cardsDir: VaultPath,
 ): VaultPath => paths.get(id) ?? joinVaultPath(cardsDir, cardFileName(id));
 
-/** Upserts every desired note (body-preserving), serialized per path. */
+/** Upserts every desired note (body-preserving), serialized per path. Returns the
+ *  set of paths actually written, so the delete pass can spare exactly them. */
 const writeDesiredCards = async (
   fs: VaultFileSystem,
   queue: KeyedSerialQueue,
@@ -286,27 +287,36 @@ const writeDesiredCards = async (
   desired: DesiredCard[],
   paths: Map<StoryMapCardId, VaultPath>,
   cardsDir: VaultPath,
-): Promise<Result<void>> => {
+): Promise<Result<Set<string>>> => {
+  const writtenPaths = new Set<string>();
   for (const card of desired) {
     const path = cardPath(card.id, paths, cardsDir);
     const written = await queue.run(String(path), () => upsertCard(fs, mapId, card, path));
     if (!written.ok) return written;
+    writtenPaths.add(String(path));
   }
-  return ok(undefined);
+  return ok(writtenPaths);
 };
 
-/** Deletes the note of every existing card no longer in `keep`, serialized per path. */
+/**
+ * Deletes every existing note whose path was NOT (re)written this reconcile,
+ * keyed by each note's OWN path — not the id→path map, which collapses two files
+ * that share an `SMC-*` id (a user-duplicated or hand-edited note) to one entry.
+ * Going per-occurrence means dropping one of two same-id cards from the board
+ * deletes that file instead of skipping both (which left the duplicate to
+ * reappear on the next reload).
+ */
 const deleteRemovedCards = async (
   fs: VaultFileSystem,
   queue: KeyedSerialQueue,
   existing: StoryMapCard[],
-  keep: Set<StoryMapCardId>,
-  paths: Map<StoryMapCardId, VaultPath>,
+  writtenPaths: Set<string>,
   cardsDir: VaultPath,
 ): Promise<Result<void>> => {
   for (const card of existing) {
-    if (card.id === undefined || keep.has(card.id)) continue;
-    const path = cardPath(card.id, paths, cardsDir);
+    if (card.id === undefined) continue;
+    const path = card.notePath ?? joinVaultPath(cardsDir, cardFileName(card.id));
+    if (writtenPaths.has(String(path))) continue; // this path was just (re)written — keep it
     const deleted = await queue.run(String(path), () => fs.deleteFile(path));
     if (!deleted.ok) return deleted;
   }
@@ -343,6 +353,5 @@ export const reconcileCards = async (
   const written = await writeDesiredCards(fs, queue, mapId, desired, paths, cardsDir);
   if (!written.ok) return written;
 
-  const keep = new Set(desired.map((d) => d.id));
-  return deleteRemovedCards(fs, queue, existing, keep, paths, cardsDir);
+  return deleteRemovedCards(fs, queue, existing, written.value, cardsDir);
 };
