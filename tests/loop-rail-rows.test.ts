@@ -63,25 +63,22 @@ describe("loopCapabilitiesFor", () => {
     expect(caps.stepsDefined).toBe(false);
   });
 
-  it.each<AutomationStatus>(["implemented", "passing"])(
-    "treats %s automation as steps-defined when a Feature exists",
-    (automationStatus) => {
-      // Only the run-PASSED statuses prove the step definitions exist: an undefined
-      // step always imports as `failed`, so a UC that reached passing/implemented
-      // cannot have run with a missing step definition.
-      const caps = loopCapabilitiesFor(
-        useCase({ featureFiles: [vp("Features/UC-001-happy.feature")], automationStatus }),
-      );
-      expect(caps.stepsDefined).toBe(true);
-    },
-  );
+  it("treats `passing` automation as steps-defined when a Feature exists", () => {
+    // `passing` is the only sound proof: it requires EVERY contributing scenario to
+    // have run and passed, so every step necessarily matched its definition.
+    const caps = loopCapabilitiesFor(
+      useCase({ featureFiles: [vp("Features/UC-001-happy.feature")], automationStatus: "passing" }),
+    );
+    expect(caps.stepsDefined).toBe(true);
+  });
 
-  it.each<AutomationStatus>(["planned", "failing"])(
+  it.each<AutomationStatus>(["planned", "failing", "implemented"])(
     "treats `%s` automation as steps-NOT-defined even with a Feature",
     (automationStatus) => {
-      // Neither proves stubs exist: `planned` is reached before any stub is written,
-      // and `failing` can come straight from missing stubs (undefined steps import
-      // as failed). The rail conservatively keeps the Generate-steps CTA for both.
+      // None proves all stubs exist: `planned` precedes any stub; `failing` can be
+      // a missing-step failure; `implemented` can carry a NEW unrun scenario whose
+      // steps aren't generated yet. The rail conservatively keeps the Generate-steps
+      // CTA for all three.
       const caps = loopCapabilitiesFor(
         useCase({ featureFiles: [vp("Features/UC-001-happy.feature")], automationStatus }),
       );
@@ -176,10 +173,12 @@ describe("projectLoopRail", () => {
   it("advances current to Run once steps are defined — Suite is optional and never blocks", () => {
     // Steps defined but NOT in any Suite (suite membership is by tag and not
     // reflected on the entity). The rail must skip the optional Suite node and
-    // make Run the next step, not strand the user on "Create suite".
+    // make Run the next step, not strand the user on "Create suite". `passing` is
+    // the only steps-defined status; with no recorded run on the entity this
+    // isolates the steps-defined-but-run-pending state the projection must handle.
     const uc = useCase({
       featureFiles: [vp("Features/UC-001-happy.feature")],
-      automationStatus: "implemented",
+      automationStatus: "passing",
     });
     const rail = projectLoopRail(uc);
     expect(rail.currentStage).toBe("run");
@@ -223,12 +222,27 @@ describe("projectLoopRail", () => {
   it("marks the Suite node done when the Use Case lists a suite (informational)", () => {
     const uc = useCase({
       featureFiles: [vp("Features/UC-001-happy.feature")],
-      automationStatus: "implemented",
+      automationStatus: "passing",
       suites: ["SUITE-smoke"],
     });
     const rail = projectLoopRail(uc);
     expect(rail.nodes.find((n) => n.stage === "suite")?.state).toBe("done");
     expect(rail.currentStage).toBe("run"); // still Run; suite never gates it
+  });
+
+  it("keeps Steps current at `implemented` with a recorded run — a new unrun scenario may lack stubs", () => {
+    // `implemented` can mean a previously-passing UC gained a NEW scenario whose
+    // steps aren't generated yet (old scenarios passed, the new one has no result).
+    // Even with a prior run recorded, the rail must NOT close — it offers Generate
+    // steps so the new scenario's stubs get written before the next run.
+    const uc = useCase({
+      featureFiles: [vp("Features/UC-001-happy.feature")],
+      automationStatus: "implemented",
+      lastTestRun: PASSED_RUN,
+    });
+    const rail = projectLoopRail(uc);
+    expect(rail.currentStage).toBe("steps");
+    expect(rail.currentAction).toBe("generate-steps");
   });
 
   it("closes the loop (no current, no action) once everything is done", () => {

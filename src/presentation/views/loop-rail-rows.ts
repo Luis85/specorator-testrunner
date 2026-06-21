@@ -84,31 +84,35 @@ const STAGE_ACTION: Record<LoopRailStage, LoopRailAction> = {
 };
 
 /**
- * Automation statuses that PROVE the Use Case's step definitions exist. Only the
- * run-PASSED statuses qualify: `passing` (every scenario passed) and `implemented`
- * (some passed, none failing). An undefined step ALWAYS imports as `failed`
- * (`cucumber-json-report-parser` puts `undefined`/`pending`/`ambiguous` in its
- * `FAILURE_STATUSES`), so a UC that reached `passing`/`implemented` cannot have run
- * with a missing step definition — those two statuses are sound proof.
+ * Automation statuses that PROVE every one of the Use Case's step definitions
+ * exists. Only `passing` qualifies: it is reached solely when EVERY contributing
+ * scenario has run AND its latest result is `passed` (a scenario with no history
+ * makes the Feature `partial`, not `passing`). Every passed scenario necessarily
+ * matched its step definitions, so `passing` is full proof.
  *
- * `planned` and `failing` are deliberately EXCLUDED, because neither proves the
- * step definitions exist:
+ * Every other status is EXCLUDED, because none proves all the stubs exist:
  * - `planned` ("has Gherkin steps, not yet run") is reached the instant Generate
  *   Feature writes scenarios, BEFORE any stub exists. The `missing-steps` gate in
  *   `computeAutomationStatus` measures empty **Gherkin** steps in the `.feature`
- *   (`scenario.steps.length === 0`), NOT the runner project's step-definition stubs,
- *   which the domain never inspects.
+ *   (`scenario.steps.length === 0`), NOT the runner project's step-definition stubs.
  * - `failing` can come straight from missing stubs: bddgen exits 0 while printing
- *   undefined steps, and the importer maps those undefined steps to `failed`, so a
- *   run with no step definitions lands on `failing` — indistinguishable from a
- *   genuine assertion failure on defined steps (Codex review).
+ *   undefined steps, and `cucumber-json-report-parser` maps `undefined`/`pending`/
+ *   `ambiguous` to `failed`, so a run with no step definitions lands on `failing`.
+ * - `implemented` is NOT full proof either: when a previously-passing UC gains a
+ *   NEW scenario, the history roll-up reads `partial`→`implemented` (old scenarios
+ *   passed, the new one has no result yet), but the new scenario can still lack its
+ *   stubs — it simply hasn't been RUN to surface the undefined step. Including it
+ *   would mark Steps done and, with a prior run/evidence recorded, close the loop
+ *   before the new scenario's steps are generated (Codex review).
  *
- * Since the status alone can't tell a missing-steps `failing` from a defined-but-
- * failing one, the rail takes the conservative reading (matching its `planned`
- * handling): at `planned`/`failing` the Steps node stays the current
- * "Generate step definitions" CTA. generate-steps is non-destructive (a no-op once
- * stubs exist) and the header's "Run Use Case" button still runs directly, so the
- * redundant CTA costs nothing; a `passing`/`implemented` run advances the rail.
+ * Since the status alone can't tell a fully-defined UC from one carrying an unrun,
+ * stub-less scenario, the rail takes the conservative reading (matching its
+ * `planned`/`failing` handling): at any non-`passing` status the Steps node stays
+ * the current "Generate step definitions" CTA. generate-steps is non-destructive
+ * (a no-op once stubs exist) and the header's "Run Use Case" button still runs
+ * directly, so the redundant CTA costs nothing; a full `passing` run advances the
+ * rail. (The exact alternative — gating on per-Feature missing-step detection —
+ * spawns the bddgen process per render and was deferred; this is the cheap floor.)
  *
  * Known limitation (accepted): `automationStatus` is derived from the UC's
  * frontmatter `featureFiles` (TraceabilityService), while the rail derives Feature
@@ -119,7 +123,6 @@ const STAGE_ACTION: Record<LoopRailStage, LoopRailAction> = {
  * still works, so this degrades gracefully rather than dead-ending.
  */
 const STEPS_DEFINED_STATUSES: ReadonlySet<AutomationStatus> = new Set<AutomationStatus>([
-  "implemented",
   "passing",
 ]);
 
