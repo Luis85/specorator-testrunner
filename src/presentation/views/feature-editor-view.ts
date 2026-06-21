@@ -1,4 +1,4 @@
-import { Notice, TextFileView, type WorkspaceLeaf } from "obsidian";
+import { Notice, setIcon, TextFileView, type WorkspaceLeaf } from "obsidian";
 
 import {
   parseFeature,
@@ -9,8 +9,12 @@ import type { StepDefinitionPattern } from "../../application/content/step-defin
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SpecificationService } from "../../application/services/specification-service";
 import type { FeatureSpecification } from "../../domain/entities/specification";
+import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
+import type { RunLauncher } from "../run/run-launcher";
+import { renderChecklist } from "./checklist";
 import { captureFocus, restoreFocus } from "./focus-restore";
+import { validateFeatureOutcome } from "./use-case-detail-rows";
 import {
   asDescriptionLines,
   newScenario,
@@ -30,8 +34,12 @@ import { renderScenarioCard } from "./feature-editor-scenario";
 export const FEATURE_EDITOR_VIEW_TYPE = "e2e-test-hub-feature-editor";
 
 export interface FeatureEditorDeps {
-  specifications: Pick<SpecificationService, "announceUpdated" | "listStepPatterns">;
+  specifications: Pick<SpecificationService, "announceUpdated" | "listStepPatterns" | "validate">;
   featureInsight: Pick<FeatureInsightService, "listKnownTags">;
+  // WS-C1 (03-§3.1): the editor is where authoring ends, so it must be where
+  // running begins. ▶ Run launches a Feature-scoped run through the SAME shared
+  // launcher every other surface uses (no run logic is forked).
+  runLauncher: Pick<RunLauncher, "launch">;
 }
 
 /**
@@ -222,6 +230,73 @@ export class FeatureEditorView extends TextFileView {
       this.mode = "raw";
       this.render();
     });
+
+    // WS-C1 forward affordances: ▶ Run (this feature) and ✓ Validate live in the
+    // toolbar so the loop flows from authoring straight into running, without a
+    // hop back to the detail view or an explorer. Both reuse existing paths — the
+    // shared run launcher and the SpecificationService.validate the detail view
+    // calls — so no run/validate logic is duplicated here.
+    const forward = bar.createDiv({ cls: "e2e-test-hub-feature-editor-toolbar-forward" });
+    const run = forward.createEl("button", {
+      cls: "mod-cta",
+      attr: { "aria-label": "Run this feature", "data-focus-key": "toolbar:run" },
+    });
+    // Lucide iconography (03-§3.7) over a glyph in the label: ▶ play / ✓ check.
+    setIcon(run.createSpan({ cls: "e2e-test-hub-feature-editor-toolbar-icon" }), "play");
+    run.createSpan({ text: "Run" });
+    run.addEventListener("click", () => void this.runFeature());
+    const validate = forward.createEl("button", {
+      attr: { "aria-label": "Validate this feature", "data-focus-key": "toolbar:validate" },
+    });
+    setIcon(validate.createSpan({ cls: "e2e-test-hub-feature-editor-toolbar-icon" }), "check");
+    validate.createSpan({ text: "Validate" });
+    validate.addEventListener("click", () => void this.validateFeature());
+  }
+
+  /** Launches a Feature-scoped run for the open file through the shared launcher. */
+  private async runFeature(): Promise<void> {
+    if (!this.file) {
+      new Notice("Open a .feature file before running it.");
+      return;
+    }
+    await this.deps.runLauncher.launch({ scope: "feature", target: this.file.path });
+  }
+
+  /**
+   * Validates the open Feature and renders the outcome inline using the shared
+   * checklist vocabulary (✓/✗/!), reusing the detail view's validate
+   * orchestration so the editor and detail view report identically.
+   */
+  private async validateFeature(): Promise<void> {
+    if (!this.file) {
+      new Notice("Open a .feature file before validating it.");
+      return;
+    }
+    const resultEl = this.ensureValidateResultEl();
+    renderChecklist(resultEl, [{ status: "pending", icon: "…", text: "Validating…" }]);
+    const path: VaultPath = unsafeVaultPath(this.file.path);
+    const rows = await validateFeatureOutcome(this.deps.specifications, path);
+    // A re-render (an external change, a mode toggle) may have detached the
+    // result area while we awaited — writing into it would be invisible.
+    if (!resultEl.isConnected) return;
+    renderChecklist(resultEl, rows);
+  }
+
+  /** The dedicated, persistent result area for the ✓ Validate toolbar action. */
+  private ensureValidateResultEl(): HTMLElement {
+    const existing = this.contentEl.querySelector<HTMLElement>(
+      ".e2e-test-hub-feature-editor-validate-result",
+    );
+    if (existing) return existing;
+    // Place it directly under the toolbar so the outcome reads where the action
+    // is; the toolbar is always the first child the render writes.
+    const result = this.contentEl.createDiv({
+      cls: "e2e-test-hub-feature-editor-validate-result",
+      attr: { "aria-live": "polite" },
+    });
+    const toolbar = this.contentEl.querySelector(".e2e-test-hub-feature-editor-toolbar");
+    if (toolbar?.nextSibling) this.contentEl.insertBefore(result, toolbar.nextSibling);
+    return result;
   }
 
   private renderRaw(root: HTMLElement): void {

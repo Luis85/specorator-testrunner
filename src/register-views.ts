@@ -116,6 +116,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         workspace,
         eventBus,
         runLauncher: s.runLauncher,
+        openCreateSuite: () => deps.openCreateSuite(),
         openArtifact: (id) => deps.openArtifact(id),
         openGenerateFeature: (useCase, onGenerated) =>
           generateFeatureForUseCase(
@@ -270,6 +271,8 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
       new FeatureEditorView(leaf, {
         specifications: s.specificationService,
         featureInsight: s.featureInsightService,
+        // WS-C1: ▶ Run (this feature) launches through the shared launcher.
+        runLauncher: s.runLauncher,
       }),
   );
   try {

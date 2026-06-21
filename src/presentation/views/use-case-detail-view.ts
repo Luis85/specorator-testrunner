@@ -14,6 +14,7 @@ import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
 import { type ChecklistRow, renderChecklist } from "./checklist";
 import { EditUseCaseModal } from "./edit-use-case-modal";
+import { type LoopRailAction, projectLoopRail, renderLoopRail } from "./loop-rail-rows";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { openOrNotice, renderEmptyState, renderLoadError } from "./modal-helpers";
 import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
@@ -108,6 +109,10 @@ export interface UseCaseDetailDeps {
   // the command palette's logic (no generation logic is duplicated here). The
   // `onGenerated` callback lets the view refresh once the Feature lands.
   openGenerateFeature: (useCase: UseCase, onGenerated: () => void) => void;
+  // WS-C1 loop rail: the "Create suite" next-step action opens the existing
+  // create-Suite flow (the rail reuses the same modal the dashboard/explorer
+  // open — no suite-creation logic is duplicated here).
+  openCreateSuite: () => void;
   // WS-A4 deep-link port: the PRD breadcrumb opens the SPECIFIC parent PRD
   // (01-§3.2) instead of the PRD explorer — one id-keyed navigation path.
   openArtifact: (id: string) => void;
@@ -244,6 +249,11 @@ export class UseCaseDetailView extends LiveDashboardView {
   ): void {
     const header = projectUseCaseHeader(useCase);
 
+    // WS-C1 loop rail: the forward-momentum spine above everything else. It
+    // reads the next obvious step off the Use Case's current capabilities and
+    // routes its live button to the SAME services/flows the buttons below use.
+    this.renderLoopRail(container, useCase);
+
     const headerEl = container.createDiv({ cls: "e2e-test-hub-uc-detail-header" });
     // Breadcrumb back to the explorer (entry-point review): the healthy detail
     // view shouldn't be a dead-end either — same call as the not-found branch.
@@ -310,6 +320,66 @@ export class UseCaseDetailView extends LiveDashboardView {
       .addEventListener("click", () =>
         this.deps.openGenerateFeature(useCase, () => void this.live.schedule()),
       );
+  }
+
+  /**
+   * Renders the WS-C1 loop rail (03-§3.1): the five-node next-step spine. The
+   * pure {@link projectLoopRail} decides done/current/todo + the next action from
+   * the Use Case alone; this thin render wires the current node's button to the
+   * existing flows so nothing is reinvented. The view's own REFRESH_ON
+   * subscriptions re-render the rail as the artifact gains each capability.
+   */
+  private renderLoopRail(container: HTMLElement, useCase: UseCase): void {
+    const wrap = container.createDiv();
+    const rail = wrap.createDiv();
+    // A persistent result area below the rail for the generate-steps outcome
+    // (the rail's only inline-reporting action); :empty CSS hides it until used.
+    const resultEl = wrap.createDiv({
+      cls: "e2e-test-hub-uc-detail-feature-result",
+      attr: { "aria-live": "polite" },
+    });
+    renderLoopRail(rail, projectLoopRail(useCase), (action) =>
+      this.runLoopAction(action, useCase, resultEl),
+    );
+  }
+
+  /**
+   * Dispatches a loop-rail next-step action to the SAME services/flows the
+   * detail view's per-row buttons use (no run/generate/suite logic is forked):
+   * Feature → the generate-Feature flow; Steps → generate step definitions for
+   * the Use Case's first Feature; Suite → the create-Suite modal; Run → a
+   * Use Case-scoped run through the shared launcher.
+   */
+  // Untested view dispatch — its CRAP score is high only because views are
+  // unit-test-exempt (AGENTS.md, 0 coverage); the per-action routing is a flat
+  // switch (cyclomatic 6), not logic density. The action MODEL is tested in
+  // loop-rail-rows.test.ts; this just wires each to an existing flow.
+  // fallow-ignore-next-line complexity
+  private runLoopAction(
+    action: Exclude<LoopRailAction, null>,
+    useCase: UseCase,
+    resultEl: HTMLElement,
+  ): void {
+    switch (action) {
+      case "generate-feature":
+        this.deps.openGenerateFeature(useCase, () => void this.live.schedule());
+        return;
+      case "generate-steps": {
+        // The Steps node only surfaces once a Feature exists; generate against
+        // the first feature file (the common single-feature case) and render the
+        // outcome inline, reusing the per-row orchestration. A refresh follows so
+        // the rail re-projects once the steps land (the event also fires).
+        const featurePath = useCase.featureFiles[0];
+        if (featurePath !== undefined) void this.generateStepDefinitions(featurePath, resultEl);
+        return;
+      }
+      case "create-suite":
+        this.deps.openCreateSuite();
+        return;
+      case "run":
+        void this.deps.runLauncher.launch({ scope: "use-case", target: useCase.id });
+        return;
+    }
   }
 
   /**
