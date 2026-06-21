@@ -85,7 +85,7 @@ The five reviews independently converged on a small set of systemic issues. Thes
 | **Duplicated components** — 3 status pills, 5 bordered panels, 12 focus rings, 2 banners | 02-H2/H3/H4/M5 | One `spec-*` component library (WS-A2) |
 | **Three status vocabularies** (planning vs automation vs run vs PRD) with three colour rules | 02; 03-R8; 04-M6; 05-m6 | One shared **status-chip component**; keep the *semantics* distinct (planning ≠ automation, per CONTEXT.md), unify the *rendering* (WS-A2) |
 | **Full-repaint on every change** resets scroll/hover, flickers, blocks a viewport | 04-C2; 05-m3 | A reusable **reconciling render** helper (WS-A3); keystone for the board |
-| **Dead artifact graph** — no deep-linking, PRD→UC, board card→UC, breadcrumbs | 01-C2; 04-M1; 05-M5 | One `openArtifact(id)` port + `breadcrumbFor()` projection (WS-A4) |
+| **Dead artifact graph** — no deep-linking, PRD→UC, board card→UC, breadcrumbs | 01-C2; 04-M1; 05-M5 | One deep-link port over a **discriminated-union target** (artifact-id / feature-/suite-/evidence-path / run-id) + `breadcrumbFor()` projection (WS-A4) |
 | **No true home; 11 co-equal leaves** | 01-C1/M3/M4; 03-§3.8 | The Test Hub home shell + section rail (WS-B1) |
 | **Inconsistent destructive + validation UX** (PRD delete has no confirm) | 05-M3/M6; 01 | Extract the proven two-click confirm + checklist-validation as shared primitives (WS-A3) |
 | **Onboarding fragmented across 3 systems** | 01-C3 | One onboarding orchestrator (WS-B2) |
