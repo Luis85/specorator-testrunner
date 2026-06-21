@@ -232,7 +232,7 @@ Note this *unifies* the spine motif: the same left edge that carries hover-accen
 ## 5. Open questions for the product owner
 
 1. ~~**Brand colour**~~ — **DECIDED (§0/T2): a real Specorator hue (teal) as the *default***, not native-only and not opt-in. Shipped in A1.
-2. **Plugin id rename:** `e2e-test-hub` → `specorator-testrunner` is a breaking migration (settings/data path). In scope for this redesign, or keep id and rename only classes/UI?
+2. ~~**Plugin id rename**~~ — **DECIDED (§0/T2): keep the plugin id `e2e-test-hub`** (renaming it is a breaking settings/data-path migration — out of scope). The redesign renames only **classes (`spec-*`) and UI copy/wordmark** to "Specorator"; do **not** touch the manifest id or migrate the data path.
 3. **Class-prefix churn:** OK to migrate `e2e-test-hub-*` → `spec-*` for shared primitives now (one big-ish PR series), or stage it so existing snapshot/integration tests that assert class names migrate incrementally?
 4. **The accent spine as house style:** is the left-edge accent (proven on Story Map cards) the identity motif you want everywhere, or do you prefer a top-border / corner-mark / icon-lockup signature?
 5. **Story Map pastels:** the five card-type hexes are the only true brand colours and must stay light in both themes (dark-ink contrast). Should these become *the* Specorator palette seed, or stay isolated to the board?
