@@ -388,6 +388,7 @@ export class DefaultStoryMapService implements StoryMapService {
               path,
               folderPath,
               cardsDir,
+              id,
               folderPreexisted,
               cardsDirPreexisted,
             );
@@ -515,16 +516,21 @@ export class DefaultStoryMapService implements StoryMapService {
    * failed to create. When THIS call created the map folder, dropping the folder
    * removes the note and any partial card notes at once; otherwise (a pre-existing
    * folder, e.g. attachments left by a prior map that reused this path) remove just
-   * the note and the cards/ folder this call created, preserving the rest.
+   * the note and the card notes this call wrote, preserving the rest.
    *
-   * `cardsDirPreexisted` guards the latter case: a cards/ subfolder that was
-   * already there (with unrelated card notes or user files) is left untouched —
-   * recursively deleting it would destroy data this attempt never wrote.
+   * `cardsDirPreexisted` guards the cards/ subfolder: when this attempt created it,
+   * dropping it whole is safe; when it was already there (unrelated card notes or
+   * user files), recursively deleting it would destroy data this attempt never
+   * wrote — so instead delete only the notes THIS attempt wrote. Those carry
+   * `map: <mapId>` with the freshly-minted id no pre-existing note can hold, so
+   * `loadCards(…, mapId)` selects exactly them (and yields each note's actual
+   * path, even if reconcile wrote it before a later card failed).
    */
   private async rollbackFailedCreate(
     notePath: VaultPath,
     folderPath: VaultPath,
     cardsDir: VaultPath,
+    mapId: string,
     folderPreexisted: boolean,
     cardsDirPreexisted: boolean,
   ): Promise<void> {
@@ -533,10 +539,15 @@ export class DefaultStoryMapService implements StoryMapService {
       return;
     }
     await this.fs.deleteFile(notePath);
-    // Only drop cards/ when this attempt created it; a pre-existing one may hold
-    // unrelated notes.
-    if (!cardsDirPreexisted && (await this.fs.exists(cardsDir))) {
-      await this.fs.deleteFolder(cardsDir);
+    if (!cardsDirPreexisted) {
+      // This attempt created cards/: drop it whole.
+      if (await this.fs.exists(cardsDir)) await this.fs.deleteFolder(cardsDir);
+      return;
+    }
+    // Pre-existing cards/: delete only this attempt's notes, leaving the rest.
+    const ours = await loadCards(this.fs, cardsDir, mapId);
+    for (const card of ours) {
+      if (card.notePath !== undefined) await this.fs.deleteFile(card.notePath);
     }
   }
 

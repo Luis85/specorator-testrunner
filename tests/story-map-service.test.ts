@@ -212,54 +212,77 @@ describe("DefaultStoryMapService.create", () => {
     expect(result.ok && result.value.cards).toHaveLength(1);
   });
 
-  it("rolls back the created note (preserving pre-existing files) when an initial card write fails", async () => {
-    const { service, fs } = build();
-    // A prior map left an attachment in the folder this create reuses (the id/path
-    // freed by a delete that preserved attachments).
-    const folder = "Story Maps/SM-001-map";
-    await fs.createFolder(unsafeVaultPath(folder));
-    fs.files.set(`${folder}/diagram.png`, "binary");
-    // Make the initial card-note write fail after the map note is written.
-    fs.failOn = { path: `${folder}/cards/SMC-001.md`, message: "disk full" };
-
-    const result = await service.create({
+  // The reused folder a failed create cleans up after (the id/path freed by a
+  // prior delete that preserved sibling files).
+  const ROLLBACK_FOLDER = "Story Maps/SM-001-map";
+  const authorCard = (id: string, title: string) => ({
+    id,
+    title,
+    activity: "Author spec",
+    slice: "Walking skeleton",
+    tags: [] as string[],
+  });
+  const createMapWith = (
+    service: ReturnType<typeof build>["service"],
+    cards: ReturnType<typeof authorCard>[],
+  ) =>
+    service.create({
       title: "Map",
       activities: ["Author spec"],
       slices: ["Walking skeleton"],
-      cards: [
-        { id: "SMC-001", title: "X", activity: "Author spec", slice: "Walking skeleton", tags: [] },
-      ],
+      cards,
     });
+
+  it("rolls back the created note (preserving pre-existing files) when an initial card write fails", async () => {
+    const { service, fs } = build();
+    await fs.createFolder(unsafeVaultPath(ROLLBACK_FOLDER));
+    fs.files.set(`${ROLLBACK_FOLDER}/diagram.png`, "binary");
+    // Make the initial card-note write fail after the map note is written.
+    fs.failOn = { path: `${ROLLBACK_FOLDER}/cards/SMC-001.md`, message: "disk full" };
+
+    const result = await createMapWith(service, [authorCard("SMC-001", "X")]);
 
     expect(result.ok).toBe(false);
     // The just-created map note is gone (no phantom map), but the pre-existing
     // attachment in the reused folder survives.
-    expect(fs.files.has(`${folder}/SM-001-map.md`)).toBe(false);
-    expect(fs.files.has(`${folder}/diagram.png`)).toBe(true);
+    expect(fs.files.has(`${ROLLBACK_FOLDER}/SM-001-map.md`)).toBe(false);
+    expect(fs.files.has(`${ROLLBACK_FOLDER}/diagram.png`)).toBe(true);
   });
 
   it("preserves a pre-existing cards/ folder when an initial card write fails", async () => {
     const { service, fs } = build();
     // The reused folder ALREADY has a cards/ subfolder holding an unrelated note.
-    const folder = "Story Maps/SM-001-map";
-    await fs.createFolder(unsafeVaultPath(`${folder}/cards`));
-    fs.files.set(`${folder}/cards/SMC-099.md`, "pre-existing card body");
-    // The initial card-note write fails after the map note is written.
-    fs.failOn = { path: `${folder}/cards/SMC-001.md`, message: "disk full" };
+    await fs.createFolder(unsafeVaultPath(`${ROLLBACK_FOLDER}/cards`));
+    fs.files.set(`${ROLLBACK_FOLDER}/cards/SMC-099.md`, "pre-existing card body");
+    fs.failOn = { path: `${ROLLBACK_FOLDER}/cards/SMC-001.md`, message: "disk full" };
 
-    const result = await service.create({
-      title: "Map",
-      activities: ["Author spec"],
-      slices: ["Walking skeleton"],
-      cards: [
-        { id: "SMC-001", title: "X", activity: "Author spec", slice: "Walking skeleton", tags: [] },
-      ],
-    });
+    const result = await createMapWith(service, [authorCard("SMC-001", "X")]);
 
     expect(result.ok).toBe(false);
     // No phantom map note, but the pre-existing card note is NOT recursively wiped.
-    expect(fs.files.has(`${folder}/SM-001-map.md`)).toBe(false);
-    expect(fs.files.get(`${folder}/cards/SMC-099.md`)).toBe("pre-existing card body");
+    expect(fs.files.has(`${ROLLBACK_FOLDER}/SM-001-map.md`)).toBe(false);
+    expect(fs.files.get(`${ROLLBACK_FOLDER}/cards/SMC-099.md`)).toBe("pre-existing card body");
+  });
+
+  it("removes this attempt's partial card notes (not pre-existing ones) when a later initial card fails", async () => {
+    const { service, fs } = build();
+    await fs.createFolder(unsafeVaultPath(`${ROLLBACK_FOLDER}/cards`));
+    fs.files.set(`${ROLLBACK_FOLDER}/cards/SMC-099.md`, "pre-existing card body");
+    // The SECOND initial card write fails, AFTER the first (SMC-001) was written.
+    fs.failOn = { path: `${ROLLBACK_FOLDER}/cards/SMC-002.md`, message: "disk full" };
+
+    const result = await createMapWith(service, [
+      authorCard("SMC-001", "A"),
+      authorCard("SMC-002", "B"),
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(fs.files.has(`${ROLLBACK_FOLDER}/SM-001-map.md`)).toBe(false);
+    // This attempt's partial note is removed (a later create reusing the id can't
+    // silently adopt it)...
+    expect(fs.files.has(`${ROLLBACK_FOLDER}/cards/SMC-001.md`)).toBe(false);
+    // ...while the unrelated pre-existing note is preserved.
+    expect(fs.files.get(`${ROLLBACK_FOLDER}/cards/SMC-099.md`)).toBe("pre-existing card body");
   });
 
   it("collapses a multi-line title into a single parser-safe line", async () => {
