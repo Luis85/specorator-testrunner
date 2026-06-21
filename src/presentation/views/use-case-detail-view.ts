@@ -29,6 +29,7 @@ import {
   prdBreadcrumbLabel,
   projectFeatureRows,
   projectUseCaseHeader,
+  stepsAreDefined,
   storyMapBacklinks,
   validateFeatureOutcome,
   type FeatureRow,
@@ -253,11 +254,13 @@ export class UseCaseDetailView extends LiveDashboardView {
     // The filename listing is the source of truth for the loop rail; fall back to
     // the entity's own links only when the listing itself failed.
     const railPaths = featurePaths ?? useCase.featureFiles;
-    // The REAL "steps defined" signal: do all the listed Features' Gherkin steps
-    // have matching step definitions? A static read of the step-definition patterns
-    // (no bddgen spawn, no side effects), so it is safe on every render and tells
-    // the rail the truth the automationStatus proxy could not (Codex review).
-    const stepsDefined = await this.deps.specificationService.allStepsDefined(railPaths);
+    // The "steps defined" signal: the static step-definition coverage check (no
+    // bddgen spawn, no side effects — safe on every render), rescued by a passing
+    // run for Features the heuristic can't fully model (see stepsAreDefined).
+    const stepsDefined = stepsAreDefined(
+      await this.deps.specificationService.allStepsDefined(railPaths),
+      useCase.automationStatus,
+    );
 
     this.renderHeader(container, useCase, prdTitleById, backlinks, railPaths, stepsDefined);
     this.renderFeatures(container, useCase, listed);

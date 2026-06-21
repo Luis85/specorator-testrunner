@@ -10,7 +10,7 @@ import type {
   GenerateStepDefinitionsResult,
   StepDefinitionService,
 } from "../../application/services/step-definition-service";
-import type { UseCase } from "../../domain/entities/use-case";
+import type { AutomationStatus, UseCase } from "../../domain/entities/use-case";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import { type ChecklistRow, checklistRow } from "./checklist";
 
@@ -113,6 +113,29 @@ export const projectFeatureRows = (
   features
     .filter((feature) => useCaseIdFromPath(feature.path) === useCaseId)
     .map((feature) => ({ path: feature.path, label: feature.label }));
+
+/**
+ * The loop rail's `stepsDefined` fact, combining the two signals the view holds:
+ *
+ * - `heuristicAllDefined` — `SpecificationService.allStepsDefined`, the static
+ *   pattern matcher. Accurate and cheap, but it deliberately does NOT model some
+ *   valid Cucumber constructs (custom parameter types, optional/alternative syntax,
+ *   runtime-built definitions — see `step-definitions.ts`), so it can OVER-report
+ *   missing steps for a Feature that nonetheless runs.
+ *
+ * - `automationStatus === "passing"` — a sound run-proof: `passing` is reached only
+ *   when EVERY contributing scenario has run and passed, and an undefined step always
+ *   imports as `failed`, so a passing Use Case's steps provably all exist. This rescues
+ *   the heuristic's false-misses for already-runnable Features (Codex review) so the
+ *   rail isn't stranded on "Generate step definitions" for a Feature that clearly runs.
+ *
+ * Only `passing` is OR-ed in — it is the one status that proves coverage; `planned`/
+ * `failing`/`implemented` can each carry an undefined step, so they never count.
+ */
+export const stepsAreDefined = (
+  heuristicAllDefined: boolean,
+  automationStatus: AutomationStatus,
+): boolean => heuristicAllDefined || automationStatus === "passing";
 
 /** A feature-level exclusion badge (e.g. `@wip`, `@quarantine`) for the health line. */
 export interface FeatureHealthBadge {
