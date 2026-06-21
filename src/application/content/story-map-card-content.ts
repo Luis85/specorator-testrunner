@@ -1,5 +1,9 @@
 import { buildNote, parseNote, type FrontmatterValue } from "../../shared/utils/frontmatter";
-import { isCardType, type StoryMapCardNote } from "../../domain/entities/story-map-card";
+import {
+  isCardType,
+  isStoryMapCardId,
+  type StoryMapCardNote,
+} from "../../domain/entities/story-map-card";
 import { isCardStatus, isValidUseCaseRef } from "../../domain/entities/story-map";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 
@@ -35,7 +39,10 @@ const intOrUndef = (v: unknown): number | undefined => {
 
 export const parseCardNote = (content: string, path: VaultPath): StoryMapCardNote | null => {
   const { frontmatter: fm, body } = parseNote(content);
-  if (fm.type !== "story-map-card" || typeof fm.id !== "string") return null;
+  // Reject a malformed id here: it becomes the card's file name / queue key, so a
+  // hand-edited `id` with `/` or `..` would otherwise escape cards/ or make
+  // joinVaultPath throw on the next save. An unparsable note is simply ignored.
+  if (fm.type !== "story-map-card" || !isStoryMapCardId(fm.id)) return null;
   const str = (v: unknown): string => (typeof v === "string" ? v : "");
   const arr = (v: string | string[] | undefined): string[] =>
     Array.isArray(v) ? v : typeof v === "string" && v !== "" ? [v] : [];

@@ -16,8 +16,16 @@ export const CARD_TYPE_COLORS: Record<CardType, string> = {
 };
 
 export type StoryMapCardId = string; // "SMC-NNN"
-// fallow-ignore-next-line unused-export
 export const STORY_MAP_CARD_ID_RE = /^SMC-(\d{3,})$/;
+
+/**
+ * True when `value` is a well-formed `SMC-NNN` card id. Card ids become file
+ * names (`cardFileName`) and queue keys, so an id carrying `/` or `..` would
+ * escape the cards/ folder or make `joinVaultPath` throw — reject such ids at
+ * the parse boundary before they reach the store.
+ */
+export const isStoryMapCardId = (value: unknown): value is StoryMapCardId =>
+  typeof value === "string" && STORY_MAP_CARD_ID_RE.test(value);
 
 /** Persisted card-note: placement + planning attributes + body (ADR-0030). */
 export interface StoryMapCardNote {

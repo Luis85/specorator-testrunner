@@ -46,6 +46,14 @@ describe("card note content", () => {
     const bad = buildCardNote(card).replace("card_type: task", "card_type: epic");
     expect(parseCardNote(bad, card.path)?.cardType).toBe("task");
   });
+  it("rejects a card id that is not SMC-NNN (unsafe file name / path traversal)", () => {
+    // The id becomes the card's file name; a hand-edited `/` or `..` would escape
+    // cards/ or throw in joinVaultPath, so an invalid id makes the note unparsable.
+    for (const badId of ["../evil", "SMC-1/x", "SMC-01", "nope"]) {
+      const note = buildCardNote(card).replace("id: SMC-001", `id: ${badId}`);
+      expect(parseCardNote(note, card.path)).toBeNull();
+    }
+  });
   it("rejects fractional points (drops to undefined)", () => {
     const frac = buildCardNote(card).replace("points: 3", "points: 2.5");
     expect(parseCardNote(frac, card.path)?.points).toBeUndefined();
