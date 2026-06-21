@@ -22,8 +22,11 @@ implementation subagents. The detail lives in the source reports — cited as `[
 **Non-negotiable constraints (every workstream honours these):**
 - Hexagonal architecture: presentation stays a **thin shell** over pure, unit-tested
   modules (ADR-0029, AGENTS.md). New logic lands in pure projections/helpers with tests.
-- **Native theming only** — colours/spacing derive from Obsidian CSS variables; no
-  hard-coded palette except the deliberate Story-Map pastels.
+- **Native theming only** — all **non-brand** colours/spacing derive from Obsidian CSS
+  variables. The **two** sanctioned hard-coded exceptions are the deliberate Story-Map pastels
+  and the **single decided `--spec-accent` brand teal** (T2, §0 — a contrast-tuned, adjustable
+  token); A1 implementers ship that literal brand fallback by design. Everything else derives
+  from theme vars.
 - eslint forbids `as` casts and `!`; zero raw HTML (`createEl`/`createDiv`).
 - Desktop-only. Colour is never the sole signal (the `[data-status]` reinforcement
   contract is preserved and extended).

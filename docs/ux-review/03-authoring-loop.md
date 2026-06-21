@@ -139,8 +139,15 @@ Stay 100% on Obsidian CSS variables (the contract), but layer a *light, consiste
 - **Lucide iconography** already used in the console (`setIcon`) extended to a small, consistent set per stage (use-case, feature, suite, run, evidence) used in the loop rail, tab icons, and headers — the "light identity" is largely *consistent iconography + one accent system*, which costs no theme divergence.
 - **Status as a chip, not a word in a cell** — a single shared status-chip component (text + accent dot) across UC table, suite table, console, evidence. One micro-component unifies the visual language.
 
-### 3.8 IA restructure: one **Workbench** leaf with stages, fewer orphan explorers
-The five separate leaves (Use Cases, Suites, Console, Evidence, plus detail) force the user to assemble the loop themselves. Consider a **single Workbench view** with a left stage-rail (Use Cases · Suites · Runs · Evidence) and the detail/editor in the main pane — so the loop lives in one window the way an IDE does, instead of leaves the user opens and re-finds. (Editor stays the native `.feature` handler; the Workbench links into it.) This is the most ambitious IA move and the one most aligned with "bold redesign."
+### 3.8 IA restructure — SUPERSEDED by the decided Test Hub shell (B1/T1)
+**This section's "separate Workbench leaf" is superseded** by §0/T1 in `00-redesign-plan.md`: the
+decided IA is **one Test Hub shell with a Plan/Build/Run/Review rail** (01-§3.1), not a second
+parallel leaf. The authoring loop is **not** its own shell — it lives *inside* that one shell:
+Use Cases/Features under **Build**, Suites/Console under **Run**, Evidence/Runs under **Review**
+(the editor stays the native `.feature` handler the shell links into). B1 implementers must target
+the single Test Hub shell; treat 03-R9 below as "host the loop in the B1 shell," not "build a
+separate Workbench." The IDE-like "loop in one window" intent is preserved — it is realised by B1,
+not by a competing leaf.
 
 ---
 
@@ -156,7 +163,7 @@ The five separate leaves (Use Cases, Suites, Console, Evidence, plus detail) for
 | R6 | **Tag-expression builder + "in N suites" in editor + tag glossary** (§3.4) | M | M | Low for the builder (reuses `listKnownTags` + the live preview); **Med for "in N suites"** — needs a NEW per-scenario suite-membership projection (evaluate each suite's expression against the scenario's tags), not `scenarioCounter`'s corpus aggregate (Codex catch) | `FeatureInsightService` (tags); **new** suite-membership projection over the suite set |
 | R7 | **Inline rename-identity confirm** (§3.5) — soften copy to "has recorded history", OR add a history-count API if an exact weight is wanted (current service caps `recent` at history depth — Codex catch) | M | M | Med — editor commit is currently fire-and-forget on blur | Scenario History (+ optional new count API); feature-editor commit path |
 | R8 | **Light identity system:** shared status-chip, run-state accent token, Gherkin rhythm, consistent stage icons (§3.7) | M | M | Low — pure CSS/var + small shared component; theme-safe | styles.css; keep `var(--…)` contract |
-| R9 | **Single Workbench leaf** with stage-rail unifying the five surfaces (§3.8) | H | H | High — large IA change; risk of breaking native-leaf expectations | All views; main.ts wiring; ADR likely needed |
+| R9 | **= B1 (the decided Test Hub shell)** — host the loop's surfaces under Build/Run/Review in the one shell; NOT a separate Workbench leaf (§3.8 superseded, T1) | H | H | High — large IA change; ADR for the shell | **B1** (00-plan); all views; main.ts wiring |
 | R10 | **Per-status KPI drill-down** + Suite/UC create open with a Run affordance (§Mi1, Mi2) | L | L | Low | DashboardNavTarget union; explorer filter param |
 
 Suggested sequencing: **R1 → R2 → R5 → R4 → R6/R8 → R3 → R7 → R9**. R1, R2, R5, R8 are high-value, low-risk and establish the redesign vocabulary; R3 and R9 are the ambitious payoffs that the early wins de-risk.
