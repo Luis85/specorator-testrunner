@@ -95,23 +95,31 @@ export class DefaultPersonaService implements PersonaService {
     return ok(persona);
   }
 
+  /**
+   * Runs `fn` with the current persona list under the persona-wide mutation key, so
+   * a find/check + create/write is one atomic step against concurrent persona
+   * mutations. Callers must NOT re-enter the key (e.g. via `this.create`); call
+   * `createUnlocked` directly — re-entering would deadlock the same-key serial chain.
+   */
+  private withPersonaList<T>(fn: (personas: Persona[]) => Promise<Result<T>>): Promise<Result<T>> {
+    return this.noteWrites.run(PERSONA_MUTATE_KEY, async () => {
+      const all = await this.findAll();
+      if (!all.ok) return err(all.error);
+      return fn(all.value);
+    });
+  }
+
   async findOrCreateByName(name: string): Promise<Result<Persona>> {
     const trimmed = name.trim();
     if (trimmed === "") {
       return err(appError("VALIDATION_FAILED", "A Persona name is required."));
     }
-
     // Find-then-maybe-create under ONE hold of the persona-wide key so two
     // concurrent calls for the same name can't both miss the find and create
-    // duplicate notes. We call createUnlocked directly (NOT this.create, which
-    // re-enters the same key and would deadlock the same-key serial chain).
-    return this.noteWrites.run(PERSONA_MUTATE_KEY, async () => {
-      const existing = await this.findAll();
-      if (!existing.ok) return err(existing.error);
-
-      const match = existing.value.find((p) => p.name === trimmed);
+    // duplicate notes.
+    return this.withPersonaList(async (personas) => {
+      const match = personas.find((p) => p.name === trimmed);
       if (match) return ok(match);
-
       return this.createUnlocked(trimmed);
     });
   }
@@ -151,32 +159,27 @@ export class DefaultPersonaService implements PersonaService {
       return err(appError("VALIDATION_FAILED", "A Persona name is required."));
     }
 
-    const preLock = await this.findById(id);
-    if (!preLock.ok) return err(preLock.error);
-    if (preLock.value === null) {
-      return err(appError("VALIDATION_FAILED", `Unknown Persona: ${id}`));
-    }
-    const notePath = preLock.value.path;
-
-    return this.noteWrites.run(notePath, async () => {
-      // Re-read inside the lock to get the freshest state.
-      const fresh = await this.findById(id);
-      if (!fresh.ok) return err(fresh.error);
-      if (fresh.value === null) {
+    // Serialize under the persona-wide key (like create/findOrCreateByName) so the
+    // duplicate-name check + write is atomic against concurrent creates/renames.
+    // Otherwise two notes could end up with the same `name`, and findOrCreateByName
+    // (first sorted id wins) would later resolve a Story Map user to the wrong one.
+    return this.withPersonaList(async (personas) => {
+      const target = personas.find((p) => p.id === id);
+      if (target === undefined) {
         return err(appError("VALIDATION_FAILED", `Unknown Persona: ${id}`));
       }
-      const existing = fresh.value;
+      if (personas.some((p) => p.id !== id && p.name === trimmed)) {
+        return err(appError("VALIDATION_FAILED", `A Persona named "${trimmed}" already exists.`));
+      }
 
-      // Rebuild the note from the current entity, swapping in the new name.
-      const updated: Persona = { ...existing, name: trimmed };
-      const content = buildPersonaNote(updated);
-      const written = await this.fs.writeFile(notePath, content);
+      const updated: Persona = { ...target, name: trimmed };
+      const written = await this.fs.writeFile(target.path, buildPersonaNote(updated));
       if (!written.ok) return err(written.error);
 
       await this.eventBus.publish(
         createEvent(
           "persona.updated",
-          { personaId: id, name: trimmed, path: notePath },
+          { personaId: id, name: trimmed, path: target.path },
           { correlationId: id },
         ),
       );

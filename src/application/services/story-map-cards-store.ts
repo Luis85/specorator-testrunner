@@ -339,8 +339,12 @@ export const reconcileCards = async (
   existing: StoryMapCard[],
 ): Promise<Result<void>> => {
   // Reserve every id whose file already occupies cards/ so a newly-minted id can
-  // never overwrite a pre-existing (possibly unparsable / foreign) note.
+  // never overwrite a pre-existing (possibly unparsable / foreign) note. Fail closed
+  // on a real list error BEFORE allocating/writing — otherwise we'd write partial
+  // card notes and only fail later at reloadCards, leaving side effects from an
+  // operation reported as failed. A genuinely-missing folder is benign (none yet).
   const listed = await fs.listFilesRecursive(cardsDir);
+  if (!listed.ok && listed.error.code !== "RUNNER_MISSING_FILE") return listed;
   const reserved = listed.ok ? occupiedCardIds(listed.value) : [];
   const desired = withCellOrder(allocateIds(model, existing, reserved));
 

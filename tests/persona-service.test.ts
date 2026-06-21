@@ -262,6 +262,28 @@ describe("DefaultPersonaService", () => {
     if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
   });
 
+  it("rename rejects a name already used by another persona (no duplicate names)", async () => {
+    const { svc } = build();
+    await svc.create({ name: "Home Cook" }); // PER-001
+    await svc.create({ name: "Reviewer" }); // PER-002
+
+    const result = await svc.rename("PER-002", "Home Cook");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+    // PER-002 keeps its name; there is exactly one "Home Cook" (no duplicate the
+    // user-materialization could later resolve to the wrong id).
+    const all = await svc.findAll();
+    expect(all.ok && all.value.map((p) => p.name).sort()).toEqual(["Home Cook", "Reviewer"]);
+  });
+
+  it("rename allows renaming a persona to its own current name (idempotent)", async () => {
+    const { svc } = build();
+    await svc.create({ name: "Home Cook" });
+    const result = await svc.rename("PER-001", "Home Cook");
+    expect(result.ok).toBe(true);
+  });
+
   it("rename emits persona.updated with correct payload", async () => {
     const { svc, events } = build();
     await svc.create({ name: "Old" });

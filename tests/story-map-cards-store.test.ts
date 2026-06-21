@@ -348,6 +348,23 @@ describe("reconcileCards", () => {
     expect(remaining).toHaveLength(1);
   });
 
+  it("fails closed on a real list error before allocating or writing card notes", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    // A real I/O/indexing error listing cards/ (NOT a missing folder).
+    fs.listFilesRecursive = async () => ({
+      ok: false,
+      error: { code: "INIT_FAILED", message: "vault indexing in progress" },
+    });
+    const model = [modelCard({ title: "new" })];
+
+    const result = await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, model, []);
+
+    expect(result.ok).toBe(false);
+    // No partial card-note side effects from an operation reported as failed.
+    expect(fs.files.has(String(joinVaultPath(CARDS_DIR, "SMC-001.md")))).toBe(false);
+  });
+
   it("updates order frontmatter when two cards in a cell are reordered", async () => {
     const fs = new FakeVaultFileSystem();
     const queue = new KeyedSerialQueue();
