@@ -188,7 +188,12 @@ repaints.
 Restructure `render()` into a clear above-the-fold hero and a deferable below-the-fold:
 
 - **Health hero (new, top).** One large card answering "is my product green?": a big
-  **pass-rate ring/bar** over the **automated Use Cases** (`passing ÷ automatedUseCases`,
+  **pass-rate ring/bar** over the **automated Use Cases** (`passing ÷ automatedUseCases`;
+  **zero-denominator contract** — when `automatedUseCases === 0` (fresh / still-unspecified
+  vault) the projection must **not** divide: show a distinct **empty hero** ("No automated Use
+  Cases yet — author a Use Case to start tracking health") and **hide the rate ring** until the
+  denominator is nonzero. E1's pure projection returns an explicit "no-rate" state (not
+  `NaN`/`Infinity`), and its tests cover the 0-automated case (Codex catch),
   `@wip` already excluded upstream), the timestamp of the last run, and a one-line verdict
   ("12 of 16 automated Use Cases passing · 2 failing · 2 in progress"). **The "last run"
   verdict needs a run-history source, not the dashboard snapshot** (reviewer catch, Codex
