@@ -1,27 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultUseCaseService, nextUseCaseId } from "../src/application/services/use-case-service";
 import { buildDemoUseCaseNote } from "../src/application/content/demo-content";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { UseCase, UseCaseStatus } from "../src/domain/entities/use-case";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
-import {
-  FakeDataStore,
-  FakePrdLookup,
-  FakeVaultFileSystem,
-  recordingEventBus,
-  silentLogger,
-} from "./fakes";
+import { FakePrdLookup, serviceHarness, silentLogger } from "./fakes";
 
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus, types, events } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, types, events, settings } = serviceHarness();
   const service = new DefaultUseCaseService(settings, fs, bus, silentLogger, new FakePrdLookup());
   return { service, fs, types, events };
 };
@@ -639,13 +625,7 @@ describe("assignToPrd", () => {
   });
 
   it("rejects linking to a PRD that does not exist (stale dropdown / typo)", async () => {
-    const fs = new FakeVaultFileSystem();
-    const { bus } = recordingEventBus();
-    const settings = new DefaultSettingsService(
-      new FakeDataStore(),
-      new DefaultPathSafetyPolicy(),
-      bus,
-    );
+    const { fs, bus, settings } = serviceHarness();
     // A lookup that knows of no PRDs → every target resolves to "not found".
     const service = new DefaultUseCaseService(
       settings,

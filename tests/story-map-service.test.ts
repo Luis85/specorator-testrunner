@@ -11,12 +11,11 @@ import {
 } from "../src/domain/entities/story-map";
 import { buildCardNote } from "../src/application/content/story-map-card-content";
 import type { StoryMapCardNote } from "../src/domain/entities/story-map-card";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
+import { appError } from "../src/shared/errors/errors";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
 import { ok, type Result } from "../src/shared/result/result";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import { FakeVaultFileSystem, failReadAt, serviceHarness, silentLogger } from "./fakes";
 
 /**
  * Resolver that maps a fixed id → note path so links resolve in tests. Includes a
@@ -35,13 +34,7 @@ const resolver = (paths: Record<string, string> = {}): PrdGuard => ({
 const ROOT_PRD = { "PRD-000": "PRDs/PRD-000-product-vision/PRD-000-product-vision.md" };
 
 const build = (ucPaths?: Record<string, string>, prdPaths: Record<string, string> = ROOT_PRD) => {
-  const fs = new FakeVaultFileSystem();
-  const { bus, types, events } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, types, events, settings } = serviceHarness();
   // A real PersonaService over the SAME fake fs/settings/bus so the map's
   // persona side-effects (find-or-create per user) land in this fs.
   const personaService = new DefaultPersonaService(settings, fs, bus, silentLogger);
@@ -538,11 +531,7 @@ describe("DefaultStoryMapService.deleteStoryMap", () => {
       slice: "S",
     });
     const cardPath = "Story Maps/SM-001-j/cards/SMC-001.md";
-    const realRead = fs.readFile.bind(fs);
-    fs.readFile = async (p) =>
-      String(p) === cardPath
-        ? { ok: false as const, error: { code: "INIT_FAILED" as const, message: "EIO card note" } }
-        : realRead(p);
+    failReadAt(fs, cardPath, appError("INIT_FAILED", "EIO card note"));
 
     const result = await service.deleteStoryMap("SM-001");
 

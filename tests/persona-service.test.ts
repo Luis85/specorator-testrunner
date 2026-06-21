@@ -1,18 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPersonaService } from "../src/application/services/persona-service";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { buildNote } from "../src/shared/utils/frontmatter";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import { serviceHarness, silentLogger } from "./fakes";
 
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus, types, events } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, types, events, settings } = serviceHarness();
   const svc = new DefaultPersonaService(settings, fs, bus, silentLogger);
   return { svc, fs, types, events };
 };

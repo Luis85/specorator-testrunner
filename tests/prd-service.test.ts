@@ -1,18 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { DefaultPrdService } from "../src/application/services/prd-service";
-import { DefaultSettingsService } from "../src/application/services/settings-service";
-import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
-import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
+import { appError } from "../src/shared/errors/errors";
+import { FakeVaultFileSystem, failReadAt, serviceHarness, silentLogger } from "./fakes";
 
 const build = () => {
-  const fs = new FakeVaultFileSystem();
-  const { bus, types, events } = recordingEventBus();
-  const settings = new DefaultSettingsService(
-    new FakeDataStore(),
-    new DefaultPathSafetyPolicy(),
-    bus,
-  );
+  const { fs, bus, types, events, settings } = serviceHarness();
   const service = new DefaultPrdService(settings, fs, bus, silentLogger);
   return { service, fs, types, events };
 };
@@ -436,11 +429,7 @@ describe("DefaultPrdService.deletePrd", () => {
     );
     const cardPath = "Story Maps/SM-001-j/cards/SMC-001.md";
     fs.files.set(cardPath, "unreadable card note");
-    const realRead = fs.readFile.bind(fs);
-    fs.readFile = async (p) =>
-      String(p) === cardPath
-        ? { ok: false as const, error: { code: "INIT_FAILED" as const, message: "EIO card note" } }
-        : realRead(p);
+    failReadAt(fs, cardPath, appError("INIT_FAILED", "EIO card note"));
 
     const result = await service.deletePrd("PRD-001");
 
@@ -471,17 +460,11 @@ describe("DefaultPrdService.deletePrd", () => {
     // A storyMapsPath that itself contains a `cards` segment: the card-note skip must
     // be RELATIVE to the maps root, else every map-note path matches and the guard
     // counts zero — deleting a PRD still used as a map's `product` (dangling anchor).
-    const fs = new FakeVaultFileSystem();
-    const { bus } = recordingEventBus();
-    const settings = new DefaultSettingsService(
-      new FakeDataStore({
-        schemaVersion: 1,
-        ...DEFAULT_SETTINGS,
-        paths: { ...DEFAULT_SETTINGS.paths, storyMapsPath: "Planning/cards/Story Maps" },
-      }),
-      new DefaultPathSafetyPolicy(),
-      bus,
-    );
+    const { fs, bus, settings } = serviceHarness({
+      schemaVersion: 1,
+      ...DEFAULT_SETTINGS,
+      paths: { ...DEFAULT_SETTINGS.paths, storyMapsPath: "Planning/cards/Story Maps" },
+    });
     const service = new DefaultPrdService(settings, fs, bus, silentLogger);
     seedRoot(fs);
     seedSub(fs);
@@ -535,11 +518,7 @@ describe("DefaultPrdService.deletePrd", () => {
       ["---", "id: UC-001", "type: use-case", "title: A", "prd-id: PRD-001", "---", ""].join("\n"),
     );
     // Simulate a transient read error on the linked Use Case note.
-    const realRead = fs.readFile.bind(fs);
-    fs.readFile = (path) =>
-      String(path) === ucPath
-        ? Promise.resolve({ ok: false as const, error: { code: "INIT_FAILED", message: "locked" } })
-        : realRead(path);
+    failReadAt(fs, ucPath, appError("INIT_FAILED", "locked"));
 
     const result = await service.deletePrd("PRD-001");
     expect(result.ok).toBe(false);

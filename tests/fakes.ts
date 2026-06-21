@@ -15,14 +15,17 @@ import type {
 import type { PrdLookup } from "../src/application/services/use-case-service";
 import { buildRunnerTemplates } from "../src/infrastructure/runner/templates/runner-templates";
 import type { VaultFileSystem } from "../src/application/ports/vault-file-system";
+import { DefaultSettingsService } from "../src/application/services/settings-service";
+import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
 import type { TestHubSettings } from "../src/domain/settings/settings";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { unsafeVaultPath } from "../src/domain/value-objects/vault-path";
 import { joinVaultPath } from "../src/shared/utils/vault-path";
 import type { DomainEvent, DomainEventType } from "../src/domain/events/domain-event";
+import type { AppError } from "../src/shared/errors/errors";
 import { InMemoryEventBus } from "../src/shared/event-bus/event-bus";
 import type { Logger } from "../src/shared/logging/logger";
-import { ok, type Result } from "../src/shared/result/result";
+import { err, ok, type Result } from "../src/shared/result/result";
 
 /** No-op {@link Logger} for tests. */
 export const silentLogger: Logger = {
@@ -348,4 +351,43 @@ export const recordingEventBus = (): {
     return originalPublish(event);
   };
   return { bus, events, types: () => events.map((event) => event.type) };
+};
+
+/**
+ * The common service-test substrate: an in-memory {@link FakeVaultFileSystem},
+ * a {@link recordingEventBus}, and a {@link DefaultSettingsService} wired over
+ * both. Every service test composes its `build()` from this — construct the SUT
+ * with `{ settings, fs, bus }` and return whichever of `{ fs, bus, types, events }`
+ * the assertions need. Pass `data` to seed the settings {@link FakeDataStore}.
+ */
+export const serviceHarness = (
+  data?: unknown,
+): {
+  fs: FakeVaultFileSystem;
+  bus: InMemoryEventBus;
+  events: DomainEvent[];
+  types: () => DomainEventType[];
+  settings: DefaultSettingsService;
+} => {
+  const fs = new FakeVaultFileSystem();
+  const { bus, types, events } = recordingEventBus();
+  const settings = new DefaultSettingsService(new FakeDataStore(data), new DefaultPathSafetyPolicy(), bus);
+  return { fs, bus, types, events, settings };
+};
+
+/**
+ * Overrides `fs.readFile` so reads of paths matching `match` fail with `error`,
+ * passing every other path through to the real in-memory read. Models the
+ * production "one note is corrupt/unreadable while the rest are fine" fault that
+ * the write/delete paths must fail closed on. `match` is an exact vault-path
+ * string or a predicate (e.g. `(p) => String(p).endsWith("SMC-001.md")`).
+ */
+export const failReadAt = (
+  fs: FakeVaultFileSystem,
+  match: string | ((path: VaultPath) => boolean),
+  error: AppError,
+): void => {
+  const realRead = fs.readFile.bind(fs);
+  const matches = typeof match === "string" ? (path: VaultPath) => String(path) === match : match;
+  fs.readFile = async (path) => (matches(path) ? err(error) : realRead(path));
 };
