@@ -21,16 +21,16 @@ const displayTitle = (title: string, ref: string | undefined, id: string): strin
   title.trim() || (ref ?? id);
 
 /**
- * Recovers the user's body by removing the `# <title>` heading {@link buildCardNote}
- * prepends (and its single blank-line separator). The explicit, line-based inverse
- * of that prepend: it drops at most the heading line plus one blank line and keeps
- * every remaining byte intact — NO trim — so a hand-written body with meaningful
- * leading/trailing whitespace (an indented code block, intentional blank lines)
- * survives a board save unchanged.
+ * Recovers the user's body by removing the EXACT `# <title>` heading
+ * {@link buildCardNote} prepends (and its single blank-line separator). The
+ * explicit, line-based inverse of that prepend: it drops the heading line only
+ * when it matches `generatedHeading` byte-for-byte — so a user-authored H1 that
+ * isn't the generated heading is preserved — plus one blank line, keeping every
+ * remaining byte intact (NO trim) so meaningful whitespace survives a board save.
  */
-const stripCardHeading = (body: string): string => {
+const stripCardHeading = (body: string, generatedHeading: string): string => {
   const lines = body.split("\n");
-  if (lines[0]?.startsWith("# ")) {
+  if (lines[0] === generatedHeading) {
     lines.shift(); // the generated heading line
     if (lines[0] === "") lines.shift(); // its single blank-line separator, when present
   }
@@ -80,6 +80,11 @@ export const parseCardNote = (content: string, path: VaultPath): StoryMapCardNot
     Array.isArray(v) ? v : typeof v === "string" && v !== "" ? [v] : [];
   const step = typeof fm.step === "string" && fm.step !== "" ? fm.step : undefined;
   const ref = typeof fm.ref === "string" && isValidUseCaseRef(fm.ref) ? fm.ref : undefined;
+  // A referenced card may carry a blank title (only reference-less cards require one
+  // — validateCardPlacement); displayTitle falls it back to the ref (never the
+  // generated note id), matching the heading buildCardNote wrote. Strip only that
+  // exact generated heading, so a user-authored H1 is preserved.
+  const title = displayTitle(str(fm.title), ref, fm.id);
   return {
     id: fm.id,
     map: str(fm.map),
@@ -93,11 +98,8 @@ export const parseCardNote = (content: string, path: VaultPath): StoryMapCardNot
     step,
     slice: str(fm.slice),
     order: intOrUndef(fm.order) ?? 0,
-    // A referenced card may carry a blank title (only reference-less cards require
-    // one — validateCardPlacement); displayTitle falls it back to the ref (never
-    // the generated note id), matching the heading buildCardNote wrote.
-    title: displayTitle(str(fm.title), ref, fm.id),
-    body: stripCardHeading(body),
+    title,
+    body: stripCardHeading(body, `# ${title}`),
     path,
   };
 };

@@ -589,15 +589,7 @@ export class DefaultStoryMapService implements StoryMapService {
       // Resolve BOTH the card Use Cases (grid cells) and the product PRD (body
       // paragraph) so a reassigned product link is refreshed, not just the grid.
       const noteNames = await this.resolveNoteNames(map);
-      // Normalize CRLF→LF on the raw content BEFORE parsing/slicing: parseNote
-      // returns an LF-normalized body, so subtracting its length from a raw CRLF
-      // string would slice mid-body and corrupt the note. Normalizing first keeps
-      // the frontmatter boundary aligned with the body parseNote returns.
-      const normalized = read.value.replace(/\r\n/g, "\n");
-      const { body } = parseNote(normalized);
-      const nextBody = refreshManagedBlocks(body, map, noteNames);
-      const frontmatter = normalized.slice(0, normalized.length - body.length);
-      const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
+      const written = await this.writeGridBlock(map, noteNames, read.value);
       if (!written.ok) return written;
       // Live views refresh on this (the explorer's row count + captured map go
       // stale otherwise after a hand-edit + rebuild).
@@ -734,22 +726,34 @@ export class DefaultStoryMapService implements StoryMapService {
       map.cards,
     );
     if (!reconciled.ok) return reconciled;
+    // After the card notes are reconciled, any failure reading/writing the map note
+    // leaves the card notes mutated but the grid stale — the caller is told the save
+    // failed yet a reload sees the new cards (and a retried add could duplicate). Roll
+    // the card notes back to map.cards so a reported failure leaves a consistent,
+    // retryable state (mirrors saveMap's map-note-write rollback). Best-effort.
+    const rollbackCards = async (): Promise<void> => {
+      const current = await loadCards(this.fs, cardsDir, map.id);
+      await reconcileCards(this.fs, this.noteWrites, cardsDir, map.id, map.cards, current);
+    };
     // Fail closed: the notes are on disk now, so a transient reload failure must
     // abort rather than regenerate the grid (and republish the board) without them.
     const reloaded = await reloadCards(this.fs, cardsDir, map.id);
-    if (!reloaded.ok) return reloaded;
+    if (!reloaded.ok) {
+      await rollbackCards();
+      return reloaded;
+    }
     const composed = { ...map, cards: reloaded.value };
     const read = await this.fs.readFile(map.path);
-    if (!read.ok) return read;
+    if (!read.ok) {
+      await rollbackCards();
+      return read;
+    }
     const noteNames = await this.resolveNoteNames(composed);
-    // Normalize CRLF→LF before parsing/slicing (see rebuildGrid): parseNote
-    // returns an LF body, so the frontmatter/body boundary must be aligned.
-    const normalized = read.value.replace(/\r\n/g, "\n");
-    const { body } = parseNote(normalized);
-    const nextBody = refreshManagedBlocks(body, composed, noteNames);
-    const frontmatter = normalized.slice(0, normalized.length - body.length);
-    const written = await this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
-    if (!written.ok) return written;
+    const written = await this.writeGridBlock(composed, noteNames, read.value);
+    if (!written.ok) {
+      await rollbackCards();
+      return written;
+    }
     // Notify live views (the explorer's row counts + captured map go stale
     // otherwise) that this map's cards changed.
     await this.publishUpdated(composed, origin);
@@ -968,6 +972,24 @@ export class DefaultStoryMapService implements StoryMapService {
     const productName = await this.noteNameOf(this.prds, map.product);
     if (productName !== undefined) names.set(map.product, productName);
     return names;
+  }
+
+  /**
+   * Rewrites the managed grid block of `map`'s existing note from its `raw` content,
+   * preserving the frontmatter and hand-written body. Shared by rebuildGrid and
+   * writeCards. Normalize CRLF→LF BEFORE parsing/slicing: parseNote returns an LF
+   * body, so subtracting its length from a raw CRLF string would slice mid-body.
+   */
+  private async writeGridBlock(
+    map: StoryMap,
+    noteNames: Map<string, string>,
+    raw: string,
+  ): Promise<Result<void>> {
+    const normalized = raw.replace(/\r\n/g, "\n");
+    const { body } = parseNote(normalized);
+    const nextBody = refreshManagedBlocks(body, map, noteNames);
+    const frontmatter = normalized.slice(0, normalized.length - body.length);
+    return this.fs.writeFile(map.path, `${frontmatter}${nextBody}`);
   }
 
   /** The `cards/` folder for a map: a sibling of the map note (ADR-0030). */

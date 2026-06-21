@@ -66,6 +66,26 @@ describe("card note content", () => {
     const parsed = parseCardNote(buildCardNote({ ...card, body }), card.path);
     expect(parsed?.body).toBe(body);
   });
+  it("preserves a user-authored H1 that is not the generated heading", () => {
+    // The user deleted the generated heading and wrote their own H1 as the body's
+    // first line; the generated heading would be "# Search by name".
+    const content = [
+      "---",
+      "type: story-map-card",
+      "id: SMC-001",
+      "map: SM-001",
+      "card_type: task",
+      "activity: Find & Cook",
+      "slice: MVP",
+      "title: Search by name",
+      "---",
+      "",
+      "# My own heading",
+      "",
+      "body text",
+    ].join("\n");
+    expect(parseCardNote(content, card.path)?.body).toBe("# My own heading\n\nbody text");
+  });
   it("rejects a non-card note and falls back an out-of-set card_type", () => {
     expect(parseCardNote("---\ntype: note\n---\n", card.path)).toBeNull();
     const bad = buildCardNote(card).replace("card_type: task", "card_type: epic");

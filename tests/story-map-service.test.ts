@@ -796,6 +796,27 @@ describe("DefaultStoryMapService card authoring (add/update/remove)", () => {
     expect(types()).not.toContain("storymap.updated");
   });
 
+  it("rolls back the new card note when the map-note write fails (no duplicate on retry)", async () => {
+    const { service, fs } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
+    const path = seedNote(fs); // map note + SMC-001
+    // The map-note write fails AFTER the new card (SMC-002) was reconciled to disk.
+    fs.failOn = { path, message: "disk full" };
+
+    const result = await service.addCard("SM-001", {
+      ref: "UC-040",
+      title: "Run the suite",
+      activity: "Author spec",
+      slice: "Next",
+      tags: [],
+    });
+
+    expect(result.ok).toBe(false);
+    // The new card note is rolled back; only the original remains, so a retry can't
+    // mint a duplicate.
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-002.md")).toBe(false);
+    expect(fs.files.has("Story Maps/SM-001-j/cards/SMC-001.md")).toBe(true);
+  });
+
   it("adds a card: writes a new card-note, regenerates the grid block, emits storymap.updated", async () => {
     const { service, fs, types } = build({ "UC-040": "Use Cases/UC-040 Run the suite.md" });
     const path = seedNote(fs);
