@@ -238,6 +238,30 @@ describe("DefaultStoryMapService.create", () => {
     expect(fs.files.has(`${folder}/diagram.png`)).toBe(true);
   });
 
+  it("preserves a pre-existing cards/ folder when an initial card write fails", async () => {
+    const { service, fs } = build();
+    // The reused folder ALREADY has a cards/ subfolder holding an unrelated note.
+    const folder = "Story Maps/SM-001-map";
+    await fs.createFolder(unsafeVaultPath(`${folder}/cards`));
+    fs.files.set(`${folder}/cards/SMC-099.md`, "pre-existing card body");
+    // The initial card-note write fails after the map note is written.
+    fs.failOn = { path: `${folder}/cards/SMC-001.md`, message: "disk full" };
+
+    const result = await service.create({
+      title: "Map",
+      activities: ["Author spec"],
+      slices: ["Walking skeleton"],
+      cards: [
+        { id: "SMC-001", title: "X", activity: "Author spec", slice: "Walking skeleton", tags: [] },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    // No phantom map note, but the pre-existing card note is NOT recursively wiped.
+    expect(fs.files.has(`${folder}/SM-001-map.md`)).toBe(false);
+    expect(fs.files.get(`${folder}/cards/SMC-099.md`)).toBe("pre-existing card body");
+  });
+
   it("collapses a multi-line title into a single parser-safe line", async () => {
     const { service, fs } = build();
     const result = await service.create({
