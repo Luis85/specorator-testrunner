@@ -87,6 +87,31 @@ describe("breadcrumbFor", () => {
   });
 });
 
+describe("breadcrumbFor with an active hub section", () => {
+  it("defaults the root to Test Hub › Plan when no section is given", () => {
+    const trail = breadcrumbFor({ kind: "prd", prd: { id: "PRD-003", title: "Checkout" } });
+    expect(trail.slice(0, 2).map((c) => c.label)).toEqual(["Test Hub", "Plan"]);
+  });
+
+  it("roots the trail at the given section", () => {
+    const trail = breadcrumbFor(
+      { kind: "prd", prd: { id: "PRD-003", title: "Checkout" } },
+      "review",
+    );
+    expect(trail.map((c) => c.label)).toEqual(["Test Hub", "Review", "PRD-003: Checkout"]);
+  });
+
+  it("keeps the section-rooted root crumbs non-deep-linkable", () => {
+    const trail = breadcrumbFor(
+      { kind: "use-case", useCase: { id: "UC-009", title: "Orphan" } },
+      "build",
+    );
+    expect(trail[0]).toEqual({ label: "Test Hub" });
+    expect(trail[1]).toEqual({ label: "Build" });
+    expect(isDeepLinkable(trail[1])).toBe(false);
+  });
+});
+
 describe("isDeepLinkable", () => {
   it("is true for a node crumb carrying a recognized id", () => {
     expect(isDeepLinkable({ label: "PRD-003: Checkout", id: "PRD-003", kind: "prd" })).toBe(true);

@@ -1,4 +1,5 @@
 import { type ArtifactKind, classifyArtifactId } from "./artifact-id";
+import { type HubSectionId, hubCrumbRoot } from "./hub-sections";
 
 /**
  * Pure breadcrumb projection for the artifact graph (01-§3.3, WS-A4). Every
@@ -27,8 +28,19 @@ export interface Crumb {
   kind?: ArtifactKind;
 }
 
-/** The root crumbs every trail starts with — the home node and its planning section. */
-const HOME: readonly Crumb[] = [{ label: "Test Hub" }, { label: "Plan" }];
+/**
+ * The active Test Hub rail section a trail is rooted under. Optional everywhere a
+ * trail is projected; defaults to `"plan"` so the root reads `Test Hub › Plan`
+ * exactly as before the hub shell existed (additive generalization, ADR-0031).
+ */
+const DEFAULT_TRAIL_SECTION: HubSectionId = "plan";
+
+/**
+ * The root crumbs every trail starts with — `Test Hub › <Section>`, reflecting
+ * the active hub section ({@link hubCrumbRoot}). Defaults to the `plan` section.
+ */
+const homeRoot = (section: HubSectionId = DEFAULT_TRAIL_SECTION): readonly Crumb[] =>
+  hubCrumbRoot(section);
 
 /** A resolved PRD ancestor for the trail: its id and (optional) human title. */
 export interface PrdCrumbInput {
@@ -77,19 +89,21 @@ const prdChainCrumbs = (chain: readonly PrdCrumbInput[] | undefined): Crumb[] =>
   (chain ?? []).map((prd) => nodeCrumb(prd, "prd"));
 
 /**
- * Projects the ordered breadcrumb trail for `target`. The trail is always
- * rooted at `Test Hub › Plan`, then the resolved hierarchy (PRD ancestry),
- * then the target node itself. Pure: a deterministic function of the resolved
- * inputs handed in. The terminal crumb is the target — a caller renders it as
- * the current location (not a link).
+ * Projects the ordered breadcrumb trail for `target`. The trail is always rooted
+ * at `Test Hub › <Section>` (`section`, defaulting to `plan` so today's output is
+ * unchanged), then the resolved hierarchy (PRD ancestry), then the target node
+ * itself. Pure: a deterministic function of the resolved inputs handed in. The
+ * terminal crumb is the target — a caller renders it as the current location
+ * (not a link).
  */
-export const breadcrumbFor = (target: BreadcrumbTarget): Crumb[] => {
+export const breadcrumbFor = (target: BreadcrumbTarget, section?: HubSectionId): Crumb[] => {
+  const home = homeRoot(section);
   switch (target.kind) {
     case "prd":
-      return [...HOME, ...prdChainCrumbs(target.ancestors), nodeCrumb(target.prd, "prd")];
+      return [...home, ...prdChainCrumbs(target.ancestors), nodeCrumb(target.prd, "prd")];
     case "use-case":
       return [
-        ...HOME,
+        ...home,
         ...prdChainCrumbs(target.useCase.prdChain),
         nodeCrumb({ id: target.useCase.id, title: target.useCase.title }, "use-case"),
       ];
@@ -97,7 +111,7 @@ export const breadcrumbFor = (target: BreadcrumbTarget): Crumb[] => {
       const product = target.storyMap.product;
       const productCrumb = product ? [nodeCrumb(product, "prd")] : [];
       return [
-        ...HOME,
+        ...home,
         ...productCrumb,
         nodeCrumb({ id: target.storyMap.id, title: target.storyMap.title }, "story-map"),
       ];
