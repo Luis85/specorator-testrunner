@@ -211,7 +211,7 @@ const readBody = async (
   const read = await fs.readFile(path);
   if (!read.ok) return err(read.error);
   const note = parseCardNote(read.value, path);
-  if (note === null || note.map !== mapId) {
+  if (note?.map !== mapId) {
     return err(
       appError("VALIDATION_FAILED", `Refusing to overwrite ${path}: not a ${mapId} card note.`),
     );
