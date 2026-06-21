@@ -18,8 +18,15 @@
  * per theme for contrast (white on the deeper light-mode teal; dark ink on the
  * brighter dark-mode teal). Colour is never the sole signal — the `[data-status]`
  * reinforcement contract (border position / text / icon) is preserved.
+ *
+ * Scoped to `body`, NOT `:root`: Obsidian's theme variables (`--text-success`,
+ * `--size-4-*`, `--radius-*`) are defined on `body` / `.theme-*`, so deriving these
+ * tokens at `:root` would resolve the `var()` references out of scope — status colours
+ * would compute invalid and the sizing aliases would fall back to their literals
+ * instead of following the active theme. `body` is the element that carries the theme
+ * vars; the `.theme-light`/`.theme-dark` accent overrides below out-rank it by class.
  * ───────────────────────────────────────────────────────────────────────────── */
-:root {
+body {
   /* Spacing rhythm — one scale, named by intent, mapped to Obsidian sizes. */
   --spec-space-1: var(--size-4-1, 4px);
   --spec-space-2: var(--size-4-2, 8px);
@@ -74,7 +81,7 @@
 
 /* Honour reduced-motion for every token-driven transition in one place. */
 @media (prefers-reduced-motion: reduce) {
-  :root {
+  body {
     --spec-motion-fast: 0ms;
   }
 }
