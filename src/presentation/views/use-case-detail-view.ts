@@ -241,29 +241,27 @@ export class UseCaseDetailView extends LiveDashboardView {
     const maps = await this.deps.storyMapService.findAll();
     const backlinks = maps.ok ? storyMapBacklinks(useCase.id, maps.value) : [];
 
-    // List the UC's Feature Specifications ONCE and feed the SAME listing to both
-    // the loop rail and the Feature section. The rail's "does a Feature exist?"
-    // and "which files take generate-steps?" must agree with what the rows show,
-    // and the ADR-0012 filename back-reference — not `useCase.featureFiles`, which
-    // can lag a failed forward-link write — is the source of truth (Codex review).
-    const listed = await this.deps.specificationService.listFeatures();
-    const featurePaths = listed.ok
-      ? projectFeatureRows(useCase.id, listed.value).map((row) => row.path)
-      : null;
-    // The filename listing is the source of truth for the loop rail; fall back to
-    // the entity's own links only when the listing itself failed.
-    const railPaths = featurePaths ?? useCase.featureFiles;
-    // The "steps defined" signal: the static step-definition coverage check (no
-    // bddgen spawn, no side effects — safe on every render). We deliberately do NOT
-    // OR in `automationStatus === "passing"`: a scenario's history key is
-    // `featurePath::name` (not step content), so a scenario edited to add an
-    // undefined step keeps its prior `passed` result and would derive a STALE
-    // `passing`, falsely closing the rail past the new missing step (Codex review).
-    // The heuristic's only failure is over-reporting missing for unmodeled Cucumber
-    // constructs — the SAFE direction (a non-destructive Generate-steps CTA, never a
-    // false close), and the same limitation the Feature Editor's flags already have.
+    // The loop rail reflects the UC's FRONTMATTER-linked Features — the SAME source
+    // the UC-scoped Run (useCaseScopeCommand) and the automation status both use — so
+    // its readiness, Run, and generate-steps never diverge from what a UC run actually
+    // executes (Codex review). Orphan `.feature` files (matching the UC-NNN- filename
+    // but not yet linked in frontmatter) still appear in the Feature list below with
+    // their own per-row Run/Generate actions, so they stay reachable until the forward
+    // link is repaired — the rail just doesn't speak for them.
+    const railPaths = useCase.featureFiles;
+    // The "steps defined" signal: the static step-definition coverage check (no bddgen
+    // spawn, no side effects — safe on every render). We deliberately do NOT OR in
+    // `automationStatus === "passing"`: a scenario's history key is `featurePath::name`
+    // (not step content), so a scenario edited to add an undefined step keeps its prior
+    // `passed` result and would derive a STALE `passing`, falsely closing the rail past
+    // the new missing step (Codex review). The heuristic's only failure is over-reporting
+    // missing for unmodeled Cucumber constructs — the SAFE direction (a non-destructive
+    // Generate-steps CTA, never a false close), the same limitation the Feature Editor has.
     const stepsDefined = await this.deps.specificationService.allStepsDefined(railPaths);
 
+    // The Feature list shows every `.feature` on disk for this UC (filename listing), so
+    // an unlinked orphan is still visible and actionable per-row.
+    const listed = await this.deps.specificationService.listFeatures();
     this.renderHeader(container, useCase, prdTitleById, backlinks, railPaths, stepsDefined);
     this.renderFeatures(container, useCase, listed);
   }

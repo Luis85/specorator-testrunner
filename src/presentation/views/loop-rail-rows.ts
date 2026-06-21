@@ -96,14 +96,16 @@ export interface LoopCapabilities {
 }
 
 /**
- * The two facts the loop rail CANNOT read reliably from the Use Case entity, so
- * the detail view computes and supplies them:
+ * The two facts the loop rail CANNOT read reliably from the Use Case entity alone,
+ * so the detail view computes and supplies them:
  *
- * - `featureCount` — how many Feature Specifications the UC owns, derived from the
- *   ADR-0012 filename back-reference (`<UC-id>-<slug>.feature`), the source of
- *   truth. A Feature created on disk whose forward-link write failed is missing
- *   from `useCase.featureFiles` yet still belongs to the UC, so the view passes
- *   the filename listing rather than the frontmatter count.
+ * - `featureCount` — how many Feature Specifications the UC owns, from its
+ *   FRONTMATTER-linked `featureFiles`. This is the SAME source the UC-scoped Run
+ *   (`useCaseScopeCommand`) and the automation status derive from, so the rail's
+ *   readiness/Run/generate-steps never claim a Feature the UC run wouldn't execute.
+ *   An orphan `.feature` (matching the `UC-NNN-` filename but not yet linked) is
+ *   handled per-row in the detail view's Feature list instead, until its link is
+ *   repaired — the rail deliberately doesn't speak for it (Codex review).
  *
  * - `stepsDefined` — whether EVERY Gherkin step across those Features already has a
  *   matching step definition (`SpecificationService.allStepsDefined`, the static
@@ -112,9 +114,7 @@ export interface LoopCapabilities {
  *   reached before any stub exists, and both `failing` and `implemented` can carry
  *   a scenario whose stubs are missing (an undefined step imports as `failed`; a
  *   newly-added scenario rolls up `implemented` while still unrun). Reading the
- *   actual step definitions tells the rail the truth, and because it reads the same
- *   filename-listed Features it also removes the old frontmatter-vs-filename
- *   inconsistency (Codex review).
+ *   actual step definitions tells the rail the truth instead.
  *
  * `inSuite` and `hasRun` still derive from the entity below — those are reliable.
  */
