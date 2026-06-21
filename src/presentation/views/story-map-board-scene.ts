@@ -133,7 +133,15 @@ const cardGroupSpec = (box: BoardLayout["cards"][number]): SvgNodeSpec => {
     text("sm-board-card-title", box.x + 8, box.y + 20, box.card.title),
   ];
   if (box.card.ref !== undefined && box.card.ref !== "") {
-    children.push(text("sm-board-card-ref", box.x + 8, box.y + 34, box.card.ref));
+    // WS-A4 deep-link: the ref carries `data-card-ref` so the board can open the
+    // referenced Use Case detail on click (01-§3.2). The board already resolves
+    // `UC-NNN` refs; here it exposes them as a navigation affordance.
+    children.push({
+      tag: "text",
+      class: "sm-board-card-ref",
+      attrs: { x: box.x + 8, y: box.y + 34, "data-card-ref": box.card.ref },
+      text: box.card.ref,
+    });
   }
   children.push(...chipSpecs(box));
   const remove = removeButton("sm-board-remove", box.x + box.width - 18, box.y + 4, {

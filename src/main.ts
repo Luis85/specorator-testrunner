@@ -50,6 +50,8 @@ import { TEST_CONSOLE_VIEW_TYPE } from "./presentation/views/test-console-view";
 import { USE_CASE_DETAIL_VIEW_TYPE } from "./presentation/views/use-case-detail-view";
 import { STORY_MAP_BOARD_VIEW_TYPE } from "./presentation/views/story-map-board-view";
 import { openOrNotice } from "./presentation/views/modal-helpers";
+import { ArtifactNavigator } from "./presentation/navigation/artifact-navigator";
+import type { ArtifactNavigationPort } from "./presentation/navigation/artifact-navigation-port";
 import { DASHBOARD_VIEW_TYPE } from "./presentation/views/dashboard-view";
 import { GUIDED_TOUR_VIEW_TYPE } from "./presentation/views/guided-tour-view";
 import { InMemoryEventBus, type EventBus } from "./shared/event-bus/event-bus";
@@ -88,6 +90,10 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // site.
   private runLauncher!: RunLauncher;
   private workspaceAdapter!: ObsidianWorkspaceAdapter;
+  // WS-A4 deep-link port: resolves an artifact id (PRD-NNN/UC-NNN/SM-NNN) and
+  // opens the right view focused on it, reusing the existing findById services +
+  // the leaf-opening flows below. Thin views link through this, not openView.
+  private artifactNavigator!: ArtifactNavigationPort;
   // In-process post-run flow (P2-1/P2-6/P2-7). Subscribes to the EN-2 terminal
   // run events and runs import→evidence→dashboard-refresh, owning the `lastRun`
   // state, the run-status eligibility rule, and the serializing evidence chain
@@ -178,6 +184,18 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.postRunCoordinator = services.postRunCoordinator;
     this.guidedTourService = services.guidedTourService;
 
+    // WS-A4: the deep-link navigator wires the findById services to the existing
+    // leaf-opening flows. A PRD has no detail view, so it opens its note; a Use
+    // Case / Story Map re-targets its single detail/board leaf.
+    this.artifactNavigator = new ArtifactNavigator({
+      prdService: this.prdService,
+      useCaseService: this.useCaseService,
+      storyMapService: this.storyMapService,
+      openUseCaseDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
+      openStoryMapBoard: (storyMapId) => void this.openStoryMapBoard(storyMapId),
+      openFile: (path) => this.workspaceAdapter.openFile(path),
+    });
+
     // Register the Obsidian views + the `.feature` editor extension out-of-line
     // (size budget). Each view's factory closes over the composed services and
     // the open-a-modal / switch-environment callbacks this composition root owns
@@ -192,6 +210,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       getSettings: () => this.hubSettings,
       openCreateUseCase: () => this.openCreateUseCase(),
       openUseCaseDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
+      openArtifact: (id) => void this.openArtifact(id),
       openCreateSuite: () => this.openCreateSuite(),
       openPrdBuilder: (parentPrdId) => this.openPrdBuilder(parentPrdId),
       openStoryMapBuilder: () => this.openStoryMapBuilder(),
@@ -338,6 +357,14 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       useCaseService: this.useCaseService,
       workspace: this.workspaceAdapter,
     }).open();
+  }
+
+  // WS-A4: open whatever artifact `id` names (PRD/UC/Story Map) through the
+  // deep-link port, surfacing a graceful Notice when the id can't be resolved
+  // (renamed/deleted/unrecognized) rather than failing silently.
+  private async openArtifact(id: string): Promise<void> {
+    const result = await this.artifactNavigator.openArtifact(id);
+    if (!result.ok) new Notice(result.error.message, 8000);
   }
 
   // Wave D: open (or re-target) the Use Case detail view for `useCaseId`. The id

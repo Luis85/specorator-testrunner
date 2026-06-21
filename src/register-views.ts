@@ -56,6 +56,8 @@ export interface ViewWiringDeps {
   getSettings: () => TestHubSettings;
   openCreateUseCase: () => void;
   openUseCaseDetail: (useCaseId: string) => void;
+  /** WS-A4 deep-link port: open whatever artifact `id` names (PRD/UC/Story Map). */
+  openArtifact: (id: string) => void;
   openCreateSuite: () => void;
   openPrdBuilder: (parentPrdId?: string) => void;
   openStoryMapBuilder: () => void;
@@ -114,6 +116,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         workspace,
         eventBus,
         runLauncher: s.runLauncher,
+        openArtifact: (id) => deps.openArtifact(id),
         openGenerateFeature: (useCase, onGenerated) =>
           generateFeatureForUseCase(
             app,
@@ -148,6 +151,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         workspace,
         eventBus,
         openPrdBuilder: (parentPrdId) => deps.openPrdBuilder(parentPrdId),
+        openArtifact: (id) => deps.openArtifact(id),
       }),
   );
   plugin.registerView(
@@ -170,6 +174,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         storyMapService: s.storyMapService,
         useCaseService: s.useCaseService,
         eventBus,
+        openArtifact: (id) => deps.openArtifact(id),
       }),
   );
   plugin.registerView(

@@ -17,7 +17,6 @@ import { EditUseCaseModal } from "./edit-use-case-modal";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
 import { USE_CASE_VIEW_TYPE } from "./use-case-dashboard-view";
-import { PRD_VIEW_TYPE } from "./prd-explorer-view";
 import {
   detectMissingStepsOutcome,
   featureHealthLine,
@@ -109,6 +108,9 @@ export interface UseCaseDetailDeps {
   // the command palette's logic (no generation logic is duplicated here). The
   // `onGenerated` callback lets the view refresh once the Feature lands.
   openGenerateFeature: (useCase: UseCase, onGenerated: () => void) => void;
+  // WS-A4 deep-link port: the PRD breadcrumb opens the SPECIFIC parent PRD
+  // (01-§3.2) instead of the PRD explorer — one id-keyed navigation path.
+  openArtifact: (id: string) => void;
 }
 
 /**
@@ -312,8 +314,9 @@ export class UseCaseDetailView extends LiveDashboardView {
 
   /**
    * Renders the Domain › PRD breadcrumb above the title. The PRD segment is a
-   * link-button opening the PRD Explorer; nothing renders when the Use Case has
-   * neither a domain nor a PRD link.
+   * link-button opening the SPECIFIC parent PRD through the deep-link port
+   * (WS-A4, 01-§3.2); nothing renders when the Use Case has neither a domain nor
+   * a PRD link.
    */
   // Untested view render method — its CRAP score is high only because views are
   // unit-test-exempt (AGENTS.md, 0 coverage), not from logic density.
@@ -331,13 +334,14 @@ export class UseCaseDetailView extends LiveDashboardView {
     if (useCase.prdId) {
       if (useCase.domain) crumb.createSpan({ text: "  ›  " });
       const title = prdTitleById.get(useCase.prdId);
+      const prdId = useCase.prdId;
       crumb
         .createEl("button", {
-          text: title ? `${useCase.prdId}: ${title}` : useCase.prdId,
+          text: title ? `${prdId}: ${title}` : prdId,
           cls: "e2e-test-hub-link-button",
-          attr: { "aria-label": `Open PRD ${useCase.prdId} in the PRD explorer` },
+          attr: { "aria-label": `Open PRD ${prdId}` },
         })
-        .addEventListener("click", () => void this.deps.workspace.openView(PRD_VIEW_TYPE));
+        .addEventListener("click", () => this.deps.openArtifact(prdId));
     }
   }
 

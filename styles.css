@@ -1336,7 +1336,13 @@
   fill: var(--sm-card-ink-muted, rgba(26, 26, 34, 0.62));
   font-size: 10px;
   font-weight: 500;
-  pointer-events: none;
+  /* WS-A4: the ref is a deep-link into the referenced Use Case detail. */
+  cursor: pointer;
+}
+
+.sm-board-card-ref:hover {
+  fill: var(--text-accent);
+  text-decoration: underline;
 }
 
 /* Card footer chips (points + tags). */
