@@ -145,16 +145,16 @@ pure modules it should produce (to keep presentation thin), and its risk.
 | **A1 Design tokens** | `:root` token sheet over Obsidian vars (accent/spacing/radius/elevation/motion) + `prefers-reduced-motion` guard. Purely additive, zero visual change. | 02-R1/R2 | CSS only; no behaviour change |
 | **A2 Component library** | `spec-panel` (+ accent-spine), `spec-btn` (+ modifiers, one focus-ring), one **status-chip**, `spec-banner`, `spec-chip`, `spec-empty`/`renderEmptyState`, checklist. Consolidate 3 pills / 5 panels / 12 rings / 2 banners. Collapse `sm-board-`/`e2e-test-hub-story-map-` → `spec-storymap-`; fix undefined classes (`error-text`, `scope-items`…). | 02-R3..R9; 03-R8; 04-R15; 05-R12 | View `cls:` churn; coordinate with tests asserting class names |
 | **A3 Interaction primitives** | Extract the proven **two-click destructive confirm** and **checklist validation** as shared helpers; a generic **reconciling-render** helper (keyed spec-differ); `renderLoadError` sibling. | 04-R1; 05-R5/R12 | Reconciling-render is a pure fn over two spec lists; keystone for D1 |
-| **A4 Navigation port** | A deep-link port + pure `breadcrumbFor(node, target)` projection. **The target is a discriminated union, not id-only** (Codex catch): `{kind:"artifact", id}` for PRD/UC/SM (resolved via `findById`), `{kind:"evidence", path}` for Evidence notes (`TraceabilityRecord.evidence` is `VaultPath[]`), `{kind:"run", runId}` for runs (`RunHistoryService` has only `list()`, no `findById` — so carry the `evidencePath`/run id or add a lookup). **As-built A4 covers the id-addressable artifacts (PRD/UC/SM); Evidence/Run path-based targets are a follow-on** (B4). | 01-R2/R4 | `findById`/`findAll` for PRD/UC/SM; Evidence/Run need path/run-id targets (or a new run lookup); handle renamed/missing like UC-detail not-found |
+| **A4 Navigation port** | A deep-link port + pure `breadcrumbFor(node, target)` projection. **The target is a discriminated union, not id-only** (Codex catch): `{kind:"artifact", id}` for PRD/UC/SM (via `findById`); **`{kind:"feature", path}`** (Features open by vault path — `use-case-detail-view.ts:429`; Scenario References encode `featurePath`); **`{kind:"suite", path}`** (`TestSuite` carries a note path); `{kind:"evidence", path}` for Evidence notes (`TraceabilityRecord.evidence` is `VaultPath[]`); `{kind:"run", runId}` for runs (`RunHistoryService` has only `list()`, no `findById` — carry the `evidencePath` or add a lookup). **As-built A4 covers the id-addressable artifacts (PRD/UC/SM); Feature/Suite/Evidence/Run path targets are a follow-on** (B4). | 01-R2/R4 | `findById` for PRD/UC/SM; **path targets for Feature/Suite/Evidence**; run-id (or lookup) for runs; handle renamed/missing like UC-detail not-found |
 
 ### Phase 1 — IA & navigation *(the structural bet; new ADR for the shell)*
 
 | WS | Scope | Sources | Risk |
 |---|---|---|---|
 | **B1 Test Hub home shell** | One hub leaf with a persistent **Plan/Build/Run/Review** section rail hosting existing view bodies; demote explorers from top-level peers. Rail model is a pure projection. | 01-R1; 03-R9 | **High** — Obsidian leaf/workspace-restore; needs an ADR |
-| **B2 Onboarding orchestrator** | One state machine ("the single next action") in a docked, never-occluded rail; retire the `Get started` panel + tour CTA banner duplication; wizard scaffolds, rail teaches. **Needs a NEW pure `projectOnboarding(initState, ucCount, tourState)`** — the tour service alone lacks init-state + UC-count, so retiring dashboard onboarding on it would lose the fresh-vault next action (Codex catch — see 01 corrected). | 01-R3 | Med — first-run behaviour change; keep tour event wiring intact |
+| **B2 Onboarding orchestrator** | One state machine ("the single next action"). **Two parts with different timing** (Codex catch): the **pure `projectOnboarding(initState, ucCount, tourState)`** projection ships in Increment 2 (the tour service alone lacks init-state + UC-count); the **docked rail + retiring the `Get started` panel/tour CTA wait for B1** — the rail's host is the shell, so retiring the dashboard onboarding before its replacement exists would leave a gap. Wizard scaffolds; rail teaches. | 01-R3 | Med — first-run behaviour change; **rail/retirement gated on B1**; keep tour event wiring intact |
 | **B3 Command + ribbon hygiene** | Prefix/group commands `Test Hub: <Area> — <verb>` (ids unchanged) — independent, ship early. **Ribbon reduction to one "Open Test Hub" icon depends on B1** (else PRD/Story Maps become palette-only — Codex catch); fix the stale comment with it. | 01-R5/R6 | Low; ribbon half gated on B1 |
-| **B4 Wire the graph** | Apply A4 everywhere: id-based PRD→UC, board card→UC, UC→Story Map board, breadcrumb→specific PRD. **Evidence↔Run↔Suite uses the path/run-id target variants** (Evidence by `VaultPath`, Run by id/`evidencePath`) — and needs a run/evidence lookup if "open the run that produced this evidence" is wanted (Codex catch). | 01-R2; 04-R6 | Low–Med (Evidence/Run may need a new lookup) |
+| **B4 Wire the graph** | Apply A4 everywhere: id-based PRD→UC, board card→UC, UC→Story Map board, breadcrumb→specific PRD. **Feature/Suite/Evidence use path targets, Run a run-id target** (`{kind:"feature"\|"suite"\|"evidence", path}` / `{kind:"run", runId}`) — and "open the run that produced this evidence" needs a run/evidence lookup (Codex catch). | 01-R2; 04-R6 | Low–Med (Feature/Suite path targets + a Run lookup) |
 
 ### Phase 2 — Core authoring loop *(parallel with Phases 3–4 after foundations)*
 
@@ -187,7 +187,8 @@ pure modules it should produce (to keep presentation thin), and its risk.
 
 **Dependency spine:** `A1 → A2 → A3/A4 → B1` ; `A3 → D1 → D2` ; `B1 → E1` (both own
 `DashboardView.render()` — E1 builds on the shell, never parallel to it) ; `B1 → B3 ribbon
-half` ; `A2/A4` underpin every Phase 2–4 surface. After Phase 0–1, the **board track (D…)**
+half` ; `B1 → B2 rail+retirement` (B2's pure `projectOnboarding` lands earlier; the rail hosts
+in the shell) ; `A2/A4` underpin every Phase 2–4 surface. After Phase 0–1, the **board track (D…)**
 parallelizes with the **hub track (B1→E1)** and the **loop track (C…)** — but workstreams
 that share a surface (notably B1/E1 on the dashboard) stay under one owner.
 
@@ -245,12 +246,14 @@ WS starts.
    status-chip → A3 primitives (confirm/validation/reconciling-render) → A4 deep-link port.
    *Visible identity, zero structural risk; every later WS builds on it.*
 2. **Increment 2 — Navigability (Phase 1, subset b of T1):** B4 wire the graph + B3
-   **command renames only** + B2 onboarding orchestrator + the **loop rail** (C1). *Delivers
-   "forward momentum" and a navigable graph before the heavier shell.* **NB (Codex catch):
-   defer the ribbon reduction half of B3** — removing the PRD/Story Map ribbon icons before
-   the hub rail exists (B1) would strand Story Maps in palette-only access, since the
-   dashboard has no Story Maps quick action today. Ribbon demotion moves to Increment 3,
-   after B1.
+   **command renames only** + **B2 projection-only** (the pure `projectOnboarding`) + the
+   **loop rail** (C1). *Delivers "forward momentum" and a navigable graph before the heavier
+   shell.* **NB (Codex catches):** (a) **defer the ribbon-reduction half of B3** — removing the
+   PRD/Story Map ribbon icons before the hub rail exists (B1) would strand Story Maps in
+   palette-only access; it moves to Increment 3, after B1. (b) **B2's docked onboarding rail +
+   the retirement of the dashboard `Get started`/tour CTA also wait for B1** (the rail's host
+   is the shell) — Increment 2 builds only the pure `projectOnboarding(initState, ucCount,
+   tourState)` projection; the rail and the retirement land in Increment 3 once B1 exists.
 3. **Increment 3 — The bets:** B1 hub shell (Phase 1a) **then** E1 health hero + KPI funnel
    **on top of it**, in parallel with D1→D2 board reconciling-render + zoom/pan/focus. **NB
    (Codex catch): E1 must NOT run parallel to B1** — both own `DashboardView.render()` (B1
