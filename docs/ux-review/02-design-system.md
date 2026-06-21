@@ -109,11 +109,13 @@ Console banner (166, with `[data-status]` states) vs feature-editor banner (896,
  * The literal fallback keeps the plugin styled if a theme omits the base var. */
 .theme-light, .theme-dark, :root {
   /* — Identity accent — the single Specorator signature.
-   * Defaults to the user's own theme accent (native), but is its OWN token so
-   * a future opt-in "Specorator teal" is a one-line override, not a refactor. */
-  --spec-accent:            var(--interactive-accent);
-  --spec-accent-hover:      var(--interactive-accent-hover);
-  --spec-on-accent:         var(--text-on-accent);
+   * DECIDED (§0/T2): defaults to a Specorator brand teal (a contrast-tuned literal),
+   * NOT the theme accent. It is its own token, so falling back to the theme accent
+   * is a one-line override, not a refactor. (Example values shown here are illustrative;
+   * the shipped values live in styles.css / A1.) */
+  --spec-accent:            #0f766e;  /* Specorator brand teal (T2 default, NOT the theme accent) */
+  --spec-accent-hover:      #115e54;  /* per-theme contrast overrides live in A1 / styles.css */
+  --spec-on-accent:         #ffffff;
 
   /* — Spacing rhythm (one scale, named by intent, mapped to Obsidian sizes) — */
   --spec-space-1: var(--size-4-1, 4px);   /* hairline gaps, chip padding */

@@ -172,7 +172,7 @@ Suggested sequencing: **R1 → R2 → R5 → R4 → R6/R8 → R3 → R7 → R9**
 
 ## 5. Open questions for the product owner
 
-1. **How bold on IA?** Is the single **Workbench leaf** (R9) in scope for this redesign, or do we keep the multi-leaf model and unify it only via the **loop rail** (R1)? This is the biggest fork.
+1. ~~**How bold on IA?**~~ — **DECIDED (§0/T1): the single Test Hub shell.** The loop hosts inside it (Build/Run/Review sections) via the loop rail; R9 = B1, not a separate Workbench leaf. No longer an open fork.
 2. **Per-scenario live results (R3)** depend on the runner emitting per-scenario events mid-run, not just terminal counts. Do we have (or can we add) that stream granularity, or must the live Run view stay output-log-based until a scenario reports?
 3. **Run-time environment override (R5):** acceptable to run against a non-active environment *without* changing the persisted active, or does the single-active-environment model (per glossary) need to remain the only source of truth?
 4. **Rename protection (R7):** confirm-on-rename adds friction to a fast structured editor. Is a blocking confirm acceptable for the history-bearing case, or should it stay advisory-only and instead offer a post-hoc "re-attach history" repair?
