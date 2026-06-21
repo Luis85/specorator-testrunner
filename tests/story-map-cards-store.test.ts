@@ -244,6 +244,57 @@ describe("reconcileCards", () => {
     expect(fs.files.get(String(joinVaultPath(CARDS_DIR, "SMC-001.md")))).toContain("id: SMC-001");
   });
 
+  it("reserves a preassigned id so a later id-less card can't re-mint (and clobber) it", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    // Preassigned SMC-001 first, then an id-less card — the id-less one must NOT
+    // also become SMC-001 (both would write to cards/SMC-001.md, one clobbered).
+    const model = [modelCard({ id: "SMC-001", title: "kept" }), modelCard({ title: "fresh" })];
+
+    await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, model, []);
+
+    const reloaded = await loadCards(fs, CARDS_DIR, MAP_ID);
+    expect(reloaded.map((c) => c.id).sort()).toEqual(["SMC-001", "SMC-002"]);
+    expect(reloaded.map((c) => c.title).sort()).toEqual(["fresh", "kept"]);
+  });
+
+  it("reallocates a duplicate preassigned id so two cards never share a note", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    const model = [
+      modelCard({ id: "SMC-001", title: "first" }),
+      modelCard({ id: "SMC-001", title: "second" }),
+    ];
+
+    await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, model, []);
+
+    const reloaded = await loadCards(fs, CARDS_DIR, MAP_ID);
+    expect(reloaded).toHaveLength(2);
+    expect(new Set(reloaded.map((c) => c.id)).size).toBe(2);
+    expect(reloaded.map((c) => c.title).sort()).toEqual(["first", "second"]);
+  });
+
+  it("fails closed (does not blank the body) when an existing card note can't be read", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    seedNote(fs, cardNote({ id: "SMC-005", title: "t", body: "Precious hand-written body." }));
+    const original = fs.readFile.bind(fs);
+    fs.readFile = async (p: VaultPath) =>
+      String(p).endsWith("SMC-005.md")
+        ? { ok: false as const, error: { code: "INIT_FAILED" as const, message: "indexing" } }
+        : original(p);
+    const existing = [modelCard({ id: "SMC-005", title: "t" })];
+    const model = [modelCard({ id: "SMC-005", title: "t updated" })];
+
+    const result = await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, model, existing);
+
+    expect(result.ok).toBe(false);
+    // The note on disk is untouched — the body survives rather than being blanked.
+    expect(fs.files.get(String(joinVaultPath(CARDS_DIR, "SMC-005.md")))).toContain(
+      "Precious hand-written body.",
+    );
+  });
+
   it("updates order frontmatter when two cards in a cell are reordered", async () => {
     const fs = new FakeVaultFileSystem();
     const queue = new KeyedSerialQueue();

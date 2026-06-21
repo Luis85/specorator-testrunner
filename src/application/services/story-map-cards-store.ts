@@ -121,28 +121,39 @@ interface DesiredCard {
 /**
  * Assigns an id to every model card lacking a well-formed `SMC-NNN` one,
  * advancing the allocation seed as it goes so two new cards in a single call get
- * distinct ids. Seeded with `existing` ids so allocation continues past
- * previously-persisted cards.
+ * distinct ids. Seeded with the `existing` (on-disk) ids AND every valid id the
+ * model already carries, so a freshly-minted id can never collide with a
+ * preassigned one regardless of their order in `model`.
  *
  * A card's id becomes its note's file name (`cards/<id>.md`). A caller-supplied
  * id is therefore validated here — the filesystem boundary — not trusted: a
  * malformed id (a `/` would write a nested orphan that fails to parse back; a
  * `..` would throw out of `joinVaultPath` across the Result-returning service
  * boundary) is discarded and a fresh id allocated, mirroring how the parser drops
- * a disk note with a malformed id rather than crashing.
+ * a disk note with a malformed id rather than crashing. A DUPLICATE valid id (two
+ * model cards claiming the same `SMC-NNN`) is likewise reallocated for the later
+ * card so the two never write to — and clobber — the same note.
  */
 const allocateIds = (
   model: StoryMapCard[],
   existing: StoryMapCard[],
 ): { card: StoryMapCard; id: StoryMapCardId }[] => {
-  const seed: { id: StoryMapCardId }[] = existing
-    .map((c) => c.id)
-    .filter((id): id is StoryMapCardId => id !== undefined)
-    .map((id) => ({ id }));
+  const validIds = (cards: StoryMapCard[]): StoryMapCardId[] =>
+    cards.map((c) => c.id).filter((id): id is StoryMapCardId => isStoryMapCardId(id));
+  const seed: { id: StoryMapCardId }[] = [...validIds(existing), ...validIds(model)].map((id) => ({
+    id,
+  }));
+  const used = new Set<StoryMapCardId>();
   return model.map((card) => {
-    if (isStoryMapCardId(card.id)) return { card, id: card.id };
+    // Claim a valid, not-yet-taken preassigned id; otherwise mint a fresh one
+    // (covers id-less, malformed-id, and duplicate-preassigned-id cards).
+    if (isStoryMapCardId(card.id) && !used.has(card.id)) {
+      used.add(card.id);
+      return { card, id: card.id };
+    }
     const id = nextStoryMapCardId(seed);
-    seed.push({ id }); // advance the seed so the next id-less card differs
+    seed.push({ id }); // advance the seed so the next minted id differs
+    used.add(id);
     return { card, id };
   });
 };
@@ -161,13 +172,21 @@ const withCellOrder = (allocated: { card: StoryMapCard; id: StoryMapCardId }[]):
   });
 };
 
-/** Reads an existing note's hand-written body, or "" when no note exists yet. */
-const readBody = async (fs: VaultFileSystem, path: VaultPath): Promise<string> => {
-  const existed = await fs.exists(path);
-  if (!existed) return "";
+/**
+ * The existing note's hand-written body, `ok("")` when it doesn't exist yet, or
+ * the read error when an EXISTING note can't be read. Failing closed here lets
+ * `upsertCard` abort instead of overwriting the note with an empty body and
+ * silently destroying the user's card text during a transient I/O failure.
+ */
+const readBody = async (
+  fs: VaultFileSystem,
+  existed: boolean,
+  path: VaultPath,
+): Promise<Result<string>> => {
+  if (!existed) return ok("");
   const read = await fs.readFile(path);
-  if (!read.ok) return "";
-  return parseCardNote(read.value, path)?.body ?? "";
+  if (!read.ok) return err(read.error);
+  return ok(parseCardNote(read.value, path)?.body ?? "");
 };
 
 /**
@@ -183,7 +202,8 @@ const upsertCard = async (
 ): Promise<Result<void>> => {
   const { card, id, order } = desired;
   const existed = await fs.exists(path);
-  const body = await readBody(fs, path);
+  const body = await readBody(fs, existed, path);
+  if (!body.ok) return body;
   const content = buildCardNote({
     id,
     map: mapId,
@@ -198,7 +218,7 @@ const upsertCard = async (
     slice: card.slice,
     order,
     title: card.title,
-    body,
+    body: body.value,
     path,
   });
   return existed ? fs.writeFile(path, content) : fs.createFile(path, content);
