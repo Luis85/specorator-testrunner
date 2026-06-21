@@ -315,9 +315,17 @@ that opens on card-select and edits in place: title, type (as swatches), status,
 points, tags, ref (with Promote), and — critically — the card's **Markdown body**
 (description/acceptance notes, which exist on disk per ADR-0030 but are *invisible
 on the board today*). Selecting a card highlights it; the panel edits live through
-the same debounced save loop. The Card Modal can remain as the "open in modal"
-fallback, but the inspector makes the rich note-backed model finally visible where
-the work happens. A second panel tab can host **Personas** (M3): real persona
+the same debounced save loop. **Editing the body needs NEW read/write plumbing — it
+is not free in the current save loop** (reviewer catch, Codex 2026-06-21): the board
+model **drops** the body — `StoryMapCard` has no `body` field, `noteToCard` discards
+`StoryMapCardNote.body`, and `reconcileCards` *preserves* the on-disk body while
+writing only placement/planning metadata. So the inspector can edit
+title/type/status/points/tags/ref through the existing loop, but **loading and
+persisting the Markdown body requires extending the card model + read path (carry
+the body into the board model) and the write path (let a body edit flow through
+reconcile instead of being preserved-only)**. The Card Modal can remain as the "open
+in modal" fallback, but the inspector makes the rich note-backed model finally
+visible where the work happens. A second panel tab can host **Personas** (M3): real persona
 chips with colour/initial, linking to `PER-NNN`, and showing which activities each
 owns.
 
@@ -348,7 +356,7 @@ Flag: ★ = keeps the ItemView thin (logic lands in pure modules / a thin adapte
 | R7 | **Reconcile the two colour systems** — inline swatch cycles Card *Types*; hex override modal-only (M4) | M | S | M (changes a documented P4 behaviour — confirm w/ owner) | — | ★ swap `CARD_PALETTE` for `CARD_TYPES` |
 | R8 | **Board toolbar** (breadcrumb + view controls + add + legend toggle), replacing the hint line (M2, m6) | H | M | L | hosts R2/R3/R9 | view chrome; handlers call pure ops |
 | R9 | **Live legend = filter + type palette**, docked & co-visible (M5) | M | M | L | R1 (filter = re-render), R8 | ★ filter/palette state pure |
-| R10 | **Right-docked card inspector** incl. the card **body**, replacing modal-first editing (3.5) | H | H | M | R1; service already exposes body | view panel; writes via existing save loop |
+| R10 | **Right-docked card inspector** incl. the card **body**, replacing modal-first editing (3.5) | H | H | M | R1; **new card-note body read/write plumbing** (model drops body: `StoryMapCard` has no body field, `noteToCard` discards it, reconcile preserves-only — Codex catch) | view panel; body needs model + read/write path changes, not just the existing save loop |
 | R11 | **In-board undo stack** of model snapshots (m4) | M | S | L | ops already return immutable maps | ★ snapshot stack is pure |
 | R12 | **Persona lane identity** — colour/initial chips linking to `PER-NNN`, activity ownership (M3) | M | M | L | persona notes exist (ADR-0030) | ★ lane spec + resolution pure |
 | R13 | **Real empty / first-run states + coachmarks** (M2, M7) | M | S | L | — | ★ empty-state specs pure |
