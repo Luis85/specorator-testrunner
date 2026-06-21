@@ -4,7 +4,7 @@ import type { StoryMapService } from "../../application/services/story-map-servi
 import type { StoryMap } from "../../domain/entities/story-map";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
-import { openOrNotice, renderLoadError } from "./modal-helpers";
+import { openOrNotice, renderEmptyState, renderLoadError } from "./modal-helpers";
 import { LiveDashboardView } from "./live-dashboard-view";
 
 export const STORY_MAP_VIEW_TYPE = "e2e-test-hub-story-maps";
@@ -72,9 +72,10 @@ export class StoryMapExplorerView extends LiveDashboardView {
     }
 
     if (maps.value.length === 0) {
-      container.createEl("p", {
-        text: "No Story Maps yet. Create one to shape the product journey across PRDs.",
-      });
+      renderEmptyState(
+        container,
+        "No Story Maps yet. Create one to shape the product journey across PRDs.",
+      );
       return;
     }
 
@@ -84,7 +85,7 @@ export class StoryMapExplorerView extends LiveDashboardView {
 
   private renderRow(parent: HTMLElement, map: StoryMap): void {
     const li = parent.createEl("li", { cls: "e2e-test-hub-story-map-node" });
-    const card = li.createDiv({ cls: "e2e-test-hub-story-map-card" });
+    const card = li.createDiv({ cls: "spec-panel e2e-test-hub-story-map-card" });
 
     // Title row: prominent title (opens the board) + status pill.
     const titleRow = card.createDiv({ cls: "e2e-test-hub-story-map-card-title-row" });
@@ -98,7 +99,7 @@ export class StoryMapExplorerView extends LiveDashboardView {
 
     titleRow.createEl("span", {
       text: map.status,
-      cls: "e2e-test-hub-story-map-status",
+      cls: "spec-pill",
       attr: { "data-status": map.status, title: `Map status: ${map.status}` },
     });
 

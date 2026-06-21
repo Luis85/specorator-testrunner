@@ -269,7 +269,7 @@ export class DashboardView extends LiveDashboardView {
       prds.value,
       counts.ok ? counts.value : new Map<string, number>(),
     );
-    const section = container.createDiv({ cls: "e2e-test-hub-prd-roadmap" });
+    const section = container.createDiv({ cls: "spec-panel e2e-test-hub-prd-roadmap" });
 
     if (!roadmap.root) {
       section.createEl("p", { text: "No PRDs yet. Start with the product vision." });
@@ -312,7 +312,7 @@ export class DashboardView extends LiveDashboardView {
    * hub is not set up yet, with a one-line explanation. Opens the wizard.
    */
   private renderInitializeCta(container: HTMLElement): void {
-    const panel = container.createDiv({ cls: "e2e-test-hub-init-cta" });
+    const panel = container.createDiv({ cls: "spec-panel e2e-test-hub-init-cta" });
     panel.createEl("p", {
       cls: "e2e-test-hub-init-cta-text",
       text: "Set up your Test Hub to create Use Cases, write specifications, and run tests in this vault.",
@@ -399,7 +399,7 @@ export class DashboardView extends LiveDashboardView {
    * the pure {@link ONBOARDING_STEPS}; the view only renders and dispatches.
    */
   private renderOnboarding(container: HTMLElement): void {
-    const panel = container.createDiv({ cls: "e2e-test-hub-onboarding" });
+    const panel = container.createDiv({ cls: "spec-panel e2e-test-hub-onboarding" });
     panel.createEl("h3", { text: "Get started" });
     panel.createEl("p", {
       cls: "e2e-test-hub-onboarding-intro",

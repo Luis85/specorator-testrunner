@@ -227,7 +227,8 @@ export class FeatureEditorView extends TextFileView {
   private renderRaw(root: HTMLElement): void {
     if (this.specification === null && this.data.trim() !== "") {
       root.createDiv({
-        cls: "e2e-test-hub-feature-editor-banner",
+        cls: "spec-banner",
+        attr: { "data-status": "warning" },
         text:
           "Structured editing is unavailable: the file is not a parseable Feature " +
           "or contains constructs the editor can't preserve (comments, Rule: blocks).",
