@@ -6,6 +6,12 @@ export type CardType = (typeof CARD_TYPES)[number];
 export const isCardType = (v: unknown): v is CardType =>
   typeof v === "string" && (CARD_TYPES as readonly string[]).includes(v);
 
+/** Human-friendly label for a card type, e.g. "edge-case" → "Edge case". */
+export const cardTypeLabel = (type: CardType): string => {
+  const spaced = type.replace(/-/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+};
+
 /** Legend colours (storymaps.io parity). CSS resolves these via var() fallbacks. */
 export const CARD_TYPE_COLORS: Record<CardType, string> = {
   task: "var(--sm-card-task, #f6e58d)",

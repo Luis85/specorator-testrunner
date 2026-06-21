@@ -12,6 +12,7 @@ import {
   statusOptions,
   stepOptionsFor,
 } from "../../application/services/story-map-card-form";
+import { CARD_TYPES, cardTypeLabel } from "../../domain/entities/story-map-card";
 
 export interface StoryMapCardDeps {
   storyMapService: Pick<StoryMapService, "addCard" | "updateCard">;
@@ -74,6 +75,7 @@ export class StoryMapCardModal extends Modal {
     this.renderStatus(contentEl);
     this.renderPoints(contentEl);
     this.renderTags(contentEl);
+    this.renderCardType(contentEl);
     this.renderColor(contentEl);
     this.renderSubmit(contentEl);
   }
@@ -210,11 +212,25 @@ export class StoryMapCardModal extends Modal {
       });
   }
 
+  private renderCardType(contentEl: HTMLElement): void {
+    new Setting(contentEl)
+      .setName("Card type")
+      .setDesc("Drives the card's default colour (override below).")
+      .addDropdown((dropdown) => {
+        for (const type of CARD_TYPES) dropdown.addOption(type, cardTypeLabel(type));
+        dropdown.setValue(this.values.cardType);
+        dropdown.onChange((value) => (this.values = { ...this.values, cardType: value }));
+      });
+  }
+
   private renderColor(contentEl: HTMLElement): void {
-    new Setting(contentEl).setName("Color").addText((text) => {
-      text.setPlaceholder("Optional token or hex").setValue(this.values.color);
-      text.onChange((value) => (this.values = { ...this.values, color: value }));
-    });
+    new Setting(contentEl)
+      .setName("Color")
+      .setDesc("Optional override of the card-type colour.")
+      .addText((text) => {
+        text.setPlaceholder("Optional token or hex").setValue(this.values.color);
+        text.onChange((value) => (this.values = { ...this.values, color: value }));
+      });
   }
 
   private renderSubmit(contentEl: HTMLElement): void {

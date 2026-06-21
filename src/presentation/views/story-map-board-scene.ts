@@ -1,4 +1,4 @@
-import { CARD_TYPES, CARD_TYPE_COLORS } from "../../domain/entities/story-map-card";
+import { CARD_TYPES, CARD_TYPE_COLORS, cardTypeLabel } from "../../domain/entities/story-map-card";
 import type { BoardLayout } from "./story-map-board-layout";
 import { BOARD_METRICS } from "./story-map-board-layout";
 
@@ -256,7 +256,12 @@ const legendSpecs = (layout: BoardLayout): SvgNodeSpec[] => {
       }),
     );
     children.push(
-      text("sm-board-legend-label", 8 + M.legendLabelOffset, y + M.legendSwatch - 2, type),
+      text(
+        "sm-board-legend-label",
+        8 + M.legendLabelOffset,
+        y + M.legendSwatch - 2,
+        cardTypeLabel(type),
+      ),
     );
   });
   return [group("sm-board-legend", {}, children)];
