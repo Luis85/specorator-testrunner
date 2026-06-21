@@ -49,15 +49,18 @@
   --spec-status-idle: var(--text-muted);
 
   /* Identity accent (T2) — a Specorator brand teal by default, not the theme
-   * accent. Retune the brand here; per-theme contrast overrides follow below. */
-  --spec-accent: #0f9488;
-  --spec-accent-hover: #0b7d72;
+   * accent. Retune the brand here; per-theme contrast overrides follow below.
+   * Light-mode default is teal-700: white-on-accent ≈ 5.4:1, clearing WCAG AA
+   * (4.5:1) for normal-size filled-accent labels (e.g. primary buttons). */
+  --spec-accent: #0f766e;
+  --spec-accent-hover: #115e54;
   --spec-on-accent: #ffffff;
 }
 
 .theme-light {
-  --spec-accent: #0f9488;
-  --spec-accent-hover: #0b7d72;
+  /* teal-700 / teal-800 — white-on-accent ≈ 5.4:1 (AA for normal text). */
+  --spec-accent: #0f766e;
+  --spec-accent-hover: #115e54;
   --spec-on-accent: #ffffff;
 }
 
