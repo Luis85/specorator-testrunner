@@ -1049,32 +1049,41 @@ export class StoryMapBoardView extends LiveDashboardView {
       const model = this.model;
       // Treat an unexpected throw like a failed Result (the service is Result-based,
       // but never lose an edit silently to an unhandled rejection).
-      const error = await this.trySave(id, model);
+      const outcome = await this.trySave(id, model);
       // The leaf retargeted to another map mid-save: our model/index context is
       // gone, so report not-clean so dependent ops abort.
       if (id !== this.storyMapId) return false;
-      if (error !== null) {
-        new Notice(`Could not save the board: ${error}`);
+      if ("error" in outcome) {
+        new Notice(`Could not save the board: ${outcome.error}`);
         // Revert the optimistic edits to the last-saved state — but not while
         // closing (onClose awaits this flush), where a repaint is pointless and
         // would re-render a view about to be torn down.
         if (this.isOpen) await this.live.schedule();
         return false;
       }
-      // Advance the baseline to what we just wrote so the next iteration (a drop
-      // that arrived during this save) compares against it, not the stale value.
-      this.baseline = storyMapSignature(model);
+      // Advance the baseline to what's now ON DISK — the composed map saveMap wrote
+      // and reloaded — not the optimistic model we sent. saveMap normalizes on
+      // persist (labels/steps, and each card through the buildCardNote→parseCardNote
+      // round-trip), so a model-derived baseline would make the next save see a
+      // phantom external change ("changed elsewhere").
+      this.baseline = storyMapSignature(outcome.saved);
     }
     return true;
   }
 
-  /** Persists one save; returns an error message, or null on success. Never throws. */
-  private async trySave(id: string, model: StoryMap): Promise<string | null> {
+  /**
+   * Persists one save. Returns the composed (persisted) map on success, or an
+   * error message — never throws.
+   */
+  private async trySave(
+    id: string,
+    model: StoryMap,
+  ): Promise<{ saved: StoryMap } | { error: string }> {
     try {
       const result = await this.deps.storyMapService.saveMap(id, model, this.origin, this.baseline);
-      return result.ok ? null : result.error.message;
+      return result.ok ? { saved: result.value } : { error: result.error.message };
     } catch (e) {
-      return e instanceof Error ? e.message : String(e);
+      return { error: e instanceof Error ? e.message : String(e) };
     }
   }
 
