@@ -175,6 +175,21 @@ describe("reconcileCards", () => {
     expect(written).toContain("Body kept.");
   });
 
+  it("allocates a fresh id for a caller-supplied id that isn't a well-formed SMC-NNN", async () => {
+    const fs = new FakeVaultFileSystem();
+    const queue = new KeyedSerialQueue();
+    // A traversal id must never reach cardFileName/joinVaultPath (joinVaultPath
+    // throws on "..", escaping the Result-returning service boundary).
+    const model = [modelCard({ id: "../escape", title: "evil" })];
+
+    const result = await reconcileCards(fs, queue, CARDS_DIR, MAP_ID, model, []);
+
+    expect(result.ok).toBe(true);
+    // Written under a safe, freshly-allocated canonical id — never the bad one.
+    expect(fs.files.has(String(joinVaultPath(CARDS_DIR, "SMC-001.md")))).toBe(true);
+    expect(fs.files.get(String(joinVaultPath(CARDS_DIR, "SMC-001.md")))).toContain("id: SMC-001");
+  });
+
   it("updates order frontmatter when two cards in a cell are reordered", async () => {
     const fs = new FakeVaultFileSystem();
     const queue = new KeyedSerialQueue();
