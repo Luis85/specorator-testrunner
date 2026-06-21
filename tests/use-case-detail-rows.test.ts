@@ -15,7 +15,6 @@ import {
   projectFeatureRows,
   projectUseCaseHeader,
   stepGenerationRows,
-  stepsAreDefined,
   storyMapBacklinks,
   validateFeatureOutcome,
 } from "../src/presentation/views/use-case-detail-rows";
@@ -115,32 +114,6 @@ describe("projectFeatureRows", () => {
       entry("Features/UC-001-a.feature"),
     ]);
     expect(rows.map((r) => r.label)).toEqual(["UC-001-b.feature", "UC-001-a.feature"]);
-  });
-});
-
-describe("stepsAreDefined", () => {
-  it("is true when the static coverage heuristic confirms every step is defined", () => {
-    expect(stepsAreDefined(true, "planned")).toBe(true);
-  });
-
-  it("is true when a passing run proves coverage even if the heuristic over-reports", () => {
-    // The matcher can't model custom param types / optional syntax / runtime defs,
-    // so it may falsely report missing steps; a passing run is authoritative proof.
-    expect(stepsAreDefined(false, "passing")).toBe(true);
-  });
-
-  it("is false when the heuristic finds gaps and the UC has not passed", () => {
-    expect(stepsAreDefined(false, "planned")).toBe(false);
-  });
-
-  it.each<["implemented" | "failing" | "missing-steps" | "not-planned"]>([
-    ["implemented"],
-    ["failing"],
-    ["missing-steps"],
-    ["not-planned"],
-  ])("does not let %s rescue the heuristic (only passing is sound proof)", (status) => {
-    // Each of these can carry an undefined step, so they never prove coverage.
-    expect(stepsAreDefined(false, status)).toBe(false);
   });
 });
 

@@ -29,7 +29,6 @@ import {
   prdBreadcrumbLabel,
   projectFeatureRows,
   projectUseCaseHeader,
-  stepsAreDefined,
   storyMapBacklinks,
   validateFeatureOutcome,
   type FeatureRow,
@@ -255,12 +254,15 @@ export class UseCaseDetailView extends LiveDashboardView {
     // the entity's own links only when the listing itself failed.
     const railPaths = featurePaths ?? useCase.featureFiles;
     // The "steps defined" signal: the static step-definition coverage check (no
-    // bddgen spawn, no side effects — safe on every render), rescued by a passing
-    // run for Features the heuristic can't fully model (see stepsAreDefined).
-    const stepsDefined = stepsAreDefined(
-      await this.deps.specificationService.allStepsDefined(railPaths),
-      useCase.automationStatus,
-    );
+    // bddgen spawn, no side effects — safe on every render). We deliberately do NOT
+    // OR in `automationStatus === "passing"`: a scenario's history key is
+    // `featurePath::name` (not step content), so a scenario edited to add an
+    // undefined step keeps its prior `passed` result and would derive a STALE
+    // `passing`, falsely closing the rail past the new missing step (Codex review).
+    // The heuristic's only failure is over-reporting missing for unmodeled Cucumber
+    // constructs — the SAFE direction (a non-destructive Generate-steps CTA, never a
+    // false close), and the same limitation the Feature Editor's flags already have.
+    const stepsDefined = await this.deps.specificationService.allStepsDefined(railPaths);
 
     this.renderHeader(container, useCase, prdTitleById, backlinks, railPaths, stepsDefined);
     this.renderFeatures(container, useCase, listed);
