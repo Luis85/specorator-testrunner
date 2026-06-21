@@ -353,15 +353,18 @@ export class DefaultPrdService implements PrdService {
   /** Counts Story Map notes whose `product` frontmatter anchors to `prdId`. */
   private async countLinkedStoryMaps(prdId: PrdId): Promise<Result<number>> {
     const settings = await this.settingsService.load();
+    const root = String(settings.paths.storyMapsPath);
     // Reuse parseStoryMapNote so the guard can't drift from StoryMapService.findAll:
     // it filters non-map notes AND applies the ADR-0027 default (a blank `product`
-    // resolves to PRD-000). Skip per-card notes (Story Maps/<map>/cards/SMC-NNN.md,
-    // ADR-0030) — they carry `type: story-map-card`, never a `product` anchor, so an
-    // unreadable card note must not fail-close (and block) deleting an unrelated PRD.
+    // resolves to PRD-000). Skip per-card notes (<map>/cards/SMC-NNN.md, ADR-0030) —
+    // they carry `type: story-map-card`, never a `product` anchor, so an unreadable
+    // card note must not fail-close (and block) deleting an unrelated PRD. Match the
+    // cards/ segment RELATIVE to the maps root (not an absolute substring) so a
+    // storyMapsPath that itself contains a `cards` segment still keeps its map notes.
     return this.countNotesUnder(
       settings.paths.storyMapsPath,
       (content, path) => parseStoryMapNote(content, path)?.product === prdId,
-      (path) => String(path).includes("/cards/"),
+      (path) => String(path).slice(root.length).includes("/cards/"),
     );
   }
 

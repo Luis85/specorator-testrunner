@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DefaultPrdService } from "../src/application/services/prd-service";
 import { DefaultSettingsService } from "../src/application/services/settings-service";
 import { DefaultPathSafetyPolicy } from "../src/domain/policies/path-safety-policy";
+import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import { FakeDataStore, FakeVaultFileSystem, recordingEventBus, silentLogger } from "./fakes";
 
 const build = () => {
@@ -445,6 +446,38 @@ describe("DefaultPrdService.deletePrd", () => {
 
     expect(result.ok).toBe(true);
     expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(false);
+  });
+
+  it("still counts map notes as anchors when storyMapsPath is nested under a 'cards' segment", async () => {
+    // A storyMapsPath that itself contains a `cards` segment: the card-note skip must
+    // be RELATIVE to the maps root, else every map-note path matches and the guard
+    // counts zero — deleting a PRD still used as a map's `product` (dangling anchor).
+    const fs = new FakeVaultFileSystem();
+    const { bus } = recordingEventBus();
+    const settings = new DefaultSettingsService(
+      new FakeDataStore({
+        schemaVersion: 1,
+        ...DEFAULT_SETTINGS,
+        paths: { ...DEFAULT_SETTINGS.paths, storyMapsPath: "Planning/cards/Story Maps" },
+      }),
+      new DefaultPathSafetyPolicy(),
+      bus,
+    );
+    const service = new DefaultPrdService(settings, fs, bus, silentLogger);
+    seedRoot(fs);
+    seedSub(fs);
+    fs.files.set(
+      "Planning/cards/Story Maps/SM-001-j/SM-001-j.md",
+      ["---", "id: SM-001", "type: story-map", "title: J", "product: PRD-001", "---", ""].join(
+        "\n",
+      ),
+    );
+
+    const result = await service.deletePrd("PRD-001");
+
+    // PRD-001 is still the map's product anchor → deletion refused (map note counted).
+    expect(result.ok).toBe(false);
+    expect(fs.files.has("PRDs/PRD-001-dash/PRD-001-dash.md")).toBe(true);
   });
 
   it("treats a Story Map with a blank product as anchored to PRD-000, not a sub-PRD", async () => {
