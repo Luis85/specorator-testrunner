@@ -85,5 +85,10 @@ corrupt log file reads as empty (logged), and a write fault returns `err`.
 - The cap is `HISTORY_DEPTH_DEFAULT`; the log is a bounded, regenerable-by-
   accumulation projection, so a corrupt or hand-edited file degrades to empty
   rather than erroring a run.
-- A late terminal event after unload cannot drive a write: the recorder detaches
-  its subscriptions in `onunload`, mirroring the post-run coordinator.
+- A late terminal event after unload cannot drive a spurious write: the recorder
+  detaches its subscriptions in `onunload`. It diverges from the post-run
+  coordinator (which detaches synchronously) in ONE case — when a run is active at
+  unload, the recorder stays subscribed until the unload-initiated `cancel()` has
+  published `testrun.cancelled`, so that terminal run is recorded and the
+  latest-run verdict isn't stale after reload. The cancellation produces no report,
+  so keeping the recorder alive cannot drive an evidence import.

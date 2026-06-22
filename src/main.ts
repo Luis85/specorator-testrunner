@@ -310,7 +310,21 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
             reason: cancelled.error.message,
           });
         }
+        // Detach the recorder only AFTER cancel() has published (and the
+        // still-subscribed recorder enqueued) `testrun.cancelled`. cancel()
+        // awaits its terminal publish, so by the time this resolves the unload
+        // cancellation has been recorded into the durable log — unlike the
+        // post-run coordinator (stopped synchronously below), the log must
+        // capture this terminal run so the latest-run verdict isn't stale after
+        // reload (ADR-0032 / Codex P2). The cancellation produces no report, so
+        // keeping the recorder alive cannot drive a spurious evidence import.
+        this.executionLogRecorder?.stop();
       });
+    } else {
+      // No active run to cancel: nothing further to record, so detach the
+      // recorder immediately (a late terminal event after unload can't drive a
+      // new log write; synchronous, race-free; ADR-0032).
+      this.executionLogRecorder?.stop();
     }
     // Detach the post-run coordinator's bus subscriptions so a late terminal
     // event after unload can't drive a new import (synchronous, race-free).
@@ -320,9 +334,6 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // synchronous per PRES-H1, and the per-run snapshot already protects
     // attribution, so we do not block teardown on whenSettled() here.
     this.postRunCoordinator?.stop();
-    // Detach the execution-log recorder so a late terminal event after unload
-    // can't drive a new log write (synchronous, race-free; ADR-0032).
-    this.executionLogRecorder?.stop();
     this.guidedTourService?.stop();
     // Best-effort kill signal to ANY child still tracked by either runner —
     // notably an in-flight `npm install`/`playwright install` on the shared
