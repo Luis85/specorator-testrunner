@@ -7,6 +7,7 @@ import type { MaintenanceService } from "./application/services/maintenance-serv
 import type { PipelineGenerationService } from "./application/services/pipeline-generation-service";
 import type { FeatureInsightService } from "./application/services/feature-insight-service";
 import type { PostRunCoordinator } from "./application/services/post-run-coordinator";
+import type { ExecutionLogRecorder } from "./application/services/execution-log-recorder";
 import type { GuidedTourService } from "./application/services/guided-tour-service";
 import {
   DefaultSettingsService,
@@ -97,6 +98,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // state, the run-status eligibility rule, and the serializing evidence chain
   // that used to live here.
   private postRunCoordinator!: PostRunCoordinator;
+  // E1 (ADR-0032): records EVERY terminal run into the durable execution log,
+  // independent of evidence, so a later read serves an honest "last run".
+  private executionLogRecorder!: ExecutionLogRecorder;
   private guidedTourService!: GuidedTourService;
   private commandHelpers!: RegisteredCommandHelpers;
   // Every NodeChildProcessRunner built by this composition root, so onunload
@@ -180,6 +184,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.testExecutionService = services.testExecutionService;
     this.runLauncher = services.runLauncher;
     this.postRunCoordinator = services.postRunCoordinator;
+    this.executionLogRecorder = services.executionLogRecorder;
+    // E1 (ADR-0032): begin recording every terminal run into the durable log.
+    this.executionLogRecorder.start();
     this.guidedTourService = services.guidedTourService;
 
     // WS-A4: the deep-link navigator wires the findById services to the existing
@@ -313,6 +320,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // synchronous per PRES-H1, and the per-run snapshot already protects
     // attribution, so we do not block teardown on whenSettled() here.
     this.postRunCoordinator?.stop();
+    // Detach the execution-log recorder so a late terminal event after unload
+    // can't drive a new log write (synchronous, race-free; ADR-0032).
+    this.executionLogRecorder?.stop();
     this.guidedTourService?.stop();
     // Best-effort kill signal to ANY child still tracked by either runner —
     // notably an in-flight `npm install`/`playwright install` on the shared
