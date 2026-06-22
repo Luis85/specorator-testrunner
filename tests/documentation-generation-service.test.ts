@@ -198,7 +198,7 @@ describe("documentation content builders (US-043/044/045)", () => {
     expect(manual).toContain("# User Manual");
     expect(manual).toContain("Build — new Use Case");
     expect(manual).toContain("Build — generate feature from Use Case");
-    expect(manual).toContain("Review — open dashboard");
+    expect(manual).toContain("Open Test Hub");
     expect(manual).toContain("Setup — generate CI workflow");
   });
 

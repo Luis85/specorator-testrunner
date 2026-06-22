@@ -47,6 +47,7 @@ describe("Create PRD command", () => {
       "importLastRun"
     >,
     workspace: {} as Partial<WorkspacePort> as WorkspacePort,
+    openHub: vi.fn(),
     openWizard: vi.fn(),
     openCreateUseCase: vi.fn(),
     openCreateSuite: vi.fn(),

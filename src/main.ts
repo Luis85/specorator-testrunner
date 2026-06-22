@@ -43,10 +43,7 @@ import { CreateSuiteModal } from "./presentation/views/create-suite-modal";
 import { CreateUseCaseModal } from "./presentation/views/create-use-case-modal";
 import { InitializationWizardModal } from "./presentation/views/initialization-wizard-modal";
 import { PrdBuilderModal } from "./presentation/views/prd-builder-modal";
-import { PRD_VIEW_TYPE } from "./presentation/views/prd-explorer-view";
 import { StoryMapBuilderModal } from "./presentation/views/story-map-builder-modal";
-import { STORY_MAP_VIEW_TYPE } from "./presentation/views/story-map-explorer-view";
-import { TEST_CONSOLE_VIEW_TYPE } from "./presentation/views/test-console-view";
 import { USE_CASE_DETAIL_VIEW_TYPE } from "./presentation/views/use-case-detail-view";
 import { STORY_MAP_BOARD_VIEW_TYPE } from "./presentation/views/story-map-board-view";
 import { HUB_VIEW_TYPE } from "./presentation/views/hub-view";
@@ -54,7 +51,6 @@ import { openOrNotice } from "./presentation/views/modal-helpers";
 import { ArtifactNavigator } from "./presentation/navigation/artifact-navigator";
 import type { ArtifactNavigationPort } from "./presentation/navigation/artifact-navigation-port";
 import type { NavigationTarget } from "./presentation/navigation/navigation-target";
-import { DASHBOARD_VIEW_TYPE } from "./presentation/views/dashboard-view";
 import { GUIDED_TOUR_VIEW_TYPE } from "./presentation/views/guided-tour-view";
 import { InMemoryEventBus, type EventBus } from "./shared/event-bus/event-bus";
 import { ConsoleLogger } from "./shared/logging/logger";
@@ -243,32 +239,13 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       }),
     );
 
-    // Ribbon icons stay in the composition root (they are plugin chrome, not
-    // command bodies). Default chrome is deliberately minimal (2026-06-11
-    // review §4 product call): Dashboard + Test Console only — the dashboard
-    // is the hub (incl. the Initialize call to action when uninitialized);
-    // every other surface stays reachable via the command palette and the
-    // dashboard's quick actions.
-    this.addRibbonIcon(
-      "gauge",
-      "Open Test Hub dashboard",
-      () => void this.workspaceAdapter.openView(DASHBOARD_VIEW_TYPE),
-    );
-    this.addRibbonIcon(
-      "terminal",
-      "Open Test Console",
-      () => void this.workspaceAdapter.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
-    );
-    this.addRibbonIcon(
-      "git-fork",
-      "Open PRDs",
-      () => void this.workspaceAdapter.openView(PRD_VIEW_TYPE, "sidebar"),
-    );
-    this.addRibbonIcon(
-      "map",
-      "Open Story Maps",
-      () => void this.workspaceAdapter.openView(STORY_MAP_VIEW_TYPE, "sidebar"),
-    );
+    // ONE ribbon icon — the single "Open Test Hub" front door (WS-B1-PR4 / 01-R6).
+    // The hub's section rail now reaches every surface that used to have its own
+    // icon (PRDs + Story Maps → Plan, Test Console → Run, the old dashboard → the
+    // hub itself), and the grouped command palette covers the keyboard path — so the
+    // deliberately-minimal chrome the 2026-06-11 review §4 intended is finally a
+    // single front door, not four competing peers.
+    this.addRibbonIcon("layout-dashboard", "Open Test Hub", () => void this.openHub());
 
     // Command-palette surface (P2-7): the command bodies live in
     // presentation/commands/register-commands.ts behind a narrow deps contract;
@@ -287,6 +264,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       runLauncher: this.runLauncher,
       postRunCoordinator: this.postRunCoordinator,
       workspace: this.workspaceAdapter,
+      openHub: () => this.openHub(),
       openWizard: () => this.openWizard(),
       openCreateUseCase: () => this.openCreateUseCase(),
       openCreateSuite: () => this.openCreateSuite(),

@@ -345,7 +345,11 @@ Summary:
 
 ## 14. UI Composition Map
 
-Each view opens as its own workspace leaf. Navigation is by ribbon icon + command palette.
+The Test Hub home shell (ADR-0031) is a single workspace leaf that hosts the demoted
+list surfaces as in-hub sections behind a Plan/Build/Run/Review rail; stateful/id-targeted
+surfaces (board, console, Use Case detail, feature editor) stay their own leaves, opened
+from the hub via the deep-link navigator. Navigation is by the hub's section rail, the
+single "Open Test Hub" ribbon icon, and the grouped command palette.
 
 ```
 Obsidian Workspace
