@@ -9,11 +9,12 @@ import type { ConsoleLogger } from "./shared/logging/logger";
 import type { ComposedServices } from "./compose-services";
 import type { NavigationTarget } from "./presentation/navigation/navigation-target";
 import type { DashboardDocumentType } from "./presentation/views/dashboard-view";
-import { DASHBOARD_VIEW_TYPE, DashboardView } from "./presentation/views/dashboard-view";
+import { DASHBOARD_VIEW_TYPE } from "./presentation/views/dashboard-view";
 import {
   EVIDENCE_EXPLORER_VIEW_TYPE,
   EvidenceExplorerView,
 } from "./presentation/views/evidence-explorer-view";
+import { DashboardAliasView, HUB_VIEW_TYPE, HubView } from "./presentation/views/hub-view";
 import {
   FEATURE_EDITOR_VIEW_TYPE,
   FeatureEditorView,
@@ -57,6 +58,8 @@ export interface ViewWiringDeps {
   getSettings: () => TestHubSettings;
   openCreateUseCase: () => void;
   openUseCaseDetail: (useCaseId: string) => void;
+  /** WS-B1 / ADR-0031: open (or reveal) the single Test Hub home leaf. */
+  openHub: () => void | Promise<void>;
   /**
    * WS-A4/B4 deep-link port: open whatever node `target` names — PRD/UC/Story
    * Map by id, Feature/Suite/Evidence by path, or a Run by id.
@@ -201,46 +204,100 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         openEvidence: (path) => deps.openEvidence(path),
       }),
   );
+  // WS-B1 / ADR-0031: the Test Hub home shell — the SINGLE leaf hosting all the
+  // demoted list surfaces in a left-rail section switcher. Its deps are the union
+  // of the hosted bodies' deps: the overview dashboard (the superset, with the
+  // same create/run/open/switch-environment callbacks the standalone dashboard
+  // used), plus each explorer body's own service slices. Every callback reuses an
+  // EXISTING helper — no run/create/navigate logic is duplicated here.
+  plugin.registerView(
+    HUB_VIEW_TYPE,
+    (leaf) =>
+      new HubView(leaf, {
+        app,
+        workspace,
+        dashboard: {
+          traceabilityService: s.traceabilityService,
+          prdService: s.prdService,
+          useCaseService: s.useCaseService,
+          openPrdBuilder: () => deps.openPrdBuilder(),
+          navigateToPrds: () => void workspace.openView(PRD_VIEW_TYPE, "sidebar"),
+          eventBus,
+          // Real initialization signal: the Use Cases folder the snapshot reads
+          // exists once the wizard has scaffolded the vault (a fresh vault lists
+          // it as ok([]), so snapshot success can't distinguish "not set up").
+          isInitialized: () => vault.exists(deps.getSettings().paths.useCasesPath),
+          openDocumentation: (documentType) => deps.openDocumentation(documentType),
+          openWizard: () => deps.openWizard(),
+          openCreateUseCase: () => deps.openCreateUseCase(),
+          openCreateSuite: () => deps.openCreateSuite(),
+          runAll: () => s.runLauncher.launch({ scope: "all", target: "all" }),
+          runDemo: () => s.runLauncher.launch({ scope: "demo", target: "demo" }),
+          generateDocumentation: () => deps.generateDocumentation(),
+          navigate: () => void workspace.openView(USE_CASE_VIEW_TYPE),
+          openSuites: () => void workspace.openView(SUITE_VIEW_TYPE),
+          openConsole: () => void workspace.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
+          openEvidence: (path) => deps.openEvidence(path),
+          getEnvironments: () => ({
+            active: deps.getSettings().sut.active,
+            names: Object.keys(deps.getSettings().sut.environments),
+          }),
+          switchEnvironment: (name) => deps.switchEnvironment(name),
+          openEvidenceExplorer: () => void workspace.openView(EVIDENCE_EXPLORER_VIEW_TYPE),
+          tourVisible: () => {
+            const state = s.guidedTourService.getState();
+            return !state.completed && !state.dismissed;
+          },
+          openGuidedTour: () => void workspace.openView(GUIDED_TOUR_VIEW_TYPE, "sidebar"),
+        },
+        prds: {
+          prdService: s.prdService,
+          useCaseService: s.useCaseService,
+          openPrdBuilder: (parentPrdId) => deps.openPrdBuilder(parentPrdId),
+          navigate: (target) => deps.navigate(target),
+          // The body's own `refresh` is supplied by the hub (its active-panel
+          // re-render); this placeholder is overwritten in HubView.renderBody.
+          refresh: () => undefined,
+        },
+        storyMaps: {
+          storyMapService: s.storyMapService,
+          workspace,
+          openStoryMapBuilder: () => deps.openStoryMapBuilder(),
+          openMapSettings: (map) =>
+            new StoryMapSettingsModal(app, map, { storyMapService: s.storyMapService }).open(),
+          openStoryMapBoard: (id) => deps.openStoryMapBoard(id),
+          refresh: () => undefined,
+        },
+        useCases: {
+          traceability: s.traceabilityService,
+          specificationService: s.specificationService,
+          workspace,
+          runLauncher: s.runLauncher,
+          onCreate: () => deps.openCreateUseCase(),
+          onOpenDetail: (useCaseId) => deps.openUseCaseDetail(useCaseId),
+          refresh: () => undefined,
+        },
+        suites: {
+          suiteService: s.suiteService,
+          runLauncher: s.runLauncher,
+          featureInsight: s.featureInsightService,
+          onCreate: () => deps.openCreateSuite(),
+          navigate: (target) => deps.navigate(target),
+          refresh: () => undefined,
+        },
+        evidence: {
+          runHistory: s.runHistoryService,
+          navigate: (target) => deps.navigate(target),
+          refresh: () => undefined,
+        },
+      }),
+  );
+  // ADR-0031 alias migration: the legacy dashboard view type stays registered so
+  // a persisted layout never orphans, but mounts a thin redirect that opens the
+  // hub and detaches itself — a restored dashboard leaf lands on the hub.
   plugin.registerView(
     DASHBOARD_VIEW_TYPE,
-    (leaf) =>
-      // Wave C: the dashboard hub drives create/run/open/generate-docs/switch-
-      // environment/open-evidence through callbacks wired to the EXISTING
-      // helpers + the Wave B RunLauncher (no run/create logic is duplicated).
-      new DashboardView(leaf, {
-        traceabilityService: s.traceabilityService,
-        prdService: s.prdService,
-        useCaseService: s.useCaseService,
-        openPrdBuilder: () => deps.openPrdBuilder(),
-        navigateToPrds: () => void workspace.openView(PRD_VIEW_TYPE, "sidebar"),
-        eventBus,
-        // Real initialization signal: the Use Cases folder the snapshot reads
-        // exists once the wizard has scaffolded the vault (a fresh vault lists it
-        // as ok([]), so snapshot success can't distinguish "not set up").
-        isInitialized: () => vault.exists(deps.getSettings().paths.useCasesPath),
-        openDocumentation: (documentType) => deps.openDocumentation(documentType),
-        openWizard: () => deps.openWizard(),
-        openCreateUseCase: () => deps.openCreateUseCase(),
-        openCreateSuite: () => deps.openCreateSuite(),
-        runAll: () => s.runLauncher.launch({ scope: "all", target: "all" }),
-        runDemo: () => s.runLauncher.launch({ scope: "demo", target: "demo" }),
-        generateDocumentation: () => deps.generateDocumentation(),
-        navigate: () => void workspace.openView(USE_CASE_VIEW_TYPE),
-        openSuites: () => void workspace.openView(SUITE_VIEW_TYPE),
-        openConsole: () => void workspace.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
-        openEvidence: (path) => deps.openEvidence(path),
-        getEnvironments: () => ({
-          active: deps.getSettings().sut.active,
-          names: Object.keys(deps.getSettings().sut.environments),
-        }),
-        switchEnvironment: (name) => deps.switchEnvironment(name),
-        openEvidenceExplorer: () => void workspace.openView(EVIDENCE_EXPLORER_VIEW_TYPE),
-        tourVisible: () => {
-          const state = s.guidedTourService.getState();
-          return !state.completed && !state.dismissed;
-        },
-        openGuidedTour: () => void workspace.openView(GUIDED_TOUR_VIEW_TYPE, "sidebar"),
-      }),
+    (leaf) => new DashboardAliasView(leaf, () => deps.openHub()),
   );
   plugin.registerView(
     EVIDENCE_EXPLORER_VIEW_TYPE,

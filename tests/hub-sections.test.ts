@@ -5,6 +5,7 @@ import {
   HUB_SECTION_DESCRIPTORS,
   hubCrumbRoot,
   projectHubRail,
+  readPersistedActiveSection,
   resolveActiveSection,
   type HubContentRef,
   type HubRail,
@@ -134,6 +135,44 @@ describe("resolveActiveSection", () => {
 
   it("falls back to overview for an empty string", () => {
     expect(resolveActiveSection("")).toBe(DEFAULT_HUB_SECTION);
+  });
+});
+
+describe("readPersistedActiveSection", () => {
+  it("reads the activeSection string off a setState payload", () => {
+    expect(readPersistedActiveSection({ activeSection: "run" })).toBe("run");
+  });
+
+  it("reads an unknown string through (resolveActiveSection sanitizes it)", () => {
+    expect(readPersistedActiveSection({ activeSection: "settings" })).toBe("settings");
+  });
+
+  it("returns undefined when the field is absent", () => {
+    expect(readPersistedActiveSection({})).toBeUndefined();
+    expect(readPersistedActiveSection({ other: "x" })).toBeUndefined();
+  });
+
+  it("returns undefined for a non-string activeSection", () => {
+    expect(readPersistedActiveSection({ activeSection: 3 })).toBeUndefined();
+    expect(readPersistedActiveSection({ activeSection: null })).toBeUndefined();
+    expect(readPersistedActiveSection({ activeSection: { nested: true } })).toBeUndefined();
+  });
+
+  it("returns undefined for a non-object / null / undefined state", () => {
+    expect(readPersistedActiveSection(undefined)).toBeUndefined();
+    expect(readPersistedActiveSection(null)).toBeUndefined();
+    expect(readPersistedActiveSection("run")).toBeUndefined();
+    expect(readPersistedActiveSection(42)).toBeUndefined();
+  });
+
+  it("composes with resolveActiveSection to land a known section or the default", () => {
+    expect(resolveActiveSection(readPersistedActiveSection({ activeSection: "plan" }))).toBe(
+      "plan",
+    );
+    expect(resolveActiveSection(readPersistedActiveSection({ activeSection: "nope" }))).toBe(
+      DEFAULT_HUB_SECTION,
+    );
+    expect(resolveActiveSection(readPersistedActiveSection(null))).toBe(DEFAULT_HUB_SECTION);
   });
 });
 

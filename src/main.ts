@@ -49,6 +49,7 @@ import { STORY_MAP_VIEW_TYPE } from "./presentation/views/story-map-explorer-vie
 import { TEST_CONSOLE_VIEW_TYPE } from "./presentation/views/test-console-view";
 import { USE_CASE_DETAIL_VIEW_TYPE } from "./presentation/views/use-case-detail-view";
 import { STORY_MAP_BOARD_VIEW_TYPE } from "./presentation/views/story-map-board-view";
+import { HUB_VIEW_TYPE } from "./presentation/views/hub-view";
 import { openOrNotice } from "./presentation/views/modal-helpers";
 import { ArtifactNavigator } from "./presentation/navigation/artifact-navigator";
 import type { ArtifactNavigationPort } from "./presentation/navigation/artifact-navigation-port";
@@ -214,6 +215,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       getSettings: () => this.hubSettings,
       openCreateUseCase: () => this.openCreateUseCase(),
       openUseCaseDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
+      openHub: () => this.openHub(),
       navigate: (target) => void this.navigate(target),
       openCreateSuite: () => this.openCreateSuite(),
       openPrdBuilder: (parentPrdId) => this.openPrdBuilder(parentPrdId),
@@ -372,6 +374,17 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   private async navigate(target: NavigationTarget): Promise<void> {
     const result = await this.artifactNavigator.navigate(target);
     if (!result.ok) new Notice(result.error.message, 8000);
+  }
+
+  // WS-B1 / ADR-0031: open (or reveal) the SINGLE Test Hub home leaf. Mirrors
+  // openUseCaseDetail/openStoryMapBoard — reuse the existing hub leaf if one is
+  // open, else create a new main tab; setViewState then revealLeaf brings it
+  // forward. The hub is a singleton home, so there is never more than one leaf.
+  private async openHub(): Promise<void> {
+    const { workspace } = this.app;
+    const leaf = workspace.getLeavesOfType(HUB_VIEW_TYPE)[0] ?? workspace.getLeaf("tab");
+    await leaf.setViewState({ type: HUB_VIEW_TYPE, active: true });
+    void workspace.revealLeaf(leaf);
   }
 
   // Wave D: open (or re-target) the Use Case detail view for `useCaseId`. The id
