@@ -129,6 +129,24 @@ export const projectLastRun = (entry: ExecutionLogEntry | null): HealthLastRun |
   return { status: entry.status, statusLabel, tone, finishedAt: entry.finishedAt };
 };
 
+/**
+ * A short at-a-glance recency label for a run's ISO finish time relative to
+ * `nowMs`, or `null` when the timestamp cannot be parsed (the body then shows
+ * the status alone). Pure (the clock is injected) so the bucket boundaries are
+ * unit-tested without a real clock; the hero only needs a glanceable recency,
+ * not a full relative-time engine.
+ */
+export const formatLastRunAge = (iso: string, nowMs: number): string | null => {
+  const finished = Date.parse(iso);
+  if (Number.isNaN(finished)) return null;
+  const minutes = Math.floor(Math.max(nowMs - finished, 0) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${String(minutes)} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${String(hours)} h ago`;
+  return `${String(Math.floor(hours / 24))} d ago`;
+};
+
 /** The label + status tone for a terminal run status (exhaustive over the union). */
 const describeStatus = (
   status: TestRunStatus,

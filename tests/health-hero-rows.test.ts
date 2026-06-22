@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { DashboardSnapshot } from "../src/application/services/traceability-service";
 import type { ExecutionLogEntry } from "../src/domain/entities/execution-log";
 import type { TestRunStatus } from "../src/domain/entities/test-run";
-import { projectHealthHero, projectLastRun } from "../src/presentation/views/health-hero-rows";
+import {
+  formatLastRunAge,
+  projectHealthHero,
+  projectLastRun,
+} from "../src/presentation/views/health-hero-rows";
 
 const snapshot = (over: Partial<DashboardSnapshot> = {}): DashboardSnapshot => ({
   totalUseCases: 16,
@@ -111,5 +115,26 @@ describe("projectLastRun", () => {
       const run = projectLastRun(entry({ status }));
       expect(run).toEqual({ status, statusLabel, tone, finishedAt: entry().finishedAt });
     }
+  });
+});
+
+describe("formatLastRunAge", () => {
+  const now = Date.parse("2026-06-22T12:00:00.000Z");
+  const ago = (ms: number): string => new Date(now - ms).toISOString();
+
+  it("returns null for an unparseable timestamp", () => {
+    expect(formatLastRunAge("not a date", now)).toBeNull();
+  });
+
+  it("buckets sub-minute (and future) ages as just now", () => {
+    expect(formatLastRunAge(ago(30_000), now)).toBe("just now");
+    // A clock-skewed future timestamp clamps to zero rather than going negative.
+    expect(formatLastRunAge(new Date(now + 60_000).toISOString(), now)).toBe("just now");
+  });
+
+  it("buckets minutes, hours, and days", () => {
+    expect(formatLastRunAge(ago(5 * 60_000), now)).toBe("5 min ago");
+    expect(formatLastRunAge(ago(3 * 3_600_000), now)).toBe("3 h ago");
+    expect(formatLastRunAge(ago(2 * 86_400_000), now)).toBe("2 d ago");
   });
 });

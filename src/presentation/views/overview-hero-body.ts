@@ -3,6 +3,7 @@ import type { ExecutionLogService } from "../../application/services/execution-l
 import type { TraceabilityService } from "../../application/services/traceability-service";
 import { projectDashboard, type DashboardNavTarget, type KpiTile } from "./dashboard-rows";
 import {
+  formatLastRunAge,
   projectHealthHero,
   projectLastRun,
   type HealthHero,
@@ -140,7 +141,7 @@ const renderLastRun = (heroEl: HTMLElement, lastRun: HealthLastRun | null): void
   if (lastRun === null) return;
   const line = heroEl.createDiv({ cls: "spec-hub-hero-last-run" });
   line.dataset.tone = lastRun.tone;
-  const when = formatFinishedAt(lastRun.finishedAt);
+  const when = formatLastRunAge(lastRun.finishedAt, Date.now());
   line.setText(`Last run: ${lastRun.statusLabel}${when === null ? "" : ` · ${when}`}`);
 };
 
@@ -198,23 +199,4 @@ const renderFunnelTile = (funnel: HTMLElement, tile: KpiTile, deps: OverviewHero
     bar.createDiv({ cls: "spec-hub-funnel-percent", text: `${String(tile.percent)}%` });
   }
   bar.addEventListener("click", () => void deps.navigate(tile.navigateTo));
-};
-
-/**
- * A short relative-ish label for an ISO finish time, or `null` when it cannot be
- * parsed (the line then shows the status alone). Kept deliberately small — the
- * hero only needs an at-a-glance recency, not a full relative-time engine.
- */
-const formatFinishedAt = (iso: string): string | null => {
-  const finished = Date.parse(iso);
-  if (Number.isNaN(finished)) return null;
-  const deltaMs = Date.now() - finished;
-  if (deltaMs < 0) return "just now";
-  const minutes = Math.floor(deltaMs / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${String(minutes)} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${String(hours)} h ago`;
-  const days = Math.floor(hours / 24);
-  return `${String(days)} d ago`;
 };
