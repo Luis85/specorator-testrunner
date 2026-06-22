@@ -184,6 +184,46 @@ describe("DefaultExecutionLogService.record", () => {
   });
 });
 
+describe("DefaultExecutionLogService.latest", () => {
+  it("returns null when no log file exists yet", async () => {
+    const { service } = build();
+
+    expect(await service.latest()).toBeNull();
+  });
+
+  it("returns the newest entry after records (the head of the newest-first log)", async () => {
+    const { service } = build();
+
+    await service.record(run({ id: "RUN-A", status: "passed" }));
+    await service.record(run({ id: "RUN-B", status: "failed" }));
+
+    const latest = await service.latest();
+    expect(latest?.runId).toBe("RUN-B");
+    expect(latest?.status).toBe("failed");
+  });
+
+  it("returns null when the log file is corrupt", async () => {
+    const { service, fs } = build();
+    fs.seed(LOG_PATH, "{ this is not json");
+
+    expect(await service.latest()).toBeNull();
+  });
+
+  it("returns null when the persisted value is not an array", async () => {
+    const { service, fs } = build();
+    fs.seed(LOG_PATH, JSON.stringify({ not: "an array" }));
+
+    expect(await service.latest()).toBeNull();
+  });
+
+  it("returns null when the vault base path is unavailable", async () => {
+    const { service, fs } = build();
+    fs.basePath = null; // non-desktop: no absolute base to resolve the log path
+
+    expect(await service.latest()).toBeNull();
+  });
+});
+
 /** Asserts a best-effort write fault: an `EVIDENCE_WRITE_FAILED` err, logged. */
 const expectWriteFailure = (result: Result<void>, warned: boolean): void => {
   expect(result.ok).toBe(false);

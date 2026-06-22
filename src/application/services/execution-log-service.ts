@@ -35,12 +35,20 @@ const isExecutionLogEntry = (value: unknown): value is ExecutionLogEntry =>
  * verdict the evidence-derived history sources cannot (they skip runs that
  * produced no evidence: an `errored` spawn fault or a `cancelled` run).
  *
- * THIS increment is record-only; the read path (`latest`/`list`) ships with its
- * consumer in a follow-up so no export is dead.
+ * The read path ships with its consumer (the Overview health hero's last-run
+ * verdict, E1 PR2): {@link latest} reads the newest recorded entry so no export
+ * is dead.
  */
 export interface ExecutionLogService {
   /** Records a terminal run into the durable log. Best-effort; never rejects. */
   record(run: TestRun): Promise<Result<void>>;
+  /**
+   * The newest recorded entry (the head of the newest-first log), or `null` when
+   * the log is absent, empty, or unreadable. Tolerant: a missing/corrupt/non-array
+   * file reads as `null` rather than rejecting — the log is a regenerable
+   * projection, so the hero degrades to "no last run" rather than erroring.
+   */
+  latest(): Promise<ExecutionLogEntry | null>;
   /**
    * Resolves when every enqueued log write has settled. Maintenance (reset/repair)
    * drains this UNDER the maintenance lock before it deletes/re-syncs the runner
@@ -88,6 +96,16 @@ export class DefaultExecutionLogService implements ExecutionLogService {
   /** Drains the write queue (see {@link ExecutionLogService.whenSettled}). */
   whenSettled(): Promise<void> {
     return this.queue.whenSettled();
+  }
+
+  async latest(): Promise<ExecutionLogEntry | null> {
+    const path = await this.logPath();
+    // No vault base path (non-desktop): there is nowhere the log could live.
+    if (path === undefined) return null;
+    // Reuse the SAME tolerant read `record` uses (absent/corrupt/non-array →
+    // empty), so the read path can't drift from the write path's parse rules.
+    const entries = await this.readLog(path);
+    return entries[0] ?? null;
   }
 
   private async recordInternal(run: TestRun): Promise<Result<void>> {
