@@ -19,6 +19,7 @@ import {
   renderEvidenceExplorerBody,
   type EvidenceExplorerBodyDeps,
 } from "./evidence-explorer-body";
+import { renderOnboardingRailBody, type OnboardingRailBodyDeps } from "./onboarding-rail-body";
 import { renderOverviewHeroBody, type OverviewHeroBodyDeps } from "./overview-hero-body";
 import { renderRecentRunsBody, type RecentRunsBodyDeps } from "./recent-runs-body";
 import type { UseCaseKpiFilter } from "./dashboard-rows";
@@ -68,8 +69,15 @@ const REFRESH_ON: DomainEventType[] = [
   "dashboard.kpi.updated",
   // Settings (active-environment badge + history-derived columns).
   "settings.updated",
-  // Guided tour CTA on the overview body hides once the tour completes.
+  // Onboarding rail (B2): the docked rail re-projects its single next action on
+  // every tour transition (start/step/complete) and on the init/UC-count signals
+  // it derives from — evidence.generated arms the manual step, settings.reset
+  // restarts the tour underneath the rail.
+  "tour.started",
+  "tour.step.completed",
+  "tour.step.skipped",
   "tour.completed",
+  "settings.reset",
   // PRD lifecycle (overview roadmap + the PRDs tree).
   "prd.created",
   "prd.deleted",
@@ -109,6 +117,19 @@ type HubRecentRunsDeps = Omit<RecentRunsBodyDeps, "openEvidenceExplorer" | "refr
 type HubUseCasesDeps = Omit<UseCaseDashboardBodyDeps, "filter" | "clearFilter">;
 
 /**
+ * The docked onboarding rail's deps MINUS the `collapsed`/`onToggleCollapsed`/`refresh`
+ * the hub OWNS (B2 PR3): the rail's collapse is hub-held ephemeral chrome (mirrors
+ * {@link evidenceFilter}/{@link useCaseFilter}), supplied at render time, and the
+ * `refresh` is the hub's active-panel re-render. Mirrors {@link HubHeroDeps}: the
+ * composition root supplies the live inputs (init signal, UC count, tour service,
+ * the shared dispatch, the CTA openers); the hub supplies the three chrome bits.
+ */
+type HubOnboardingDeps = Omit<
+  OnboardingRailBodyDeps,
+  "collapsed" | "onToggleCollapsed" | "refresh"
+>;
+
+/**
  * Everything the hub leaf renders: the union of the hosted bodies' deps (the
  * Overview hero + recent-runs bodies, each minus the section drilldowns the hub
  * owns; the explorer bodies add their own service slices), the workspace port a
@@ -135,6 +156,8 @@ export interface HubViewDeps {
   suites: SuiteDashboardBodyDeps;
   /** The review section's Evidence list body deps. */
   evidence: EvidenceExplorerBodyDeps;
+  /** The docked onboarding rail's deps (B2 PR3; the hub owns collapse + refresh). */
+  onboarding: HubOnboardingDeps;
 }
 
 /**
@@ -170,6 +193,13 @@ export class HubView extends LiveDashboardView {
    * discoverable and clearable (the same contract the Evidence filter has).
    */
   private useCaseFilter: UseCaseKpiFilter = "all";
+  /**
+   * The onboarding rail's ephemeral collapse (chrome). Mirrors
+   * {@link evidenceFilter}/{@link useCaseFilter}: NOT persisted in get/setState, so
+   * it survives section switches within the session but resets on a workspace
+   * reload. Distinct from the tour's Dismiss (persisted), which hides the rail.
+   */
+  private onboardingCollapsed = false;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -262,9 +292,20 @@ export class HubView extends LiveDashboardView {
     const layout = container.createDiv({ cls: "spec-hub-layout" });
     this.renderRail(layout, projectHubRail(this.activeSection));
     this.panelEl = layout.createDiv({ cls: "spec-hub-panel" });
-    // The onboarding rail region is ALWAYS created (B2 fills it later); empty for
-    // now so the structure is in place without building the onboarding projection.
-    container.createDiv({ cls: "spec-hub-onboarding-rail" });
+    // The docked onboarding rail (B2 PR3): a SIBLING of the layout (so it spans
+    // the hub bottom and persists across section switches — the panel re-render
+    // never wipes it). Its body loads its own inputs and is void-awaited the same
+    // way as every other body; the hub supplies the ephemeral collapse + refresh.
+    const railEl = container.createDiv({ cls: "spec-hub-onboarding-rail" });
+    void renderOnboardingRailBody(railEl, {
+      ...this.deps.onboarding,
+      collapsed: this.onboardingCollapsed,
+      onToggleCollapsed: () => {
+        this.onboardingCollapsed = !this.onboardingCollapsed;
+        void this.live.schedule();
+      },
+      refresh: () => void this.live.schedule(),
+    });
 
     this.renderActivePanel();
   }
