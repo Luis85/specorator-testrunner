@@ -1,9 +1,10 @@
-import { Notice, type WorkspaceLeaf } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import type { GuidedTourService } from "../../application/services/guided-tour-service";
 import type { TourActionId } from "../../domain/onboarding/tour-steps";
 import type { EventBus } from "../../shared/event-bus/event-bus";
-import { projectTour, TOUR_DONE_MESSAGE, type TourStepRow } from "./guided-tour-rows";
+import { projectTour, TOUR_DONE_MESSAGE } from "./guided-tour-rows";
 import { LiveDashboardView } from "./live-dashboard-view";
+import { renderTourStep } from "./tour-step-body";
 
 export const GUIDED_TOUR_VIEW_TYPE = "e2e-test-hub-guided-tour";
 
@@ -73,7 +74,13 @@ export class GuidedTourView extends LiveDashboardView {
       });
     }
 
-    for (const row of model.rows) this.renderStep(container, row);
+    for (const row of model.rows) {
+      renderTourStep(container, row, {
+        dispatch: (id) => this.dispatch(id),
+        markDone: (id) => void this.deps.tour.markDone(id),
+        skip: (id) => void this.deps.tour.skip(id),
+      });
+    }
 
     const footer = container.createDiv({ cls: "e2e-test-hub-tour-actions" });
     const restart = footer.createEl("button", {
@@ -87,63 +94,6 @@ export class GuidedTourView extends LiveDashboardView {
         attr: { "aria-label": "Hide the guided tour call to action on the dashboard" },
       });
       dismiss.addEventListener("click", () => void this.deps.tour.dismiss());
-    }
-  }
-
-  private renderStep(container: HTMLElement, row: TourStepRow): void {
-    const step = container.createDiv({ cls: "e2e-test-hub-tour-step" });
-    step.dataset.status = row.status;
-    step.setAttr("aria-label", row.ariaLabel);
-    step.createDiv({
-      cls: "e2e-test-hub-tour-step-title",
-      text: `${row.statusIcon} ${row.index}. ${row.title}`,
-    });
-    if (!row.expanded) return;
-
-    step.createDiv({ cls: "e2e-test-hub-tour-teach", text: row.teach });
-    for (const snippet of row.snippets) {
-      const block = step.createDiv({ cls: "e2e-test-hub-tour-snippet" });
-      block.createDiv({ cls: "e2e-test-hub-tour-step-title", text: snippet.title });
-      block.createEl("pre").createEl("code", { text: snippet.code });
-      const copy = block.createEl("button", {
-        text: "Copy",
-        attr: { "aria-label": `Copy the ${snippet.title} snippet` },
-      });
-      copy.addEventListener("click", () => {
-        // Promise.resolve().then keeps a synchronously-missing clipboard API
-        // (no navigator.clipboard) on the SAME failure path as a rejected
-        // write, so the user always gets the manual-selection fallback notice.
-        void Promise.resolve()
-          .then(() => navigator.clipboard.writeText(snippet.code))
-          .then(() => new Notice("Copied to clipboard."))
-          .catch(() => new Notice("Could not copy — select the snippet text manually.", 10000));
-      });
-    }
-    if (row.hint) step.createDiv({ cls: "e2e-test-hub-tour-hint", text: row.hint });
-
-    const actions = step.createDiv({ cls: "e2e-test-hub-tour-actions" });
-    if (row.action) {
-      const button = actions.createEl("button", {
-        text: row.action.label,
-        cls: "mod-cta",
-        attr: { "aria-label": row.action.ariaLabel },
-      });
-      const actionId = row.action.id;
-      button.addEventListener("click", () => this.dispatch(actionId));
-    }
-    if (row.showMarkDone) {
-      const done = actions.createEl("button", {
-        text: "Mark done",
-        attr: { "aria-label": `Mark step ${row.index} done` },
-      });
-      done.addEventListener("click", () => void this.deps.tour.markDone(row.id));
-    }
-    if (row.showSkip) {
-      const skip = actions.createEl("button", {
-        text: "Skip",
-        attr: { "aria-label": `Skip step ${row.index}` },
-      });
-      skip.addEventListener("click", () => void this.deps.tour.skip(row.id));
     }
   }
 
