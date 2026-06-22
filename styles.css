@@ -1848,6 +1848,14 @@ body {
   min-width: 0;
 }
 
+/* The overview section maps both `kpi-overview` and `recent-runs` content refs
+ * to the single combined dashboard body, so the second ref's panel child renders
+ * empty for now; collapse it (and its inter-body margin) until E1 splits the
+ * dashboard body into separate health/recent-runs renderers that both fill. */
+.spec-hub-section-body:empty {
+  display: none;
+}
+
 .spec-hub-section-body + .spec-hub-section-body,
 .spec-hub-section-body + .spec-hub-section-actions {
   margin-top: 16px;
