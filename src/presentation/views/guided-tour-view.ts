@@ -4,25 +4,21 @@ import type { TourActionId } from "../../domain/onboarding/tour-steps";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import { projectTour, TOUR_DONE_MESSAGE } from "./guided-tour-rows";
 import { LiveDashboardView } from "./live-dashboard-view";
+import { dispatchTourAction, type TourActionFlows } from "./tour-actions";
 import { renderTourStep } from "./tour-step-body";
 
 export const GUIDED_TOUR_VIEW_TYPE = "e2e-test-hub-guided-tour";
 
 /**
- * Callbacks the tour's action buttons dispatch to. Every callback is wired in
- * main.ts to an EXISTING flow (modal, launcher, workspace, command body) — the
- * tour guides, it never re-implements an action (spec 2026-06-11).
+ * Everything the Guided Tour leaf needs: the tour service + bus, plus the
+ * action-button {@link TourActionFlows} (each wired in main.ts to an EXISTING
+ * flow — modal, launcher, workspace, command body; the tour guides, it never
+ * re-implements an action, spec 2026-06-11). The flows are shared with the hub's
+ * onboarding rail through {@link dispatchTourAction}.
  */
-export interface GuidedTourViewDeps {
+export interface GuidedTourViewDeps extends TourActionFlows {
   tour: GuidedTourService;
   eventBus: EventBus;
-  runDemo: () => void | Promise<void>;
-  openCreateUseCase: () => void;
-  openUseCases: () => void | Promise<void>;
-  openCreateSuite: () => void;
-  openSuites: () => void | Promise<void>;
-  openLatestEvidence: () => void;
-  generateCiWorkflow: () => Promise<void>;
 }
 
 /**
@@ -98,28 +94,6 @@ export class GuidedTourView extends LiveDashboardView {
   }
 
   private dispatch(id: TourActionId): void {
-    switch (id) {
-      case "run-demo":
-        void this.deps.runDemo();
-        break;
-      case "open-create-use-case":
-        this.deps.openCreateUseCase();
-        break;
-      case "open-use-cases":
-        void this.deps.openUseCases();
-        break;
-      case "open-create-suite":
-        this.deps.openCreateSuite();
-        break;
-      case "open-suites":
-        void this.deps.openSuites();
-        break;
-      case "open-latest-evidence":
-        this.deps.openLatestEvidence();
-        break;
-      case "generate-ci":
-        void this.deps.generateCiWorkflow();
-        break;
-    }
+    dispatchTourAction(id, this.deps);
   }
 }
