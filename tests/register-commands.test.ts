@@ -200,6 +200,7 @@ const buildDeps = (): TestHubCommandDeps => ({
     openView: vi.fn(async () => ok(undefined)),
   },
 
+  openHub: vi.fn(() => undefined),
   openWizard: vi.fn(() => undefined),
   openCreateUseCase: vi.fn(() => undefined),
   openCreateSuite: vi.fn(() => undefined),

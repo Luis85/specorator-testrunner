@@ -198,8 +198,8 @@ Output streams live into the **Run — open Test Console** view.
 
 When a run finishes, its report is imported and a linked **Evidence** note is
 written under \`${paths.evidencePath}/\` (toggle in settings).
-**Review — import report for last run** re-runs that import. **Review — open dashboard**
-shows live KPI tiles (total /
+**Review — import report for last run** re-runs that import. **Open Test Hub** opens
+the home shell — its Overview shows live KPI tiles (total /
 specified / automated / passing / failing) and recent runs.
 
 ## How to: set up CI

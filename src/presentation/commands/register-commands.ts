@@ -14,7 +14,6 @@ import type { TestHubSettings } from "../../domain/settings/settings";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import type { RunLauncher } from "../run/run-launcher";
-import { DASHBOARD_VIEW_TYPE } from "../views/dashboard-view";
 import { EVIDENCE_EXPLORER_VIEW_TYPE } from "../views/evidence-explorer-view";
 import { GenerateFeatureModal } from "../views/generate-feature-modal";
 import { GUIDED_TOUR_VIEW_TYPE } from "../views/guided-tour-view";
@@ -51,6 +50,8 @@ export interface TestHubCommandDeps {
   postRunCoordinator: Pick<PostRunCoordinator, "importLastRun">;
   workspace: WorkspacePort;
   // Shared with ribbon icons / view registrations in the composition root:
+  /** Opens (or reveals) the single Test Hub leaf — the home front door (WS-B1). */
+  openHub(): void | Promise<void>;
   openWizard(): void;
   openCreateUseCase(): void;
   openCreateSuite(): void;
@@ -366,11 +367,13 @@ export function registerCommands(
 
   registerRunCommands(plugin, deps);
 
-  // EPIC-009 Dashboard (UC-018).
+  // The Test Hub home front door (WS-B1). The id stays `open-dashboard` so any
+  // existing user hotkey survives; the hub supersedes the old dashboard (which now
+  // redirects to it). Unprefixed because the hub spans every area — it isn't one.
   plugin.addCommand({
     id: "open-dashboard",
-    name: "Review — open dashboard",
-    callback: () => void deps.workspace.openView(DASHBOARD_VIEW_TYPE),
+    name: "Open Test Hub",
+    callback: () => void deps.openHub(),
   });
 
   // EPIC-011 Documentation (FEAT-024 US-043/044/045, FEAT-025 US-046).
