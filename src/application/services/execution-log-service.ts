@@ -1,6 +1,6 @@
 import type { SettingsService } from "./settings-service";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
-import type { TestRun } from "../../domain/entities/test-run";
+import { isTestRunStatus, type TestRun } from "../../domain/entities/test-run";
 import {
   prependCapped,
   toExecutionLogEntry,
@@ -17,17 +17,26 @@ import { SerialQueue } from "../../shared/async/serial-queue";
 const LOG_FILE_NAME = "execution-log.json";
 
 /**
- * Minimal shape guard for a persisted log element. The file is a regenerable,
- * hand-editable projection, so a parsed array may hold a malformed item; this
- * keeps only objects carrying the `runId` the dedupe in {@link prependCapped}
- * keys on. Entries are otherwise carried through unread, so a stricter check
- * would reject benign forward-compatible fields.
+ * Shape guard for a persisted log element. The file is a regenerable,
+ * hand-editable projection, so a parsed array may hold a malformed item — this
+ * keeps only entries whose CONSUMED fields are sound: the `runId` the dedupe in
+ * {@link prependCapped} keys on, plus the `status` and `finishedAt` the last-run
+ * line projects. A partial entry like `{ "runId": "RUN-X" }` would otherwise pass
+ * and make `projectLastRun` throw on an `undefined` status (codex P2). The
+ * remaining fields (scope/target/durationMs/result) are carried through unread,
+ * so they are not validated here — a stricter check would reject benign
+ * forward-compatible fields.
  */
 const isExecutionLogEntry = (value: unknown): value is ExecutionLogEntry =>
   typeof value === "object" &&
   value !== null &&
   "runId" in value &&
-  typeof value.runId === "string";
+  typeof value.runId === "string" &&
+  "status" in value &&
+  isTestRunStatus(value.status) &&
+  "finishedAt" in value &&
+  typeof value.finishedAt === "string" &&
+  value.finishedAt !== "";
 
 /**
  * The durable execution log (E1, ADR-0032). Records every terminal run —
@@ -35,12 +44,20 @@ const isExecutionLogEntry = (value: unknown): value is ExecutionLogEntry =>
  * verdict the evidence-derived history sources cannot (they skip runs that
  * produced no evidence: an `errored` spawn fault or a `cancelled` run).
  *
- * THIS increment is record-only; the read path (`latest`/`list`) ships with its
- * consumer in a follow-up so no export is dead.
+ * The read path ships with its consumer (the Overview health hero's last-run
+ * verdict, E1 PR2): {@link latest} reads the newest recorded entry so no export
+ * is dead.
  */
 export interface ExecutionLogService {
   /** Records a terminal run into the durable log. Best-effort; never rejects. */
   record(run: TestRun): Promise<Result<void>>;
+  /**
+   * The newest recorded entry (the head of the newest-first log), or `null` when
+   * the log is absent, empty, or unreadable. Tolerant: a missing/corrupt/non-array
+   * file reads as `null` rather than rejecting — the log is a regenerable
+   * projection, so the hero degrades to "no last run" rather than erroring.
+   */
+  latest(): Promise<ExecutionLogEntry | null>;
   /**
    * Resolves when every enqueued log write has settled. Maintenance (reset/repair)
    * drains this UNDER the maintenance lock before it deletes/re-syncs the runner
@@ -88,6 +105,24 @@ export class DefaultExecutionLogService implements ExecutionLogService {
   /** Drains the write queue (see {@link ExecutionLogService.whenSettled}). */
   whenSettled(): Promise<void> {
     return this.queue.whenSettled();
+  }
+
+  async latest(): Promise<ExecutionLogEntry | null> {
+    // Read THROUGH the same queue as record(), so a latest() triggered by the
+    // terminal-event refresh observes the just-enqueued (fire-and-forget) write
+    // rather than the pre-write head. For an `errored`/`cancelled`-no-report run
+    // there is no later dashboard refresh to correct a stale read (codex P2).
+    return this.queue.run(() => this.latestInternal());
+  }
+
+  private async latestInternal(): Promise<ExecutionLogEntry | null> {
+    const path = await this.logPath();
+    // No vault base path (non-desktop): there is nowhere the log could live.
+    if (path === undefined) return null;
+    // Reuse the SAME tolerant read `record` uses (absent/corrupt/non-array →
+    // empty), so the read path can't drift from the write path's parse rules.
+    const entries = await this.readLog(path);
+    return entries[0] ?? null;
   }
 
   private async recordInternal(run: TestRun): Promise<Result<void>> {

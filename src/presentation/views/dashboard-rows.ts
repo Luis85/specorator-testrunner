@@ -2,18 +2,48 @@ import type { DashboardSnapshot } from "../../application/services/traceability-
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 
 /**
- * View types a KPI tile can drill into. V1 has no per-status filter, so every
- * tile opens the Use Cases explorer — the honest drill-down (Wave C §4). Kept as
- * a named union so the wiring in the view/main.ts stays type-checked rather than
- * passing a bare string around.
+ * The Use Cases status filter a KPI tile drills into (E1 PR2 funnel). Each tile
+ * carries the filter that scopes the Use Cases explorer to that funnel stage;
+ * honoring it in the explorer's filter UI is PR3 — this PR only routes it.
  */
-export type DashboardNavTarget = "use-cases";
+export type UseCaseKpiFilter = "all" | "specified" | "automated" | "passing" | "failing";
 
-/** A KPI tile the dashboard renders (US-037). Clicking it navigates (Wave C §4). */
+/**
+ * Where a KPI tile drills into. Every tile opens the Use Cases explorer, now
+ * CARRYING the funnel stage's filter (E1 PR2) so the explorer can scope to it
+ * (PR3). A discriminated object (not a bare string) so the filter rides along
+ * type-checked rather than as a side channel.
+ */
+export interface DashboardNavTarget {
+  kind: "use-cases";
+  filter: UseCaseKpiFilter;
+}
+
+/**
+ * A KPI funnel tile the overview renders (US-037, E1 PR2 funnel). Each tile is a
+ * count framed against the single Total baseline (`denominator`/`percent`), so
+ * the row reads as a funnel — Total → Specified → Automated → Passing — with
+ * Failing as a distinct alert tile.
+ */
 export interface KpiTile {
   label: string;
   value: number;
-  /** Where clicking/activating the tile navigates (Wave C §4). */
+  /**
+   * The baseline the tile is measured against (always Total), or `null` on the
+   * Total tile itself (the funnel head has no denominator).
+   */
+  denominator: number | null;
+  /**
+   * `value` as a whole percent of {@link denominator}, or `null` when there is no
+   * denominator or it is zero — NEVER `NaN` (the body shows no percent then).
+   */
+  percent: number | null;
+  /**
+   * The tile's visual tone: `alert` ONLY for a non-zero Failing tile (it draws
+   * the warning status), `neutral` otherwise.
+   */
+  tone: "neutral" | "alert";
+  /** Where clicking/activating the tile navigates, carrying the funnel filter. */
   navigateTo: DashboardNavTarget;
   /** Spoken affordance for assistive tech (the visible value+label is a bare count). */
   ariaLabel: string;
@@ -46,43 +76,95 @@ export interface DashboardView {
 export const NO_EVIDENCE_TOOLTIP = "No evidence note for this run.";
 
 /**
- * Pure projection of a {@link DashboardSnapshot} into KPI tiles + recent-run
- * rows (US-037/US-038), kept separate from the ItemView so the shaping is
- * unit-testable. Tile order matches the US-037 acceptance criteria. Every tile
- * navigates to the Use Cases explorer (the honest V1 drill-down, Wave C §4) and
+ * Pure projection of a {@link DashboardSnapshot} into the KPI funnel tiles +
+ * recent-run rows (US-037/US-038, E1 PR2 funnel), kept separate from the ItemView
+ * so the shaping is unit-testable. The four funnel tiles (Total → Specified →
+ * Automated → Passing) are each measured OF TOTAL — one baseline so the row reads
+ * as a narrowing funnel — with Failing as a distinct alert tile (also of Total).
+ * Each tile carries its funnel filter for the drill-down (Wave C §4 / PR3), and
  * each recent-run row is marked navigable when it carries an Evidence path
  * (Wave C §3). Keep the view thin: all decisions live here.
  */
-export const projectDashboard = (snapshot: DashboardSnapshot): DashboardView => ({
-  kpis: [
-    kpi("Total Use Cases", snapshot.totalUseCases),
-    kpi("Specified", snapshot.specifiedUseCases),
-    kpi("Automated", snapshot.automatedUseCases),
-    kpi("Passing", snapshot.passingUseCases),
-    kpi("Failing", snapshot.failingUseCases),
-  ],
-  recentRuns: snapshot.recentRuns.map((run) => {
-    const navigable = run.evidencePath !== undefined;
-    return {
-      runId: run.runId,
-      status: run.status,
-      date: run.date,
-      evidencePath: run.evidencePath,
-      navigable,
-      ariaLabel: navigable
-        ? `Open evidence for run ${run.runId} (${run.status})`
-        : `Run ${run.runId} (${run.status}) — ${NO_EVIDENCE_TOOLTIP}`,
-    };
-  }),
+export const projectDashboard = (snapshot: DashboardSnapshot): DashboardView => {
+  const total = snapshot.totalUseCases;
+  return {
+    kpis: [
+      // The funnel head: no denominator (nothing to measure it against).
+      totalTile(total),
+      funnelTile("Specified", snapshot.specifiedUseCases, "specified", total),
+      funnelTile("Automated", snapshot.automatedUseCases, "automated", total),
+      funnelTile("Passing", snapshot.passingUseCases, "passing", total),
+      failingTile(snapshot.failingUseCases, total),
+    ],
+    recentRuns: snapshot.recentRuns.map((run) => {
+      const navigable = run.evidencePath !== undefined;
+      return {
+        runId: run.runId,
+        status: run.status,
+        date: run.date,
+        evidencePath: run.evidencePath,
+        navigable,
+        ariaLabel: navigable
+          ? `Open evidence for run ${run.runId} (${run.status})`
+          : `Run ${run.runId} (${run.status}) — ${NO_EVIDENCE_TOOLTIP}`,
+      };
+    }),
+  };
+};
+
+/** `value` as a whole percent of `denominator`, or `null` when there is no rate. */
+const percentOf = (value: number, denominator: number): number | null =>
+  denominator === 0 ? null : Math.round((value / denominator) * 100);
+
+/** The funnel head: the Total tile — no denominator, no percent, the baseline. */
+const totalTile = (total: number): KpiTile => ({
+  label: "Total Use Cases",
+  value: total,
+  denominator: null,
+  percent: null,
+  tone: "neutral",
+  navigateTo: { kind: "use-cases", filter: "all" },
+  ariaLabel: `Total Use Cases: ${String(total)}. Open Use Cases.`,
 });
 
-/** Builds a navigable KPI tile (all tiles open the Use Cases explorer in V1). */
-const kpi = (label: string, value: number): KpiTile => ({
-  label,
-  value,
-  navigateTo: "use-cases",
-  ariaLabel: `${label}: ${value}. Open Use Cases.`,
-});
+/** A funnel-stage tile measured OF TOTAL (Specified / Automated / Passing). */
+const funnelTile = (
+  label: string,
+  value: number,
+  filter: UseCaseKpiFilter,
+  total: number,
+): KpiTile => {
+  const percent = percentOf(value, total);
+  return {
+    label,
+    value,
+    denominator: total,
+    percent,
+    tone: "neutral",
+    navigateTo: { kind: "use-cases", filter },
+    ariaLabel: ariaForFunnel(label, value, percent),
+  };
+};
+
+/** The Failing tile — measured of Total, drawing the `alert` tone only when non-zero. */
+const failingTile = (value: number, total: number): KpiTile => {
+  const percent = percentOf(value, total);
+  return {
+    label: "Failing",
+    value,
+    denominator: total,
+    percent,
+    tone: value > 0 ? "alert" : "neutral",
+    navigateTo: { kind: "use-cases", filter: "failing" },
+    ariaLabel: ariaForFunnel("Failing", value, percent),
+  };
+};
+
+/** Spoken affordance for a denominator-bearing tile (value, optional of-Total percent). */
+const ariaForFunnel = (label: string, value: number, percent: number | null): string =>
+  percent === null
+    ? `${label}: ${String(value)}. Open Use Cases.`
+    : `${label}: ${String(value)} (${String(percent)} percent of total). Open Use Cases.`;
 
 /**
  * The quick-action buttons the dashboard hub exposes (Wave C §1). Each id maps

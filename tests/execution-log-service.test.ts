@@ -136,9 +136,20 @@ describe("DefaultExecutionLogService.record", () => {
     expect(runIds(fs)).toEqual(["RUN-NEW"]);
   });
 
-  it("drops malformed elements from an existing log array", async () => {
+  it("drops malformed elements (missing runId/status/finishedAt) from an existing log array", async () => {
     const { service, fs } = build();
-    fs.seed(LOG_PATH, JSON.stringify([{ noRunId: true }, { runId: "RUN-OLD" }]));
+    // Three malformed shapes that must be dropped — no runId, a partial entry
+    // with only runId (the codex P2 case: status/finishedAt absent), and an
+    // unknown status — plus one fully-valid entry that must survive.
+    fs.seed(
+      LOG_PATH,
+      JSON.stringify([
+        { noRunId: true },
+        { runId: "RUN-PARTIAL" },
+        { runId: "RUN-BADSTATUS", status: "bogus", finishedAt: "2026-06-01T09:00:00.000Z" },
+        { runId: "RUN-OLD", status: "passed", finishedAt: "2026-06-01T09:00:00.000Z" },
+      ]),
+    );
 
     await service.record(run({ id: "RUN-NEW" }));
 
@@ -181,6 +192,75 @@ describe("DefaultExecutionLogService.record", () => {
     await service.whenSettled();
 
     expect(runIds(fs)).toEqual(["RUN-PENDING"]);
+  });
+});
+
+describe("DefaultExecutionLogService.latest", () => {
+  it("returns null when no log file exists yet", async () => {
+    const { service } = build();
+
+    expect(await service.latest()).toBeNull();
+  });
+
+  it("returns the newest entry after records (the head of the newest-first log)", async () => {
+    const { service } = build();
+
+    await service.record(run({ id: "RUN-A", status: "passed" }));
+    await service.record(run({ id: "RUN-B", status: "failed" }));
+
+    const latest = await service.latest();
+    expect(latest?.runId).toBe("RUN-B");
+    expect(latest?.status).toBe("failed");
+  });
+
+  it("returns null when the log file is corrupt", async () => {
+    const { service, fs } = build();
+    fs.seed(LOG_PATH, "{ this is not json");
+
+    expect(await service.latest()).toBeNull();
+  });
+
+  it("returns null when the persisted value is not an array", async () => {
+    const { service, fs } = build();
+    fs.seed(LOG_PATH, JSON.stringify({ not: "an array" }));
+
+    expect(await service.latest()).toBeNull();
+  });
+
+  it("returns null when the vault base path is unavailable", async () => {
+    const { service, fs } = build();
+    fs.basePath = null; // non-desktop: no absolute base to resolve the log path
+
+    expect(await service.latest()).toBeNull();
+  });
+
+  it("skips a malformed head entry and returns the newest VALID entry", async () => {
+    const { service, fs } = build();
+    // A partial head (codex P2: no status/finishedAt) must not surface — it would
+    // make the hero's projectLastRun throw. latest() returns the next valid entry.
+    fs.seed(
+      LOG_PATH,
+      JSON.stringify([
+        { runId: "RUN-PARTIAL" },
+        { runId: "RUN-OK", status: "errored", finishedAt: "2026-06-01T10:00:00.000Z" },
+      ]),
+    );
+
+    const latest = await service.latest();
+    expect(latest?.runId).toBe("RUN-OK");
+    expect(latest?.status).toBe("errored");
+  });
+
+  it("observes a concurrently-enqueued write (reads through the queue)", async () => {
+    const { service } = build();
+
+    // Mirror the recorder: fire-and-forget record WITHOUT awaiting, then call
+    // latest() immediately. Reading through the queue makes latest() land AFTER
+    // the queued write, so it sees the new head rather than the stale one.
+    void service.record(run({ id: "RUN-LATEST", status: "errored" }));
+    const latest = await service.latest();
+
+    expect(latest?.runId).toBe("RUN-LATEST");
   });
 });
 

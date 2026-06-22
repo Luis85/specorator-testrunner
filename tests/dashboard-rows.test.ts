@@ -8,54 +8,78 @@ import {
   QUICK_ACTIONS,
   QUICK_ACTION_GROUPS,
   shouldShowOnboarding,
+  type KpiTile,
 } from "../src/presentation/views/dashboard-rows";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const snapshot = (over: Partial<DashboardSnapshot> = {}): DashboardSnapshot => ({
-  totalUseCases: 5,
+  totalUseCases: 8,
   specifiedUseCases: 4,
-  automatedUseCases: 3,
-  passingUseCases: 2,
+  automatedUseCases: 2,
+  passingUseCases: 1,
   failingUseCases: 1,
   recentRuns: [],
   ...over,
 });
 
-describe("projectDashboard", () => {
-  it("projects the KPI tiles in US-037 order, each navigating to the Use Cases explorer", () => {
-    const view = projectDashboard(snapshot());
-    expect(view.kpis).toEqual([
-      {
-        label: "Total Use Cases",
-        value: 5,
-        navigateTo: "use-cases",
-        ariaLabel: "Total Use Cases: 5. Open Use Cases.",
-      },
-      {
-        label: "Specified",
-        value: 4,
-        navigateTo: "use-cases",
-        ariaLabel: "Specified: 4. Open Use Cases.",
-      },
-      {
-        label: "Automated",
-        value: 3,
-        navigateTo: "use-cases",
-        ariaLabel: "Automated: 3. Open Use Cases.",
-      },
-      {
-        label: "Passing",
-        value: 2,
-        navigateTo: "use-cases",
-        ariaLabel: "Passing: 2. Open Use Cases.",
-      },
-      {
-        label: "Failing",
-        value: 1,
-        navigateTo: "use-cases",
-        ariaLabel: "Failing: 1. Open Use Cases.",
-      },
+describe("projectDashboard (KPI funnel)", () => {
+  it("frames Total as the funnel head — no denominator, no percent, neutral tone", () => {
+    const [total] = projectDashboard(snapshot()).kpis;
+    expect(total).toEqual({
+      label: "Total Use Cases",
+      value: 8,
+      denominator: null,
+      percent: null,
+      tone: "neutral",
+      navigateTo: { kind: "use-cases", filter: "all" },
+      ariaLabel: "Total Use Cases: 8. Open Use Cases.",
+    });
+  });
+
+  it("measures every funnel stage OF TOTAL with its drill-down filter", () => {
+    const kpis = projectDashboard(snapshot()).kpis;
+    expect(kpis.map((k) => [k.label, k.value, k.denominator, k.percent])).toEqual([
+      ["Total Use Cases", 8, null, null],
+      ["Specified", 4, 8, 50],
+      ["Automated", 2, 8, 25],
+      ["Passing", 1, 8, 13],
+      ["Failing", 1, 8, 13],
     ]);
+    expect(kpis.map((k) => k.navigateTo.filter)).toEqual([
+      "all",
+      "specified",
+      "automated",
+      "passing",
+      "failing",
+    ]);
+  });
+
+  it("rounds the of-Total percent (1 of 8 → 13)", () => {
+    const passing = projectDashboard(snapshot()).kpis.find((k) => k.label === "Passing");
+    expect(passing?.percent).toBe(13);
+  });
+
+  it("yields a null percent (never NaN) when Total is zero", () => {
+    const kpis = projectDashboard(
+      snapshot({
+        totalUseCases: 0,
+        specifiedUseCases: 0,
+        automatedUseCases: 0,
+        passingUseCases: 0,
+        failingUseCases: 0,
+      }),
+    ).kpis;
+    for (const tile of kpis) {
+      expect(tile.percent).toBeNull();
+      expect(Number.isNaN(tile.percent)).toBe(false);
+    }
+  });
+
+  it("marks the Failing tile alert only when failures exist, neutral at zero", () => {
+    const failingOf = (over: Partial<DashboardSnapshot>): KpiTile | undefined =>
+      projectDashboard(snapshot(over)).kpis.find((k) => k.label === "Failing");
+    expect(failingOf({ failingUseCases: 1 })?.tone).toBe("alert");
+    expect(failingOf({ failingUseCases: 0 })?.tone).toBe("neutral");
   });
 
   it("marks a recent-run row navigable when it carries an evidence path (US-038, Wave C §3)", () => {
