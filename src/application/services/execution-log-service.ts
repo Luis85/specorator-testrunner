@@ -1,19 +1,17 @@
 import type { SettingsService } from "./settings-service";
-import type { VaultFileSystem } from "../ports/vault-file-system";
+import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { TestRun } from "../../domain/entities/test-run";
 import {
   prependCapped,
   toExecutionLogEntry,
   type ExecutionLogEntry,
 } from "../../domain/entities/execution-log";
-import type { VaultPath } from "../../domain/value-objects/identifiers";
-import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
+import { runnerHistoryFilePath } from "./runner-history-path";
 import { HISTORY_DEPTH_DEFAULT } from "../../domain/settings/settings";
 import { appError } from "../../shared/errors/errors";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
 import { SerialQueue } from "../../shared/async/serial-queue";
-import { joinVaultPath } from "../../shared/utils/vault-path";
 
 /** File name of the durable execution log under `<testRunnerPath>/history`. */
 const LOG_FILE_NAME = "execution-log.json";
@@ -54,13 +52,23 @@ export interface ExecutionLogService {
 }
 
 /**
- * Vault-file-backed {@link ExecutionLogService}. The log is a single newest-first
- * JSON array at `<settings.paths.testRunnerPath>/history/execution-log.json`,
- * capped at {@link HISTORY_DEPTH_DEFAULT}. Each {@link record} is a read-modify-
- * write serialized through one {@link SerialQueue} so back-to-back terminal runs
- * cannot clobber each other's append (mirroring DefaultScenarioHistoryService).
- * Best-effort throughout: a missing or corrupt file reads as empty (logged
- * `warn`), and a write fault returns `err` without throwing.
+ * {@link AbsoluteFileSystem}-backed {@link ExecutionLogService}. The log is a
+ * single newest-first JSON array at
+ * `<vaultBase>/<settings.paths.testRunnerPath>/history/execution-log.json`,
+ * capped at {@link HISTORY_DEPTH_DEFAULT}.
+ *
+ * It uses the ABSOLUTE filesystem, not the vault filesystem, because the log
+ * lives under `.testrunner` — a dot-folder Obsidian does NOT index. The vault
+ * adapter's `writeFile` resolves an existing unindexed file as `null` (no
+ * `TFile`) and falls through to `create`, which throws on an existing path, so
+ * every record after the first would fail. The regenerable
+ * `scenario-index.json` read model writes through the same absolute path for
+ * exactly this reason (DefaultScenarioHistoryService).
+ *
+ * Each {@link record} is a read-modify-write serialized through one
+ * {@link SerialQueue} so back-to-back terminal runs cannot clobber each other's
+ * append. Best-effort throughout: a missing or corrupt file reads as empty
+ * (logged `warn`), and a write fault returns `err` without throwing.
  */
 export class DefaultExecutionLogService implements ExecutionLogService {
   // Back-to-back runs each read-modify-write the same file; serialize so the
@@ -69,7 +77,7 @@ export class DefaultExecutionLogService implements ExecutionLogService {
 
   constructor(
     private readonly settingsService: SettingsService,
-    private readonly vaultFs: VaultFileSystem,
+    private readonly absoluteFs: AbsoluteFileSystem,
     private readonly logger: Logger,
   ) {}
 
@@ -83,28 +91,18 @@ export class DefaultExecutionLogService implements ExecutionLogService {
   }
 
   private async recordInternal(run: TestRun): Promise<Result<void>> {
-    const settings = await this.settingsService.load();
-    const path = this.logPath(settings.paths.testRunnerPath);
+    const path = await this.logPath();
+    if (path === undefined) {
+      // No vault base path (non-desktop): there is nowhere to write the log.
+      this.logger.warn("Execution log path unavailable; skipping record", { runId: run.id });
+      return err(appError("EVIDENCE_WRITE_FAILED", "Could not resolve the execution log path."));
+    }
     const existing = await this.readLog(path);
     const next = prependCapped(existing, toExecutionLogEntry(run), HISTORY_DEPTH_DEFAULT);
 
-    // Ensure the `history` folder exists before writing — the VaultFileSystem
-    // adapter creates the ancestor chain (mirrors DefaultScenarioHistoryService).
-    const folder = unsafeVaultPath(path.slice(0, path.lastIndexOf("/")));
-    const folderCreated = await this.vaultFs.createFolder(folder);
-    if (!folderCreated.ok) {
-      this.logger.warn("Could not create execution log folder", {
-        runId: run.id,
-        reason: folderCreated.error.message,
-      });
-      return err(
-        appError("EVIDENCE_WRITE_FAILED", "Could not create the execution log folder.", {
-          cause: folderCreated.error,
-        }),
-      );
-    }
-
-    const written = await this.vaultFs.writeFile(path, JSON.stringify(next, null, 2));
+    // writeAbsolute creates the `history` ancestor chain (mkdir -p) and OVERWRITES
+    // an existing file — the behaviour the unindexed `.testrunner` path needs.
+    const written = await this.absoluteFs.writeAbsolute(path, JSON.stringify(next, null, 2));
     if (!written.ok) {
       this.logger.warn("Could not write execution log", {
         runId: run.id,
@@ -126,9 +124,10 @@ export class DefaultExecutionLogService implements ExecutionLogService {
    * is validated by {@link isExecutionLogEntry} so a malformed entry is dropped
    * rather than poisoning a later re-record's dedupe.
    */
-  private async readLog(path: VaultPath): Promise<ExecutionLogEntry[]> {
-    const read = await this.vaultFs.readFile(path);
-    if (!read.ok) return []; // no file yet (fresh vault) — start empty
+  private async readLog(path: string): Promise<ExecutionLogEntry[]> {
+    if (!(await this.absoluteFs.existsAbsolute(path))) return []; // no file yet — start empty
+    const read = await this.absoluteFs.readAbsolute(path);
+    if (!read.ok) return [];
     let parsed: unknown;
     try {
       parsed = JSON.parse(read.value);
@@ -143,8 +142,8 @@ export class DefaultExecutionLogService implements ExecutionLogService {
     return parsed.filter(isExecutionLogEntry);
   }
 
-  /** `<testRunnerPath>/history/execution-log.json`. */
-  private logPath(testRunnerPath: VaultPath): VaultPath {
-    return joinVaultPath(testRunnerPath, "history", LOG_FILE_NAME);
+  /** `<vaultBase>/<testRunnerPath>/history/execution-log.json` (or `undefined`). */
+  private logPath(): Promise<string | undefined> {
+    return runnerHistoryFilePath(this.absoluteFs, this.settingsService, LOG_FILE_NAME);
   }
 }

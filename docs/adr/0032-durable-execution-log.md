@@ -37,10 +37,17 @@ Every terminal run is appended to a single newest-first JSON array at
 `.testrunner/history/execution-log.json` (under `settings.paths.testRunnerPath`),
 capped at `HISTORY_DEPTH_DEFAULT`. The entry carries the run's identity, scope,
 target, status, timestamps, and — when present — its duration and result
-counts. It is written through the vault filesystem alongside the regenerable
-`scenario-index.json`, mirroring the scenario-history idiom (folder ensured
-before write, read-modify-write serialized through one `SerialQueue` so
-back-to-back runs cannot clobber each other's append).
+counts. The read-modify-write is serialized through one `SerialQueue` so
+back-to-back runs cannot clobber each other's append.
+
+It is written through the ABSOLUTE filesystem, not the vault filesystem,
+alongside the regenerable `scenario-index.json` read model. `.testrunner` is a
+dot-folder Obsidian does NOT index, and the vault adapter's `writeFile` resolves
+an existing unindexed file as `null` (no `TFile`) and falls through to `create`,
+which throws on an existing path — so every record after the first would fail and
+freeze the log on the first run. The scenario-index uses the absolute path for
+exactly this reason, and `writeAbsolute` (mkdir -p + overwrite) is the behaviour
+the unindexed path needs.
 
 ### Drained before maintenance touches the runner folder
 The log lives under `settings.paths.testRunnerPath`, which `reset()` deletes and

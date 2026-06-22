@@ -347,7 +347,11 @@ export const composeServices = (ctx: ComposeContext): ComposedServices => {
   // evidence, so a later read can serve an honest "last run" verdict. A
   // dedicated recorder keeps execution-logging separate from the coordinator's
   // evidence concern; it reads the SAME `lastRun` source the coordinator does.
-  services.executionLogService = new DefaultExecutionLogService(hubSettingsService, vault, logger);
+  services.executionLogService = new DefaultExecutionLogService(
+    hubSettingsService,
+    absoluteFs,
+    logger,
+  );
   services.executionLogRecorder = new ExecutionLogRecorder({
     eventBus,
     executionLogService: services.executionLogService,

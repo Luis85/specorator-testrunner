@@ -5,10 +5,13 @@ import type { ExecutionLogEntry } from "../src/domain/entities/execution-log";
 import { DEFAULT_SETTINGS, HISTORY_DEPTH_DEFAULT } from "../src/domain/settings/settings";
 import type { Logger } from "../src/shared/logging/logger";
 import type { Result } from "../src/shared/result/result";
-import { FakeVaultFileSystem, silentLogger } from "./fakes";
+import { FakeAbsoluteFileSystem, silentLogger } from "./fakes";
 import { executionRun as run } from "./execution-log-fixtures";
 
-const LOG_PATH = ".testrunner/history/execution-log.json";
+// The log lives under the unindexed `.testrunner` dot-folder, so it is written
+// through the ABSOLUTE filesystem (vault base + runner path), mirroring the
+// scenario-index read model — see the service doc.
+const LOG_PATH = "/vault/.testrunner/history/execution-log.json";
 
 /** A minimal SettingsService that only needs to answer `load()` (E1). */
 const settings: SettingsService = {
@@ -19,7 +22,7 @@ const settings: SettingsService = {
 
 /** Builds the service, capturing whether `warn` was called via a spy logger. */
 const build = (logger: Logger = silentLogger) => {
-  const fs = new FakeVaultFileSystem();
+  const fs = new FakeAbsoluteFileSystem();
   const service = new DefaultExecutionLogService(settings, fs, logger);
   return { service, fs };
 };
@@ -37,10 +40,10 @@ const spyLogger = (): { logger: Logger; warned: () => boolean } => {
   };
 };
 
-const readLog = (fs: FakeVaultFileSystem): ExecutionLogEntry[] =>
-  JSON.parse(fs.files.get(LOG_PATH) ?? "[]") as ExecutionLogEntry[];
+const readLog = (fs: FakeAbsoluteFileSystem): ExecutionLogEntry[] =>
+  JSON.parse(fs.written.get(LOG_PATH) ?? "[]") as ExecutionLogEntry[];
 
-const runIds = (fs: FakeVaultFileSystem): string[] => readLog(fs).map((e) => e.runId);
+const runIds = (fs: FakeAbsoluteFileSystem): string[] => readLog(fs).map((e) => e.runId);
 
 describe("DefaultExecutionLogService.record", () => {
   it("records one entry into a fresh vault (no file yet)", async () => {
@@ -61,6 +64,19 @@ describe("DefaultExecutionLogService.record", () => {
       durationMs: 60000,
       result: { passed: 1, failed: 0, skipped: 0, total: 1 },
     });
+  });
+
+  it("overwrites the existing unindexed log on a second record (regression: stuck-on-first)", async () => {
+    // The vault adapter cannot overwrite an unindexed `.testrunner` file, so the
+    // service must use the absolute FS — proven here by a SECOND record landing
+    // (the first already created the file) rather than failing and freezing the
+    // log on the first run (Codex P2).
+    const { service, fs } = build();
+
+    expect((await service.record(run({ id: "RUN-A" }))).ok).toBe(true);
+    expect((await service.record(run({ id: "RUN-B" }))).ok).toBe(true);
+
+    expect(runIds(fs)).toEqual(["RUN-B", "RUN-A"]);
   });
 
   it("records errored/cancelled runs the evidence path skips", async () => {
@@ -102,7 +118,7 @@ describe("DefaultExecutionLogService.record", () => {
   it("treats a corrupt existing log as empty, warns, and still writes", async () => {
     const spy = spyLogger();
     const { service, fs } = build(spy.logger);
-    fs.files.set(LOG_PATH, "{ this is not json");
+    fs.seed(LOG_PATH, "{ this is not json");
 
     const result = await service.record(run({ id: "RUN-NEW" }));
 
@@ -113,7 +129,7 @@ describe("DefaultExecutionLogService.record", () => {
 
   it("treats a non-array existing log as empty and still writes", async () => {
     const { service, fs } = build();
-    fs.files.set(LOG_PATH, JSON.stringify({ not: "an array" }));
+    fs.seed(LOG_PATH, JSON.stringify({ not: "an array" }));
 
     await service.record(run({ id: "RUN-NEW" }));
 
@@ -122,7 +138,7 @@ describe("DefaultExecutionLogService.record", () => {
 
   it("drops malformed elements from an existing log array", async () => {
     const { service, fs } = build();
-    fs.files.set(LOG_PATH, JSON.stringify([{ noRunId: true }, { runId: "RUN-OLD" }]));
+    fs.seed(LOG_PATH, JSON.stringify([{ noRunId: true }, { runId: "RUN-OLD" }]));
 
     await service.record(run({ id: "RUN-NEW" }));
 
@@ -130,20 +146,29 @@ describe("DefaultExecutionLogService.record", () => {
   });
 
   it("returns err and logs (without throwing) when the write fails", async () => {
-    const { result, warned, fs } = await recordWithFault({ path: LOG_PATH, message: "disk full" });
+    const spy = spyLogger();
+    const { service, fs } = build(spy.logger);
+    fs.writeAbsolute = async () => ({
+      ok: false,
+      error: { code: "INIT_FAILED", message: "disk full" },
+    });
 
-    expectWriteFailure(result, warned);
-    // A failed write leaves no partial file behind.
-    expect(fs.files.has(LOG_PATH)).toBe(false);
+    const result = await service.record(run());
+
+    expectWriteFailure(result, spy.warned());
+    // A failed write leaves no file behind.
+    expect(fs.written.has(LOG_PATH)).toBe(false);
   });
 
-  it("returns err and logs when the history folder cannot be created", async () => {
-    const fault = { path: ".testrunner/history", message: "read-only" };
-    const { result, warned, fs } = await recordWithFault(fault);
+  it("returns err and logs when the vault base path is unavailable", async () => {
+    const spy = spyLogger();
+    const { service, fs } = build(spy.logger);
+    fs.basePath = null; // non-desktop: no absolute base to resolve the log path
 
-    expectWriteFailure(result, warned);
-    // The write is never attempted once the folder cannot be created.
-    expect(fs.files.has(LOG_PATH)).toBe(false);
+    const result = await service.record(run());
+
+    expectWriteFailure(result, spy.warned());
+    expect(fs.written.size).toBe(0);
   });
 
   it("whenSettled resolves only after the enqueued write completes", async () => {
@@ -158,18 +183,6 @@ describe("DefaultExecutionLogService.record", () => {
     expect(runIds(fs)).toEqual(["RUN-PENDING"]);
   });
 });
-
-/** Records a run against a vault that fails IO on `failOn`, capturing the spy. */
-const recordWithFault = async (failOn: {
-  path: string;
-  message: string;
-}): Promise<{ result: Result<void>; warned: boolean; fs: FakeVaultFileSystem }> => {
-  const spy = spyLogger();
-  const { service, fs } = build(spy.logger);
-  fs.failOn = failOn;
-  const result = await service.record(run());
-  return { result, warned: spy.warned(), fs };
-};
 
 /** Asserts a best-effort write fault: an `EVIDENCE_WRITE_FAILED` err, logged. */
 const expectWriteFailure = (result: Result<void>, warned: boolean): void => {
