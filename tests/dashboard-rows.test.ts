@@ -8,6 +8,7 @@ import {
   QUICK_ACTIONS,
   QUICK_ACTION_GROUPS,
   shouldShowOnboarding,
+  useCaseFilterLabel,
   type KpiTile,
 } from "../src/presentation/views/dashboard-rows";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
@@ -191,5 +192,14 @@ describe("projectEnvironmentBadge", () => {
     const badge = projectEnvironmentBadge("demo", ["demo"]);
     expect(badge.switchable).toBe(false);
     expect(badge.ariaLabel).toBe("Active environment: demo.");
+  });
+});
+
+describe("useCaseFilterLabel (E1 PR3 filter chip)", () => {
+  it("labels each non-'all' funnel stage", () => {
+    expect(useCaseFilterLabel("specified")).toBe("Specified");
+    expect(useCaseFilterLabel("automated")).toBe("Automated");
+    expect(useCaseFilterLabel("passing")).toBe("Passing");
+    expect(useCaseFilterLabel("failing")).toBe("Failing");
   });
 });

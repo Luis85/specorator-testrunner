@@ -88,6 +88,11 @@ export class UseCaseDashboardView extends LiveDashboardView {
       onCreate: this.deps.onCreate,
       onOpenDetail: this.deps.onOpenDetail,
       refresh: () => void this.live.schedule(),
+      // The standalone leaf has no KPI funnel to drill from, so it always shows
+      // every Use Case: the filter is fixed "all" (no chip renders), and the
+      // clearer is unreachable (the chip's ✕ is the only caller).
+      filter: "all",
+      clearFilter: () => undefined,
     });
   }
 }

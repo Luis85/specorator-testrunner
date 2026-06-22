@@ -1042,6 +1042,35 @@ body {
   margin-top: var(--size-4-3, 12px);
 }
 
+/* Use Cases explorer KPI funnel filter chip (E1 PR3). Chrome affordance drawing
+   the brand --spec-accent, NEVER a --spec-status-* colour: the chip says "you
+   drilled in here", not "this is good/bad". */
+.e2e-test-hub-uc-filter {
+  margin: var(--size-4-2, 8px) 0;
+}
+.e2e-test-hub-uc-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-4-2, 8px);
+  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+  border: 1px solid var(--spec-accent);
+  border-radius: var(--radius-s, 4px);
+  background: var(--background-secondary);
+  color: var(--spec-accent);
+  font-size: var(--font-ui-smaller, 12px);
+}
+.e2e-test-hub-uc-filter-clear {
+  padding: 0 var(--size-4-1, 4px);
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  line-height: 1;
+}
+.e2e-test-hub-uc-filter-clear:focus-visible {
+  outline: 2px solid var(--spec-accent);
+}
+
 /* Guided Tour (spec 2026-06-11) */
 .e2e-test-hub-tour-progress {
   color: var(--text-muted);

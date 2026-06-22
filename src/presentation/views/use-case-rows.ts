@@ -1,6 +1,11 @@
 import type { FeatureFileEntry } from "../../application/services/specification-service";
+import {
+  AUTOMATED_STATUSES,
+  SPECIFIED_STATUSES,
+} from "../../application/services/traceability-service";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
+import type { UseCaseKpiFilter } from "./dashboard-rows";
 import { projectFeatureRows } from "./use-case-detail-rows";
 
 /** A Use Case projected to the columns US-017 displays. */
@@ -37,6 +42,41 @@ export const projectUseCaseRows = (
     featureCount: features === null ? null : projectFeatureRows(useCase.id, features).length,
     path: useCase.path,
   }));
+
+/**
+ * Scopes the projected rows to a KPI funnel filter (E1 PR3), so a tile showing
+ * "8 passing" drills into EXACTLY those 8 rows. Each bucket reuses the SAME
+ * predicate {@link projectDashboardSnapshot} counts with — the shared
+ * {@link SPECIFIED_STATUSES}/{@link AUTOMATED_STATUSES} sets and the same
+ * `automationStatus` comparisons — so the explorer can never drift from the
+ * funnel. The exhaustive `switch` (no `default`) makes a new filter a compile
+ * error here. Pure: no I/O, unit-tested against every automation status.
+ */
+export const filterUseCaseRows = (rows: UseCaseRow[], filter: UseCaseKpiFilter): UseCaseRow[] => {
+  switch (filter) {
+    case "all":
+      return rows;
+    case "specified":
+      // A deprecated UC's status ("deprecated") is not in SPECIFIED_STATUSES, so
+      // this already matches `specifiedUseCases` (active-only) without a guard.
+      return rows.filter((row) => SPECIFIED_STATUSES.has(row.status));
+    case "automated":
+      return rows.filter((row) => isActive(row) && AUTOMATED_STATUSES.has(row.automationStatus));
+    case "passing":
+      return rows.filter((row) => isActive(row) && row.automationStatus === "passing");
+    case "failing":
+      return rows.filter((row) => isActive(row) && row.automationStatus === "failing");
+  }
+};
+
+/**
+ * Mirrors {@link projectDashboardSnapshot}'s `active` filter (ADR-0017): the
+ * automation buckets count NON-deprecated Use Cases only. Without this a
+ * deprecated UC that was `passing`/`failing`/`automated` before deprecation —
+ * excluded from the funnel tile — would still surface under the explorer's
+ * filter, so "8 passing" would drill into 9 rows.
+ */
+const isActive = (row: UseCaseRow): boolean => row.status !== "deprecated";
 
 /** The "Features" cell of one Use Case row (Wave F insight). */
 export interface FeatureCountCell {

@@ -9,6 +9,26 @@ import type { VaultPath } from "../../domain/value-objects/identifiers";
 export type UseCaseKpiFilter = "all" | "specified" | "automated" | "passing" | "failing";
 
 /**
+ * The visible chip label for an active funnel filter in the Use Cases explorer
+ * (E1 PR3): the funnel-stage name the user drilled in on. `"all"` is the
+ * no-filter sentinel — it has no chip, so it has no label (the explorer renders
+ * none then). Exhaustive `switch` (no `default`) so a new filter is a compile
+ * error; pure so the explorer's chip text is unit-tested without a DOM.
+ */
+export const useCaseFilterLabel = (filter: Exclude<UseCaseKpiFilter, "all">): string => {
+  switch (filter) {
+    case "specified":
+      return "Specified";
+    case "automated":
+      return "Automated";
+    case "passing":
+      return "Passing";
+    case "failing":
+      return "Failing";
+  }
+};
+
+/**
  * Where a KPI tile drills into. Every tile opens the Use Cases explorer, now
  * CARRYING the funnel stage's filter (E1 PR2) so the explorer can scope to it
  * (PR3). A discriminated object (not a bare string) so the filter rides along

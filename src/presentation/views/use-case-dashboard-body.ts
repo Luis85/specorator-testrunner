@@ -2,10 +2,11 @@ import type { SpecificationService } from "../../application/services/specificat
 import type { TraceabilityService } from "../../application/services/traceability-service";
 import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { RunLauncher } from "../run/run-launcher";
+import { useCaseFilterLabel, type UseCaseKpiFilter } from "./dashboard-rows";
 import { appendLinkButtonCell } from "./link-button-cell";
 import { renderListHeader } from "./list-header";
 import { openOrNotice, renderLoadError } from "./modal-helpers";
-import { featureCountCell, projectUseCaseRows } from "./use-case-rows";
+import { featureCountCell, filterUseCaseRows, projectUseCaseRows } from "./use-case-rows";
 
 /**
  * The deps the Use Cases body needs to load + render, independent of the leaf:
@@ -32,6 +33,16 @@ export interface UseCaseDashboardBodyDeps {
   onOpenDetail: (useCaseId: string) => void;
   /** Re-renders the body (load-error retry). */
   refresh: () => void;
+  /**
+   * The active KPI funnel filter (E1 PR3): a tile drill-down carries the stage
+   * it represents, scoping the table to those rows and showing a clear-able
+   * chip. `"all"` is the default no-filter view (no chip). Hub-owned ephemeral
+   * state, supplied in `renderBody` like `refresh` — mirrors the Evidence
+   * explorer's filter lifecycle.
+   */
+  filter: UseCaseKpiFilter;
+  /** Clears the active filter back to `"all"` and re-renders (the chip's ✕). */
+  clearFilter: () => void;
 }
 
 /**
@@ -69,9 +80,21 @@ export const renderUseCaseDashboardBody = async (
 
   // A failed Feature listing degrades the "Features" column to "—" (unknown)
   // rather than hiding the whole explorer — the listing is insight, not data.
-  const rows = projectUseCaseRows(result.value, listed.ok ? listed.value : null);
-  if (rows.length === 0) {
+  const allRows = projectUseCaseRows(result.value, listed.ok ? listed.value : null);
+  if (allRows.length === 0) {
     el.createEl("p", { text: "No Use Cases yet. Create one to get started." });
+    return;
+  }
+
+  // A KPI tile drilled in carrying its funnel stage: show the clear-able chip
+  // (chrome affordance, never a status colour) above the table, then scope the
+  // rows to that stage with the SAME predicate the funnel counts with.
+  renderFilterChip(el, deps);
+  const rows = filterUseCaseRows(allRows, deps.filter);
+  if (rows.length === 0) {
+    el.createEl("p", {
+      text: `No Use Cases match the ${deps.filter} filter. Clear the filter to see all Use Cases.`,
+    });
     return;
   }
 
@@ -127,4 +150,28 @@ export const renderUseCaseDashboardBody = async (
       void deps.runLauncher.launch({ scope: "use-case", target: row.id });
     });
   }
+};
+
+/**
+ * Renders the active-filter chip (E1 PR3) above the table: a labelled pill with
+ * a focusable clear button (real `<button>` semantics + an `aria-label`) that
+ * resets the filter to `"all"` via {@link UseCaseDashboardBodyDeps.clearFilter}.
+ * `"all"` is the no-filter state, so it renders nothing. Chip styling is chrome
+ * (`--spec-accent`/neutral), NOT a status colour — it is an affordance, not a
+ * verdict. Built with createDiv/createEl/setText only (never innerHTML).
+ */
+const renderFilterChip = (el: HTMLElement, deps: UseCaseDashboardBodyDeps): void => {
+  if (deps.filter === "all") return;
+  const label = useCaseFilterLabel(deps.filter);
+  const bar = el.createDiv({ cls: "e2e-test-hub-uc-filter" });
+  const chip = bar.createDiv({ cls: "e2e-test-hub-uc-filter-chip" });
+  chip.createSpan({ cls: "e2e-test-hub-uc-filter-label", text: `${label} Use Cases` });
+  const clear = chip.createEl("button", {
+    cls: "e2e-test-hub-uc-filter-clear",
+    text: "✕",
+    attr: { "aria-label": `Clear the ${deps.filter} filter`, type: "button" },
+  });
+  clear.addEventListener("click", () => {
+    deps.clearFilter();
+  });
 };
