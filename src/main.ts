@@ -7,6 +7,7 @@ import type { MaintenanceService } from "./application/services/maintenance-serv
 import type { PipelineGenerationService } from "./application/services/pipeline-generation-service";
 import type { FeatureInsightService } from "./application/services/feature-insight-service";
 import type { PostRunCoordinator } from "./application/services/post-run-coordinator";
+import type { ExecutionLogRecorder } from "./application/services/execution-log-recorder";
 import type { GuidedTourService } from "./application/services/guided-tour-service";
 import {
   DefaultSettingsService,
@@ -97,6 +98,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
   // state, the run-status eligibility rule, and the serializing evidence chain
   // that used to live here.
   private postRunCoordinator!: PostRunCoordinator;
+  // E1 (ADR-0032): records EVERY terminal run into the durable execution log,
+  // independent of evidence, so a later read serves an honest "last run".
+  private executionLogRecorder!: ExecutionLogRecorder;
   private guidedTourService!: GuidedTourService;
   private commandHelpers!: RegisteredCommandHelpers;
   // Every NodeChildProcessRunner built by this composition root, so onunload
@@ -180,6 +184,9 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     this.testExecutionService = services.testExecutionService;
     this.runLauncher = services.runLauncher;
     this.postRunCoordinator = services.postRunCoordinator;
+    this.executionLogRecorder = services.executionLogRecorder;
+    // E1 (ADR-0032): begin recording every terminal run into the durable log.
+    this.executionLogRecorder.start();
     this.guidedTourService = services.guidedTourService;
 
     // WS-A4: the deep-link navigator wires the findById services to the existing
@@ -296,14 +303,37 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // snapshot already protects evidence attribution).
     const active = this.testExecutionService?.activeRunId() ?? null;
     if (active !== null) {
+      // Best-effort kill signal so an active run's child doesn't outlive unload.
+      // In the finalization window (child already closed but the terminal event
+      // not yet published) cancel() returns the benign RUN_CANCELLED WITHOUT
+      // publishing — the run is completing on its own — so that is not a real
+      // failure to warn about.
       void this.testExecutionService.cancel(active).then((cancelled) => {
-        if (!cancelled.ok) {
+        if (!cancelled.ok && cancelled.error.code !== "RUN_CANCELLED") {
           this.logger?.warn("Could not cancel active run on unload", {
             runId: active,
             reason: cancelled.error.message,
           });
         }
       });
+      // Detach the recorder only AFTER the active run fully SETTLES — its
+      // terminal event has published (the still-subscribed recorder enqueues the
+      // record during that synchronous publish) and its snapshot recorded. Tying
+      // the stop to whenActiveSettles() rather than to cancel() covers BOTH
+      // terminal paths: our cancel (publishes testrun.cancelled) AND the
+      // finalization race where cancel() no-ops because the child already closed
+      // (the real completed/failed event still publishes afterwards). Unlike the
+      // post-run coordinator (stopped synchronously below — a cancelled run has
+      // no report to import), the log must capture this terminal run so the
+      // latest-run verdict isn't stale after reload (ADR-0032 / Codex P2).
+      void this.testExecutionService.whenActiveSettles().then(() => {
+        this.executionLogRecorder?.stop();
+      });
+    } else {
+      // No active run to settle: nothing further to record, so detach the
+      // recorder immediately (a late terminal event after unload can't drive a
+      // new log write; synchronous, race-free; ADR-0032).
+      this.executionLogRecorder?.stop();
     }
     // Detach the post-run coordinator's bus subscriptions so a late terminal
     // event after unload can't drive a new import (synchronous, race-free).

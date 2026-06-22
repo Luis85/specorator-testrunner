@@ -274,6 +274,8 @@ const buildReset = (
   opts: {
     /** Injected post-run settle hook (PostRunCoordinator.whenSettled). */
     whenPostRunSettled?: () => Promise<void>;
+    /** Injected execution-log settle hook (ExecutionLogService.whenSettled). */
+    whenExecutionLogSettled?: () => Promise<void>;
     /** Wraps the execution service's lock, e.g. to record acquisition order. */
     wrapLock?: (lock: MaintenanceLock) => MaintenanceLock;
   } = {},
@@ -351,6 +353,7 @@ const buildReset = (
     vault,
     lock,
     opts.whenPostRunSettled,
+    opts.whenExecutionLogSettled,
   );
   return { service, vault, absoluteFs, execution, types, events, settings };
 };
@@ -557,6 +560,9 @@ describe("DefaultMaintenanceService.reset (UC-024)", () => {
       whenPostRunSettled: async () => {
         order.push("post-run-settled");
       },
+      whenExecutionLogSettled: async () => {
+        order.push("execution-log-settled");
+      },
       wrapLock: (lock) => ({
         inProgress: () => lock.inProgress(),
         begin: () => {
@@ -581,7 +587,11 @@ describe("DefaultMaintenanceService.reset (UC-024)", () => {
     expect(result.ok).toBe(true);
     expect(order.indexOf("lock-acquired")).toBeGreaterThanOrEqual(0);
     expect(order.indexOf("post-run-settled")).toBeGreaterThan(order.indexOf("lock-acquired"));
-    expect(order.indexOf("delete-runner")).toBeGreaterThan(order.indexOf("post-run-settled"));
+    // The execution-log write queue drains under the lock too, before the
+    // destructive delete — so a late log write cannot re-materialise
+    // `<runner>/history` after the runtime is removed (ADR-0032).
+    expect(order.indexOf("execution-log-settled")).toBeGreaterThan(order.indexOf("lock-acquired"));
+    expect(order.indexOf("delete-runner")).toBeGreaterThan(order.indexOf("execution-log-settled"));
     expect(order[order.length - 1]).toBe("lock-released");
   });
 

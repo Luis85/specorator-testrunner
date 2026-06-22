@@ -15,6 +15,11 @@ import {
   type PostRunCoordinator,
 } from "./application/services/post-run-coordinator";
 import { DefaultScenarioHistoryService } from "./application/services/scenario-history-service";
+import {
+  DefaultExecutionLogService,
+  type ExecutionLogService,
+} from "./application/services/execution-log-service";
+import { ExecutionLogRecorder } from "./application/services/execution-log-recorder";
 import { ScenarioIdentityResolver } from "./application/services/scenario-identity-resolver";
 import { DefaultGuidedTourService } from "./application/services/guided-tour-service";
 import { DEMO_FEATURE_FILE_NAME, DEMO_USE_CASE_ID } from "./application/content/demo-content";
@@ -91,6 +96,8 @@ export interface ComposedServices {
   traceabilityService: DefaultTraceabilityService;
   runHistoryService: DefaultRunHistoryService;
   postRunCoordinator: PostRunCoordinator;
+  executionLogService: ExecutionLogService;
+  executionLogRecorder: ExecutionLogRecorder;
   guidedTourService: DefaultGuidedTourService;
 }
 
@@ -192,6 +199,11 @@ export const composeServices = (ctx: ComposeContext): ComposedServices => {
     // of the previous run's import/evidence chain settles before maintenance
     // touches any files.
     () => services.postRunCoordinator.whenSettled(),
+    // Likewise drain the durable execution-log write queue under the lock so a
+    // late fire-and-forget log write cannot re-materialise `<runner>/history`
+    // after reset deletes the runtime (ADR-0032). Lazy: the service is built
+    // further down, like the post-run coordinator above.
+    () => services.executionLogService.whenSettled(),
   );
   // Built before useCaseService (which links to it): PrdService depends only on
   // settings/vault/bus/logger, so constructing it first lets assignToPrd's
@@ -328,6 +340,24 @@ export const composeServices = (ctx: ComposeContext): ComposedServices => {
     isEvidenceMarkdownEnabled: () => ctx.getSettings().automation.generateEvidenceMarkdown,
   });
   services.postRunCoordinator.start();
+
+  // E1 (ADR-0032): the durable execution log records EVERY terminal run —
+  // including `errored`/`cancelled` runs the evidence-import path skips — into a
+  // capped newest-first JSON log under `.testrunner/history`, independent of
+  // evidence, so a later read can serve an honest "last run" verdict. A
+  // dedicated recorder keeps execution-logging separate from the coordinator's
+  // evidence concern; it reads the SAME `lastRun` source the coordinator does.
+  services.executionLogService = new DefaultExecutionLogService(
+    hubSettingsService,
+    absoluteFs,
+    logger,
+  );
+  services.executionLogRecorder = new ExecutionLogRecorder({
+    eventBus,
+    executionLogService: services.executionLogService,
+    lastRun: () => services.testExecutionService.lastRun(),
+    logger,
+  });
 
   // Guided Tour (spec 2026-06-11): observes the user's real actions on the bus
   // and advances the onboarding checklist whether or not the view is open.

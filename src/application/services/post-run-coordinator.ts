@@ -3,21 +3,15 @@ import type { ReportImportService } from "./report-import-service";
 import type { ScenarioHistoryService } from "./scenario-history-service";
 import type { ScenarioIdentityResolver } from "./scenario-identity-resolver";
 import type { TraceabilityService } from "./traceability-service";
+import { TerminalRunSubscription } from "./terminal-run-subscription";
 import type { TestRun, TestRunStatus } from "../../domain/entities/test-run";
-import type { DomainEvent, DomainEventType } from "../../domain/events/domain-event";
+import type { DomainEvent } from "../../domain/events/domain-event";
 import type { RunId, VaultPath } from "../../domain/value-objects/identifiers";
 import { appError } from "../../shared/errors/errors";
-import type { EventBus, Unsubscribe } from "../../shared/event-bus/event-bus";
+import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { Logger } from "../../shared/logging/logger";
 import { err, ok, type Result } from "../../shared/result/result";
 import { SerialQueue } from "../../shared/async/serial-queue";
-
-/** Terminal run events that drive the post-run import→evidence flow (EN-2). */
-const TERMINAL_EVENTS: DomainEventType[] = [
-  "testrun.completed",
-  "testrun.failed",
-  "testrun.cancelled",
-];
 
 /** Run statuses that can have produced a report worth importing. */
 const IMPORTABLE_STATUSES = new Set<TestRunStatus>(["passed", "failed", "cancelled"]);
@@ -97,7 +91,7 @@ export interface PostRunCoordinator {
  * unload. Each task first waits for its run to settle (snapshot recorded).
  */
 export class DefaultPostRunCoordinator implements PostRunCoordinator {
-  private subscriptions: Unsubscribe[] = [];
+  private readonly subscription: TerminalRunSubscription;
   // Post-run import+evidence reads then writes Use Case frontmatter, so back-to-
   // back runs could interleave and clobber each other's evidence/last_run fields
   // — serialize them through a single queue (shared SerialQueue, review §4).
@@ -110,7 +104,11 @@ export class DefaultPostRunCoordinator implements PostRunCoordinator {
   // outcome — the probe must not point the UI at a non-existent file.
   private lastGenerated: LastEvidence | null = null;
 
-  constructor(private readonly deps: PostRunCoordinatorDeps) {}
+  constructor(private readonly deps: PostRunCoordinatorDeps) {
+    this.subscription = new TerminalRunSubscription(deps.eventBus, (event) =>
+      this.onTerminal(event),
+    );
+  }
 
   /**
    * The evidence note generated for the most recent imported run, or null when
@@ -123,23 +121,16 @@ export class DefaultPostRunCoordinator implements PostRunCoordinator {
   }
 
   /**
-   * Subscribes to the terminal run events. Returns/stores Unsubscribe handles so
-   * {@link stop} can detach them. Idempotent: calling start() twice does not
-   * double-subscribe.
+   * Subscribes to the terminal run events. Idempotent: calling start() twice
+   * does not double-subscribe.
    */
   start(): void {
-    if (this.subscriptions.length > 0) return;
-    for (const type of TERMINAL_EVENTS) {
-      this.subscriptions.push(
-        this.deps.eventBus.subscribe(type, (event) => this.onTerminal(event)),
-      );
-    }
+    this.subscription.start();
   }
 
   /** Detaches the bus subscriptions. Safe to call when not started. */
   stop(): void {
-    for (const unsubscribe of this.subscriptions) unsubscribe();
-    this.subscriptions = [];
+    this.subscription.stop();
   }
 
   /**

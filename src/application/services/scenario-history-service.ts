@@ -16,6 +16,7 @@ import {
   type ScenarioIndex,
 } from "./scenario-history-index";
 import { groupRunFolders, resolveRunEntries } from "./scenario-history-source";
+import { runnerHistoryFilePath } from "./runner-history-path";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
 import { HISTORY_DEPTH_DEFAULT } from "../../domain/settings/settings";
@@ -459,12 +460,8 @@ export class DefaultScenarioHistoryService implements ScenarioHistoryService {
     return joinVaultPath(this.runFolder(run, root), "summary.md");
   }
 
-  private async indexAbsolutePath(): Promise<string | undefined> {
-    const base = await this.absoluteFs.getVaultBasePath();
-    if (!base.ok) return undefined;
-    const settings = await this.settingsService.load();
-    const runner = settings.paths.testRunnerPath;
-    return `${base.value.replace(/[/\\]$/, "")}/${runner}/history/scenario-index.json`;
+  private indexAbsolutePath(): Promise<string | undefined> {
+    return runnerHistoryFilePath(this.absoluteFs, this.settingsService, "scenario-index.json");
   }
 
   private async readIndex(): Promise<ScenarioIndex | null> {

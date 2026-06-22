@@ -17,12 +17,12 @@ import type {
 import type { Evidence } from "../src/domain/entities/evidence";
 import type { TestRun, TestRunStatus } from "../src/domain/entities/test-run";
 import type { DomainEventType } from "../src/domain/events/domain-event";
-import { createEvent } from "../src/shared/event-bus/create-event";
 import { appError } from "../src/shared/errors/errors";
 import { err, ok, type Result } from "../src/shared/result/result";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import type { Logger } from "../src/shared/logging/logger";
 import { recordingEventBus, silentLogger } from "./fakes";
+import { publishTerminalEvent } from "./execution-log-fixtures";
 
 const run = (overrides: Partial<TestRun> = {}): TestRun => ({
   id: "RUN-2026-05-31-100000",
@@ -178,24 +178,7 @@ const publishTerminal = (
   bus: ReturnType<typeof build>["bus"],
   type: Extract<DomainEventType, "testrun.completed" | "testrun.failed" | "testrun.cancelled">,
   runId = "RUN-2026-05-31-100000",
-): Promise<void> => {
-  if (type === "testrun.completed") {
-    return bus.publish(
-      createEvent(type, {
-        runId,
-        status: "passed",
-        durationMs: 1,
-        passed: 1,
-        failed: 0,
-        skipped: 0,
-      }),
-    );
-  }
-  if (type === "testrun.failed") {
-    return bus.publish(createEvent(type, { runId, reason: "boom" }));
-  }
-  return bus.publish(createEvent(type, { runId }));
-};
+): Promise<void> => publishTerminalEvent(bus, type, runId);
 
 describe("PostRunCoordinator", () => {
   describe("terminal-event reaction", () => {
