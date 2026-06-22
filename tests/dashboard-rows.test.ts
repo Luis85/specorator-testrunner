@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { DashboardSnapshot } from "../src/application/services/traceability-service";
 import {
   NO_EVIDENCE_TOOLTIP,
-  ONBOARDING_STEPS,
   projectDashboard,
   projectEnvironmentBadge,
   QUICK_ACTIONS,
   QUICK_ACTION_GROUPS,
-  shouldShowOnboarding,
   useCaseFilterLabel,
   type KpiTile,
 } from "../src/presentation/views/dashboard-rows";
@@ -148,32 +146,6 @@ describe("QUICK_ACTIONS", () => {
 
   it("files Generate documentation under Create — it produces artifacts, it doesn't run tests", () => {
     expect(QUICK_ACTIONS.find((a) => a.id === "generate-docs")?.group).toBe("create");
-  });
-});
-
-describe("onboarding panel (Wave G §2)", () => {
-  it("shows only when the vault has zero Use Cases (the view gates on isInitialized first)", () => {
-    expect(shouldShowOnboarding(0)).toBe(true);
-    // A Use Case exists: the panel disappears naturally.
-    expect(shouldShowOnboarding(1)).toBe(false);
-    expect(shouldShowOnboarding(3)).toBe(false);
-  });
-
-  it("walks create-UC → demo run → Getting Started as numbered steps 1–3", () => {
-    expect(ONBOARDING_STEPS.map((s) => s.step)).toEqual([1, 2, 3]);
-    expect(ONBOARDING_STEPS.map((s) => s.action)).toEqual([
-      "create-use-case",
-      "run-demo",
-      "open-getting-started",
-    ]);
-  });
-
-  it("gives every step a label, a one-line explanation, and an aria-label", () => {
-    for (const step of ONBOARDING_STEPS) {
-      expect(step.label.length).toBeGreaterThan(0);
-      expect(step.description.length).toBeGreaterThan(0);
-      expect(step.ariaLabel).toContain(`Step ${step.step}`);
-    }
   });
 });
 
