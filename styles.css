@@ -1848,10 +1848,9 @@ body {
   min-width: 0;
 }
 
-/* The overview section maps both `kpi-overview` and `recent-runs` content refs
- * to the single combined dashboard body, so the second ref's panel child renders
- * empty for now; collapse it (and its inter-body margin) until E1 splits the
- * dashboard body into separate health/recent-runs renderers that both fill. */
+/* Defensive: a body that renders nothing (e.g. an early return) collapses out of
+ * the flow rather than leaving a gap. The overview now fills BOTH content refs —
+ * the hero body and the recent-runs body — so the E1 empty-div hack is retired. */
 .spec-hub-section-body:empty {
   display: none;
 }
@@ -1871,4 +1870,159 @@ body {
  * so it collapses out of the flow until it holds content. */
 .spec-hub-onboarding-rail:empty {
   display: none;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Overview health hero + KPI funnel (E1 PR2): the Overview's pass-rate gauge,
+ * the one-line verdict, the durable execution log's last-run line, the two
+ * primary actions, and the of-Total KPI funnel bars.
+ *
+ * Token discipline (01-§3.6): the ring sweep, the last-run tone, and the funnel
+ * fill are STATUS, so they draw --spec-status-*; the brand --spec-accent is
+ * reserved for chrome (focus rings, the action CTA tint Obsidian's mod-cta owns).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.spec-hub-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+}
+
+/* No-rate empty state (nothing automated yet): the ring is absent, this shows. */
+.spec-hub-hero-empty {
+  color: var(--text-muted);
+  text-align: center;
+  font-size: var(--font-ui-medium);
+}
+
+/* The pass-rate ring: a conic sweep driven by --spec-hero-rate (0–100), tinted
+ * with the pass status colour over a muted track. STATUS, never chrome. */
+.spec-hub-hero-ring {
+  --spec-hero-rate: 0;
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: conic-gradient(
+    var(--spec-status-pass) calc(var(--spec-hero-rate) * 1%),
+    var(--background-modifier-border) 0
+  );
+}
+
+/* The inner disc carries the percentage text; the ring shows only as a rim. */
+.spec-hub-hero-percent {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--background-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-ui-large);
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.spec-hub-hero-verdict {
+  text-align: center;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+/* The last-run line, tinted by its status tone via data-tone (status, not chrome). */
+.spec-hub-hero-last-run {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.spec-hub-hero-last-run[data-tone="pass"] {
+  color: var(--spec-status-pass);
+}
+
+.spec-hub-hero-last-run[data-tone="fail"] {
+  color: var(--spec-status-fail);
+}
+
+.spec-hub-hero-last-run[data-tone="warn"] {
+  color: var(--spec-status-warn);
+}
+
+.spec-hub-hero-last-run[data-tone="idle"] {
+  color: var(--spec-status-idle);
+}
+
+/* The two primary actions (New Use Case is the mod-cta primary). */
+.spec-hub-hero-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.spec-hub-hero-action:focus-visible {
+  outline: 2px solid var(--spec-accent);
+  outline-offset: 2px;
+}
+
+/* The KPI funnel: a vertical stack of bars, each narrowing toward the tail. */
+.spec-hub-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+/* One funnel bar: a left status fill sized by --spec-funnel-fill (the of-Total
+ * percent), with the value/label/percent text overlaid so it never reads by
+ * width or colour alone (colour-blind / high-contrast safe). */
+.spec-hub-funnel-tile {
+  --spec-funnel-fill: 100;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: linear-gradient(
+    to right,
+    var(--background-modifier-active-hover) calc(var(--spec-funnel-fill) * 1%),
+    transparent 0
+  );
+  color: var(--text-normal);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.spec-hub-funnel-tile:hover {
+  border-color: var(--text-muted);
+}
+
+.spec-hub-funnel-tile:focus-visible {
+  outline: 2px solid var(--spec-accent);
+  outline-offset: 2px;
+}
+
+/* A non-zero Failing tile draws the fail status accent (status, not chrome). */
+.spec-hub-funnel-tile[data-tone="alert"] {
+  border-left: 3px solid var(--spec-status-fail);
+}
+
+.spec-hub-funnel-value {
+  font-weight: 700;
+  min-width: 2ch;
+}
+
+.spec-hub-funnel-label {
+  flex: 1 1 auto;
+  font-size: var(--font-ui-small);
+}
+
+.spec-hub-funnel-percent {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
 }

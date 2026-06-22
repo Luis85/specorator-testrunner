@@ -215,36 +215,28 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
     (leaf) =>
       new HubView(leaf, {
         app,
+        eventBus,
         workspace,
-        dashboard: {
+        // E1 PR2: the Overview hero body — health hero (pass-rate ring + verdict
+        // + the durable execution log's last-run line) + primary actions + KPI
+        // funnel. The `navigate`/`refresh` the hub owns are supplied in renderBody.
+        hero: {
           traceabilityService: s.traceabilityService,
-          prdService: s.prdService,
-          useCaseService: s.useCaseService,
-          openPrdBuilder: () => deps.openPrdBuilder(),
-          eventBus,
+          executionLogService: s.executionLogService,
           // Real initialization signal: the Use Cases folder the snapshot reads
           // exists once the wizard has scaffolded the vault (a fresh vault lists
           // it as ok([]), so snapshot success can't distinguish "not set up").
           isInitialized: () => vault.exists(deps.getSettings().paths.useCasesPath),
-          openDocumentation: (documentType) => deps.openDocumentation(documentType),
           openWizard: () => deps.openWizard(),
           openCreateUseCase: () => deps.openCreateUseCase(),
-          openCreateSuite: () => deps.openCreateSuite(),
           runAll: () => s.runLauncher.launch({ scope: "all", target: "all" }),
-          runDemo: () => s.runLauncher.launch({ scope: "demo", target: "demo" }),
-          generateDocumentation: () => deps.generateDocumentation(),
-          openConsole: () => void workspace.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
+        },
+        // E1 PR2: the Overview recent-runs body — its own snapshot-loaded run
+        // table. `openEvidenceExplorer`/`refresh` the hub owns are supplied in
+        // renderBody (it switches to the Review section).
+        recentRuns: {
+          traceabilityService: s.traceabilityService,
           openEvidence: (path) => deps.openEvidence(path),
-          getEnvironments: () => ({
-            active: deps.getSettings().sut.active,
-            names: Object.keys(deps.getSettings().sut.environments),
-          }),
-          switchEnvironment: (name) => deps.switchEnvironment(name),
-          tourVisible: () => {
-            const state = s.guidedTourService.getState();
-            return !state.completed && !state.dismissed;
-          },
-          openGuidedTour: () => void workspace.openView(GUIDED_TOUR_VIEW_TYPE, "sidebar"),
         },
         prds: {
           prdService: s.prdService,
