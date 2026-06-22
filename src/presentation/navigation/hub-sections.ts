@@ -173,6 +173,22 @@ export const resolveActiveSection = (persisted: string | undefined): HubSectionI
 };
 
 /**
+ * Reads the persisted `activeSection` string off Obsidian's opaque `setState`
+ * payload WITHOUT an unsafe `as` cast — the hub leaf's `setState(state: unknown)`
+ * receives a `Record<string, unknown>`-shaped value whose `activeSection` field
+ * is only ever a string we wrote in `getState()`. Returns it when present and a
+ * string, else `undefined`, so the caller pipes it straight into
+ * {@link resolveActiveSection} (which then sanitizes unknown/empty). Pure: a
+ * deterministic read over an unknown, no I/O — keeps the view's `setState` free
+ * of casts the strict type-checked lint flags.
+ */
+export const readPersistedActiveSection = (state: unknown): string | undefined => {
+  if (typeof state !== "object" || state === null) return undefined;
+  const value: unknown = (state as Record<string, unknown>).activeSection;
+  return typeof value === "string" ? value : undefined;
+};
+
+/**
  * The rail for an active section: the ordered nodes with exactly one marked
  * `active`, plus the resolved active descriptor. The direct analogue of
  * `projectLoopRail`. Pure: a deterministic function of `activeSection`.

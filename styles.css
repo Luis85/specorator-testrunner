@@ -1750,3 +1750,125 @@ body {
   fill: var(--text-muted);
   font-size: 10px;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Test Hub home shell (WS-B1, ADR-0031): the single-leaf home with a persistent
+ * left-rail section switcher. Chrome only draws the brand --spec-accent (the
+ * active rail node, the identity wordmark); content bodies keep their own
+ * existing classes and statuses untouched.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.spec-hub {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Identity bar: a light wordmark strip drawing the accent for chrome. */
+.spec-hub-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.spec-hub-wordmark-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--spec-accent);
+}
+
+.spec-hub-wordmark {
+  font-weight: 600;
+  font-size: var(--font-ui-large);
+  color: var(--text-normal);
+}
+
+/* The rail + content panel sit side by side below the identity bar. */
+.spec-hub-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+/* The persistent left rail: a vertical column of section switch nodes. */
+.spec-hub-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 auto;
+  min-width: 132px;
+}
+
+.spec-hub-rail-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.spec-hub-rail-node:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Exactly one node is active; the --spec-accent marker is CHROME, never status. */
+.spec-hub-rail-node.is-active {
+  border-left-color: var(--spec-accent);
+  color: var(--spec-accent);
+  font-weight: 600;
+}
+
+.spec-hub-rail-node:focus-visible {
+  outline: 2px solid var(--spec-accent);
+  outline-offset: 2px;
+}
+
+.spec-hub-rail-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.spec-hub-rail-label {
+  font-size: var(--font-ui-small);
+}
+
+/* The content panel hosts the active section's bodies / leaf actions. */
+.spec-hub-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The overview section maps both `kpi-overview` and `recent-runs` content refs
+ * to the single combined dashboard body, so the second ref's panel child renders
+ * empty for now; collapse it (and its inter-body margin) until E1 splits the
+ * dashboard body into separate health/recent-runs renderers that both fill. */
+.spec-hub-section-body:empty {
+  display: none;
+}
+
+.spec-hub-section-body + .spec-hub-section-body,
+.spec-hub-section-body + .spec-hub-section-actions {
+  margin-top: 16px;
+}
+
+.spec-hub-section-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* The onboarding-rail slot is always present (B2 fills it later). Empty for now,
+ * so it collapses out of the flow until it holds content. */
+.spec-hub-onboarding-rail:empty {
+  display: none;
+}
