@@ -1,6 +1,7 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
+import { renderListHeader } from "./list-header";
 import { LiveRefresh } from "./live-refresh";
 
 /**
@@ -43,9 +44,11 @@ export abstract class LiveDashboardView extends ItemView {
 
   /**
    * The list-explorer preamble shared by the PRDs / Use Cases / Test Suites
-   * panels: clear the content, then a header bar of an `<h2>` title and a
-   * primary "New …" action button, returning the content element so the caller
-   * fills the list below the bar. `headerCls` namespaces the bar per explorer.
+   * panels: clears `this.contentEl` and writes the header bar, returning the
+   * content element so the caller fills the list below the bar. A thin wrapper
+   * over the host-agnostic {@link renderListHeader} (which takes the target
+   * element explicitly) so the same writer fills a standalone leaf and the
+   * (later) Test Hub body identically.
    */
   protected renderListHeader(options: {
     headerCls: string;
@@ -54,12 +57,7 @@ export abstract class LiveDashboardView extends ItemView {
     onAction: () => void;
   }): HTMLElement {
     const container = this.contentEl;
-    container.empty();
-    const header = container.createDiv({ cls: options.headerCls });
-    header.createEl("h2", { text: options.title });
-    header
-      .createEl("button", { text: options.actionLabel, cls: "mod-cta" })
-      .addEventListener("click", () => options.onAction());
+    renderListHeader(container, options);
     return container;
   }
 }

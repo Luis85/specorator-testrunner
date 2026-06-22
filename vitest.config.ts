@@ -49,6 +49,16 @@ export default defineConfig({
         // count toward coverage.
         "src/presentation/views/*-view.ts",
         "src/presentation/views/*-modal.ts",
+        // WS-B1 / ADR-0031: the host-agnostic section bodies extracted from the
+        // explorer & dashboard views so the Test Hub shell can render them in-leaf,
+        // plus the two thin DOM-writer helpers they share and the deps/types module.
+        // DOM-building only — the pure projections (`*-rows.ts`) they call stay
+        // covered; the SAME exemption as the `*-view.ts` files they were lifted from
+        // (mirrors the feature-editor-structured / settings-* extractions below).
+        "src/presentation/views/*-body.ts",
+        "src/presentation/views/list-header.ts",
+        "src/presentation/views/link-button-cell.ts",
+        "src/presentation/views/dashboard-view-deps.ts",
         // The Feature Editor's structured sub-renderers (scenario/step/examples
         // cards), extracted from feature-editor-view.ts to keep it under the
         // size budget. DOM-building only — the pure editing logic they call

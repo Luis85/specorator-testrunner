@@ -4,10 +4,9 @@ import type { SuiteService } from "../../application/services/suite-service";
 import type { DomainEventType } from "../../domain/events/domain-event";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
-import { suiteTarget, type NavigationTarget } from "../navigation/navigation-target";
-import { renderLoadError } from "./modal-helpers";
+import { type NavigationTarget } from "../navigation/navigation-target";
 import { LiveDashboardView } from "./live-dashboard-view";
-import { projectSuiteRows, scenarioCountCell } from "./suite-rows";
+import { renderSuiteDashboardBody } from "./suite-dashboard-body";
 
 export const SUITE_VIEW_TYPE = "e2e-test-hub-suites";
 
@@ -66,79 +65,16 @@ export class SuiteDashboardView extends LiveDashboardView {
   }
 
   protected async render(): Promise<void> {
-    const container = this.renderListHeader({
-      headerCls: "e2e-test-hub-suite-header",
-      title: "Test Suites",
-      actionLabel: "New Test Suite",
-      onAction: () => this.deps.onCreate(),
+    // Thin caller: the body builds entirely into this leaf's `contentEl` via the
+    // host-agnostic renderer, so the standalone leaf and the (later) Test Hub
+    // body render identically (ADR-0031).
+    await renderSuiteDashboardBody(this.contentEl, {
+      suiteService: this.deps.suiteService,
+      runLauncher: this.deps.runLauncher,
+      featureInsight: this.deps.featureInsight,
+      onCreate: this.deps.onCreate,
+      navigate: this.deps.navigate,
+      refresh: () => void this.live.schedule(),
     });
-
-    const result = await this.deps.suiteService.findAll();
-    if (!result.ok) {
-      // Recoverable dead-end: offer a retry instead of a bare terminal message.
-      renderLoadError(
-        container,
-        `Could not load Test Suites: ${result.error.message}`,
-        "Retry loading the Test Suites",
-        () => void this.live.schedule(),
-      );
-      return;
-    }
-
-    const rows = projectSuiteRows(result.value);
-    if (rows.length === 0) {
-      container.createEl("p", { text: "No Test Suites yet. Create one to get started." });
-      return;
-    }
-
-    const table = container.createEl("table", { cls: "e2e-test-hub-suite-table" });
-    const headRow = table.createEl("thead").createEl("tr");
-    for (const label of ["Name", "ID", "Tag Expression", "Scenarios", "Run"]) {
-      // scope="col" ties each header to its column for screen-reader tables.
-      headRow.createEl("th", { text: label, attr: { scope: "col" } });
-    }
-
-    // Wave F insight, batched (review): load + parse the Feature corpus ONCE
-    // per render and count per suite synchronously — the per-row variant
-    // re-read every Feature file once PER SUITE (O(suites × features) I/O on
-    // every event-driven re-render). A corpus-load failure degrades every
-    // row's cell the same way a per-row failure did.
-    const counter = await this.deps.featureInsight.scenarioCounter();
-
-    const body = table.createEl("tbody");
-    for (const row of rows) {
-      const tr = body.createEl("tr");
-      const open = tr.createEl("td").createEl("button", {
-        text: row.name,
-        cls: "e2e-test-hub-link-button",
-        attr: { "aria-label": `Open Test Suite ${row.name}` },
-      });
-      open.addEventListener("click", () => {
-        this.deps.navigate(suiteTarget(row.path));
-      });
-      tr.createEl("td", { text: row.id });
-      tr.createEl("td", { text: row.tagExpression });
-      // How many scenarios this Tag Expression actually matches (effective
-      // tags, so feature-level tags count). The projection is pure
-      // (scenarioCountCell); a malformed expression surfaces its parse error.
-      const cell = scenarioCountCell(counter.ok ? counter.value(row.tagExpression) : counter);
-      const scenariosTd = tr.createEl("td", {
-        text: cell.text,
-        cls: "e2e-test-hub-suite-scenarios",
-        attr: { "aria-label": cell.ariaLabel },
-      });
-      if (cell.tooltip !== null) scenariosTd.setAttr("title", cell.tooltip);
-      if (cell.status !== null) scenariosTd.dataset.status = cell.status;
-      // Per-row Run button (Wave B): launches a suite-scoped run via the shared
-      // launcher, which reveals the Test Console first so output streams in.
-      const run = tr.createEl("td").createEl("button", {
-        text: "Run",
-        cls: "e2e-test-hub-run-button",
-        attr: { "aria-label": `Run Test Suite ${row.name}` },
-      });
-      run.addEventListener("click", () => {
-        void this.deps.runLauncher.launch({ scope: "suite", target: row.id });
-      });
-    }
   }
 }
