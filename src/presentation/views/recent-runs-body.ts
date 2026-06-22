@@ -14,6 +14,13 @@ import { renderLoadError } from "./modal-helpers";
  */
 export interface RecentRunsBodyDeps {
   traceabilityService: Pick<TraceabilityService, "snapshot">;
+  /**
+   * A REAL initialization signal (Wave C §1), shared with the hero body: a fresh
+   * vault's missing Use Cases folder lists as `ok([])`, so the snapshot can't
+   * tell "not set up" from "set up but empty". Gates this body so a pre-init
+   * Overview is just the hero's Initialize CTA, not an empty Recent Runs under it.
+   */
+  isInitialized: () => Promise<boolean>;
   /** Wave C §3: open the Evidence note a recent-run row links to. */
   openEvidence: (path: VaultPath) => void | Promise<void>;
   /** EPIC-008: the Recent Runs header links into the full history explorer. */
@@ -35,6 +42,11 @@ export const renderRecentRunsBody = async (
   deps: RecentRunsBodyDeps,
 ): Promise<void> => {
   el.empty();
+
+  // Pre-init: the hero body owns the Initialize CTA, so this body stays empty
+  // (its panel collapses via `.spec-hub-section-body:empty`) rather than showing
+  // an empty Recent Runs under the setup CTA on a fresh vault (codex P2).
+  if (!(await deps.isInitialized())) return;
 
   const result = await deps.traceabilityService.snapshot();
   if (!result.ok) {

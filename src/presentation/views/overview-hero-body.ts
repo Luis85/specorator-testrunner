@@ -170,6 +170,12 @@ const renderPrimaryActions = (container: HTMLElement, deps: OverviewHeroBodyDeps
  * of-Total percent via a CSS custom property; a non-zero Failing tile draws the
  * alert tone. The value+label text always remains, so a tile is never read by
  * colour or width alone (colour-blind / high-contrast safe).
+ *
+ * a11y: the container is a labelled `group`, NOT a `list` — the tiles are native
+ * `<button>`s, and a `role="listitem"` on a button would override its button role
+ * in the accessibility tree (screen readers would announce a list item, not an
+ * actionable drill-down). Keeping native button semantics is what matters here
+ * (codex P2).
  */
 const renderFunnel = (
   container: HTMLElement,
@@ -178,7 +184,7 @@ const renderFunnel = (
 ): void => {
   const funnel = container.createDiv({
     cls: "spec-hub-funnel",
-    attr: { role: "list", "aria-label": "Use Case funnel" },
+    attr: { role: "group", "aria-label": "Use Case funnel" },
   });
   for (const tile of kpis) renderFunnelTile(funnel, tile, deps);
 };
@@ -187,7 +193,7 @@ const renderFunnel = (
 const renderFunnelTile = (funnel: HTMLElement, tile: KpiTile, deps: OverviewHeroBodyDeps): void => {
   const bar = funnel.createEl("button", {
     cls: "spec-hub-funnel-tile",
-    attr: { role: "listitem", "aria-label": tile.ariaLabel },
+    attr: { "aria-label": tile.ariaLabel },
   });
   bar.dataset.tone = tile.tone;
   // The fill width is the of-Total percent; the head tile (no percent) fills

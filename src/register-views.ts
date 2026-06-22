@@ -236,6 +236,9 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         // renderBody (it switches to the Review section).
         recentRuns: {
           traceabilityService: s.traceabilityService,
+          // Same real init signal as the hero, so a fresh vault's Overview is
+          // just the Initialize CTA — not an empty Recent Runs under it.
+          isInitialized: () => vault.exists(deps.getSettings().paths.useCasesPath),
           openEvidence: (path) => deps.openEvidence(path),
         },
         prds: {
