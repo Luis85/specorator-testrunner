@@ -298,14 +298,15 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         },
         // B2 PR3: the docked onboarding rail. Reuses the hero's real init signal
         // and the SAME tour-action flows as the GuidedTourView (dispatched through
-        // the shared dispatchTourAction). ucCount Result-handles the snapshot — a
-        // failed load returns 0 (the body's own load-error guard covers a thrown
-        // rejection). `collapsed`/`onToggleCollapsed`/`refresh` the hub supplies.
+        // the shared dispatchTourAction). ucCount maps a failed snapshot read to
+        // `null` so the rail shows its retryable load error rather than projecting
+        // the failure as an empty hub (codex P2). `collapsed`/`onToggleCollapsed`/
+        // `refresh` the hub supplies.
         onboarding: {
           isInitialized: () => vault.exists(deps.getSettings().paths.useCasesPath),
           ucCount: async () => {
             const snapshot = await s.traceabilityService.snapshot();
-            return snapshot.ok ? snapshot.value.totalUseCases : 0;
+            return snapshot.ok ? snapshot.value.totalUseCases : null;
           },
           tour: s.guidedTourService,
           dispatchTourAction: (id) => dispatchTourAction(id, tourActionFlows),

@@ -22,8 +22,13 @@ import { renderTourStep } from "./tour-step-body";
 export interface OnboardingRailBodyDeps {
   /** Real init signal — does the Test Hub vault structure exist (mirrors the hero)? */
   isInitialized: () => Promise<boolean>;
-  /** The snapshot's totalUseCases; the impl Result-handles a failed snapshot load. */
-  ucCount: () => Promise<number>;
+  /**
+   * The snapshot's totalUseCases, or `null` when the snapshot read FAILED — the
+   * rail then shows the retryable load error rather than mis-projecting a
+   * failed read as an empty hub (which would offer "New Use Case"/tour CTAs over
+   * an unknown vault state, codex P2). The wiring maps a `Result.err` to `null`.
+   */
+  ucCount: () => Promise<number | null>;
   /** The tour service the rail READS + dismiss/restart/markDone/skip CALLS through. */
   tour: Pick<GuidedTourService, "getState" | "dismiss" | "restart" | "markDone" | "skip">;
   /** Routes a tour step's action button (the shared {@link dispatchTourAction}). */

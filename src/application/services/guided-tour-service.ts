@@ -30,6 +30,15 @@ export interface TourState {
   /** True when every step is done or skipped. */
   completed: boolean;
   dismissed: boolean;
+  /**
+   * True once the tour has been STARTED — a `tourId` has been minted, by an
+   * explicit `restart()` or lazily on the first observed step activity. Distinct
+   * from any step status: a brand-new tour already marks its first step `active`
+   * (the cursor), so consumers that need "has the user engaged the tour yet?"
+   * (e.g. the onboarding rail's first-Use-Case branch) must read THIS, not the
+   * step statuses.
+   */
+  started: boolean;
 }
 
 /**
@@ -129,7 +138,12 @@ export class DefaultGuidedTourService implements GuidedTourService {
       } else status = "pending";
       return { definition, status, armed: this.armed.has(definition.id) };
     });
-    return { steps, completed: this.allSettled(), dismissed: this.dismissed };
+    return {
+      steps,
+      completed: this.allSettled(),
+      dismissed: this.dismissed,
+      started: this.tourId !== null,
+    };
   }
 
   markDone(stepId: TourStepId): Promise<Result<void>> {
@@ -234,20 +248,29 @@ export class DefaultGuidedTourService implements GuidedTourService {
 
   private async handleEvent(event: DomainEvent): Promise<void> {
     for (const definition of TOUR_STEPS) {
-      if (definition.armedBy?.type === event.type && !this.isSettled(definition.id)) {
-        if (definition.armedBy.matches(event.payload, this.ctx)) this.armed.add(definition.id);
-      }
-      if (this.isSettled(definition.id)) continue;
-      if (!this.requirementsMet(definition)) continue;
+      await this.applyEventToStep(definition, event);
+    }
+  }
 
-      const { completion } = definition;
-      if (completion.kind === "event" && completion.rule.type === event.type) {
-        if (completion.rule.matches(event.payload, this.ctx)) {
-          await this.completeStep(definition, "event", event);
-        }
-      } else if (completion.kind === "event-sequence") {
-        await this.handleSequence(definition, completion, event);
+  /** Arms / advances ONE step against an observed event (the per-step body of
+   * {@link handleEvent}). `continue` in the loop becomes an early `return` here. */
+  private async applyEventToStep(
+    definition: TourStepDefinition,
+    event: DomainEvent,
+  ): Promise<void> {
+    if (definition.armedBy?.type === event.type && !this.isSettled(definition.id)) {
+      if (definition.armedBy.matches(event.payload, this.ctx)) this.armed.add(definition.id);
+    }
+    if (this.isSettled(definition.id)) return;
+    if (!this.requirementsMet(definition)) return;
+
+    const { completion } = definition;
+    if (completion.kind === "event" && completion.rule.type === event.type) {
+      if (completion.rule.matches(event.payload, this.ctx)) {
+        await this.completeStep(definition, "event", event);
       }
+    } else if (completion.kind === "event-sequence") {
+      await this.handleSequence(definition, completion, event);
     }
   }
 
