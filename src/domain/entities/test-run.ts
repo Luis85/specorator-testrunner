@@ -27,6 +27,14 @@ const TEST_RUN_STATUSES = [
 
 export type TestRunStatus = (typeof TEST_RUN_STATUSES)[number];
 
+/**
+ * Runtime guard that a value is a {@link TestRunStatus}. Used where persisted
+ * data (e.g. a hand-edited execution log) is read back against the union — the
+ * compile-time type cannot vouch for bytes on disk.
+ */
+export const isTestRunStatus = (value: unknown): value is TestRunStatus =>
+  typeof value === "string" && (TEST_RUN_STATUSES as readonly string[]).includes(value);
+
 export interface TestRunResult {
   passed: number;
   failed: number;
