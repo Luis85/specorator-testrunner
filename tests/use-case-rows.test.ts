@@ -132,6 +132,30 @@ describe("filterUseCaseRows (E1 PR3 tile filters)", () => {
     expect(filterUseCaseRows(rows, "passing")).toHaveLength(snapshot.passingUseCases);
     expect(filterUseCaseRows(rows, "failing")).toHaveLength(snapshot.failingUseCases);
   });
+
+  it("excludes a deprecated Use Case from the automation buckets (snapshot parity)", () => {
+    // A UC deprecated AFTER it was passing: the funnel's passing/automated tiles
+    // count active UCs only (ADR-0017), so the explorer filter must drop it too —
+    // otherwise "N passing" would drill into N+1 rows.
+    const withDeprecated: UseCase[] = [
+      ...fixture,
+      useCase({ id: "UC-DEP", status: "deprecated", automationStatus: "passing" }),
+    ];
+    const depRows = projectUseCaseRows(withDeprecated, []);
+    const snapshot = projectDashboardSnapshot(withDeprecated);
+
+    // Absent from every automation bucket...
+    expect(filterUseCaseRows(depRows, "passing").map((row) => row.id)).not.toContain("UC-DEP");
+    expect(filterUseCaseRows(depRows, "automated").map((row) => row.id)).not.toContain("UC-DEP");
+    // ...and the bucket counts still equal the snapshot's (active-only) counts.
+    expect(filterUseCaseRows(depRows, "passing")).toHaveLength(snapshot.passingUseCases);
+    expect(filterUseCaseRows(depRows, "automated")).toHaveLength(snapshot.automatedUseCases);
+    expect(filterUseCaseRows(depRows, "specified")).toHaveLength(snapshot.specifiedUseCases);
+    // `all` is the unfiltered explorer list, so it intentionally still shows the
+    // deprecated UC — one more row than the active-only Total tile counts.
+    expect(filterUseCaseRows(depRows, "all")).toHaveLength(depRows.length);
+    expect(depRows).toHaveLength(snapshot.totalUseCases + 1);
+  });
 });
 
 describe("featureCountCell (Wave F)", () => {
