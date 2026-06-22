@@ -289,61 +289,6 @@ export const QUICK_ACTION_GROUPS: readonly {
   { group: "open", heading: "Open" },
 ];
 
-/**
- * Wave G §2: ids of the onboarding panel's step actions. Each maps to an
- * EXISTING deps callback in the view (openCreateUseCase / runDemo /
- * openDocumentation) so the panel introduces no new flows, only guidance.
- */
-export type OnboardingActionId = "create-use-case" | "run-demo" | "open-getting-started";
-
-/** One numbered "Get started" step (a real button + one-line explanation). */
-export interface OnboardingStep {
-  step: number;
-  label: string;
-  /** One-line explanation rendered under the button. */
-  description: string;
-  action: OnboardingActionId;
-  ariaLabel: string;
-}
-
-/**
- * The "Get started" panel model (Wave G §2): the first-time path from an empty
- * (but initialized) hub to a first run. Pure + ordered so the steps are
- * unit-tested without a DOM; the view renders one numbered button per entry.
- */
-export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
-  {
-    step: 1,
-    label: "Create a Use Case",
-    description: "Describe the first capability your application must support.",
-    action: "create-use-case",
-    ariaLabel: "Step 1: Create a Use Case",
-  },
-  {
-    step: 2,
-    label: "Run the demo test",
-    description: "Watch the shipped demo run end-to-end — no Use Case needed.",
-    action: "run-demo",
-    ariaLabel: "Step 2: Run the demo test",
-  },
-  {
-    step: 3,
-    label: "Open Getting Started",
-    description: "The guide walks through specifying, automating, and running your Use Case.",
-    action: "open-getting-started",
-    ariaLabel: "Step 3: Open the Getting Started guide",
-  },
-];
-
-/**
- * Whether the dashboard shows the "Get started" onboarding panel (Wave G §2):
- * only when the vault has no Use Cases yet. The view calls this strictly after
- * its isInitialized() gate — before initialization the Initialize CTA owns the
- * screen; once the first Use Case exists the panel disappears naturally (the
- * next render drops it).
- */
-export const shouldShowOnboarding = (totalUseCases: number): boolean => totalUseCases === 0;
-
 /** The badge model for the active environment top-bar control (Wave C §2). */
 export interface EnvironmentBadge {
   /** The active environment name, shown as "Environment: <active>". */
