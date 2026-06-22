@@ -221,7 +221,6 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           prdService: s.prdService,
           useCaseService: s.useCaseService,
           openPrdBuilder: () => deps.openPrdBuilder(),
-          navigateToPrds: () => void workspace.openView(PRD_VIEW_TYPE, "sidebar"),
           eventBus,
           // Real initialization signal: the Use Cases folder the snapshot reads
           // exists once the wizard has scaffolded the vault (a fresh vault lists
@@ -234,8 +233,6 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           runAll: () => s.runLauncher.launch({ scope: "all", target: "all" }),
           runDemo: () => s.runLauncher.launch({ scope: "demo", target: "demo" }),
           generateDocumentation: () => deps.generateDocumentation(),
-          navigate: () => void workspace.openView(USE_CASE_VIEW_TYPE),
-          openSuites: () => void workspace.openView(SUITE_VIEW_TYPE),
           openConsole: () => void workspace.openView(TEST_CONSOLE_VIEW_TYPE, "sidebar"),
           openEvidence: (path) => deps.openEvidence(path),
           getEnvironments: () => ({
@@ -243,7 +240,6 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
             names: Object.keys(deps.getSettings().sut.environments),
           }),
           switchEnvironment: (name) => deps.switchEnvironment(name),
-          openEvidenceExplorer: () => void workspace.openView(EVIDENCE_EXPLORER_VIEW_TYPE),
           tourVisible: () => {
             const state = s.guidedTourService.getState();
             return !state.completed && !state.dismissed;
@@ -319,8 +315,8 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         runDemo: () => s.runLauncher.launch({ scope: "demo", target: "demo" }),
         openCreateUseCase: () => deps.openCreateUseCase(),
         openUseCases: () => void workspace.openView(USE_CASE_VIEW_TYPE),
-        openCreateSuite: () => deps.openCreateSuite(),
         openSuites: () => void workspace.openView(SUITE_VIEW_TYPE),
+        openCreateSuite: () => deps.openCreateSuite(),
         openLatestEvidence: () => deps.openLatestEvidence(),
         generateCiWorkflow: () => deps.generateCiWorkflow(),
       }),

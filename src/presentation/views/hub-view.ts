@@ -82,18 +82,32 @@ const REFRESH_ON: DomainEventType[] = [
 ];
 
 /**
+ * The overview dashboard body's deps MINUS the four section-navigation callbacks
+ * the hub OWNS. In-hub, a KPI tile / "Open Use Cases" / "Open Suites" / "Open
+ * Evidence" / PRD drilldown must switch the rail section, not open the legacy
+ * standalone leaf — otherwise clicking a tile leaves the single hub flow (Codex
+ * review). {@link HubView.renderBody} supplies these four via `setActiveSection`;
+ * the rest (create/run/doc/console/evidence-file/environment) come from the root.
+ */
+type HubDashboardDeps = Omit<
+  DashboardViewDeps,
+  "navigate" | "navigateToPrds" | "openSuites" | "openEvidenceExplorer"
+>;
+
+/**
  * Everything the hub leaf renders: the union of the hosted bodies' deps (the
- * overview dashboard is the superset {@link DashboardViewDeps}; the explorer
- * bodies add their own service slices), the workspace port a `leaf` content ref
- * opens through, and the `app` the dashboard's environment picker needs. The
- * composition root wires this in `register-views.ts` exactly once.
+ * overview dashboard is the superset {@link DashboardViewDeps} minus the section
+ * drilldowns the hub owns; the explorer bodies add their own service slices), the
+ * workspace port a `leaf` content ref opens through, and the `app` the dashboard's
+ * environment picker needs. The composition root wires this in `register-views.ts`
+ * exactly once.
  */
 export interface HubViewDeps {
   app: App;
   /** Opens a `leaf` content ref (the Test Console) at its declared location. */
   workspace: WorkspacePort;
   /** The overview section's body deps (KPI summary + recent runs); the superset. */
-  dashboard: DashboardViewDeps;
+  dashboard: HubDashboardDeps;
   /** The plan section's PRD roadmap body deps. */
   prds: PrdExplorerBodyDeps;
   /** The plan section's Story Maps list body deps. */
@@ -321,7 +335,21 @@ export class HubView extends LiveDashboardView {
         // to it, so render it once on the FIRST ref and let the second be a no-op
         // (the panel child for the second ref stays empty).
         if (body === "kpi-overview") {
-          await renderDashboardBody(el, this.deps.app, this.deps.dashboard, refresh);
+          await renderDashboardBody(
+            el,
+            this.deps.app,
+            {
+              ...this.deps.dashboard,
+              // In-hub drilldowns switch the rail section instead of opening the
+              // legacy standalone leaf, so the user stays in the single hub flow
+              // (Codex review). The only KPI nav target is "use-cases" → Build.
+              navigate: () => this.setActiveSection("build"),
+              navigateToPrds: () => this.setActiveSection("plan"),
+              openSuites: () => this.setActiveSection("run"),
+              openEvidenceExplorer: () => this.setActiveSection("review"),
+            },
+            refresh,
+          );
         }
         return;
       case "prd-roadmap":
