@@ -21,6 +21,7 @@ import {
 } from "./presentation/views/feature-editor-view";
 import { generateFeatureForUseCase } from "./presentation/views/generate-feature-modal";
 import { GUIDED_TOUR_VIEW_TYPE, GuidedTourView } from "./presentation/views/guided-tour-view";
+import { dispatchTourAction, type TourActionFlows } from "./presentation/views/tour-actions";
 import { PRD_VIEW_TYPE, PrdExplorerView } from "./presentation/views/prd-explorer-view";
 import {
   STORY_MAP_VIEW_TYPE,
@@ -86,6 +87,20 @@ export interface ViewWiringDeps {
  */
 export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
   const { app, eventBus, workspace, vault, services: s } = deps;
+
+  // The tour action-button flows, built ONCE and shared by the sidebar
+  // GuidedTourView and the hub's docked onboarding rail (both dispatch through
+  // the shared dispatchTourAction) — each flow is an existing action, never
+  // re-implemented here (spec 2026-06-11).
+  const tourActionFlows: TourActionFlows = {
+    runDemo: () => s.runLauncher.launch({ scope: "demo", target: "demo" }),
+    openCreateUseCase: () => deps.openCreateUseCase(),
+    openUseCases: () => void workspace.openView(USE_CASE_VIEW_TYPE),
+    openCreateSuite: () => deps.openCreateSuite(),
+    openSuites: () => void workspace.openView(SUITE_VIEW_TYPE),
+    openLatestEvidence: () => deps.openLatestEvidence(),
+    generateCiWorkflow: () => deps.generateCiWorkflow(),
+  };
 
   plugin.registerView(
     USE_CASE_VIEW_TYPE,
@@ -281,6 +296,24 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           navigate: (target) => deps.navigate(target),
           refresh: () => undefined,
         },
+        // B2 PR3: the docked onboarding rail. Reuses the hero's real init signal
+        // and the SAME tour-action flows as the GuidedTourView (dispatched through
+        // the shared dispatchTourAction). ucCount maps a failed snapshot read to
+        // `null` so the rail shows its retryable load error rather than projecting
+        // the failure as an empty hub (codex P2). `collapsed`/`onToggleCollapsed`/
+        // `refresh` the hub supplies.
+        onboarding: {
+          isInitialized: () => vault.exists(deps.getSettings().paths.useCasesPath),
+          ucCount: async () => {
+            const snapshot = await s.traceabilityService.snapshot();
+            return snapshot.ok ? snapshot.value.totalUseCases : null;
+          },
+          tour: s.guidedTourService,
+          dispatchTourAction: (id) => dispatchTourAction(id, tourActionFlows),
+          openWizard: () => deps.openWizard(),
+          openCreateUseCase: () => deps.openCreateUseCase(),
+          startTour: () => void s.guidedTourService.restart(),
+        },
       }),
   );
   // ADR-0031 alias migration: the legacy dashboard view type stays registered so
@@ -307,13 +340,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
       new GuidedTourView(leaf, {
         tour: s.guidedTourService,
         eventBus,
-        runDemo: () => s.runLauncher.launch({ scope: "demo", target: "demo" }),
-        openCreateUseCase: () => deps.openCreateUseCase(),
-        openUseCases: () => void workspace.openView(USE_CASE_VIEW_TYPE),
-        openSuites: () => void workspace.openView(SUITE_VIEW_TYPE),
-        openCreateSuite: () => deps.openCreateSuite(),
-        openLatestEvidence: () => deps.openLatestEvidence(),
-        generateCiWorkflow: () => deps.generateCiWorkflow(),
+        ...tourActionFlows,
       }),
   );
 

@@ -123,13 +123,17 @@ export const projectOnboarding = (
 };
 
 /**
- * Whether the tour has NOT been started: every step is still `pending` and the
- * tour is neither completed nor dismissed. Read directly off the
- * `TourStepStatus` values so a step that is `done`/`skipped`/`active` (a started
- * tour) never regresses the rail back to `first-use-case`.
+ * Whether the tour has NOT been started — read off the authoritative
+ * {@link TourState.started} (a `tourId` has been minted), NOT the step statuses:
+ * a brand-new tour already marks its first step `active` (the cursor), so an
+ * all-step check would never match a real fresh tour and would drop the
+ * empty-hub `first-use-case` CTA (codex P2). Reading `started` ALSO lets the
+ * secondary "Start guided tour" CTA work: `restart()` mints a `tourId`, so the
+ * next projection flips out of `first-use-case` into the `tour` branch (codex
+ * P2). Completed/dismissed are handled by their own branches.
  */
 const tourNotStarted = (state: TourState): boolean =>
-  !state.completed && !state.dismissed && state.steps.every((step) => step.status === "pending");
+  !state.started && !state.completed && !state.dismissed;
 
 /**
  * The title of the active step, the body prefixes with "Next: ". `completed` is

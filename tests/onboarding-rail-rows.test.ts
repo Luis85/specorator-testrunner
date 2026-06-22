@@ -18,6 +18,7 @@ const tourState = (over: {
   statuses?: TourStepStatus[];
   completed?: boolean;
   dismissed?: boolean;
+  started?: boolean;
 }): TourState => {
   const steps: TourStepState[] = TOUR_STEPS.map((definition, i) => ({
     definition,
@@ -28,14 +29,25 @@ const tourState = (over: {
     steps,
     completed: over.completed ?? false,
     dismissed: over.dismissed ?? false,
+    started: over.started ?? false,
   };
 };
 
-/** The default fresh tour: all steps pending, not completed, not dismissed. */
-const freshTour = (): TourState => tourState({});
+/**
+ * The default fresh tour as the REAL service projects it: NOT started (no
+ * `tourId` minted yet) but the first step is already `active` (the cursor) and
+ * the rest are `pending`. `started` — not the step statuses — is the "has the
+ * user engaged the tour?" signal, so the fixture pins both: a started:false tour
+ * whose first step is nonetheless `active` (the shape that masked the empty-hub
+ * first-use-case regression, codex P2).
+ */
+const freshTour = (): TourState => tourState({ statuses: ["active"] });
 
-/** A started tour: first step done, second active. */
-const startedTour = (): TourState => tourState({ statuses: ["done", "active"] });
+/** An explicitly-started tour with no step progress yet (e.g. just after restart). */
+const justStartedTour = (): TourState => tourState({ statuses: ["active"], started: true });
+
+/** A started tour: the user has completed the first step, second is active. */
+const startedTour = (): TourState => tourState({ statuses: ["done", "active"], started: true });
 
 describe("projectOnboarding", () => {
   describe("initialize phase (not-initialized wins over everything)", () => {
@@ -75,6 +87,15 @@ describe("projectOnboarding", () => {
 
     it("does NOT regress a STARTED tour back to first-use-case when ucCount is 0", () => {
       const rail = projectOnboarding("initialized", 0, startedTour());
+      expect(rail.kind).toBe("tour");
+    });
+
+    it("shows the tour after Start is clicked (started, no progress, ucCount 0)", () => {
+      // The empty-hub "Start guided tour" CTA calls restart(), which mints a
+      // tourId (started:true) WITHOUT any step progress. The rail must flip to the
+      // tour checklist, not loop back to first-use-case — otherwise the button
+      // appears to do nothing (codex P2).
+      const rail = projectOnboarding("initialized", 0, justStartedTour());
       expect(rail.kind).toBe("tour");
     });
   });
