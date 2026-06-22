@@ -21,6 +21,7 @@ import {
 } from "./evidence-explorer-body";
 import { renderOverviewHeroBody, type OverviewHeroBodyDeps } from "./overview-hero-body";
 import { renderRecentRunsBody, type RecentRunsBodyDeps } from "./recent-runs-body";
+import type { UseCaseKpiFilter } from "./dashboard-rows";
 import { EVIDENCE_PAGE_SIZE, type EvidenceStatusFilter } from "./evidence-explorer-rows";
 import { LiveDashboardView } from "./live-dashboard-view";
 import { renderPrdExplorerBody, type PrdExplorerBodyDeps } from "./prd-explorer-body";
@@ -99,6 +100,15 @@ type HubHeroDeps = Omit<OverviewHeroBodyDeps, "navigate" | "refresh">;
 type HubRecentRunsDeps = Omit<RecentRunsBodyDeps, "openEvidenceExplorer" | "refresh">;
 
 /**
+ * The Use Cases body's deps MINUS the `filter`/`clearFilter` the hub OWNS (E1
+ * PR3): the funnel filter is hub-held ephemeral state, supplied in
+ * {@link HubView.renderBody}, not threaded from the composition root. Mirrors
+ * {@link HubHeroDeps} (the composition root still supplies the placeholder
+ * `refresh` the renderBody spread overrides, as it does for every body).
+ */
+type HubUseCasesDeps = Omit<UseCaseDashboardBodyDeps, "filter" | "clearFilter">;
+
+/**
  * Everything the hub leaf renders: the union of the hosted bodies' deps (the
  * Overview hero + recent-runs bodies, each minus the section drilldowns the hub
  * owns; the explorer bodies add their own service slices), the workspace port a
@@ -120,7 +130,7 @@ export interface HubViewDeps {
   /** The plan section's Story Maps list body deps. */
   storyMaps: StoryMapExplorerBodyDeps;
   /** The build section's Use Cases list body deps. */
-  useCases: UseCaseDashboardBodyDeps;
+  useCases: HubUseCasesDeps;
   /** The run section's Test Suites list body deps. */
   suites: SuiteDashboardBodyDeps;
   /** The review section's Evidence list body deps. */
@@ -149,6 +159,17 @@ export class HubView extends LiveDashboardView {
   /** The Evidence body's ephemeral filter/limit state (review section only). */
   private evidenceFilter: EvidenceStatusFilter = "all";
   private evidenceVisibleLimit = EVIDENCE_PAGE_SIZE;
+  /**
+   * The Use Cases explorer's ephemeral KPI funnel filter (build section only, E1
+   * PR3). A funnel tile drill-down stores its stage here before switching to
+   * Build; the explorer scopes to it and shows a clear-able chip. Mirrors
+   * {@link evidenceFilter} exactly: ephemeral, NOT persisted in get/setState, so
+   * it survives section switches within the session but resets on a workspace
+   * reload. It persists until cleared — including when the user reaches Build via
+   * the rail rather than a tile — and the chip + its ✕ make that filter
+   * discoverable and clearable (the same contract the Evidence filter has).
+   */
+  private useCaseFilter: UseCaseKpiFilter = "all";
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -342,7 +363,13 @@ export class HubView extends LiveDashboardView {
         // carried filter in the Build explorer.
         await renderOverviewHeroBody(el, this.deps.app, {
           ...this.deps.hero,
-          navigate: () => this.setActiveSection("build"),
+          // E1 PR3: store the tile's carried funnel filter, then switch to Build
+          // — the section re-render shows the Build explorer scoped to that stage
+          // (with its clear-able chip) rather than dropping the filter.
+          navigate: (target) => {
+            this.useCaseFilter = target.filter;
+            this.setActiveSection("build");
+          },
           refresh,
         });
         return;
@@ -363,7 +390,18 @@ export class HubView extends LiveDashboardView {
         await renderStoryMapExplorerBody(el, { ...this.deps.storyMaps, refresh });
         return;
       case "use-cases":
-        await renderUseCaseDashboardBody(el, { ...this.deps.useCases, refresh });
+        // E1 PR3: pass the hub-owned funnel filter + a clearer that resets it to
+        // "all" and re-renders the active panel — mirrors the Evidence body's
+        // onFilterChange (both go through this.live.schedule()).
+        await renderUseCaseDashboardBody(el, {
+          ...this.deps.useCases,
+          refresh,
+          filter: this.useCaseFilter,
+          clearFilter: () => {
+            this.useCaseFilter = "all";
+            void this.live.schedule();
+          },
+        });
         return;
       case "suites":
         await renderSuiteDashboardBody(el, { ...this.deps.suites, refresh });

@@ -84,11 +84,25 @@ export interface TraceabilityService {
   linksFor(useCaseId: UseCaseId): Promise<Result<TraceabilityRecord>>;
 }
 
-/** UC business states that count as "specified" (ADR-0017 KPI definitions). */
-const SPECIFIED_STATUSES = new Set(["specified", "ready-for-automation", "automated", "verified"]);
+/**
+ * UC business states that count as "specified" (ADR-0017 KPI definitions).
+ * Exported so the Use Cases explorer's `specified` filter selects EXACTLY the
+ * Use Cases the `specifiedUseCases` count tiles, sharing the one predicate (E1
+ * PR3) rather than re-deriving the rule and risking a tile/explorer drift.
+ */
+export const SPECIFIED_STATUSES = new Set([
+  "specified",
+  "ready-for-automation",
+  "automated",
+  "verified",
+]);
 
-/** Automation states that count as "automated" (ADR-0017 KPI definitions). */
-const AUTOMATED_STATUSES = new Set(["implemented", "passing", "failing"]);
+/**
+ * Automation states that count as "automated" (ADR-0017 KPI definitions).
+ * Exported for the same reason as {@link SPECIFIED_STATUSES}: the explorer's
+ * `automated` filter shares this set with the `automatedUseCases` count (E1 PR3).
+ */
+export const AUTOMATED_STATUSES = new Set(["implemented", "passing", "failing"]);
 
 /**
  * Builds a {@link DashboardSnapshot} from the Use Case index. Pure projection,

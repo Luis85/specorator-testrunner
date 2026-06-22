@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { featureCountCell, projectUseCaseRows } from "../src/presentation/views/use-case-rows";
+import {
+  featureCountCell,
+  filterUseCaseRows,
+  projectUseCaseRows,
+  type UseCaseRow,
+} from "../src/presentation/views/use-case-rows";
+import { projectDashboardSnapshot } from "../src/application/services/traceability-service";
 import type { FeatureFileEntry } from "../src/application/services/specification-service";
 import type { UseCase } from "../src/domain/entities/use-case";
+import type { UseCaseKpiFilter } from "../src/presentation/views/dashboard-rows";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 
 const useCase = (over: Partial<UseCase>): UseCase => ({
@@ -67,6 +74,63 @@ describe("projectUseCaseRows", () => {
   it("projects featureCount null when the Feature listing is unavailable", () => {
     const rows = projectUseCaseRows([useCase({ id: "UC-001" })], null);
     expect(rows[0].featureCount).toBeNull();
+  });
+});
+
+describe("filterUseCaseRows (E1 PR3 tile filters)", () => {
+  // A fixture spanning every automation status AND a spread of business
+  // statuses, so each funnel bucket is exercised against rows it must and must
+  // not select. No deprecated UC here, so the row counts line up 1:1 with the
+  // dashboard snapshot's (which drops deprecated) for the count-parity check.
+  const fixture: UseCase[] = [
+    useCase({ id: "UC-001", status: "draft", automationStatus: "not-planned" }),
+    useCase({ id: "UC-002", status: "specified", automationStatus: "planned" }),
+    useCase({ id: "UC-003", status: "ready-for-automation", automationStatus: "missing-steps" }),
+    useCase({ id: "UC-004", status: "automated", automationStatus: "implemented" }),
+    useCase({ id: "UC-005", status: "automated", automationStatus: "passing" }),
+    useCase({ id: "UC-006", status: "verified", automationStatus: "passing" }),
+    useCase({ id: "UC-007", status: "automated", automationStatus: "failing" }),
+  ];
+  const rows: UseCaseRow[] = projectUseCaseRows(fixture, []);
+  const idsFor = (filter: UseCaseKpiFilter): string[] =>
+    filterUseCaseRows(rows, filter).map((row) => row.id);
+
+  it("returns every row unchanged for 'all' (identity)", () => {
+    expect(filterUseCaseRows(rows, "all")).toBe(rows);
+  });
+
+  it("selects rows whose business status counts as Specified", () => {
+    // SPECIFIED_STATUSES: specified / ready-for-automation / automated / verified.
+    expect(idsFor("specified")).toEqual([
+      "UC-002",
+      "UC-003",
+      "UC-004",
+      "UC-005",
+      "UC-006",
+      "UC-007",
+    ]);
+  });
+
+  it("selects rows whose automation status counts as Automated", () => {
+    // AUTOMATED_STATUSES: implemented / passing / failing.
+    expect(idsFor("automated")).toEqual(["UC-004", "UC-005", "UC-006", "UC-007"]);
+  });
+
+  it("selects only passing rows", () => {
+    expect(idsFor("passing")).toEqual(["UC-005", "UC-006"]);
+  });
+
+  it("selects only failing rows", () => {
+    expect(idsFor("failing")).toEqual(["UC-007"]);
+  });
+
+  it("matches the dashboard funnel counts for the same data (no drift)", () => {
+    const snapshot = projectDashboardSnapshot(fixture);
+    expect(filterUseCaseRows(rows, "all")).toHaveLength(snapshot.totalUseCases);
+    expect(filterUseCaseRows(rows, "specified")).toHaveLength(snapshot.specifiedUseCases);
+    expect(filterUseCaseRows(rows, "automated")).toHaveLength(snapshot.automatedUseCases);
+    expect(filterUseCaseRows(rows, "passing")).toHaveLength(snapshot.passingUseCases);
+    expect(filterUseCaseRows(rows, "failing")).toHaveLength(snapshot.failingUseCases);
   });
 });
 
