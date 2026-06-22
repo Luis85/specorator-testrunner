@@ -88,7 +88,12 @@ corrupt log file reads as empty (logged), and a write fault returns `err`.
 - A late terminal event after unload cannot drive a spurious write: the recorder
   detaches its subscriptions in `onunload`. It diverges from the post-run
   coordinator (which detaches synchronously) in ONE case — when a run is active at
-  unload, the recorder stays subscribed until the unload-initiated `cancel()` has
-  published `testrun.cancelled`, so that terminal run is recorded and the
-  latest-run verdict isn't stale after reload. The cancellation produces no report,
-  so keeping the recorder alive cannot drive an evidence import.
+  unload, the recorder stays subscribed until the run fully SETTLES
+  (`whenActiveSettles()`), so the run's terminal event is recorded and the
+  latest-run verdict isn't stale after reload. Gating on settle (not on the
+  unload `cancel()`) covers both terminal paths: our cancel publishing
+  `testrun.cancelled`, AND the finalization race where the child has already
+  closed so `cancel()` no-ops with `RUN_CANCELLED` and the real
+  `testrun.completed`/`failed` publishes on its own. The recorded run produces no
+  *new* import — the post-run coordinator is already stopped — so keeping the
+  recorder alive cannot drive an evidence write.

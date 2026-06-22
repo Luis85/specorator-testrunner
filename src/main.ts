@@ -303,25 +303,34 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
     // snapshot already protects evidence attribution).
     const active = this.testExecutionService?.activeRunId() ?? null;
     if (active !== null) {
+      // Best-effort kill signal so an active run's child doesn't outlive unload.
+      // In the finalization window (child already closed but the terminal event
+      // not yet published) cancel() returns the benign RUN_CANCELLED WITHOUT
+      // publishing — the run is completing on its own — so that is not a real
+      // failure to warn about.
       void this.testExecutionService.cancel(active).then((cancelled) => {
-        if (!cancelled.ok) {
+        if (!cancelled.ok && cancelled.error.code !== "RUN_CANCELLED") {
           this.logger?.warn("Could not cancel active run on unload", {
             runId: active,
             reason: cancelled.error.message,
           });
         }
-        // Detach the recorder only AFTER cancel() has published (and the
-        // still-subscribed recorder enqueued) `testrun.cancelled`. cancel()
-        // awaits its terminal publish, so by the time this resolves the unload
-        // cancellation has been recorded into the durable log — unlike the
-        // post-run coordinator (stopped synchronously below), the log must
-        // capture this terminal run so the latest-run verdict isn't stale after
-        // reload (ADR-0032 / Codex P2). The cancellation produces no report, so
-        // keeping the recorder alive cannot drive a spurious evidence import.
+      });
+      // Detach the recorder only AFTER the active run fully SETTLES — its
+      // terminal event has published (the still-subscribed recorder enqueues the
+      // record during that synchronous publish) and its snapshot recorded. Tying
+      // the stop to whenActiveSettles() rather than to cancel() covers BOTH
+      // terminal paths: our cancel (publishes testrun.cancelled) AND the
+      // finalization race where cancel() no-ops because the child already closed
+      // (the real completed/failed event still publishes afterwards). Unlike the
+      // post-run coordinator (stopped synchronously below — a cancelled run has
+      // no report to import), the log must capture this terminal run so the
+      // latest-run verdict isn't stale after reload (ADR-0032 / Codex P2).
+      void this.testExecutionService.whenActiveSettles().then(() => {
         this.executionLogRecorder?.stop();
       });
     } else {
-      // No active run to cancel: nothing further to record, so detach the
+      // No active run to settle: nothing further to record, so detach the
       // recorder immediately (a late terminal event after unload can't drive a
       // new log write; synchronous, race-free; ADR-0032).
       this.executionLogRecorder?.stop();
