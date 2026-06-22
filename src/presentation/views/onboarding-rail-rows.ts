@@ -123,13 +123,18 @@ export const projectOnboarding = (
 };
 
 /**
- * Whether the tour has NOT been started: every step is still `pending` and the
- * tour is neither completed nor dismissed. Read directly off the
- * `TourStepStatus` values so a step that is `done`/`skipped`/`active` (a started
- * tour) never regresses the rail back to `first-use-case`.
+ * Whether the tour has NOT been started — i.e. the user has not yet completed or
+ * skipped any step. `GuidedTourService.getState()` ALWAYS marks the first
+ * unsettled step `active` (the cursor), even on a brand-new tour, so "not
+ * started" means no step is `done`/`skipped` (the auto-`active` first step is the
+ * cursor, not progress). Treating `active` as started would never match a real
+ * fresh tour, dropping the empty-hub `first-use-case` CTA into the tour checklist
+ * (codex P2). Completed/dismissed are handled by their own branches.
  */
 const tourNotStarted = (state: TourState): boolean =>
-  !state.completed && !state.dismissed && state.steps.every((step) => step.status === "pending");
+  !state.completed &&
+  !state.dismissed &&
+  state.steps.every((step) => step.status === "pending" || step.status === "active");
 
 /**
  * The title of the active step, the body prefixes with "Next: ". `completed` is

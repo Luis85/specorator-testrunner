@@ -235,7 +235,19 @@ const renderTour = (
       cls: "spec-hub-onboarding-cta",
       attr: { "aria-label": "Hide the onboarding rail" },
     })
-    .addEventListener("click", () => void deps.tour.dismiss());
+    .addEventListener("click", () => dismissRail(deps));
+};
+
+/**
+ * Dismisses the rail and repaints. `GuidedTourService.dismiss()` PERSISTS the
+ * flag but publishes no `tour.*` event, and the hub only repaints on a subscribed
+ * event or this `refresh` callback — so without the explicit refresh the
+ * already-rendered rail would linger visible until an unrelated event / section
+ * switch / reload (codex P2). Restart/start need no such refresh: they publish
+ * `tour.started`, which the hub subscribes to.
+ */
+const dismissRail = (deps: OnboardingRailBodyDeps): void => {
+  void deps.tour.dismiss().then(() => deps.refresh());
 };
 
 /** The completed branch: the closure line + Dismiss and Restart affordances. */
@@ -252,7 +264,7 @@ const renderDone = (
       cls: "spec-hub-onboarding-cta mod-cta",
       attr: { "aria-label": "Hide the onboarding rail" },
     })
-    .addEventListener("click", () => void deps.tour.dismiss());
+    .addEventListener("click", () => dismissRail(deps));
   actions
     .createEl("button", {
       text: "Restart tour",

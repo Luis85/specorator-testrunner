@@ -31,10 +31,16 @@ const tourState = (over: {
   };
 };
 
-/** The default fresh tour: all steps pending, not completed, not dismissed. */
-const freshTour = (): TourState => tourState({});
+/**
+ * The default fresh tour as the REAL service projects it: the first unsettled
+ * step is `active` (the cursor) and the rest are `pending` — NOT all-pending.
+ * `GuidedTourService.getState()` always marks the first non-done/non-skipped step
+ * `active`, so a fixture of all-pending would not exercise the real shape and
+ * would mask the empty-hub first-use-case regression (codex P2).
+ */
+const freshTour = (): TourState => tourState({ statuses: ["active"] });
 
-/** A started tour: first step done, second active. */
+/** A started tour: the user has completed the first step, second is active. */
 const startedTour = (): TourState => tourState({ statuses: ["done", "active"] });
 
 describe("projectOnboarding", () => {
