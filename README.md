@@ -63,7 +63,7 @@ every command, but each one is also reachable through a view:
   action. The dashboard's **PRDs & roadmap** section surfaces the root product
   vision, its sub-PRDs, and per-PRD Use Case counts, with **New PRD** and a
   jump into the PRDs explorer.
-- **PRDs.** A PRDs explorer (ribbon **Open PRDs**) renders the Domain → PRD →
+- **PRDs.** A PRDs explorer (the Test Hub's **Plan** section) renders the Domain → PRD →
   Use Case tree; the **PRD Builder** (**New PRD**) walks through domains,
   research, vision, scope in/out, and assigning Use Cases. Each Use Case links
   to a parent PRD via its **Parent PRD** field in the create/edit modals.
@@ -90,7 +90,7 @@ every command, but each one is also reachable through a view:
 Story Maps are an upstream-design overlay alongside PRDs (see _Vault layout_).
 The fast path from a blank map to a working board:
 
-- **Create a map** with **New Story Map** (ribbon **Open Story Maps** →
+- **Create a map** with **New Story Map** (the Test Hub's **Plan** section →
   **New Story Map**). Creation auto-seeds the reserved root **PRD-000** if no PRD
   resolves yet, so it completes from a fresh vault.
 - **The board opens** for the new map — the board is the primary working surface
@@ -199,15 +199,15 @@ Vault
 
 PRDs form a hierarchy above Use Cases: the root product vision (`PRD-000`)
 decomposes into feature-scoped sub-PRDs, each owning the Use Cases that detail
-its solution. Open the **PRDs** explorer (ribbon: _Open PRDs_) or the dashboard's
-**PRDs & roadmap** section to navigate the tree, and use **New PRD** to launch the
-builder. See `docs/adr/0026-prd-hierarchy-artifact-model.md` for the model.
+its solution. Open the Test Hub's **Plan** section to navigate the PRD tree, and
+use **New PRD** to launch the builder. See
+`docs/adr/0026-prd-hierarchy-artifact-model.md` for the model.
 
 **Story Maps** (`Story Maps/`) are an upstream-design overlay _alongside_ PRDs,
 not inside the tree: a vault-local, single-user user-story map (audience →
 backbone activities → steps → release slices) over rich cards that reference Use
-Cases by id. Open the **Story Maps** explorer (ribbon: _Open Story Maps_) and use
-**New Story Map** to launch the builder; add cards via the explorer's **Cards**
+Cases by id. Open the Test Hub's **Plan** section and use
+**New Story Map** to launch the builder; add cards via a map's **Cards**
 action. See `docs/adr/0027-story-map-prd-sibling-overlay.md` and
 `docs/adr/0028-story-map-rich-model.md`.
 
