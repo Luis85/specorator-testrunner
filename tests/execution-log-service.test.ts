@@ -145,6 +145,18 @@ describe("DefaultExecutionLogService.record", () => {
     // The write is never attempted once the folder cannot be created.
     expect(fs.files.has(LOG_PATH)).toBe(false);
   });
+
+  it("whenSettled resolves only after the enqueued write completes", async () => {
+    const { service, fs } = build();
+
+    // Enqueue without awaiting (the fire-and-forget recorder path), then drain.
+    void service.record(run({ id: "RUN-PENDING" }));
+    // The write has not necessarily landed yet; whenSettled awaits the queue tail
+    // — the drain maintenance relies on before deleting the runner folder.
+    await service.whenSettled();
+
+    expect(runIds(fs)).toEqual(["RUN-PENDING"]);
+  });
 });
 
 /** Records a run against a vault that fails IO on `failOn`, capturing the spy. */

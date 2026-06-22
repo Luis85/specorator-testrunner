@@ -43,6 +43,14 @@ const isExecutionLogEntry = (value: unknown): value is ExecutionLogEntry =>
 export interface ExecutionLogService {
   /** Records a terminal run into the durable log. Best-effort; never rejects. */
   record(run: TestRun): Promise<Result<void>>;
+  /**
+   * Resolves when every enqueued log write has settled. Maintenance (reset/repair)
+   * drains this UNDER the maintenance lock before it deletes/re-syncs the runner
+   * folder, so a fire-and-forget write from the previous run cannot re-materialise
+   * `<runner>/history/execution-log.json` after the runtime was removed — mirroring
+   * the post-run import drain (ADR-0032).
+   */
+  whenSettled(): Promise<void>;
 }
 
 /**
@@ -67,6 +75,11 @@ export class DefaultExecutionLogService implements ExecutionLogService {
 
   async record(run: TestRun): Promise<Result<void>> {
     return this.queue.run(() => this.recordInternal(run));
+  }
+
+  /** Drains the write queue (see {@link ExecutionLogService.whenSettled}). */
+  whenSettled(): Promise<void> {
+    return this.queue.whenSettled();
   }
 
   private async recordInternal(run: TestRun): Promise<Result<void>> {

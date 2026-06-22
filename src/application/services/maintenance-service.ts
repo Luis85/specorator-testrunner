@@ -97,6 +97,17 @@ export class DefaultMaintenanceService implements MaintenanceService {
      * files are touched.
      */
     private readonly whenPostRunSettled?: () => Promise<void>,
+    /**
+     * Resolves when the durable execution log's write queue has drained (the
+     * ExecutionLogService's `whenSettled`). The recorder writes
+     * `<runner>/history/execution-log.json` fire-and-forget on every terminal
+     * run, so — like `whenPostRunSettled` — repair()/reset() await this INSIDE
+     * the maintenance lock: the lock stops any NEW run enqueuing a write, and
+     * this drains the tail of the PREVIOUS run's log write before the runner
+     * folder is deleted/re-synced, so a late write cannot re-materialise the log
+     * after the runtime was removed (ADR-0032).
+     */
+    private readonly whenExecutionLogSettled?: () => Promise<void>,
   ) {}
 
   async repair(): Promise<Result<RepairResult>> {
@@ -324,10 +335,12 @@ export class DefaultMaintenanceService implements MaintenanceService {
       // wait-for-settle behaviour so an already-finishing run drains first.
       if (!lock) await this.activeRun?.whenActiveSettles().catch(() => undefined);
 
-      // Drain the tail of the previous run's post-run import/evidence chain UNDER
-      // the lock (no new run can start now) so `body` cannot overlap in-flight
-      // evidence I/O. See the constructor doc.
+      // Drain the tail of the previous run's post-run import/evidence chain AND
+      // its durable execution-log write UNDER the lock (no new run can start now)
+      // so `body` cannot overlap in-flight I/O into the runner folder. See the
+      // constructor doc.
       await this.whenPostRunSettled?.().catch(() => undefined);
+      await this.whenExecutionLogSettled?.().catch(() => undefined);
 
       return await body();
     } finally {

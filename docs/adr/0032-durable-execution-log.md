@@ -42,6 +42,17 @@ counts. It is written through the vault filesystem alongside the regenerable
 before write, read-modify-write serialized through one `SerialQueue` so
 back-to-back runs cannot clobber each other's append).
 
+### Drained before maintenance touches the runner folder
+The log lives under `settings.paths.testRunnerPath`, which `reset()` deletes and
+`repair()` re-syncs. Writes are fire-and-forget, so a slow write from the
+previous run could otherwise land AFTER reset removed the runtime, re-materialising
+`<runner>/history/execution-log.json` with a pre-reset run. The service therefore
+exposes `whenSettled()` (drains its `SerialQueue`), and `DefaultMaintenanceService`
+awaits it UNDER the maintenance lock — alongside the post-run import drain — before
+the destructive delete/re-sync. The lock guarantees no NEW run can enqueue a write,
+and `whenSettled` drains the tail of the PREVIOUS run's, closing the race exactly as
+the post-run evidence drain does (ADR-0018).
+
 The log is its OWN source of truth, NOT derived from Evidence. That is the whole
 point: it records the very runs the evidence-derived sources skip.
 
