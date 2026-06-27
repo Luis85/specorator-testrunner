@@ -89,8 +89,9 @@ within a single mounted Vue app**: the hub's five-section rail
 future intra-view sub-navigation. It **never** triggers a cross-leaf transition —
 opening another view still goes through the workspace adapter. The active route
 survives a reload via the layout-save path — a route change updates the
-`getState()` field and calls `requestSaveLayout()`; `setState()` reads it back on
-restore and drives the router to the saved route — exactly as `activeSection`
+`getState()` field and calls `requestSaveLayout()`; on restore `setState()` reads
+it back and records it as the pending route, which `onOpen()` applies once the
+router exists (see the restore-deferral note below) — exactly as `activeSection`
 does today (ADR-0031, `hub-view.ts:271-279`). Writing `setState()` alone would
 not persist the route.
 
