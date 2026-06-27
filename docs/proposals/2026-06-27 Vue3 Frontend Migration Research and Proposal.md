@@ -232,14 +232,21 @@ gate out of Phase 0** and prove it in Phase 2 on the hub (which does override
 **Phase 1 — bridge primitives.**
 Extract the reusable seam: an `ItemView`↔Vue `mountVueView()` / `unmount` helper,
 the `useEventBus()` composable (replacing `LiveRefresh` per-view), the per-app
-`createPinia()` wiring, and the `setState`↔store/route mirroring utility. These
-become the substrate every later view reuses.
+`createPinia()` wiring, and a **state-persistence utility** that bridges a
+store/route slice to Obsidian's leaf state per §3.3 — `getState()` returns the
+slice, a mutation calls `requestSaveLayout()` to serialize it, and `setState()`
+restores it (not a `setState()` write). These become the substrate every later
+view reuses.
 
 **Phase 2 — the hub shell + router.**
 Re-express `hub-view.ts` as a root Vue component with vue-router
 (`createMemoryHistory`) driving the five-section rail (`hub-sections.ts` becomes
-the route table), each section body a route component. Mirror the active route
-into `setState`. This is the largest single view and validates the router scope.
+the route table), each section body a route component. Persist the active route
+through the layout-save path per §3.3 — on a route change, update the field
+`getState()` returns and call `requestSaveLayout()` (which re-reads `getState()`);
+`setState()` restores it and drives the router on reload. Writing `setState()`
+alone would not serialize, so a reload would revert the route. This is the
+largest single view and validates the router scope.
 
 **Phase 3 — explorers & dashboards.**
 Migrate the `LiveDashboardView` subclasses (PRDs, Use Cases, Suites, Evidence,
