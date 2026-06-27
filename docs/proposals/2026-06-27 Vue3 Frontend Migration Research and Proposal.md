@@ -50,7 +50,7 @@ preserves it.
 | --- | --- | --- |
 | Packaging | Single CJS `main.js`, esbuild-bundled, desktop-only | `esbuild.config.mjs`, `manifest.json` (`isDesktopOnly: true`) |
 | Architecture | Hexagonal: `domain → application → infrastructure/presentation`, kernel in `shared`; ESLint `no-restricted-imports` enforces boundaries | `AGENTS.md` |
-| View base | Obsidian `ItemView` subclasses writing vanilla DOM (`contentEl.createEl`, `setIcon`) | `src/presentation/views/hub-view.ts` |
+| View base | Mostly Obsidian `ItemView` subclasses writing vanilla DOM (`contentEl.createEl`, `setIcon`). **Two exceptions:** the Feature Editor extends `TextFileView` (file-backed lifecycle, below), and the Test Console drives a live run-event stream rather than a read-cache | `src/presentation/views/hub-view.ts`, `feature-editor-view.ts:58`, `test-console-view.ts:170-190` |
 | Reactivity | Hand-rolled: `LiveDashboardView`/`LiveRefresh` subscribe a view's `render()` to the in-process `EventBus`, coalesced by a `RenderScheduler` | `src/presentation/views/live-refresh.ts`, `live-dashboard-view.ts` |
 | Navigation | Obsidian leaves for cross-view (`openHub`, `openUseCaseDetail`, `setViewState`); pure `hub-sections.ts` projection for intra-hub section rail | `src/main.ts`, `src/presentation/navigation/hub-sections.ts` |
 | State persistence | Per-leaf `getState()/setState()` survives workspace reload | `hub-view.ts` (`activeSection`), `main.ts` (`useCaseId`, `storyMapId`) |
@@ -264,22 +264,39 @@ Each retires its bespoke `render()`/subscription preamble for the shared
 composable.
 
 **Phase 4 — detail/interactive views.**
-Use Case detail, Test Console, Feature Editor, and the **Story Map board**. The
-board is last and highest-risk, with **two** migration gates, not one:
-- **`interactjs` lifecycle.** It integrates `interactjs` pointer drag behind a
-  swappable adapter (`story-map-board-dnd.ts`); validate the adapter survives
-  Vue's lifecycle (mount/unmount, re-render) before migrating it.
-- **Custom EventBus origin/dirty-save filtering (must be preserved).** Unlike the
-  other views, the board does **not** use the generic blind-reload bridge: it
+Use Case detail, Test Console, Feature Editor, and the **Story Map board**. Three
+of these are **not** generic read-cache views and each carries its own
+migration gate beyond "swap the DOM shell" — the Phase 1 generic `useEventBus()`
+invalidation is the wrong fit for all three:
+
+- **Story Map board — `interactjs` lifecycle.** It integrates `interactjs`
+  pointer drag behind a swappable adapter (`story-map-board-dnd.ts`); validate the
+  adapter survives Vue's lifecycle (mount/unmount, re-render) before migrating it.
+- **Story Map board — custom EventBus origin/dirty-save filtering.** The board
   keeps `REFRESH_ON` empty and subscribes manually
   (`story-map-board-view.ts:53-56, 325-344`), filtering `storymap.updated`/
   `storymap.deleted` by **map id** *and* **`origin`** so its own debounced
   `saveMap(…, this.origin, …)` and unrelated maps never trigger a reload that
-  clobbers pending edits. The Phase 1 generic `useEventBus()` invalidation is the
-  wrong fit here. Acceptance criterion: the migrated board must preserve the
-  id + origin + dirty-save guard (a self-save is ignored; an external update to
-  *this* map reloads; an unrelated map's event is dropped) — proven by test, not
-  just the drag lifecycle.
+  clobbers pending edits. Acceptance criterion: the migrated board preserves the
+  id + origin + dirty-save guard (self-save ignored; external update to *this* map
+  reloads; unrelated map's event dropped) — proven by test, not just the drag
+  lifecycle.
+- **Test Console — live run-event stream.** The console is not a read-cache
+  invalidation case: it subscribes directly to `testrun.requested` /
+  `.started` / `.output.received` / the terminal events / `evidence.generated`,
+  appending output lines with scroll + retention behaviour and arming "Open
+  evidence" only for the latest run (`test-console-view.ts:170-190, 304-354`). A
+  generic `useEventBus()` refresh here would drop live output or enable the
+  evidence button for the wrong run. Acceptance criterion: preserve the streaming
+  append + per-run evidence matching, not a whole-view re-render.
+- **Feature Editor — `TextFileView` lifecycle.** Unlike the other surfaces it
+  extends Obsidian `TextFileView`, not `ItemView`, keeping the raw `.feature`
+  file as the single source of truth via `getViewData`/`setViewData`, `save()`,
+  and `requestSave()` (`feature-editor-view.ts:58, 97-130, 149-153`). It must stay
+  a `TextFileView` and mount Vue **inside** that lifecycle — external file reloads
+  and debounced saves keep flowing through Obsidian's file-view hooks, not a
+  plain `contentEl` mount. Acceptance criterion: file reload + debounced save
+  still round-trip through the `TextFileView` contract.
 
 **Phase 5 — modals (optional, last).**
 Obsidian `Modal` subclasses can remain native indefinitely. Migrate only if a

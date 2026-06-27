@@ -30,8 +30,11 @@ each phase is a later increment.
 ## Context
 
 - The plugin ships a single CJS `main.js` (esbuild, desktop-only).
-- Views mount into an Obsidian-owned `contentEl`. There is **no HTML page and no
-  URL bar**; Obsidian's leaf/tab system is the cross-view navigation authority.
+- Most views mount into an Obsidian-owned `contentEl`. There is **no HTML page and
+  no URL bar**; Obsidian's leaf/tab system is the cross-view navigation authority.
+  Two surfaces are not plain `ItemView` shells: the Feature Editor extends
+  `TextFileView` (file-backed lifecycle) and the Test Console drives a live
+  run-event stream — both get dedicated Phase 4 gates.
 - Each leaf persists its own state via `getState()/setState()` (the hub's
   `activeSection`, a detail leaf's `useCaseId`), surviving workspace reload.
 - Testable logic is already extracted into pure `*-rows.ts` / `*-format.ts`
@@ -125,13 +128,22 @@ component is the new thin view.
    `setState`↔store/route mirror).
 2. Hub shell + vue-router rail.
 3. Explorers & dashboards (the `LiveDashboardView` subclasses).
-4. Detail/interactive views; the Story Map board last, with two gates: its
-   `interactjs` adapter must survive the Vue lifecycle, **and** its custom
-   EventBus filtering must be preserved — the board keeps `REFRESH_ON` empty and
-   subscribes manually, filtering `storymap.updated/deleted` by map id + `origin`
-   so its own debounced saves and unrelated maps never blind-reload over pending
-   edits (`story-map-board-view.ts:53-56, 325-344`). The generic `useEventBus()`
-   invalidation does not fit here.
+4. Detail/interactive views — three carry gates beyond a DOM swap, and the
+   generic `useEventBus()` invalidation fits none of them:
+   - **Story Map board:** its `interactjs` adapter must survive the Vue
+     lifecycle, **and** its custom EventBus filtering must be preserved — empty
+     `REFRESH_ON` + manual subscribe filtering `storymap.updated/deleted` by map
+     id + `origin` so its debounced saves and unrelated maps never blind-reload
+     over pending edits (`story-map-board-view.ts:53-56, 325-344`).
+   - **Test Console:** a live run-event stream (`testrun.requested/.started/`
+     `.output.received/` terminals + `evidence.generated`), appending output with
+     scroll/retention and per-run evidence matching
+     (`test-console-view.ts:170-190, 304-354`) — preserve the stream, not a
+     whole-view re-render.
+   - **Feature Editor:** extends `TextFileView`, not `ItemView` — the raw
+     `.feature` file stays the source of truth via `getViewData`/`setViewData` +
+     `save()`/`requestSave()` (`feature-editor-view.ts:58, 97-130, 149-153`); Vue
+     mounts **inside** that file-view lifecycle.
 5. Modals — optional, native `Modal` may remain indefinitely.
 
 ## Consequences
