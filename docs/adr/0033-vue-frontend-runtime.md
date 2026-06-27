@@ -49,6 +49,16 @@ Replace the `ItemView` `render()` / `LiveRefresh` loop with **per-leaf Vue apps*
 `useEventBus()` composable replaces `LiveRefresh` — subscribe on mount,
 unsubscribe on unmount, invalidate the reactive slice on a domain event.
 
+**Async refresh stays serialized / latest-only.** Vue's batched async rendering
+coalesces DOM flushes but does **not** order or cancel overlapping async service
+reads. The existing `RenderScheduler` (`render-scheduler.ts:3-8`) serializes
+async renders so a slower refresh holding stale data cannot resolve last and
+clobber fresher output. The `useEventBus()`/Pinia bridge **must** carry this
+forward — either a `RenderScheduler`-equivalent serializer per store slice, or a
+monotonic token per async read that discards a now-stale resolution. A naive
+"re-read on every event" bridge reintroduces the stale-write race and is
+rejected.
+
 ### Runtime-only build, templates compiled at build time
 **Ship the runtime-only Vue build.** SFC templates are compiled by esbuild
 (`unplugin-vue` / `esbuild-plugin-vue3`) at build time. The runtime template
@@ -65,8 +75,12 @@ plus an EventBus-invalidated **read cache** of service queries. Constraints:
   (preserving the ESLint-enforced layering and the `Result<T>` contract).
 - Pinia is instantiated **per Vue app** (`createPinia()` per `createApp`), not as
   a global singleton — two open leaves do not share a store.
-- View-state that must survive a reload is mirrored into Obsidian
-  `getState()/setState()`; Pinia holds the live copy, `setState` the durable one.
+- View-state that must survive a reload is persisted through Obsidian's
+  **layout-save path, not by writing `setState()`** (which is only the restore
+  hook): a persisting mutation updates the field `getState()` returns and calls
+  `this.app.workspace.requestSaveLayout()`, which makes Obsidian re-read
+  `getState()` (as the hub does today, `hub-view.ts:271-279`). Pinia holds the
+  live copy; the `getState()` field + layout save is the durable copy.
 
 ### vue-router routes within a leaf, on memory history
 vue-router uses **`createMemoryHistory()`** (no browser URL) and routes **only
@@ -74,8 +88,11 @@ within a single mounted Vue app**: the hub's five-section rail
 (`overview/plan/build/run/review`, re-expressing `hub-sections.ts` as routes) and
 future intra-view sub-navigation. It **never** triggers a cross-leaf transition —
 opening another view still goes through the workspace adapter. The active route
-is mirrored into `getState()/setState()` so the rail survives a reload, exactly
-as `activeSection` does today (ADR-0031).
+survives a reload via the layout-save path — a route change updates the
+`getState()` field and calls `requestSaveLayout()`; `setState()` reads it back on
+restore and drives the router to the saved route — exactly as `activeSection`
+does today (ADR-0031, `hub-view.ts:271-279`). Writing `setState()` alone would
+not persist the route.
 
 ### Preserve the pure-projection core (load-bearing)
 `*-rows.ts` / `*-format.ts` projections stay framework-agnostic and unchanged.

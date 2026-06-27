@@ -79,8 +79,21 @@ independent `getState()` (a Use Case detail leaf carries its own `useCaseId`).
 
 **Reactivity bridge.** A `useEventBus(types, onRefresh)` composable replaces
 `LiveRefresh`: it subscribes on mount, unsubscribes on unmount, and invalidates
-the relevant reactive store slice. The `RenderScheduler` coalescing is subsumed
-by Vue's batched async rendering.
+the relevant reactive store slice.
+
+**Async refresh serialization must be carried forward.** Vue's batched async
+rendering only coalesces *DOM flushes*; it does **not** order or cancel
+overlapping async service reads. The existing `RenderScheduler`
+(`render-scheduler.ts:3-8`) does more than DOM batching — it **serializes async
+renders** so a slower refresh holding stale data cannot resolve last and clobber
+fresher output (out-of-order `findAll`/`refreshDashboard` resolutions). A
+`useEventBus()`/Pinia cache that naively re-reads on every event reintroduces
+exactly that stale-write race. Therefore the bridge **must** preserve a
+latest-only refresh discipline per store slice: either keep a `RenderScheduler`-
+equivalent serializer behind the composable, or tag each async read with a
+monotonic token and **discard a resolved read whose token is no longer current**
+(cancellation). This is an acceptance requirement of the Phase 0 spike, not an
+implementation detail to discover later.
 
 **Hard constraints (non-negotiable):**
 
@@ -116,8 +129,13 @@ Rules that keep Pinia from breaking the architecture:
 - **Per-app, not global.** Because Obsidian leaves are independent instances,
   Pinia is instantiated per Vue app (`createPinia()` per `createApp`), so two
   open leaves don't share a singleton store. View-state that must survive a
-  workspace reload is still mirrored into Obsidian `getState()/setState()` — Pinia
-  holds the live copy, `setState` holds the durable copy.
+  workspace reload is persisted through Obsidian's **layout-save path, not by
+  writing `setState()`**: `setState()` is only the *restore* hook. As the hub
+  does today (`hub-view.ts:271-279`), a store mutation that must persist updates
+  the field `getState()` returns and then calls
+  `this.app.workspace.requestSaveLayout()`, which makes Obsidian re-read
+  `getState()` and serialize it. Pinia holds the live copy; the `getState()`
+  field + the layout save is the durable copy.
 
 > Honest framing: for much of today's view-state, Vue composables (`reactive()` +
 > a `useEventBus()` hook) would be lighter than Pinia. Pinia earns its place where
@@ -143,10 +161,14 @@ Scope that lets vue-router coexist instead of compete:
   (`overview/plan/build/run/review`) and any future sub-tabs (e.g. Use Case
   detail panels). It **never** triggers a cross-leaf transition — opening another
   view still calls the existing workspace adapter.
-- **Two-way sync with `setState`.** The hub's active route is mirrored into
-  Obsidian `getState()/setState()` so the rail still survives a workspace reload,
-  exactly as `activeSection` does today. The router is the in-leaf navigation
-  model; `setState` is its durable projection.
+- **Persisted through the layout-save path.** The hub's active route survives a
+  workspace reload exactly as `activeSection` does today (`hub-view.ts:271-279`):
+  a route change updates the field `getState()` returns and calls
+  `this.app.workspace.requestSaveLayout()` (which re-reads `getState()`);
+  `setState()` reads that value back on restore and drives the router to the
+  saved route. The router is the in-leaf navigation model; the `getState()` field
+  + the layout save is its durable projection — writing `setState()` alone would
+  **not** persist, so a reload would revert the route.
 
 This re-expresses the existing `hub-sections.ts` rail as router routes and gives
 deeper views (Use Case detail, Story Map board) a real intra-view navigation
