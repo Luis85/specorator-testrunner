@@ -265,9 +265,21 @@ composable.
 
 **Phase 4 — detail/interactive views.**
 Use Case detail, Test Console, Feature Editor, and the **Story Map board**. The
-board is last and highest-risk: it integrates `interactjs` pointer drag behind a
-swappable adapter (`story-map-board-dnd.ts`); validate that the adapter survives
-Vue's lifecycle (mount/unmount, re-render) before migrating it.
+board is last and highest-risk, with **two** migration gates, not one:
+- **`interactjs` lifecycle.** It integrates `interactjs` pointer drag behind a
+  swappable adapter (`story-map-board-dnd.ts`); validate the adapter survives
+  Vue's lifecycle (mount/unmount, re-render) before migrating it.
+- **Custom EventBus origin/dirty-save filtering (must be preserved).** Unlike the
+  other views, the board does **not** use the generic blind-reload bridge: it
+  keeps `REFRESH_ON` empty and subscribes manually
+  (`story-map-board-view.ts:53-56, 325-344`), filtering `storymap.updated`/
+  `storymap.deleted` by **map id** *and* **`origin`** so its own debounced
+  `saveMap(…, this.origin, …)` and unrelated maps never trigger a reload that
+  clobbers pending edits. The Phase 1 generic `useEventBus()` invalidation is the
+  wrong fit here. Acceptance criterion: the migrated board must preserve the
+  id + origin + dirty-save guard (a self-save is ignored; an external update to
+  *this* map reloads; an unrelated map's event is dropped) — proven by test, not
+  just the drag lifecycle.
 
 **Phase 5 — modals (optional, last).**
 Obsidian `Modal` subclasses can remain native indefinitely. Migrate only if a

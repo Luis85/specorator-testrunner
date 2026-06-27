@@ -125,8 +125,13 @@ component is the new thin view.
    `setState`↔store/route mirror).
 2. Hub shell + vue-router rail.
 3. Explorers & dashboards (the `LiveDashboardView` subclasses).
-4. Detail/interactive views; the Story Map board last (its `interactjs` adapter
-   must survive the Vue lifecycle).
+4. Detail/interactive views; the Story Map board last, with two gates: its
+   `interactjs` adapter must survive the Vue lifecycle, **and** its custom
+   EventBus filtering must be preserved — the board keeps `REFRESH_ON` empty and
+   subscribes manually, filtering `storymap.updated/deleted` by map id + `origin`
+   so its own debounced saves and unrelated maps never blind-reload over pending
+   edits (`story-map-board-view.ts:53-56, 325-344`). The generic `useEventBus()`
+   invalidation does not fit here.
 5. Modals — optional, native `Modal` may remain indefinitely.
 
 ## Consequences
