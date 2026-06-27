@@ -94,6 +94,16 @@ restore and drives the router to the saved route — exactly as `activeSection`
 does today (ADR-0031, `hub-view.ts:271-279`). Writing `setState()` alone would
 not persist the route.
 
+**Restore deferral — `setState()` must not drive the router directly.** On a
+workspace restore Obsidian calls `setState()` **before** `onOpen()`, but the Vue
+app/router/subscriptions are created in `onOpen()` — so a `setState()` that tries
+to navigate the router during restore would find no router yet and lose or throw
+the restore. Mirror the existing `isOpen`-guarded restore-gap pattern
+(`hub-view.ts:237-241`): `setState()` only **records the pending route** into the
+state field; `onOpen()` (after it mounts the app and creates the router) applies
+that pending route as the router's initial location. The router is never driven
+from `setState()` before the app exists.
+
 ### Preserve the pure-projection core (load-bearing)
 `*-rows.ts` / `*-format.ts` projections stay framework-agnostic and unchanged.
 Vue components are **thin consumers** of the view-models they return; only the

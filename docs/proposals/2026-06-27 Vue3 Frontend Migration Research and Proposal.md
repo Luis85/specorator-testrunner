@@ -165,10 +165,17 @@ Scope that lets vue-router coexist instead of compete:
   workspace reload exactly as `activeSection` does today (`hub-view.ts:271-279`):
   a route change updates the field `getState()` returns and calls
   `this.app.workspace.requestSaveLayout()` (which re-reads `getState()`);
-  `setState()` reads that value back on restore and drives the router to the
-  saved route. The router is the in-leaf navigation model; the `getState()` field
-  + the layout save is its durable projection — writing `setState()` alone would
-  **not** persist, so a reload would revert the route.
+  `setState()` reads that value back on restore. The router is the in-leaf
+  navigation model; the `getState()` field + the layout save is its durable
+  projection — writing `setState()` alone would **not** persist, so a reload would
+  revert the route.
+- **Restore is deferred to `onOpen()`, not driven from `setState()`.** Obsidian
+  calls `setState()` **before** `onOpen()` on restore, but the Vue app + router
+  are created in `onOpen()` (§3.1). So `setState()` must only **record the pending
+  route** into the state field; `onOpen()` then applies it as the router's initial
+  location once the app exists. This mirrors the existing `isOpen`-guarded
+  restore-gap pattern (`hub-view.ts:237-241`) — driving the router from
+  `setState()` during restore would find no router yet and lose or throw it.
 
 This re-expresses the existing `hub-sections.ts` rail as router routes and gives
 deeper views (Use Case detail, Story Map board) a real intra-view navigation
@@ -243,10 +250,12 @@ Re-express `hub-view.ts` as a root Vue component with vue-router
 (`createMemoryHistory`) driving the five-section rail (`hub-sections.ts` becomes
 the route table), each section body a route component. Persist the active route
 through the layout-save path per §3.3 — on a route change, update the field
-`getState()` returns and call `requestSaveLayout()` (which re-reads `getState()`);
-`setState()` restores it and drives the router on reload. Writing `setState()`
-alone would not serialize, so a reload would revert the route. This is the
-largest single view and validates the router scope.
+`getState()` returns and call `requestSaveLayout()` (which re-reads `getState()`).
+On restore, `setState()` (called before `onOpen()`) only records the pending
+route; `onOpen()` applies it as the router's initial location once the app exists
+(§3.3 restore deferral). Writing `setState()` alone would not serialize, so a
+reload would revert the route. This is the largest single view and validates the
+router scope.
 
 **Phase 3 — explorers & dashboards.**
 Migrate the `LiveDashboardView` subclasses (PRDs, Use Cases, Suites, Evidence,
