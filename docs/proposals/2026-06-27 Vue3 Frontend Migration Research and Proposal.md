@@ -209,12 +209,25 @@ Each phase is independently shippable and gated by the full PR gate
 
 **Phase 0 — ADR + toolchain spike (de-risk).**
 Land ADR-0033. Add Vue/Pinia/vue-router + the esbuild Vue plugin. Convert **one
-self-contained leaf** — recommend the **Guided Tour** or **Evidence Explorer**
-(small, isolated, already has a `*-rows.ts` projection) — to a per-leaf Vue app.
-Prove, with evidence: production build succeeds, plugin loads with **no CSP
-violation**, theme CSS still applies, `getState/setState` survives a reload, the
-EventBus→reactive bridge refreshes on a domain event, and the leaf's existing
+self-contained leaf** to a per-leaf Vue app and prove, with evidence: production
+build succeeds, plugin loads with **no CSP violation**, theme CSS still applies,
+the EventBus→reactive bridge refreshes on a domain event, and the leaf's existing
 projection tests still pass unchanged. Record the bundle-size delta.
+
+**Spike-leaf choice — must persist leaf state.** The `getState/setState`-survives-
+a-reload gate can only be exercised by a leaf that **actually overrides**
+`getState()/setState()`. The small explorers do **not**: `EvidenceExplorerView`
+has no override, and `GuidedTourView`'s `getState()` reads the *tour service*
+state, not the Obsidian leaf state — so picking either would let the spike pass
+while the Vue mount↔persistence seam stayed untested. Only `UseCaseDetailView`
+(`useCaseId`, `use-case-detail-view.ts:166-184`) and `StoryMapBoardView`
+(`storyMapId`, `story-map-board-view.ts:296-319`) persist leaf state today.
+Therefore: spike on **Use Case Detail** — the smaller of the two stateful leaves
+(the Story Map board is heavier via `interactjs` and is deliberately Phase 4) — so
+the persistence gate is real. If a lighter, stateless leaf (Evidence Explorer) is
+preferred for the *first* mount/CSP/EventBus proof, then **split the persistence
+gate out of Phase 0** and prove it in Phase 2 on the hub (which does override
+`getState/setState`) — do not claim it from a leaf that never persisted state.
 
 **Phase 1 — bridge primitives.**
 Extract the reusable seam: an `ItemView`↔Vue `mountVueView()` / `unmount` helper,

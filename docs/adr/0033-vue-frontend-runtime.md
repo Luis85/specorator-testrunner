@@ -103,9 +103,13 @@ not a replacement for projection tests. "Views stay thin" is strengthened: the
 component is the new thin view.
 
 ### Phased, independently shippable migration
-0. ADR + toolchain spike on one self-contained leaf (Guided Tour or Evidence
-   Explorer) — prove build, CSP, theme CSS, `setState` survival, EventBus bridge,
-   and bundle delta.
+0. ADR + toolchain spike on one self-contained leaf — prove build, CSP, theme
+   CSS, EventBus bridge, and bundle delta. The leaf-state-survives-reload gate
+   needs a leaf that actually overrides `getState/setState`: the small explorers
+   do not (`EvidenceExplorerView` has none; `GuidedTourView.getState()` reads the
+   tour service, not leaf state), so spike on **Use Case Detail**
+   (`use-case-detail-view.ts:166-184`) — or split that gate to Phase 2 (the hub
+   overrides `getState/setState`). Do not claim persistence from a stateless leaf.
 1. Bridge primitives (`mountVueView()`, `useEventBus()`, per-app Pinia,
    `setState`↔store/route mirror).
 2. Hub shell + vue-router rail.
