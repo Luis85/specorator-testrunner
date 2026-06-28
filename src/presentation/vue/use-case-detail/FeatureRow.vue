@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, onMounted, ref } from "vue";
+import { inject, ref, watch } from "vue";
 import { USE_CASE_DETAIL_DEPS } from "./use-case-detail-deps";
 import ChecklistRows from "../ChecklistRows.vue";
 import type { ChecklistRow } from "../../views/checklist";
@@ -16,17 +16,28 @@ import {
 const props = defineProps<{ row: FeatureRowModel }>();
 const deps = inject(USE_CASE_DETAIL_DEPS)!;
 
-// The muted per-Feature health line (Wave F), loaded once on mount; an
-// unreadable/unparseable Feature simply leaves the line empty (Validate explains
-// why). Vue's reactivity replaces the hand-rolled isConnected guard.
+// The muted per-Feature health line (Wave F). An unreadable/unparseable Feature
+// leaves the line empty (Validate explains why).
 const health = ref<FeatureHealthLine | null>(null);
-onMounted(async () => {
-  const result = await deps.featureInsight.healthFor(props.row.path);
-  if (result.ok) health.value = featureHealthLine(result.value);
-});
-
 // The inline validate/detect/generate outcome (the wizard's ✓/✗/! vocabulary).
 const result = ref<ChecklistRow[] | null>(null);
+
+// Rows are keyed by path, so a refresh that keeps a Feature REUSES this component
+// with a fresh `row` object (projectFeatureRows builds new objects each reload) —
+// onMounted would only run once. Re-run the health load on every such change, and
+// clear any stale inline result, mirroring the pre-Vue render() which re-ran
+// renderFeatureHealth() and rebuilt a fresh result element on every refresh. So
+// editing a Feature's scenarios/tags updates the muted health line, and a stale
+// validate/detect/generate result never lingers across a refresh.
+watch(
+  () => props.row,
+  async () => {
+    result.value = null;
+    const loaded = await deps.featureInsight.healthFor(props.row.path);
+    health.value = loaded.ok ? featureHealthLine(loaded.value) : null;
+  },
+  { immediate: true },
+);
 const pending = (text: string): ChecklistRow[] => [{ status: "pending", icon: "…", text }];
 
 const open = (): void => deps.navigate(featureTarget(props.row.path));

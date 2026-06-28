@@ -83,6 +83,10 @@ const loopResult = ref<ChecklistRow[] | null>(null);
 // carried, and not meaningfully reducible without obscuring the sequence.
 // fallow-ignore-next-line complexity
 async function reload(): Promise<void> {
+  // Any refresh/re-target clears the rail's inline generate-steps result — the
+  // pre-Vue full re-render rebuilt a fresh (empty) result element each time, so a
+  // prior result never lingered under a now-different rail.
+  loopResult.value = null;
   const id = useCaseId.value;
   if (id === null) {
     state.value = { kind: "empty" };
@@ -170,14 +174,26 @@ function runLoopAction(action: Exclude<LoopRailAction, null>, model: LoadedModel
 // Generate step definitions for EVERY Feature the Use Case owns (the rail's Steps
 // action), labelling each when there is more than one — mirrors the view.
 async function generateStepsForAll(featurePaths: VaultPath[]): Promise<void> {
+  // Capture the target Use Case: if the leaf is re-targeted while this awaits, the
+  // result belongs to the PREVIOUS Use Case and must not be written under the new
+  // rail (the pre-Vue path guarded the same race with a captured-element
+  // isConnected check). reload() also clears loopResult on the re-target.
+  const target = useCaseId.value;
   loopResult.value = [{ status: "pending", icon: "…", text: "Generating step definitions…" }];
+  const rows = await collectStepGenerationRows(featurePaths);
+  if (useCaseId.value === target) loopResult.value = rows;
+}
+
+// One Feature reads exactly like the per-row generate; multiple Features label
+// each before its outcome so the aggregated report stays legible (mirrors the
+// view). Pure aggregation — the stale-target guard stays in the caller.
+async function collectStepGenerationRows(featurePaths: VaultPath[]): Promise<ChecklistRow[]> {
   if (featurePaths.length === 1) {
-    loopResult.value = await generateStepDefinitionsOutcome(
+    return generateStepDefinitionsOutcome(
       deps.specificationService,
       deps.stepDefinitionService,
       featurePaths[0],
     );
-    return;
   }
   const rows: ChecklistRow[] = [];
   for (const featurePath of featurePaths) {
@@ -190,7 +206,7 @@ async function generateStepsForAll(featurePaths: VaultPath[]): Promise<void> {
       )),
     );
   }
-  loopResult.value = rows;
+  return rows;
 }
 
 const openExplorer = (): void => void deps.workspace.openView(USE_CASE_VIEW_TYPE);
