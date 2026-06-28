@@ -22,43 +22,69 @@ const health = ref<FeatureHealthLine | null>(null);
 // The inline validate/detect/generate outcome (the wizard's ✓/✗/! vocabulary).
 const result = ref<ChecklistRow[] | null>(null);
 
-// Rows are keyed by path, so a refresh that keeps a Feature REUSES this component
+// A monotonic generation counter, bumped on every refresh (row-prop change). Any
+// in-flight async read captures the current generation and drops its write if a
+// refresh has happened since — the Vue equivalent of the pre-Vue captured-element
+// isConnected guard, which skipped writing into a result element a re-render had
+// detached. Rows are keyed by path, so the component is REUSED across a
+// same-Feature refresh, which is exactly when a stale write could otherwise land.
+let generation = 0;
+
+async function loadHealth(): Promise<void> {
+  const gen = generation;
+  const loaded = await deps.featureInsight.healthFor(props.row.path);
+  if (gen === generation) health.value = loaded.ok ? featureHealthLine(loaded.value) : null;
+}
+
+// Rows are keyed by path, so a refresh that keeps a Feature reuses this component
 // with a fresh `row` object (projectFeatureRows builds new objects each reload) —
-// onMounted would only run once. Re-run the health load on every such change, and
+// onMounted would only run once. Re-run the health load on every such change and
 // clear any stale inline result, mirroring the pre-Vue render() which re-ran
-// renderFeatureHealth() and rebuilt a fresh result element on every refresh. So
-// editing a Feature's scenarios/tags updates the muted health line, and a stale
-// validate/detect/generate result never lingers across a refresh.
+// renderFeatureHealth() and rebuilt a fresh result element on every refresh.
 watch(
   () => props.row,
-  async () => {
+  () => {
+    generation += 1;
     result.value = null;
-    const loaded = await deps.featureInsight.healthFor(props.row.path);
-    health.value = loaded.ok ? featureHealthLine(loaded.value) : null;
+    void loadHealth();
   },
   { immediate: true },
 );
+
 const pending = (text: string): ChecklistRow[] => [{ status: "pending", icon: "…", text }];
 
 const open = (): void => deps.navigate(featureTarget(props.row.path));
 const run = (): void => void deps.runLauncher.launch({ scope: "feature", target: props.row.path });
 
-const validate = async (): Promise<void> => {
-  result.value = pending("Validating…");
-  result.value = await validateFeatureOutcome(deps.specificationService, props.row.path);
-};
-const detect = async (): Promise<void> => {
-  result.value = pending("Detecting…");
-  result.value = await detectMissingStepsOutcome(deps.specificationService, props.row.path);
-};
-const generate = async (): Promise<void> => {
-  result.value = pending("Generating step definitions…");
-  result.value = await generateStepDefinitionsOutcome(
-    deps.specificationService,
-    deps.stepDefinitionService,
-    props.row.path,
+// The inline validate/detect/generate handlers share one runner: render pending,
+// await the outcome, then commit ONLY if no refresh intervened (so a result from
+// the pre-edit Feature can't repopulate the row after the watcher cleared it).
+async function runAction(
+  pendingText: string,
+  outcome: () => Promise<ChecklistRow[]>,
+): Promise<void> {
+  const gen = generation;
+  result.value = pending(pendingText);
+  const rows = await outcome();
+  if (gen === generation) result.value = rows;
+}
+
+const validate = (): void =>
+  void runAction("Validating…", () =>
+    validateFeatureOutcome(deps.specificationService, props.row.path),
   );
-};
+const detect = (): void =>
+  void runAction("Detecting…", () =>
+    detectMissingStepsOutcome(deps.specificationService, props.row.path),
+  );
+const generate = (): void =>
+  void runAction("Generating step definitions…", () =>
+    generateStepDefinitionsOutcome(
+      deps.specificationService,
+      deps.stepDefinitionService,
+      props.row.path,
+    ),
+  );
 </script>
 
 <template>
