@@ -32,6 +32,22 @@
       "extends": "LiveDashboardView",
       "members": ["getViewType", "getDisplayText", "getIcon", "getState", "onOpen", "onClose"],
     },
+    // Obsidian ItemView surface for the Vue-migrated leaves (ADR-0033), which
+    // mount a per-leaf Vue app and so extend ItemView DIRECTLY rather than the
+    // LiveDashboardView base (their refresh moved into a useEventBus composable).
+    // Obsidian's workspace invokes these overrides; our code never does.
+    {
+      "extends": "ItemView",
+      "members": [
+        "getViewType",
+        "getDisplayText",
+        "getIcon",
+        "getState",
+        "setState",
+        "onOpen",
+        "onClose",
+      ],
+    },
     // Obsidian TextFileView surface (FeatureEditorView): identity + the
     // file-backed read/write/clear hooks the editor framework drives.
     {
