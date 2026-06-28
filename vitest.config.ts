@@ -1,7 +1,12 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+import vue from "@vitejs/plugin-vue";
 
 export default defineConfig({
+  // Lets Vitest parse `.vue` SFCs imported transitively by the view modules
+  // under test (ADR-0033). The components themselves are runtime-bound and
+  // coverage-exempt (below); this only stops the import from failing to parse.
+  plugins: [vue()],
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",
@@ -76,6 +81,12 @@ export default defineConfig({
         "src/presentation/settings/settings-maintenance.ts",
         "src/presentation/settings/add-environment-modal.ts",
         "src/presentation/commands/register-commands.ts",
+        // ADR-0033 Vue bridge: per-leaf mount helper, the useEventBus lifecycle
+        // composable, and the SFC dependency-injection keys are all Vue/Obsidian
+        // runtime-bound (createApp/mount, onMounted/onUnmounted) — the SAME
+        // exemption as the `*-view.ts` shells. The pure projections the
+        // components consume (`*-rows.ts`) stay covered.
+        "src/presentation/vue/**",
       ],
     },
   },

@@ -30,6 +30,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.9.3",
+    "@vitejs/plugin-vue": "^6.0.7",
     "@vitest/coverage-v8": "^4.1.8",
     "@vitest/eslint-plugin": "^1.6.20",
     "builtin-modules": "^5.2.0",
@@ -41,9 +42,12 @@
     "prettier": "^3.8.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",
+    "unplugin-vue": "^7.2.0",
     "vitest": "^4.1.8"
   },
   "dependencies": {
-    "interactjs": "^1.10.27"
+    "interactjs": "^1.10.27",
+    "pinia": "^2.3.1",
+    "vue": "^3.5.39"
   }
 }

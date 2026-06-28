@@ -1,11 +1,10 @@
-import type { WorkspaceLeaf } from "obsidian";
+import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type { GuidedTourService } from "../../application/services/guided-tour-service";
-import type { TourActionId } from "../../domain/onboarding/tour-steps";
 import type { EventBus } from "../../shared/event-bus/event-bus";
-import { projectTour, TOUR_DONE_MESSAGE } from "./guided-tour-rows";
-import { LiveDashboardView } from "./live-dashboard-view";
-import { dispatchTourAction, type TourActionFlows } from "./tour-actions";
-import { renderTourStep } from "./tour-step-body";
+import GuidedTourApp from "../vue/guided-tour/GuidedTourApp.vue";
+import { GUIDED_TOUR_DEPS } from "../vue/guided-tour/guided-tour-deps";
+import { mountVueView, type MountedVueView } from "../vue/mount-vue-view";
+import type { TourActionFlows } from "./tour-actions";
 
 export const GUIDED_TOUR_VIEW_TYPE = "e2e-test-hub-guided-tour";
 
@@ -24,21 +23,22 @@ export interface GuidedTourViewDeps extends TourActionFlows {
 /**
  * The Guided Tour: a right-sidebar checklist over the full V1 loop that
  * auto-advances as the GuidedTourService observes the user's real actions.
+ *
+ * First Vue-migrated leaf (ADR-0033 Phase 0): the view is now a thin Obsidian
+ * shell that mounts a per-leaf Vue app into `contentEl` on open and unmounts it
+ * on close. The checklist's rendering + live refresh moved into
+ * {@link GuidedTourApp} (its `useEventBus` composable replaces the old
+ * `LiveDashboardView`/`LiveRefresh` subscription loop); the pure `projectTour`
+ * projection — and its tests — are unchanged.
  */
-export class GuidedTourView extends LiveDashboardView {
+export class GuidedTourView extends ItemView {
+  private mounted: MountedVueView | null = null;
+
   constructor(
     leaf: WorkspaceLeaf,
     private readonly deps: GuidedTourViewDeps,
   ) {
-    // tour.* drives progress repaints; evidence.generated flips the manual
-    // step's in-memory "armed" hint, which publishes no tour event.
-    super(leaf, deps.eventBus, [
-      "tour.started",
-      "tour.step.completed",
-      "tour.step.skipped",
-      "tour.completed",
-      "evidence.generated",
-    ]);
+    super(leaf);
   }
 
   getViewType(): string {
@@ -53,47 +53,16 @@ export class GuidedTourView extends LiveDashboardView {
     return "graduation-cap";
   }
 
-  protected render(): void {
-    const container = this.contentEl;
-    container.empty();
-    container.createEl("h2", { text: "Guided tour" });
-
-    const model = projectTour(this.deps.tour.getState());
-    container.createDiv({ cls: "e2e-test-hub-tour-progress", text: model.progressLabel });
-
-    if (model.completed) {
-      container.createEl("p", { text: TOUR_DONE_MESSAGE });
-    } else {
-      container.createEl("p", {
-        text: "Each step completes by itself when you perform the real action.",
-        cls: "e2e-test-hub-tour-hint",
-      });
-    }
-
-    for (const row of model.rows) {
-      renderTourStep(container, row, {
-        dispatch: (id) => this.dispatch(id),
-        markDone: (id) => void this.deps.tour.markDone(id),
-        skip: (id) => void this.deps.tour.skip(id),
-      });
-    }
-
-    const footer = container.createDiv({ cls: "e2e-test-hub-tour-actions" });
-    const restart = footer.createEl("button", {
-      text: "Restart tour",
-      attr: { "aria-label": "Restart the guided tour from the beginning" },
-    });
-    restart.addEventListener("click", () => void this.deps.tour.restart());
-    if (!model.dismissed && !model.completed) {
-      const dismiss = footer.createEl("button", {
-        text: "Dismiss",
-        attr: { "aria-label": "Hide the guided tour call to action on the dashboard" },
-      });
-      dismiss.addEventListener("click", () => void this.deps.tour.dismiss());
-    }
+  async onOpen(): Promise<void> {
+    this.mounted = mountVueView(this.contentEl, GuidedTourApp, (app) =>
+      app.provide(GUIDED_TOUR_DEPS, this.deps),
+    );
   }
 
-  private dispatch(id: TourActionId): void {
-    dispatchTourAction(id, this.deps);
+  async onClose(): Promise<void> {
+    // Unmounting runs GuidedTourApp's onUnmounted, which drops the useEventBus
+    // subscriptions — the same teardown the old LiveRefresh.close() did.
+    this.mounted?.unmount();
+    this.mounted = null;
   }
 }
