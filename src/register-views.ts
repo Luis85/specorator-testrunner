@@ -266,6 +266,9 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           openPrdBuilder: (parentPrdId) => deps.openPrdBuilder(parentPrdId),
           navigate: (target) => deps.navigate(target),
         },
+        // The Plan section's Story Maps body — the Vue-native StoryMapExplorerBody
+        // (ADR-0033 Phase 3). It self-loads and subscribes to the bus, so the hub
+        // supplies its deps MINUS `eventBus` (HubSection injects the hub's bus).
         storyMaps: {
           storyMapService: s.storyMapService,
           workspace,
@@ -273,7 +276,6 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           openMapSettings: (map) =>
             new StoryMapSettingsModal(app, map, { storyMapService: s.storyMapService }).open(),
           openStoryMapBoard: (id) => deps.openStoryMapBoard(id),
-          refresh: () => undefined,
         },
         useCases: {
           traceability: s.traceabilityService,

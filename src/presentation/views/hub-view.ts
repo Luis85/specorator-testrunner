@@ -13,9 +13,9 @@ import type { EvidenceExplorerBodyDeps } from "./evidence-explorer-body";
 import type { OnboardingRailBodyDeps } from "./onboarding-rail-body";
 import type { OverviewHeroBodyDeps } from "./overview-hero-body";
 import type { RecentRunsBodyDeps } from "./recent-runs-body";
-import type { StoryMapExplorerBodyDeps } from "./story-map-explorer-body";
 import type { UseCaseDashboardBodyDeps } from "./use-case-dashboard-body";
 import type { PrdBodyDeps } from "../vue/prds/prd-body-deps";
+import type { StoryMapBodyDeps } from "../vue/story-maps/story-map-body-deps";
 import type { SuiteBodyDeps } from "../vue/suites/suite-body-deps";
 import { OBSIDIAN_APP } from "../vue/obsidian-app";
 import { mountVueView, type MountedVueView } from "../vue/mount-vue-view";
@@ -75,8 +75,8 @@ export interface HubViewDeps {
   recentRuns: HubRecentRunsDeps;
   /** The plan section's PRD roadmap body deps (the hub supplies `eventBus`). */
   prds: Omit<PrdBodyDeps, "eventBus">;
-  /** The plan section's Story Maps list body deps. */
-  storyMaps: StoryMapExplorerBodyDeps;
+  /** The plan section's Story Maps list body deps (the hub supplies `eventBus`). */
+  storyMaps: Omit<StoryMapBodyDeps, "eventBus">;
   /** The build section's Use Cases list body deps. */
   useCases: HubUseCasesDeps;
   /** The run section's Test Suites body deps (the hub supplies `eventBus`). */

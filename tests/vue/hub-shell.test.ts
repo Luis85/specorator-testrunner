@@ -14,8 +14,11 @@ vi.mock("../../src/presentation/views/recent-runs-body", () => ({ renderRecentRu
 vi.mock("../../src/presentation/vue/prds/PrdExplorerBody.vue", () => ({
   default: { name: "PrdExplorerBody", render: () => null },
 }));
-vi.mock("../../src/presentation/views/story-map-explorer-body", () => ({
-  renderStoryMapExplorerBody: vi.fn(),
+// The Plan section's Story Maps body is now the Vue-native StoryMapExplorerBody
+// (ADR-0033 Phase 3); the Plan route mounts it, so stub it to a no-op render —
+// its own data loading + subscriptions are covered by story-map-explorer-body.test.ts.
+vi.mock("../../src/presentation/vue/story-maps/StoryMapExplorerBody.vue", () => ({
+  default: { name: "StoryMapExplorerBody", render: () => null },
 }));
 vi.mock("../../src/presentation/views/use-case-dashboard-body", () => ({
   renderUseCaseDashboardBody: vi.fn(),

@@ -5,6 +5,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import SuiteDashboardBody from "../../src/presentation/vue/suites/SuiteDashboardBody.vue";
 import type { SuiteBodyDeps } from "../../src/presentation/vue/suites/suite-body-deps";
 import { InMemoryEventBus } from "../../src/shared/event-bus/event-bus";
+import { hangingReload } from "./hanging-reload";
 import type { DomainEvent } from "../../src/domain/events/domain-event";
 import type { VaultPath } from "../../src/domain/value-objects/identifiers";
 
@@ -132,15 +133,10 @@ describe("SuiteDashboardBody", () => {
     const bus = new InMemoryEventBus();
     // First load resolves immediately; the refresh load hangs so we can inspect
     // the interim state while findAll() is still pending.
-    let releaseReload!: () => void;
-    const findAll = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, value: [suite()] })
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
-          releaseReload = () => resolve({ ok: true, value: [] });
-        }),
-      );
+    const { fn: findAll, release: releaseReload } = hangingReload(
+      { ok: true, value: [suite()] },
+      { ok: true, value: [] },
+    );
     const w = mountBody(makeDeps({ eventBus: bus, suiteService: { findAll } }));
     await flushPromises();
     expect(w.findAll("tbody tr")).toHaveLength(1); // loaded

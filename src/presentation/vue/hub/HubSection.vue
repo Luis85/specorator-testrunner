@@ -15,11 +15,11 @@ import {
 } from "../../navigation/hub-sections";
 import { renderOverviewHeroBody } from "../../views/overview-hero-body";
 import { renderRecentRunsBody } from "../../views/recent-runs-body";
-import { renderStoryMapExplorerBody } from "../../views/story-map-explorer-body";
 import { renderUseCaseDashboardBody } from "../../views/use-case-dashboard-body";
 import { renderEvidenceExplorerBody } from "../../views/evidence-explorer-body";
 import SuiteDashboardBody from "../suites/SuiteDashboardBody.vue";
 import PrdExplorerBody from "../prds/PrdExplorerBody.vue";
+import StoryMapExplorerBody from "../story-maps/StoryMapExplorerBody.vue";
 
 const deps = inject(HUB_DEPS)!;
 const app = inject(OBSIDIAN_APP)!;
@@ -85,7 +85,10 @@ function bodyPaint(body: HubBodyId): (el: HTMLElement) => void {
       // exhaustive — it is never reached.
       return () => undefined;
     case "story-maps":
-      return (el) => void renderStoryMapExplorerBody(el, { ...deps.storyMaps, refresh });
+      // Migrated to the StoryMapExplorerBody Vue component (Phase 3); rendered
+      // directly (not via Imperative). This arm only keeps the switch
+      // exhaustive — it is never reached.
+      return () => undefined;
     case "use-cases":
       return (el) =>
         void renderUseCaseDashboardBody(el, {
@@ -137,6 +140,10 @@ const openLeaf = (content: Extract<HubContentRef, { kind: "leaf" }>): void =>
         <PrdExplorerBody
           v-else-if="content.body === 'prd-roadmap'"
           :deps="{ ...deps.prds, eventBus: deps.eventBus }"
+        />
+        <StoryMapExplorerBody
+          v-else-if="content.body === 'story-maps'"
+          :deps="{ ...deps.storyMaps, eventBus: deps.eventBus }"
         />
         <Imperative v-else :paint="bodyPaint(content.body)" @empty="bodyEmpty[i] = $event" />
       </div>
