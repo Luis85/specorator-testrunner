@@ -13,9 +13,9 @@ import type { EvidenceExplorerBodyDeps } from "./evidence-explorer-body";
 import type { OnboardingRailBodyDeps } from "./onboarding-rail-body";
 import type { OverviewHeroBodyDeps } from "./overview-hero-body";
 import type { RecentRunsBodyDeps } from "./recent-runs-body";
-import type { UseCaseDashboardBodyDeps } from "./use-case-dashboard-body";
 import type { PrdBodyDeps } from "../vue/prds/prd-body-deps";
 import type { StoryMapBodyDeps } from "../vue/story-maps/story-map-body-deps";
+import type { UseCaseBodyDeps } from "../vue/use-cases/use-case-body-deps";
 import type { SuiteBodyDeps } from "../vue/suites/suite-body-deps";
 import { OBSIDIAN_APP } from "../vue/obsidian-app";
 import { mountVueView, type MountedVueView } from "../vue/mount-vue-view";
@@ -41,11 +41,12 @@ type HubHeroDeps = Omit<OverviewHeroBodyDeps, "navigate" | "refresh">;
 type HubRecentRunsDeps = Omit<RecentRunsBodyDeps, "openEvidenceExplorer" | "refresh">;
 
 /**
- * The Use Cases body's deps MINUS the `filter`/`clearFilter` the hub OWNS (E1
- * PR3): the funnel filter is hub-held ephemeral state (now the Pinia hub store),
- * supplied at render time, not threaded from the composition root.
+ * The Use Cases body's deps MINUS `eventBus` the hub supplies. The `filter`/
+ * `clearFilter` the hub OWNS (E1 PR3) are NOT deps at all: they are the Vue
+ * component's reactive props, fed from the Pinia hub store in HubSection — not
+ * threaded from the composition root.
  */
-type HubUseCasesDeps = Omit<UseCaseDashboardBodyDeps, "filter" | "clearFilter">;
+type HubUseCasesDeps = Omit<UseCaseBodyDeps, "eventBus">;
 
 /**
  * The docked onboarding rail's deps MINUS the `collapsed`/`onToggleCollapsed`/`refresh`
@@ -77,7 +78,7 @@ export interface HubViewDeps {
   prds: Omit<PrdBodyDeps, "eventBus">;
   /** The plan section's Story Maps list body deps (the hub supplies `eventBus`). */
   storyMaps: Omit<StoryMapBodyDeps, "eventBus">;
-  /** The build section's Use Cases list body deps. */
+  /** The build section's Use Cases list body deps (the hub supplies `eventBus`). */
   useCases: HubUseCasesDeps;
   /** The run section's Test Suites body deps (the hub supplies `eventBus`). */
   suites: Omit<SuiteBodyDeps, "eventBus">;

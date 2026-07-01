@@ -15,11 +15,11 @@ import {
 } from "../../navigation/hub-sections";
 import { renderOverviewHeroBody } from "../../views/overview-hero-body";
 import { renderRecentRunsBody } from "../../views/recent-runs-body";
-import { renderUseCaseDashboardBody } from "../../views/use-case-dashboard-body";
 import { renderEvidenceExplorerBody } from "../../views/evidence-explorer-body";
 import SuiteDashboardBody from "../suites/SuiteDashboardBody.vue";
 import PrdExplorerBody from "../prds/PrdExplorerBody.vue";
 import StoryMapExplorerBody from "../story-maps/StoryMapExplorerBody.vue";
+import UseCaseDashboardBody from "../use-cases/UseCaseDashboardBody.vue";
 
 const deps = inject(HUB_DEPS)!;
 const app = inject(OBSIDIAN_APP)!;
@@ -58,7 +58,6 @@ useEventBus(deps.eventBus, HUB_REFRESH_ON, refresh);
 // fallow-ignore-next-line complexity
 function bodyPaint(body: HubBodyId): (el: HTMLElement) => void {
   void tick.value;
-  const useCaseFilter = store.useCaseFilter;
   const evidenceFilter = store.evidenceFilter;
   const evidenceVisibleLimit = store.evidenceVisibleLimit;
   switch (body) {
@@ -90,13 +89,10 @@ function bodyPaint(body: HubBodyId): (el: HTMLElement) => void {
       // exhaustive — it is never reached.
       return () => undefined;
     case "use-cases":
-      return (el) =>
-        void renderUseCaseDashboardBody(el, {
-          ...deps.useCases,
-          refresh,
-          filter: useCaseFilter,
-          clearFilter: store.clearUseCaseFilter,
-        });
+      // Migrated to the UseCaseDashboardBody Vue component (Phase 3); rendered
+      // directly (not via Imperative). This arm only keeps the switch
+      // exhaustive — it is never reached.
+      return () => undefined;
     case "suites":
       // Migrated to the SuiteDashboardBody Vue component (Phase 3); it self-loads
       // and subscribes, so it is rendered directly (not via Imperative). This arm
@@ -144,6 +140,12 @@ const openLeaf = (content: Extract<HubContentRef, { kind: "leaf" }>): void =>
         <StoryMapExplorerBody
           v-else-if="content.body === 'story-maps'"
           :deps="{ ...deps.storyMaps, eventBus: deps.eventBus }"
+        />
+        <UseCaseDashboardBody
+          v-else-if="content.body === 'use-cases'"
+          :deps="{ ...deps.useCases, eventBus: deps.eventBus }"
+          :filter="store.useCaseFilter"
+          :clear-filter="store.clearUseCaseFilter"
         />
         <Imperative v-else :paint="bodyPaint(content.body)" @empty="bodyEmpty[i] = $event" />
       </div>

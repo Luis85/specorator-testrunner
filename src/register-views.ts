@@ -277,6 +277,10 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
             new StoryMapSettingsModal(app, map, { storyMapService: s.storyMapService }).open(),
           openStoryMapBoard: (id) => deps.openStoryMapBoard(id),
         },
+        // The Build section's Use Cases body — the Vue-native UseCaseDashboardBody
+        // (ADR-0033 Phase 3). It self-loads and subscribes to the bus, so the hub
+        // supplies its deps MINUS `eventBus` (HubSection injects the hub's bus);
+        // the KPI funnel filter is a reactive prop from the hub store, not a dep.
         useCases: {
           traceability: s.traceabilityService,
           specificationService: s.specificationService,
@@ -284,7 +288,6 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           runLauncher: s.runLauncher,
           onCreate: () => deps.openCreateUseCase(),
           onOpenDetail: (useCaseId) => deps.openUseCaseDetail(useCaseId),
-          refresh: () => undefined,
         },
         // The Run section's Test Suites body — the Vue-native SuiteDashboardBody
         // (ADR-0033 Phase 3). It self-loads and subscribes to the bus, so the hub
