@@ -257,14 +257,14 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           isInitialized: () => vault.exists(deps.getSettings().paths.useCasesPath),
           openEvidence: (path) => deps.openEvidence(path),
         },
+        // The Plan section's PRDs body — the Vue-native PrdExplorerBody (ADR-0033
+        // Phase 3). It self-loads and subscribes to the bus, so the hub supplies
+        // its deps MINUS `eventBus` (HubSection injects the hub's bus).
         prds: {
           prdService: s.prdService,
           useCaseService: s.useCaseService,
           openPrdBuilder: (parentPrdId) => deps.openPrdBuilder(parentPrdId),
           navigate: (target) => deps.navigate(target),
-          // The body's own `refresh` is supplied by the hub (its active-panel
-          // re-render); this placeholder is overwritten in HubView.renderBody.
-          refresh: () => undefined,
         },
         storyMaps: {
           storyMapService: s.storyMapService,

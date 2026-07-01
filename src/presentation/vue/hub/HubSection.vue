@@ -15,11 +15,11 @@ import {
 } from "../../navigation/hub-sections";
 import { renderOverviewHeroBody } from "../../views/overview-hero-body";
 import { renderRecentRunsBody } from "../../views/recent-runs-body";
-import { renderPrdExplorerBody } from "../../views/prd-explorer-body";
 import { renderStoryMapExplorerBody } from "../../views/story-map-explorer-body";
 import { renderUseCaseDashboardBody } from "../../views/use-case-dashboard-body";
 import { renderEvidenceExplorerBody } from "../../views/evidence-explorer-body";
 import SuiteDashboardBody from "../suites/SuiteDashboardBody.vue";
+import PrdExplorerBody from "../prds/PrdExplorerBody.vue";
 
 const deps = inject(HUB_DEPS)!;
 const app = inject(OBSIDIAN_APP)!;
@@ -75,7 +75,10 @@ function bodyPaint(body: HubBodyId): (el: HTMLElement) => void {
           refresh,
         });
     case "prd-roadmap":
-      return (el) => void renderPrdExplorerBody(el, { ...deps.prds, refresh });
+      // Migrated to the PrdExplorerBody Vue component (Phase 3); rendered
+      // directly (not via Imperative). This arm only keeps the switch
+      // exhaustive — it is never reached.
+      return () => undefined;
     case "story-maps":
       return (el) => void renderStoryMapExplorerBody(el, { ...deps.storyMaps, refresh });
     case "use-cases":
@@ -116,9 +119,15 @@ const openLeaf = (content: Extract<HubContentRef, { kind: "leaf" }>): void =>
   <div>
     <template v-for="(content, i) in descriptor.contents" :key="i">
       <div v-if="content.kind === 'section-body'" class="spec-hub-section-body">
+        <!-- Vue-native bodies (Phase 3) self-load + subscribe, so they render
+             directly; the rest still paint through the Imperative bridge. -->
         <SuiteDashboardBody
           v-if="content.body === 'suites'"
           :deps="{ ...deps.suites, eventBus: deps.eventBus }"
+        />
+        <PrdExplorerBody
+          v-else-if="content.body === 'prd-roadmap'"
+          :deps="{ ...deps.prds, eventBus: deps.eventBus }"
         />
         <Imperative v-else :paint="bodyPaint(content.body)" />
       </div>

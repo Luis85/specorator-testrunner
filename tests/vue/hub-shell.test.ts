@@ -8,8 +8,11 @@ vi.mock("../../src/presentation/views/overview-hero-body", () => ({
   renderOverviewHeroBody: vi.fn(),
 }));
 vi.mock("../../src/presentation/views/recent-runs-body", () => ({ renderRecentRunsBody: vi.fn() }));
-vi.mock("../../src/presentation/views/prd-explorer-body", () => ({
-  renderPrdExplorerBody: vi.fn(),
+// The Plan section's PRDs body is now the Vue-native PrdExplorerBody (ADR-0033
+// Phase 3); the Plan route mounts it, so stub it to a no-op render — its own
+// data loading + subscriptions are covered by prd-explorer-body.test.ts.
+vi.mock("../../src/presentation/vue/prds/PrdExplorerBody.vue", () => ({
+  default: { name: "PrdExplorerBody", render: () => null },
 }));
 vi.mock("../../src/presentation/views/story-map-explorer-body", () => ({
   renderStoryMapExplorerBody: vi.fn(),
