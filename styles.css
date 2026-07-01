@@ -1879,8 +1879,12 @@ body {
 
 /* Defensive: a body that renders nothing (e.g. an early return) collapses out of
  * the flow rather than leaving a gap. The overview now fills BOTH content refs —
- * the hero body and the recent-runs body — so the E1 empty-div hack is retired. */
-.spec-hub-section-body:empty {
+ * the hero body and the recent-runs body — so the E1 empty-div hack is retired.
+ * `.is-empty` is the Vue-hub equivalent: the Imperative wrapper is a permanent
+ * child, so the slot is never truly `:empty`; the component reports emptiness and
+ * the slot carries `is-empty` instead (ADR-0033). */
+.spec-hub-section-body:empty,
+.spec-hub-section-body.is-empty {
   display: none;
 }
 
@@ -1896,8 +1900,11 @@ body {
 }
 
 /* The onboarding-rail slot is always present and spans the hub bottom. It
- * collapses out of the flow when it renders nothing (the hidden/dismissed rail). */
-.spec-hub-onboarding-rail:empty {
+ * collapses out of the flow when it renders nothing (the hidden/dismissed rail).
+ * `.is-empty` covers the Vue hub, where the permanent Imperative wrapper stops the
+ * slot from ever being truly `:empty` (ADR-0033). */
+.spec-hub-onboarding-rail:empty,
+.spec-hub-onboarding-rail.is-empty {
   display: none;
 }
 

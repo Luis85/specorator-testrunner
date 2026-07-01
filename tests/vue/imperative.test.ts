@@ -66,4 +66,44 @@ describe("Imperative", () => {
     expect(wrapper.text()).toBe("FRESH");
     expect(capturedEl.isConnected).toBe(false);
   });
+
+  it("reports emptiness so a slot can collapse (:empty equivalent)", async () => {
+    // A painter that renders nothing (recent-runs before init, dismissed rail).
+    const wrapper = mount(Imperative, { props: { paint: () => undefined } });
+    await nextTick();
+    const empty = wrapper.emitted("empty");
+    expect(empty?.at(-1)).toEqual([true]);
+  });
+
+  it("reports non-empty when the painter writes content", async () => {
+    const wrapper = mount(Imperative, {
+      props: {
+        paint: (el: HTMLElement) => {
+          el.appendChild(document.createElement("p"));
+        },
+      },
+    });
+    await nextTick();
+    expect(wrapper.emitted("empty")?.at(-1)).toEqual([false]);
+  });
+
+  it("re-reports non-empty once an async painter writes later", async () => {
+    let resolvePaint!: () => void;
+    const asyncPaint = (el: HTMLElement): void => {
+      void new Promise<void>((resolve) => {
+        resolvePaint = resolve;
+      }).then(() => {
+        el.appendChild(document.createElement("p"));
+      });
+    };
+    const wrapper = mount(Imperative, { props: { paint: asyncPaint } });
+    await nextTick();
+    // Synchronously empty (the read is still pending) → collapsed.
+    expect(wrapper.emitted("empty")?.at(-1)).toEqual([true]);
+
+    resolvePaint();
+    await flushPromises();
+    // The MutationObserver saw the late write → reports non-empty.
+    expect(wrapper.emitted("empty")?.at(-1)).toEqual([false]);
+  });
 });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref } from "vue";
+import { computed, inject, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Imperative from "../Imperative.vue";
 import { OBSIDIAN_APP } from "../obsidian-app";
@@ -26,6 +26,11 @@ const app = inject(OBSIDIAN_APP)!;
 const store = useHubStore();
 const route = useRoute();
 const router = useRouter();
+
+// Emptiness of each Imperative-hosted body by its content index, so its slot can
+// collapse (the `:empty`/`is-empty` rule) when the painter renders nothing —
+// e.g. recent-runs before the vault is initialized. Imperative reports it.
+const bodyEmpty = reactive<Record<number, boolean>>({});
 
 const sectionParam = computed(() =>
   resolveActiveSection(typeof route.params.section === "string" ? route.params.section : undefined),
@@ -118,7 +123,11 @@ const openLeaf = (content: Extract<HubContentRef, { kind: "leaf" }>): void =>
 <template>
   <div>
     <template v-for="(content, i) in descriptor.contents" :key="i">
-      <div v-if="content.kind === 'section-body'" class="spec-hub-section-body">
+      <div
+        v-if="content.kind === 'section-body'"
+        class="spec-hub-section-body"
+        :class="{ 'is-empty': bodyEmpty[i] }"
+      >
         <!-- Vue-native bodies (Phase 3) self-load + subscribe, so they render
              directly; the rest still paint through the Imperative bridge. -->
         <SuiteDashboardBody
@@ -129,7 +138,7 @@ const openLeaf = (content: Extract<HubContentRef, { kind: "leaf" }>): void =>
           v-else-if="content.body === 'prd-roadmap'"
           :deps="{ ...deps.prds, eventBus: deps.eventBus }"
         />
-        <Imperative v-else :paint="bodyPaint(content.body)" />
+        <Imperative v-else :paint="bodyPaint(content.body)" @empty="bodyEmpty[i] = $event" />
       </div>
       <div v-else class="spec-hub-section-actions">
         <button

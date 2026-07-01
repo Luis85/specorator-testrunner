@@ -33,6 +33,10 @@ useEventBus(deps.eventBus, HUB_REFRESH_ON, refresh);
 
 const switchSection = (id: HubSectionId): void => void router.push(`/${id}`);
 
+// The docked rail collapses (its `:empty`/`is-empty` rule) when the painter
+// renders nothing — the hidden/dismissed rail. Imperative reports that.
+const onboardingEmpty = ref(false);
+
 function onboardingPaint(): (el: HTMLElement) => void {
   void tick.value;
   const collapsed = store.onboardingCollapsed;
@@ -68,6 +72,8 @@ function onboardingPaint(): (el: HTMLElement) => void {
       </nav>
       <div class="spec-hub-panel"><RouterView /></div>
     </div>
-    <div class="spec-hub-onboarding-rail"><Imperative :paint="onboardingPaint()" /></div>
+    <div class="spec-hub-onboarding-rail" :class="{ 'is-empty': onboardingEmpty }">
+      <Imperative :paint="onboardingPaint()" @empty="onboardingEmpty = $event" />
+    </div>
   </div>
 </template>
