@@ -27,10 +27,15 @@ const store = useHubStore();
 const route = useRoute();
 const router = useRouter();
 
-// Emptiness of each Imperative-hosted body by its content index, so its slot can
+// Emptiness of each Imperative-hosted body by its STABLE body id, so its slot can
 // collapse (the `:empty`/`is-empty` rule) when the painter renders nothing —
 // e.g. recent-runs before the vault is initialized. Imperative reports it.
-const bodyEmpty = reactive<Record<number, boolean>>({});
+// Keyed by body id, NOT content index: vue-router reuses this HubSection instance
+// across section switches, so a positional key would carry a hidden section's
+// stale `is-empty` onto whatever body lands at the same index next (e.g. Plan's
+// story-maps inheriting Overview's empty recent-runs, then never cleared because
+// a Vue-native body emits no `empty`). Body ids are unique per body, so no carry.
+const bodyEmpty = reactive<Partial<Record<HubBodyId, boolean>>>({});
 
 const sectionParam = computed(() =>
   resolveActiveSection(typeof route.params.section === "string" ? route.params.section : undefined),
@@ -125,7 +130,7 @@ const openLeaf = (content: Extract<HubContentRef, { kind: "leaf" }>): void =>
       <div
         v-if="content.kind === 'section-body'"
         class="spec-hub-section-body"
-        :class="{ 'is-empty': bodyEmpty[i] }"
+        :class="{ 'is-empty': bodyEmpty[content.body] }"
       >
         <!-- Vue-native bodies (Phase 3) self-load + subscribe, so they render
              directly; the rest still paint through the Imperative bridge. -->
@@ -147,7 +152,11 @@ const openLeaf = (content: Extract<HubContentRef, { kind: "leaf" }>): void =>
           :filter="store.useCaseFilter"
           :clear-filter="store.clearUseCaseFilter"
         />
-        <Imperative v-else :paint="bodyPaint(content.body)" @empty="bodyEmpty[i] = $event" />
+        <Imperative
+          v-else
+          :paint="bodyPaint(content.body)"
+          @empty="bodyEmpty[content.body] = $event"
+        />
       </div>
       <div v-else class="spec-hub-section-actions">
         <button

@@ -95,4 +95,19 @@ describe("HubShell", () => {
     expect(router.currentRoute.value.path).toBe("/plan");
     expect(wrapper.get(".spec-hub-rail-node.is-active").text()).toBe("Plan");
   });
+
+  it("does not carry a section's empty-flag onto the next section's bodies", async () => {
+    // Overview's mocked hero/recent-runs painters render nothing, so Imperative
+    // reports empty and their slots collapse (is-empty).
+    const { wrapper, router } = await mountHub("overview");
+    expect(wrapper.findAll(".spec-hub-section-body.is-empty").length).toBeGreaterThan(0);
+
+    // Plan reuses the same HubSection instance; its bodies (prd-roadmap,
+    // story-maps) must NOT inherit Overview's stale per-index empty flags — the
+    // flags are keyed by body id, so nothing carries over and the Story Maps
+    // section is not hidden.
+    await router.push("/plan");
+    await flushPromises();
+    expect(wrapper.findAll(".spec-hub-section-body.is-empty")).toHaveLength(0);
+  });
 });
