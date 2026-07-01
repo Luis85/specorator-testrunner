@@ -38,6 +38,7 @@ import HubSection from "../../src/presentation/vue/hub/HubSection.vue";
 import { HUB_DEPS } from "../../src/presentation/vue/hub/hub-deps";
 import { OBSIDIAN_APP } from "../../src/presentation/vue/obsidian-app";
 import { InMemoryEventBus } from "../../src/shared/event-bus/event-bus";
+import { renderOnboardingRailBody } from "../../src/presentation/views/onboarding-rail-body";
 import type { HubViewDeps } from "../../src/presentation/views/hub-view";
 
 const makeDeps = (): HubViewDeps =>
@@ -94,6 +95,28 @@ describe("HubShell", () => {
     await flushPromises();
     expect(router.currentRoute.value.path).toBe("/plan");
     expect(wrapper.get(".spec-hub-rail-node.is-active").text()).toBe("Plan");
+  });
+
+  it("does not self-trigger a repaint loop when an async painter fills after emptiness", async () => {
+    // The onboarding painter renders nothing synchronously, then fills after a
+    // microtask (empty → content). With the paint closure rebuilt on every
+    // render, the emptiness event would hand Imperative a fresh closure and loop
+    // repaints unboundedly (starving the macrotask queue → hang). A stable
+    // computed paint holds identity, so painting is bounded: the initial mount
+    // plus the hub's one initial useEventBus refresh — never a runaway.
+    const onboarding = vi.mocked(renderOnboardingRailBody);
+    onboarding.mockClear();
+    onboarding.mockImplementation(
+      (el: HTMLElement): Promise<void> =>
+        // Synchronously empty; fills after a microtask (the empty → content toggle).
+        Promise.resolve().then(() => {
+          el.appendChild(document.createElement("div"));
+        }),
+    );
+    await mountHub("overview");
+    await flushPromises();
+    expect(onboarding.mock.calls.length).toBeLessThanOrEqual(3);
+    onboarding.mockReset();
   });
 
   it("does not carry a section's empty-flag onto the next section's bodies", async () => {

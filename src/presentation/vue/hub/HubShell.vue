@@ -37,7 +37,13 @@ const switchSection = (id: HubSectionId): void => void router.push(`/${id}`);
 // renders nothing — the hidden/dismissed rail. Imperative reports that.
 const onboardingEmpty = ref(false);
 
-function onboardingPaint(): (el: HTMLElement) => void {
+// A COMPUTED over ONLY the real repaint inputs (`tick` + the collapse flag) — NOT
+// `onboardingEmpty`. Imperative repaints on `paint` identity change; rebuilding
+// the closure on every render would let the rail's own emptiness event (empty →
+// content → empty) hand it a fresh closure each time and self-trigger an endless
+// repaint loop (P1). Holding the identity stable across `onboardingEmpty` changes
+// means an emptiness toggle updates the `is-empty` class only, never repaints.
+const onboardingPaint = computed<(el: HTMLElement) => void>(() => {
   void tick.value;
   const collapsed = store.onboardingCollapsed;
   return (el) =>
@@ -47,7 +53,7 @@ function onboardingPaint(): (el: HTMLElement) => void {
       onToggleCollapsed: store.toggleOnboardingCollapsed,
       refresh,
     });
-}
+});
 </script>
 
 <template>
@@ -73,7 +79,7 @@ function onboardingPaint(): (el: HTMLElement) => void {
       <div class="spec-hub-panel"><RouterView /></div>
     </div>
     <div class="spec-hub-onboarding-rail" :class="{ 'is-empty': onboardingEmpty }">
-      <Imperative :paint="onboardingPaint()" @empty="onboardingEmpty = $event" />
+      <Imperative :paint="onboardingPaint" @empty="onboardingEmpty = $event" />
     </div>
   </div>
 </template>

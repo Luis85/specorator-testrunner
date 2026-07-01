@@ -53,70 +53,61 @@ const refresh = (): void => {
 };
 useEventBus(deps.eventBus, HUB_REFRESH_ON, refresh);
 
-// Builds the paint closure for one in-hub body, wiring the hub-owned callbacks
-// (KPI-tile → Build with the funnel filter; recent-runs "view all" → Review; the
-// Evidence/Use Cases ephemeral filters from the store). Reading the reactive
-// store/tick DURING render (this runs inside the `:paint` binding) makes them
-// render deps, so a change re-renders and Imperative repaints the body.
-// A flat one-arm-per-body dispatch (cognitive 1) — the direct analogue of the
-// hand-rolled HubView.renderBody, whose body-id switch carried the same note.
+// The paint closure per in-hub body, wiring the hub-owned callbacks (KPI-tile →
+// Build with the funnel filter; recent-runs "view all" → Review; the Evidence
+// ephemeral filters from the store).
+//
+// Crucially this is a COMPUTED over ONLY the real repaint inputs (`tick` + the
+// Evidence store fields it reads) — NOT `bodyEmpty`. Imperative repaints when its
+// `paint` prop changes identity; if the paint were rebuilt on every render, an
+// async painter (empty → content → empty…) whose emptiness event re-renders this
+// component would hand Imperative a fresh closure each time and self-trigger an
+// ENDLESS repaint loop (P1). Keeping the closures out of the emptiness-dependent
+// render path holds their identity stable across `bodyEmpty` changes, so an
+// emptiness toggle updates the `is-empty` class only and never repaints.
+// A flat one-arm-per-body map — the direct analogue of the hand-rolled
+// HubView.renderBody, whose body-id switch carried the same note.
 // fallow-ignore-next-line complexity
-function bodyPaint(body: HubBodyId): (el: HTMLElement) => void {
+const bodyPaints = computed<Record<HubBodyId, (el: HTMLElement) => void>>(() => {
   void tick.value;
   const evidenceFilter = store.evidenceFilter;
   const evidenceVisibleLimit = store.evidenceVisibleLimit;
-  switch (body) {
-    case "kpi-overview":
-      return (el) =>
-        void renderOverviewHeroBody(el, app, {
-          ...deps.hero,
-          navigate: (target) => {
-            store.setUseCaseFilter(target.filter);
-            void router.push("/build");
-          },
-          refresh,
-        });
-    case "recent-runs":
-      return (el) =>
-        void renderRecentRunsBody(el, {
-          ...deps.recentRuns,
-          openEvidenceExplorer: () => void router.push("/review"),
-          refresh,
-        });
-    case "prd-roadmap":
-      // Migrated to the PrdExplorerBody Vue component (Phase 3); rendered
-      // directly (not via Imperative). This arm only keeps the switch
-      // exhaustive — it is never reached.
-      return () => undefined;
-    case "story-maps":
-      // Migrated to the StoryMapExplorerBody Vue component (Phase 3); rendered
-      // directly (not via Imperative). This arm only keeps the switch
-      // exhaustive — it is never reached.
-      return () => undefined;
-    case "use-cases":
-      // Migrated to the UseCaseDashboardBody Vue component (Phase 3); rendered
-      // directly (not via Imperative). This arm only keeps the switch
-      // exhaustive — it is never reached.
-      return () => undefined;
-    case "suites":
-      // Migrated to the SuiteDashboardBody Vue component (Phase 3); it self-loads
-      // and subscribes, so it is rendered directly (not via Imperative). This arm
-      // only keeps the switch exhaustive — it is never reached.
-      return () => undefined;
-    case "evidence":
-      return (el) =>
-        void renderEvidenceExplorerBody(
-          el,
-          { ...deps.evidence, refresh },
-          {
-            filter: evidenceFilter,
-            visibleLimit: evidenceVisibleLimit,
-            onFilterChange: store.setEvidenceFilter,
-            onLoadOlder: store.loadOlderEvidence,
-          },
-        );
-  }
-}
+  // The Vue-native bodies (Phase 3) render directly, not via Imperative, so their
+  // arms are never reached — they only keep the record exhaustive over HubBodyId.
+  const migrated = (): void => undefined;
+  return {
+    "kpi-overview": (el) =>
+      void renderOverviewHeroBody(el, app, {
+        ...deps.hero,
+        navigate: (target) => {
+          store.setUseCaseFilter(target.filter);
+          void router.push("/build");
+        },
+        refresh,
+      }),
+    "recent-runs": (el) =>
+      void renderRecentRunsBody(el, {
+        ...deps.recentRuns,
+        openEvidenceExplorer: () => void router.push("/review"),
+        refresh,
+      }),
+    "prd-roadmap": migrated,
+    "story-maps": migrated,
+    "use-cases": migrated,
+    suites: migrated,
+    evidence: (el) =>
+      void renderEvidenceExplorerBody(
+        el,
+        { ...deps.evidence, refresh },
+        {
+          filter: evidenceFilter,
+          visibleLimit: evidenceVisibleLimit,
+          onFilterChange: store.setEvidenceFilter,
+          onLoadOlder: store.loadOlderEvidence,
+        },
+      ),
+  };
+});
 
 const leafLabel = (content: Extract<HubContentRef, { kind: "leaf" }>): string =>
   content.viewType === "e2e-test-hub-console" ? "Open Test Console" : "Open";
@@ -154,7 +145,7 @@ const openLeaf = (content: Extract<HubContentRef, { kind: "leaf" }>): void =>
         />
         <Imperative
           v-else
-          :paint="bodyPaint(content.body)"
+          :paint="bodyPaints[content.body]"
           @empty="bodyEmpty[content.body] = $event"
         />
       </div>
