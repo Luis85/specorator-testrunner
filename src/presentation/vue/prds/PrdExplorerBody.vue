@@ -17,13 +17,19 @@ import type { PrdBodyDeps } from "./prd-body-deps";
 
 const props = defineProps<{ deps: PrdBodyDeps }>();
 
-// A PRD created/deleted or a Use Case's PRD link changing (the per-PRD counts
-// depend on `prd-id`) refreshes the tree. The same set the standalone leaf used.
+// A PRD created/deleted, or a Use Case created/updated/deleted, refreshes the
+// tree: the per-PRD Use Case counts (countUseCasesByPrd) and the "Open Use
+// Cases" deep-link (firstUseCaseIdOfPrd) both depend on the Use Case set, so a
+// deletion must reload or a removed UC lingers in the count/deep-link. As a
+// direct Vue body this self-subscribes (it is not driven by the hub's broad
+// repaint tick), so `usecase.deleted` is included here where the old
+// Imperative-hosted body relied on HUB_REFRESH_ON for it.
 const REFRESH_ON: DomainEventType[] = [
   "prd.created",
   "prd.deleted",
   "usecase.created",
   "usecase.updated",
+  "usecase.deleted",
 ];
 
 type ViewState =

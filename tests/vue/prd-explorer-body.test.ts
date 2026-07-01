@@ -131,18 +131,25 @@ describe("PrdExplorerBody", () => {
     expect(deletePrd).toHaveBeenCalledWith("PRD-001");
   });
 
-  it("reloads on a prd event via useEventBus", async () => {
-    const bus = new InMemoryEventBus();
-    const findAll = vi.fn().mockResolvedValue({ ok: true, value: [root, child] });
-    const deps = makeDeps({ eventBus: bus, prdService: { findAll, deletePrd: vi.fn() } });
-    mountBody(deps);
-    await flushPromises();
-    expect(findAll).toHaveBeenCalledOnce();
+  // usecase.deleted matters because the per-PRD counts (countUseCasesByPrd) and
+  // the "Open Use Cases" deep-link (firstUseCaseIdOfPrd) both depend on the UC
+  // set — a deletion must reload the tree (the hub used to cover this via its
+  // broad repaint tick; a direct Vue body must self-subscribe).
+  it.each(["prd.created", "usecase.deleted"] as const)(
+    "reloads on %s via useEventBus",
+    async (type) => {
+      const bus = new InMemoryEventBus();
+      const findAll = vi.fn().mockResolvedValue({ ok: true, value: [root, child] });
+      const deps = makeDeps({ eventBus: bus, prdService: { findAll, deletePrd: vi.fn() } });
+      mountBody(deps);
+      await flushPromises();
+      expect(findAll).toHaveBeenCalledOnce();
 
-    void bus.publish({ type: "prd.created" } as unknown as DomainEvent);
-    await flushPromises();
-    expect(findAll).toHaveBeenCalledTimes(2);
-  });
+      void bus.publish({ type } as unknown as DomainEvent);
+      await flushPromises();
+      expect(findAll).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("clears stale nodes before a slow refresh finishes", async () => {
     const bus = new InMemoryEventBus();
