@@ -111,6 +111,38 @@ describe("UseCaseDetailApp", () => {
     expect(w.text()).toContain("Automation: planned");
   });
 
+  it("drops the stale Use Case view before a re-target load resolves", async () => {
+    let resolveRetarget!: (v: unknown) => void;
+    const deps = makeDeps({
+      traceability: {
+        deriveById: vi
+          .fn()
+          .mockImplementationOnce(async () => ({ ok: true, value: useCase({ id: "UC-001" }) }))
+          .mockImplementationOnce(
+            () =>
+              new Promise((resolve) => {
+                resolveRetarget = resolve;
+              }),
+          ),
+      },
+    });
+    const id = ref<UseCaseId | null>("UC-001" as UseCaseId);
+    const w = mountApp(deps, id);
+    await flushPromises();
+    expect(w.find("h2").text()).toBe("UC-001 — Login");
+
+    // Re-target to a different Use Case; its load is still pending.
+    id.value = "UC-002" as UseCaseId;
+    await flushPromises();
+    // The stale UC-001 header (and its Open/Edit/Run actions) must be gone.
+    expect(w.find("h2").exists()).toBe(false);
+    expect(w.text()).toContain("Loading");
+
+    resolveRetarget({ ok: true, value: useCase({ id: "UC-002", title: "Signup" }) });
+    await flushPromises();
+    expect(w.find("h2").text()).toBe("UC-002 — Signup");
+  });
+
   it("renders the loop-rail generate-steps result", async () => {
     // A Feature exists but its steps aren't defined → the rail's current node is
     // Steps, offering the generate action.

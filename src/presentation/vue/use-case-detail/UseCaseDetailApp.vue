@@ -68,6 +68,7 @@ interface LoadedModel {
 
 type DetailState =
   | { kind: "empty" }
+  | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "not-found"; id: string }
   | { kind: "loaded"; model: LoadedModel };
@@ -91,6 +92,14 @@ async function reload(): Promise<void> {
   if (id === null) {
     state.value = { kind: "empty" };
     return;
+  }
+  // Re-target to a DIFFERENT Use Case: drop the stale loaded view BEFORE awaiting
+  // the new reads — otherwise the old Use Case's Open/Edit/Run buttons stay
+  // clickable against the wrong target during a slow load (the pre-Vue render
+  // emptied the container before its first await). A same-Use-Case refresh keeps
+  // the current view rendered (no flicker) since its actions are still valid.
+  if (state.value.kind === "loaded" && state.value.model.useCase.id !== id) {
+    state.value = { kind: "loading" };
   }
   const found = await deps.traceability.deriveById(id);
   if (!found.ok) {
@@ -262,6 +271,8 @@ const emptyFeaturesPaint =
 <template>
   <div class="e2e-test-hub-uc-detail">
     <p v-if="state.kind === 'empty'">Open a Use Case to see its Feature Specifications.</p>
+
+    <p v-else-if="state.kind === 'loading'" class="spec-empty">Loading…</p>
 
     <Imperative v-else-if="state.kind === 'error'" :paint="errorPaint(state.message)" />
 
