@@ -102,14 +102,13 @@ async function reload(): Promise<void> {
     state.value = { kind: "empty" };
     return;
   }
-  // Re-target to a DIFFERENT Use Case: drop the stale loaded view BEFORE awaiting
-  // the new reads — otherwise the old Use Case's Open/Edit/Run buttons stay
-  // clickable against the wrong target during a slow load (the pre-Vue render
-  // emptied the container before its first await). A same-Use-Case refresh keeps
-  // the current view rendered (no flicker) since its actions are still valid.
-  if (state.value.kind === "loaded" && state.value.model.useCase.id !== id) {
-    state.value = { kind: "loading" };
-  }
+  // Drop the prior view BEFORE awaiting so no stale — and possibly now-invalid —
+  // actions stay clickable during the load: a re-target's old Use Case, OR a
+  // destructive same-id refresh (usecase.deleted) whose Open/Edit/Run/Generate
+  // buttons the incoming reads will invalidate. The pre-Vue render emptied the
+  // container at the start of EVERY refresh, so this matches that baseline (a
+  // brief "Loading…" between refreshes, never stale actions).
+  state.value = { kind: "loading" };
   const found = await deps.traceability.deriveById(id);
   if (!found.ok) {
     state.value = { kind: "error", message: found.error.message };

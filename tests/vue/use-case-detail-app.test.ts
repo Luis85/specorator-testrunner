@@ -144,6 +144,44 @@ describe("UseCaseDetailApp", () => {
     expect(w.find("h2").text()).toBe("UC-002 — Signup");
   });
 
+  it("clears the view during a same-Use-Case refresh (destructive event safe)", async () => {
+    let resolveReload!: (v: unknown) => void;
+    const bus = new InMemoryEventBus();
+    const deps = makeDeps({
+      eventBus: bus,
+      traceability: {
+        deriveById: vi
+          .fn()
+          .mockImplementationOnce(async () => ({ ok: true, value: useCase({ id: "UC-001" }) }))
+          .mockImplementationOnce(
+            () =>
+              new Promise((resolve) => {
+                resolveReload = resolve;
+              }),
+          ),
+      },
+    });
+    const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
+    await flushPromises();
+    expect(w.find("h2").exists()).toBe(true);
+
+    // The displayed Use Case is deleted — a same-id refresh whose actions are now
+    // invalid. The view must drop them while the reload awaits, not keep them live.
+    // Fire-and-forget: awaiting publish would block on the deferred reload, but the
+    // `loading` state is set synchronously before reload's first await.
+    void bus.publish({
+      type: "usecase.deleted",
+      payload: { useCaseId: "UC-001" },
+    } as unknown as DomainEvent);
+    await flushPromises();
+    expect(w.find("h2").exists()).toBe(false);
+    expect(w.text()).toContain("Loading");
+
+    resolveReload({ ok: true, value: null });
+    await flushPromises();
+    expect(w.text()).toContain("was not found");
+  });
+
   it("renders the loop-rail generate-steps result", async () => {
     // A Feature exists but its steps aren't defined → the rail's current node is
     // Steps, offering the generate action.
