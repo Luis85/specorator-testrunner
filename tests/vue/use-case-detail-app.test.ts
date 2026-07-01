@@ -132,7 +132,7 @@ describe("UseCaseDetailApp", () => {
     expect(w.find("h2").text()).toBe("UC-001 — Login");
 
     // Re-target to a different Use Case; its load is still pending.
-    id.value = "UC-002" as UseCaseId;
+    id.value = "UC-002";
     await flushPromises();
     // The stale UC-001 header (and its Open/Edit/Run actions) must be gone.
     expect(w.find("h2").exists()).toBe(false);
