@@ -12,6 +12,7 @@ import { OBSIDIAN_APP } from "../../src/presentation/vue/obsidian-app";
 import { InMemoryEventBus } from "../../src/shared/event-bus/event-bus";
 import type { UseCaseDetailDeps } from "../../src/presentation/views/use-case-detail-view";
 import type { UseCaseId, VaultPath } from "../../src/domain/value-objects/identifiers";
+import type { DomainEvent } from "../../src/domain/events/domain-event";
 
 const PATH = "Features/UC-001-login.feature" as VaultPath;
 
@@ -193,6 +194,38 @@ describe("UseCaseDetailApp", () => {
     await flushPromises();
 
     // The stale generation now resolves — its result must NOT land under the new rail.
+    resolveGenerate({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } });
+    await flushPromises();
+    expect(checkRows(w)).toHaveLength(0);
+  });
+
+  it("drops a generate-steps result after a same-Use-Case refresh", async () => {
+    let resolveGenerate!: (v: unknown) => void;
+    const bus = new InMemoryEventBus();
+    const deps = makeDeps({
+      eventBus: bus,
+      traceability: {
+        deriveById: vi.fn(async () => ({ ok: true, value: useCase({ featureFiles: [PATH] }) })),
+      },
+      specificationService: specService(false),
+      stepDefinitionService: {
+        generate: vi.fn().mockReturnValue(
+          new Promise((resolve) => {
+            resolveGenerate = resolve;
+          }),
+        ),
+      },
+    });
+    const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
+    await flushPromises();
+
+    await w.get(GENERATE_STEPS_BTN).trigger("click");
+    await nextTick();
+
+    // A same-Use-Case refresh (not a re-target) rebuilds the rail mid-generation.
+    await bus.publish({ type: "specification.updated" } as unknown as DomainEvent);
+    await flushPromises();
+
     resolveGenerate({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } });
     await flushPromises();
     expect(checkRows(w)).toHaveLength(0);

@@ -75,6 +75,13 @@ type DetailState =
 
 const state = ref<DetailState>({ kind: "empty" });
 const loopResult = ref<ChecklistRow[] | null>(null);
+// Bumped on EVERY reload (any refresh or re-target). An in-flight generate-steps
+// captures the current generation and drops its write if a reload has happened
+// since — so a same-Use-Case refresh (e.g. specification.updated rebuilding the
+// rail) drops the pre-refresh rows too, not just a re-target. The Vue equivalent
+// of the pre-Vue captured-resultEl isConnected guard, which a full re-render
+// detached on every refresh.
+let loopGeneration = 0;
 
 // Mirrors the hand-rolled render() orchestration exactly; all decisions stay in
 // the pure projections (projectUseCaseHeader/projectLoopRail/projectFeatureRows/
@@ -84,10 +91,12 @@ const loopResult = ref<ChecklistRow[] | null>(null);
 // carried, and not meaningfully reducible without obscuring the sequence.
 // fallow-ignore-next-line complexity
 async function reload(): Promise<void> {
-  // Any refresh/re-target clears the rail's inline generate-steps result — the
-  // pre-Vue full re-render rebuilt a fresh (empty) result element each time, so a
-  // prior result never lingered under a now-different rail.
+  // Any refresh/re-target clears the rail's inline generate-steps result and
+  // invalidates an in-flight generate (via loopGeneration) — the pre-Vue full
+  // re-render rebuilt a fresh (empty) result element each time, so a prior result
+  // never lingered under a rebuilt rail.
   loopResult.value = null;
+  loopGeneration += 1;
   const id = useCaseId.value;
   if (id === null) {
     state.value = { kind: "empty" };
@@ -183,14 +192,15 @@ function runLoopAction(action: Exclude<LoopRailAction, null>, model: LoadedModel
 // Generate step definitions for EVERY Feature the Use Case owns (the rail's Steps
 // action), labelling each when there is more than one — mirrors the view.
 async function generateStepsForAll(featurePaths: VaultPath[]): Promise<void> {
-  // Capture the target Use Case: if the leaf is re-targeted while this awaits, the
-  // result belongs to the PREVIOUS Use Case and must not be written under the new
-  // rail (the pre-Vue path guarded the same race with a captured-element
-  // isConnected check). reload() also clears loopResult on the re-target.
-  const target = useCaseId.value;
+  // Capture the reload generation: if ANY reload happens while this awaits — a
+  // re-target OR a same-Use-Case refresh that rebuilds the rail — the result is
+  // stale and must not be written under the rebuilt rail (the pre-Vue path guarded
+  // the same race with a captured-element isConnected check). reload() bumps the
+  // generation and clears loopResult.
+  const generation = loopGeneration;
   loopResult.value = [{ status: "pending", icon: "…", text: "Generating step definitions…" }];
   const rows = await collectStepGenerationRows(featurePaths);
-  if (useCaseId.value === target) loopResult.value = rows;
+  if (loopGeneration === generation) loopResult.value = rows;
 }
 
 // One Feature reads exactly like the per-row generate; multiple Features label
