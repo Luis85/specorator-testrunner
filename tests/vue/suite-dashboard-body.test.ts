@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import SuiteDashboardBody from "../../src/presentation/vue/suites/SuiteDashboardBody.vue";
 import type { SuiteBodyDeps } from "../../src/presentation/vue/suites/suite-body-deps";
@@ -124,6 +125,41 @@ describe("SuiteDashboardBody", () => {
     void bus.publish({ type: "suite.created" } as unknown as DomainEvent);
     await flushPromises();
     expect(findAll).toHaveBeenCalledTimes(2);
+    w.unmount();
+  });
+
+  it("clears stale rows before a slow refresh finishes (no acting on a deleted suite)", async () => {
+    const bus = new InMemoryEventBus();
+    // First load resolves immediately; the refresh load hangs so we can inspect
+    // the interim state while findAll() is still pending.
+    let releaseReload!: () => void;
+    const findAll = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: [suite()] })
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseReload = () => resolve({ ok: true, value: [] });
+        }),
+      );
+    const w = mountBody(makeDeps({ eventBus: bus, suiteService: { findAll } }));
+    await flushPromises();
+    expect(w.findAll("tbody tr")).toHaveLength(1); // loaded
+
+    // A refresh event kicks off the (hanging) reload. The stale row and its
+    // Open/Run buttons must be gone BEFORE the reads finish.
+    void bus.publish({ type: "suite.deleted" } as unknown as DomainEvent);
+    // flushPromises runs the scheduled load up to its hanging findAll() — far
+    // enough to set the loading state, not far enough to complete the reload.
+    await flushPromises();
+    await nextTick();
+    expect(w.find("tbody tr").exists()).toBe(false);
+    expect(w.find(".e2e-test-hub-run-button").exists()).toBe(false);
+    // The header stays (identical to the imperative renderer's pre-await gap).
+    expect(w.find(".e2e-test-hub-suite-header").exists()).toBe(true);
+
+    releaseReload();
+    await flushPromises();
+    expect(w.text()).toContain("No Test Suites yet");
     w.unmount();
   });
 

@@ -44,6 +44,13 @@ const state = ref<ViewState>({ kind: "loading" });
 // events collapses into one trailing load and no two loads overlap, so there is
 // no stale-write race to guard here (unlike the user-triggered async actions).
 async function load(): Promise<void> {
+  // Clear stale rows SYNCHRONOUSLY before the awaits: on an event-driven refresh
+  // (e.g. suite.deleted) in a slow vault, the old rows and their live Open/Run
+  // buttons must not stay actionable while findAll()/scenarioCounter() run — a
+  // user could act on a just-deleted suite. The imperative renderer got this for
+  // free by rebuilding the body before its first await; here we drop back to the
+  // header-only loading state (which renders identically to that pre-await gap).
+  state.value = { kind: "loading" };
   const result = await props.deps.suiteService.findAll();
   if (!result.ok) {
     state.value = { kind: "error", message: result.error.message };
