@@ -18,8 +18,8 @@ import { renderRecentRunsBody } from "../../views/recent-runs-body";
 import { renderPrdExplorerBody } from "../../views/prd-explorer-body";
 import { renderStoryMapExplorerBody } from "../../views/story-map-explorer-body";
 import { renderUseCaseDashboardBody } from "../../views/use-case-dashboard-body";
-import { renderSuiteDashboardBody } from "../../views/suite-dashboard-body";
 import { renderEvidenceExplorerBody } from "../../views/evidence-explorer-body";
+import SuiteDashboardBody from "../suites/SuiteDashboardBody.vue";
 
 const deps = inject(HUB_DEPS)!;
 const app = inject(OBSIDIAN_APP)!;
@@ -87,7 +87,10 @@ function bodyPaint(body: HubBodyId): (el: HTMLElement) => void {
           clearFilter: store.clearUseCaseFilter,
         });
     case "suites":
-      return (el) => void renderSuiteDashboardBody(el, { ...deps.suites, refresh });
+      // Migrated to the SuiteDashboardBody Vue component (Phase 3); it self-loads
+      // and subscribes, so it is rendered directly (not via Imperative). This arm
+      // only keeps the switch exhaustive — it is never reached.
+      return () => undefined;
     case "evidence":
       return (el) =>
         void renderEvidenceExplorerBody(
@@ -113,7 +116,11 @@ const openLeaf = (content: Extract<HubContentRef, { kind: "leaf" }>): void =>
   <div>
     <template v-for="(content, i) in descriptor.contents" :key="i">
       <div v-if="content.kind === 'section-body'" class="spec-hub-section-body">
-        <Imperative :paint="bodyPaint(content.body)" />
+        <SuiteDashboardBody
+          v-if="content.body === 'suites'"
+          :deps="{ ...deps.suites, eventBus: deps.eventBus }"
+        />
+        <Imperative v-else :paint="bodyPaint(content.body)" />
       </div>
       <div v-else class="spec-hub-section-actions">
         <button

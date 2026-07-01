@@ -14,7 +14,10 @@ export interface MountedVueView {
  * state, so every leaf gets a FRESH `createApp` + `createPinia` here — never a
  * shared global app/store. The optional `setup` runs against the app before
  * mount so the caller can `app.provide(KEY, deps)` the view's dependency slice
- * (services, the event bus, the action flows) into the component tree.
+ * (services, the event bus, the action flows) into the component tree. The
+ * optional `props` are the root component's props — a leaf whose whole surface is
+ * one self-loading body (e.g. the standalone Test Suites leaf mounting
+ * `SuiteDashboardBody`) passes its `deps` prop here rather than through `provide`.
  *
  * The returned {@link MountedVueView.unmount} is called from the view's
  * `onClose`; unmounting runs each component's `onUnmounted`, which is where
@@ -25,8 +28,9 @@ export function mountVueView(
   el: HTMLElement,
   component: Component,
   setup?: (app: VueApp) => void,
+  props?: Record<string, unknown>,
 ): MountedVueView {
-  const app = createApp(component);
+  const app = createApp(component, props);
   // Per-leaf Pinia: view-state stores are scoped to this app, so two open leaves
   // never share a singleton store (ADR-0033).
   app.use(createPinia());

@@ -17,9 +17,9 @@ vi.mock("../../src/presentation/views/story-map-explorer-body", () => ({
 vi.mock("../../src/presentation/views/use-case-dashboard-body", () => ({
   renderUseCaseDashboardBody: vi.fn(),
 }));
-vi.mock("../../src/presentation/views/suite-dashboard-body", () => ({
-  renderSuiteDashboardBody: vi.fn(),
-}));
+// The Run section's Test Suites body is now the Vue-native SuiteDashboardBody
+// (ADR-0033 Phase 3), which self-loads only when the /run route mounts — these
+// tests never navigate there, so no mock is needed.
 vi.mock("../../src/presentation/views/evidence-explorer-body", () => ({
   renderEvidenceExplorerBody: vi.fn(),
 }));

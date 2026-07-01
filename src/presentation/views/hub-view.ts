@@ -15,8 +15,8 @@ import type { OverviewHeroBodyDeps } from "./overview-hero-body";
 import type { RecentRunsBodyDeps } from "./recent-runs-body";
 import type { PrdExplorerBodyDeps } from "./prd-explorer-body";
 import type { StoryMapExplorerBodyDeps } from "./story-map-explorer-body";
-import type { SuiteDashboardBodyDeps } from "./suite-dashboard-body";
 import type { UseCaseDashboardBodyDeps } from "./use-case-dashboard-body";
+import type { SuiteBodyDeps } from "../vue/suites/suite-body-deps";
 import { OBSIDIAN_APP } from "../vue/obsidian-app";
 import { mountVueView, type MountedVueView } from "../vue/mount-vue-view";
 import { PersistedLeafState } from "../vue/persisted-leaf-state";
@@ -79,8 +79,8 @@ export interface HubViewDeps {
   storyMaps: StoryMapExplorerBodyDeps;
   /** The build section's Use Cases list body deps. */
   useCases: HubUseCasesDeps;
-  /** The run section's Test Suites list body deps. */
-  suites: SuiteDashboardBodyDeps;
+  /** The run section's Test Suites body deps (the hub supplies `eventBus`). */
+  suites: Omit<SuiteBodyDeps, "eventBus">;
   /** The review section's Evidence list body deps. */
   evidence: EvidenceExplorerBodyDeps;
   /** The docked onboarding rail's deps (the hub owns collapse + refresh). */

@@ -158,13 +158,14 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
     (leaf) =>
       new SuiteDashboardView(leaf, {
         suiteService: s.suiteService,
-        eventBus,
         runLauncher: s.runLauncher,
         featureInsight: s.featureInsightService,
         onCreate: () => deps.openCreateSuite(),
         // WS-B4: a suite row opens through the unified deep-link port (a Suite is
         // addressed by its note path), not an ad-hoc openOrNotice.
         navigate: (target) => deps.navigate(target),
+        // The body self-subscribes via useEventBus (ADR-0033 Phase 3).
+        eventBus,
       }),
   );
   plugin.registerView(
@@ -283,13 +284,15 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           onOpenDetail: (useCaseId) => deps.openUseCaseDetail(useCaseId),
           refresh: () => undefined,
         },
+        // The Run section's Test Suites body — the Vue-native SuiteDashboardBody
+        // (ADR-0033 Phase 3). It self-loads and subscribes to the bus, so the hub
+        // supplies its deps MINUS `eventBus` (HubSection injects the hub's bus).
         suites: {
           suiteService: s.suiteService,
           runLauncher: s.runLauncher,
           featureInsight: s.featureInsightService,
           onCreate: () => deps.openCreateSuite(),
           navigate: (target) => deps.navigate(target),
-          refresh: () => undefined,
         },
         evidence: {
           runHistory: s.runHistoryService,
