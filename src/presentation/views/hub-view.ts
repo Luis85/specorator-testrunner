@@ -9,13 +9,13 @@ import {
   resolveActiveSection,
   type HubSectionId,
 } from "../navigation/hub-sections";
-import type { EvidenceExplorerBodyDeps } from "./evidence-explorer-body";
 import type { OnboardingRailBodyDeps } from "./onboarding-rail-body";
 import type { OverviewHeroBodyDeps } from "./overview-hero-body";
 import type { RecentRunsBodyDeps } from "./recent-runs-body";
 import type { PrdBodyDeps } from "../vue/prds/prd-body-deps";
 import type { StoryMapBodyDeps } from "../vue/story-maps/story-map-body-deps";
 import type { UseCaseBodyDeps } from "../vue/use-cases/use-case-body-deps";
+import type { EvidenceBodyDeps } from "../vue/evidence/evidence-body-deps";
 import type { SuiteBodyDeps } from "../vue/suites/suite-body-deps";
 import { OBSIDIAN_APP } from "../vue/obsidian-app";
 import { mountVueView, type MountedVueView } from "../vue/mount-vue-view";
@@ -82,8 +82,8 @@ export interface HubViewDeps {
   useCases: HubUseCasesDeps;
   /** The run section's Test Suites body deps (the hub supplies `eventBus`). */
   suites: Omit<SuiteBodyDeps, "eventBus">;
-  /** The review section's Evidence list body deps. */
-  evidence: EvidenceExplorerBodyDeps;
+  /** The review section's Evidence list body deps (the hub supplies `eventBus`). */
+  evidence: Omit<EvidenceBodyDeps, "eventBus">;
   /** The docked onboarding rail's deps (the hub owns collapse + refresh). */
   onboarding: HubOnboardingDeps;
 }

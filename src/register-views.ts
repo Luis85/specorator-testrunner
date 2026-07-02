@@ -299,10 +299,13 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           onCreate: () => deps.openCreateSuite(),
           navigate: (target) => deps.navigate(target),
         },
+        // The Review section's Evidence body — the Vue-native EvidenceExplorerBody
+        // (ADR-0033 Phase 3). It self-loads and subscribes to the bus, so the hub
+        // supplies its deps MINUS `eventBus` (HubSection injects the hub's bus);
+        // filter/limit are reactive props from the hub store, not deps.
         evidence: {
           runHistory: s.runHistoryService,
           navigate: (target) => deps.navigate(target),
-          refresh: () => undefined,
         },
         // B2 PR3: the docked onboarding rail. Reuses the hero's real init signal
         // and the SAME tour-action flows as the GuidedTourView (dispatched through

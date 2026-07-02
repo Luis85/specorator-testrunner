@@ -15,11 +15,11 @@ import {
 } from "../../navigation/hub-sections";
 import { renderOverviewHeroBody } from "../../views/overview-hero-body";
 import { renderRecentRunsBody } from "../../views/recent-runs-body";
-import { renderEvidenceExplorerBody } from "../../views/evidence-explorer-body";
 import SuiteDashboardBody from "../suites/SuiteDashboardBody.vue";
 import PrdExplorerBody from "../prds/PrdExplorerBody.vue";
 import StoryMapExplorerBody from "../story-maps/StoryMapExplorerBody.vue";
 import UseCaseDashboardBody from "../use-cases/UseCaseDashboardBody.vue";
+import EvidenceExplorerBody from "../evidence/EvidenceExplorerBody.vue";
 
 const deps = inject(HUB_DEPS)!;
 const app = inject(OBSIDIAN_APP)!;
@@ -66,14 +66,12 @@ useEventBus(deps.eventBus, HUB_REFRESH_ON, refresh);
 // render path holds their identity stable across `bodyEmpty` changes, so an
 // emptiness toggle updates the `is-empty` class only and never repaints.
 // A flat one-arm-per-body map — the direct analogue of the hand-rolled
-// HubView.renderBody, whose body-id switch carried the same note.
-// fallow-ignore-next-line complexity
+// HubView.renderBody, whose body-id switch carried the same note. Only the
+// Overview hero + recent-runs remain Imperative-hosted; the rest are Vue-native
+// (Phase 3) and render directly, so their arms are never reached — they only
+// keep the record exhaustive over HubBodyId.
 const bodyPaints = computed<Record<HubBodyId, (el: HTMLElement) => void>>(() => {
   void tick.value;
-  const evidenceFilter = store.evidenceFilter;
-  const evidenceVisibleLimit = store.evidenceVisibleLimit;
-  // The Vue-native bodies (Phase 3) render directly, not via Imperative, so their
-  // arms are never reached — they only keep the record exhaustive over HubBodyId.
   const migrated = (): void => undefined;
   return {
     "kpi-overview": (el) =>
@@ -95,17 +93,7 @@ const bodyPaints = computed<Record<HubBodyId, (el: HTMLElement) => void>>(() => 
     "story-maps": migrated,
     "use-cases": migrated,
     suites: migrated,
-    evidence: (el) =>
-      void renderEvidenceExplorerBody(
-        el,
-        { ...deps.evidence, refresh },
-        {
-          filter: evidenceFilter,
-          visibleLimit: evidenceVisibleLimit,
-          onFilterChange: store.setEvidenceFilter,
-          onLoadOlder: store.loadOlderEvidence,
-        },
-      ),
+    evidence: migrated,
   };
 });
 
@@ -142,6 +130,14 @@ const openLeaf = (content: Extract<HubContentRef, { kind: "leaf" }>): void =>
           :deps="{ ...deps.useCases, eventBus: deps.eventBus }"
           :filter="store.useCaseFilter"
           :clear-filter="store.clearUseCaseFilter"
+        />
+        <EvidenceExplorerBody
+          v-else-if="content.body === 'evidence'"
+          :deps="{ ...deps.evidence, eventBus: deps.eventBus }"
+          :filter="store.evidenceFilter"
+          :visible-limit="store.evidenceVisibleLimit"
+          :on-filter-change="store.setEvidenceFilter"
+          :on-load-older="store.loadOlderEvidence"
         />
         <Imperative
           v-else

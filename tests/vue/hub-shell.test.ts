@@ -23,8 +23,11 @@ vi.mock("../../src/presentation/vue/story-maps/StoryMapExplorerBody.vue", () => 
 // The Run (Suites) and Build (Use Cases) section bodies are now Vue-native
 // (ADR-0033 Phase 3), self-loading only when their /run and /build routes mount
 // — these tests never navigate there, so no mocks are needed for them.
-vi.mock("../../src/presentation/views/evidence-explorer-body", () => ({
-  renderEvidenceExplorerBody: vi.fn(),
+// The Review section's Evidence body is now the Vue-native EvidenceExplorerBody
+// (ADR-0033 Phase 3); the Review route mounts it, so stub it to a no-op render —
+// its own data loading + subscriptions are covered by evidence-explorer-body.test.ts.
+vi.mock("../../src/presentation/vue/evidence/EvidenceExplorerBody.vue", () => ({
+  default: { name: "EvidenceExplorerBody", render: () => null },
 }));
 vi.mock("../../src/presentation/views/onboarding-rail-body", () => ({
   renderOnboardingRailBody: vi.fn(),
