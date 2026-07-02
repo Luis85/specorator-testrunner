@@ -10,14 +10,12 @@ import {
   type HubSectionId,
 } from "../navigation/hub-sections";
 import type { OnboardingRailBodyDeps } from "./onboarding-rail-body";
-import type { OverviewHeroBodyDeps } from "./overview-hero-body";
-import type { RecentRunsBodyDeps } from "./recent-runs-body";
+import type { HeroBodyDeps, RecentRunsBodyDeps } from "../vue/overview/overview-body-deps";
 import type { PrdBodyDeps } from "../vue/prds/prd-body-deps";
 import type { StoryMapBodyDeps } from "../vue/story-maps/story-map-body-deps";
 import type { UseCaseBodyDeps } from "../vue/use-cases/use-case-body-deps";
 import type { EvidenceBodyDeps } from "../vue/evidence/evidence-body-deps";
 import type { SuiteBodyDeps } from "../vue/suites/suite-body-deps";
-import { OBSIDIAN_APP } from "../vue/obsidian-app";
 import { mountVueView, type MountedVueView } from "../vue/mount-vue-view";
 import { PersistedLeafState } from "../vue/persisted-leaf-state";
 import { HUB_DEPS } from "../vue/hub/hub-deps";
@@ -27,18 +25,18 @@ import HubSection from "../vue/hub/HubSection.vue";
 export const HUB_VIEW_TYPE = "e2e-test-hub-hub";
 
 /**
- * The Overview hero body's deps MINUS the `navigate`/`refresh` the hub OWNS: a KPI
- * funnel tile switches the rail section (to Build), so the hub supplies `navigate`;
- * `refresh` is the hub's active-section repaint. The rest come from the root.
+ * The Overview hero body's deps MINUS the `navigate` the hub OWNS (a KPI funnel
+ * tile switches to the Build section carrying its filter) and the `eventBus` the
+ * hub supplies. The rest come from the composition root.
  */
-type HubHeroDeps = Omit<OverviewHeroBodyDeps, "navigate" | "refresh">;
+type HubHeroDeps = Omit<HeroBodyDeps, "navigate" | "eventBus">;
 
 /**
  * The Overview recent-runs body's deps MINUS the section-navigation
  * `openEvidenceExplorer` the hub OWNS (it switches to the Review section) and the
- * hub-owned `refresh`.
+ * `eventBus` the hub supplies.
  */
-type HubRecentRunsDeps = Omit<RecentRunsBodyDeps, "openEvidenceExplorer" | "refresh">;
+type HubRecentRunsDeps = Omit<RecentRunsBodyDeps, "openEvidenceExplorer" | "eventBus">;
 
 /**
  * The Use Cases body's deps MINUS `eventBus` the hub supplies. The `filter`/
@@ -167,7 +165,6 @@ export class HubView extends ItemView {
     this.router = router;
     this.mounted = mountVueView(this.contentEl, HubShell, (app) => {
       app.provide(HUB_DEPS, this.deps);
-      app.provide(OBSIDIAN_APP, this.app);
       app.use(router);
     });
     await router.isReady();

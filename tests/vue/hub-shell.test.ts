@@ -1,13 +1,16 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 
-// The hosted section bodies + onboarding rail are the existing DOM writers,
-// reused via Imperative. Mock them to no-ops so the shell's routing/rail can be
-// tested without their data loading or Obsidian DOM.
-vi.mock("../../src/presentation/views/overview-hero-body", () => ({
-  renderOverviewHeroBody: vi.fn(),
+// Every section body is a Vue-native component (ADR-0033 Phase 3) that self-loads
+// + subscribes; stub the ones a test's routes actually mount to a no-op render so
+// the shell's routing/rail can be tested without their data loading. The Overview
+// route mounts the hero + recent-runs bodies; each has its own component test.
+vi.mock("../../src/presentation/vue/overview/OverviewHeroBody.vue", () => ({
+  default: { name: "OverviewHeroBody", render: () => null },
 }));
-vi.mock("../../src/presentation/views/recent-runs-body", () => ({ renderRecentRunsBody: vi.fn() }));
+vi.mock("../../src/presentation/vue/overview/RecentRunsBody.vue", () => ({
+  default: { name: "RecentRunsBody", render: () => null },
+}));
 // The Plan section's PRDs body is now the Vue-native PrdExplorerBody (ADR-0033
 // Phase 3); the Plan route mounts it, so stub it to a no-op render — its own
 // data loading + subscriptions are covered by prd-explorer-body.test.ts.
@@ -120,20 +123,5 @@ describe("HubShell", () => {
     await flushPromises();
     expect(onboarding.mock.calls.length).toBeLessThanOrEqual(3);
     onboarding.mockReset();
-  });
-
-  it("does not carry a section's empty-flag onto the next section's bodies", async () => {
-    // Overview's mocked hero/recent-runs painters render nothing, so Imperative
-    // reports empty and their slots collapse (is-empty).
-    const { wrapper, router } = await mountHub("overview");
-    expect(wrapper.findAll(".spec-hub-section-body.is-empty").length).toBeGreaterThan(0);
-
-    // Plan reuses the same HubSection instance; its bodies (prd-roadmap,
-    // story-maps) must NOT inherit Overview's stale per-index empty flags — the
-    // flags are keyed by body id, so nothing carries over and the Story Maps
-    // section is not hidden.
-    await router.push("/plan");
-    await flushPromises();
-    expect(wrapper.findAll(".spec-hub-section-body.is-empty")).toHaveLength(0);
   });
 });
