@@ -93,8 +93,8 @@ export interface HubViewDeps {
  * a route, and the router's `afterEach` records it with `requestSaveLayout()`; on
  * restore `setState()` pre-sets the field and drives the router once the app is up.
  * The hub's ephemeral view-state (Evidence/Use Cases filters, onboarding collapse)
- * lives in a per-app Pinia store; the hosted section bodies are the existing DOM
- * writers, reused via the `Imperative` wrapper (their Vue-native rewrite is later).
+ * lives in a per-app Pinia store; every hosted section body + the onboarding rail
+ * is a Vue-native component (ADR-0033 Phase 3) that self-loads and self-subscribes.
  */
 export class HubView extends ItemView {
   // Persisted active section — the requestSaveLayout path (ADR-0033), since the

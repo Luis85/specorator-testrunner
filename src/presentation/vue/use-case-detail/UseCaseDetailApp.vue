@@ -3,17 +3,12 @@ import { inject, ref, watch } from "vue";
 import { USE_CASE_DETAIL_DEPS, USE_CASE_DETAIL_ID } from "./use-case-detail-deps";
 import { OBSIDIAN_APP } from "../obsidian-app";
 import { useEventBus } from "../use-event-bus";
-import Imperative from "../Imperative.vue";
 import ChecklistRows from "../ChecklistRows.vue";
 import FeatureRow from "./FeatureRow.vue";
+import LoopRailBar from "./LoopRailBar.vue";
 import { checklistRow, type ChecklistRow } from "../../views/checklist";
-import { renderEmptyState, renderLoadError, openOrNotice } from "../../views/modal-helpers";
-import {
-  projectLoopRail,
-  renderLoopRail,
-  type LoopRail,
-  type LoopRailAction,
-} from "../../views/loop-rail-rows";
+import { openOrNotice } from "../../views/modal-helpers";
+import { projectLoopRail, type LoopRail, type LoopRailAction } from "../../views/loop-rail-rows";
 import {
   generateStepDefinitionsOutcome,
   prdBreadcrumbLabel,
@@ -167,6 +162,13 @@ const { refresh } = useEventBus(deps.eventBus, REFRESH_ON, reload);
 // serialized scheduler; the ref already held the new id before onOpen on restore.
 watch(useCaseId, () => void refresh());
 
+// The loop rail's action button fires only in the `loaded` state, so re-narrow
+// from `state` here (a template inline arrow would lose the union narrowing —
+// vue-tsc; the same reason the paint factories were script-level).
+const onLoopAction = (action: Exclude<LoopRailAction, null>): void => {
+  if (state.value.kind === "loaded") runLoopAction(action, state.value.model);
+};
+
 // Loop-rail next-step action → the SAME services/flows the per-row buttons use.
 // A flat 4-arm dispatch (the action MODEL is tested in loop-rail-rows.test.ts);
 // each arm just wires an existing flow, so the cyclomatic count is structural.
@@ -241,40 +243,6 @@ const edit = (model: LoadedModel): void => {
   }).open();
 };
 const navigateArtifact = (id: string): void => deps.navigate(artifactTarget(id));
-
-// Paint factories for the reused DOM writers. Returning the closure from a script
-// function (rather than an inline arrow in the template) keeps the `state` union
-// narrowing intact: the template passes the already-narrowed value in, so the
-// closure never re-widens it (vue-tsc).
-const errorPaint =
-  (message: string) =>
-  (el: HTMLElement): void =>
-    renderLoadError(
-      el,
-      `Could not load Use Case: ${message}`,
-      "Retry loading the Use Case",
-      () => void refresh(),
-    );
-const loopRailPaint =
-  (model: LoadedModel) =>
-  (el: HTMLElement): void =>
-    renderLoopRail(el, model.loopRail, (action) => runLoopAction(action, model));
-const featuresErrorPaint =
-  (message: string) =>
-  (el: HTMLElement): void =>
-    renderLoadError(
-      el,
-      `Could not load Feature Specifications: ${message}`,
-      "Retry loading the Feature Specifications",
-      () => void refresh(),
-    );
-const emptyFeaturesPaint =
-  () =>
-  (el: HTMLElement): void =>
-    renderEmptyState(
-      el,
-      "No Feature Specifications yet. Generate one to make this Use Case executable.",
-    );
 </script>
 
 <template>
@@ -283,7 +251,12 @@ const emptyFeaturesPaint =
 
     <p v-else-if="state.kind === 'loading'" class="spec-empty">Loading…</p>
 
-    <Imperative v-else-if="state.kind === 'error'" :paint="errorPaint(state.message)" />
+    <template v-else-if="state.kind === 'error'">
+      <p>Could not load Use Case: {{ state.message }}</p>
+      <button class="mod-cta" aria-label="Retry loading the Use Case" @click="refresh">
+        Retry
+      </button>
+    </template>
 
     <template v-else-if="state.kind === 'not-found'">
       <p>Use Case {{ state.id }} was not found. It may have been renamed or deleted.</p>
@@ -294,7 +267,7 @@ const emptyFeaturesPaint =
 
     <template v-else-if="state.kind === 'loaded'">
       <div>
-        <Imperative :paint="loopRailPaint(state.model)" />
+        <LoopRailBar :rail="state.model.loopRail" @action="onLoopAction" />
         <div class="e2e-test-hub-uc-detail-feature-result" aria-live="polite">
           <ChecklistRows v-if="loopResult" :rows="loopResult" />
         </div>
@@ -382,14 +355,22 @@ const emptyFeaturesPaint =
 
       <div class="e2e-test-hub-uc-detail-features">
         <h3>Feature Specifications</h3>
-        <Imperative
-          v-if="state.model.featuresError"
-          :paint="featuresErrorPaint(state.model.featuresError)"
-        />
-        <Imperative
+        <template v-if="state.model.featuresError">
+          <p>Could not load Feature Specifications: {{ state.model.featuresError }}</p>
+          <button
+            class="mod-cta"
+            aria-label="Retry loading the Feature Specifications"
+            @click="refresh"
+          >
+            Retry
+          </button>
+        </template>
+        <p
           v-else-if="state.model.featureRows && state.model.featureRows.length === 0"
-          :paint="emptyFeaturesPaint()"
-        />
+          class="spec-empty"
+        >
+          No Feature Specifications yet. Generate one to make this Use Case executable.
+        </p>
         <FeatureRow v-else v-for="row in state.model.featureRows" :key="row.path" :row="row" />
       </div>
     </template>
