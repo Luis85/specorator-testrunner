@@ -32,8 +32,11 @@ vi.mock("../../src/presentation/vue/story-maps/StoryMapExplorerBody.vue", () => 
 vi.mock("../../src/presentation/vue/evidence/EvidenceExplorerBody.vue", () => ({
   default: { name: "EvidenceExplorerBody", render: () => null },
 }));
-vi.mock("../../src/presentation/views/onboarding-rail-body", () => ({
-  renderOnboardingRailBody: vi.fn(),
+// The onboarding rail is now the Vue-native OnboardingRailBody (ADR-0033 Phase 3),
+// always mounted by the shell; stub it to a no-op render — its own loading +
+// subscriptions are covered by onboarding-rail-body.test.ts.
+vi.mock("../../src/presentation/vue/onboarding/OnboardingRailBody.vue", () => ({
+  default: { name: "OnboardingRailBody", render: () => null },
 }));
 
 import { flushPromises, mount } from "@vue/test-utils";
@@ -44,7 +47,6 @@ import HubSection from "../../src/presentation/vue/hub/HubSection.vue";
 import { HUB_DEPS } from "../../src/presentation/vue/hub/hub-deps";
 import { OBSIDIAN_APP } from "../../src/presentation/vue/obsidian-app";
 import { InMemoryEventBus } from "../../src/shared/event-bus/event-bus";
-import { renderOnboardingRailBody } from "../../src/presentation/views/onboarding-rail-body";
 import type { HubViewDeps } from "../../src/presentation/views/hub-view";
 
 const makeDeps = (): HubViewDeps =>
@@ -101,27 +103,5 @@ describe("HubShell", () => {
     await flushPromises();
     expect(router.currentRoute.value.path).toBe("/plan");
     expect(wrapper.get(".spec-hub-rail-node.is-active").text()).toBe("Plan");
-  });
-
-  it("does not self-trigger a repaint loop when an async painter fills after emptiness", async () => {
-    // The onboarding painter renders nothing synchronously, then fills after a
-    // microtask (empty → content). With the paint closure rebuilt on every
-    // render, the emptiness event would hand Imperative a fresh closure and loop
-    // repaints unboundedly (starving the macrotask queue → hang). A stable
-    // computed paint holds identity, so painting is bounded: the initial mount
-    // plus the hub's one initial useEventBus refresh — never a runaway.
-    const onboarding = vi.mocked(renderOnboardingRailBody);
-    onboarding.mockClear();
-    onboarding.mockImplementation(
-      (el: HTMLElement): Promise<void> =>
-        // Synchronously empty; fills after a microtask (the empty → content toggle).
-        Promise.resolve().then(() => {
-          el.appendChild(document.createElement("div"));
-        }),
-    );
-    await mountHub("overview");
-    await flushPromises();
-    expect(onboarding.mock.calls.length).toBeLessThanOrEqual(3);
-    onboarding.mockReset();
   });
 });

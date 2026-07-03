@@ -9,13 +9,13 @@ import {
   resolveActiveSection,
   type HubSectionId,
 } from "../navigation/hub-sections";
-import type { OnboardingRailBodyDeps } from "./onboarding-rail-body";
 import type { HeroBodyDeps, RecentRunsBodyDeps } from "../vue/overview/overview-body-deps";
 import type { PrdBodyDeps } from "../vue/prds/prd-body-deps";
 import type { StoryMapBodyDeps } from "../vue/story-maps/story-map-body-deps";
 import type { UseCaseBodyDeps } from "../vue/use-cases/use-case-body-deps";
 import type { EvidenceBodyDeps } from "../vue/evidence/evidence-body-deps";
 import type { SuiteBodyDeps } from "../vue/suites/suite-body-deps";
+import type { OnboardingBodyDeps } from "../vue/onboarding/onboarding-body-deps";
 import { mountVueView, type MountedVueView } from "../vue/mount-vue-view";
 import { PersistedLeafState } from "../vue/persisted-leaf-state";
 import { HUB_DEPS } from "../vue/hub/hub-deps";
@@ -47,14 +47,11 @@ type HubRecentRunsDeps = Omit<RecentRunsBodyDeps, "openEvidenceExplorer" | "even
 type HubUseCasesDeps = Omit<UseCaseBodyDeps, "eventBus">;
 
 /**
- * The docked onboarding rail's deps MINUS the `collapsed`/`onToggleCollapsed`/`refresh`
- * the hub OWNS (B2 PR3): the rail's collapse is hub-held ephemeral chrome (the Pinia
- * hub store), and the `refresh` is the hub's repaint.
+ * The docked onboarding rail's deps MINUS the `eventBus` the hub supplies. The
+ * `collapsed`/`onToggleCollapsed` chrome the hub OWNS (B2 PR3) is NOT a dep: it is
+ * the Vue component's reactive prop pair, fed from the Pinia hub store in HubShell.
  */
-type HubOnboardingDeps = Omit<
-  OnboardingRailBodyDeps,
-  "collapsed" | "onToggleCollapsed" | "refresh"
->;
+type HubOnboardingDeps = Omit<OnboardingBodyDeps, "eventBus">;
 
 /**
  * Everything the hub leaf renders: the union of the hosted bodies' deps (each

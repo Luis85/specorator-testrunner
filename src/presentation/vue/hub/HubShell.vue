@@ -1,17 +1,15 @@
 <script setup lang="ts">
-import { computed, inject, ref } from "vue";
+import { computed, inject } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import Icon from "../Icon.vue";
-import Imperative from "../Imperative.vue";
-import { useEventBus } from "../use-event-bus";
-import { HUB_DEPS, HUB_REFRESH_ON } from "./hub-deps";
+import OnboardingRailBody from "../onboarding/OnboardingRailBody.vue";
+import { HUB_DEPS } from "./hub-deps";
 import { useHubStore } from "./hub-store";
 import {
   projectHubRail,
   resolveActiveSection,
   type HubSectionId,
 } from "../../navigation/hub-sections";
-import { renderOnboardingRailBody } from "../../views/onboarding-rail-body";
 
 const deps = inject(HUB_DEPS)!;
 const store = useHubStore();
@@ -23,37 +21,7 @@ const section = computed(() =>
 );
 const rail = computed(() => projectHubRail(section.value));
 
-// The docked onboarding rail persists across section switches (a sibling of the
-// content panel), so it lives here on the shell and repaints on the same events.
-const tick = ref(0);
-const refresh = (): void => {
-  tick.value += 1;
-};
-useEventBus(deps.eventBus, HUB_REFRESH_ON, refresh);
-
 const switchSection = (id: HubSectionId): void => void router.push(`/${id}`);
-
-// The docked rail collapses (its `:empty`/`is-empty` rule) when the painter
-// renders nothing — the hidden/dismissed rail. Imperative reports that.
-const onboardingEmpty = ref(false);
-
-// A COMPUTED over ONLY the real repaint inputs (`tick` + the collapse flag) — NOT
-// `onboardingEmpty`. Imperative repaints on `paint` identity change; rebuilding
-// the closure on every render would let the rail's own emptiness event (empty →
-// content → empty) hand it a fresh closure each time and self-trigger an endless
-// repaint loop (P1). Holding the identity stable across `onboardingEmpty` changes
-// means an emptiness toggle updates the `is-empty` class only, never repaints.
-const onboardingPaint = computed<(el: HTMLElement) => void>(() => {
-  void tick.value;
-  const collapsed = store.onboardingCollapsed;
-  return (el) =>
-    void renderOnboardingRailBody(el, {
-      ...deps.onboarding,
-      collapsed,
-      onToggleCollapsed: store.toggleOnboardingCollapsed,
-      refresh,
-    });
-});
 </script>
 
 <template>
@@ -78,8 +46,15 @@ const onboardingPaint = computed<(el: HTMLElement) => void>(() => {
       </nav>
       <div class="spec-hub-panel"><RouterView /></div>
     </div>
-    <div class="spec-hub-onboarding-rail" :class="{ 'is-empty': onboardingEmpty }">
-      <Imperative :paint="onboardingPaint" @empty="onboardingEmpty = $event" />
+    <!-- The docked onboarding rail: a Vue-native body that self-loads + subscribes
+         and collapses to nothing (a `hidden` projection → root v-if comment) via
+         the slot's `:empty` rule when there's no rail to show. -->
+    <div class="spec-hub-onboarding-rail">
+      <OnboardingRailBody
+        :deps="{ ...deps.onboarding, eventBus: deps.eventBus }"
+        :collapsed="store.onboardingCollapsed"
+        :on-toggle-collapsed="store.toggleOnboardingCollapsed"
+      />
     </div>
   </div>
 </template>
