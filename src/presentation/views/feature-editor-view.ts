@@ -84,10 +84,15 @@ export class FeatureEditorView extends TextFileView {
     void this.controller.loadAids();
   }
 
-  // Obsidian lifecycle hook (called by the workspace when the leaf detaches);
-  // fallow can't see the framework invoking it, so it reads as unused here.
-  // fallow-ignore-next-line unused-class-member
+  // Obsidian lifecycle hook (called by the workspace when the leaf detaches).
   async onClose(): Promise<void> {
+    // Flush any pending debounced save via the base TextFileView close path
+    // (FileView.onClose → onUnloadFile → save) BEFORE tearing down the Vue app,
+    // so closing the leaf — or a workspace shutdown — between an edit and the
+    // debounced requestSave never drops the latest edit. save() reads
+    // getViewData() → controller.data, which holds the edit regardless of mount
+    // state (Codex P1).
+    await super.onClose();
     this.mounted?.unmount();
     this.mounted = null;
   }
