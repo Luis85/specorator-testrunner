@@ -133,6 +133,13 @@ export function createFeatureEditorController(
     // toRaw: serialise the plain spec, not the reactive proxy.
     data.value = serialiseFeature(toRaw(spec.value));
     hooks.requestSave();
+    // A structured edit invalidates any showing / in-flight ✓ Validate result:
+    // the imperative view rebuilt the whole editor on every commit, detaching the
+    // result area so a late validateFeatureOutcome write was dropped (its
+    // isConnected guard) and a completed result never lingered under edited
+    // content. clearValidate() reproduces both — it bumps the generation (dropping
+    // the in-flight write) and nulls the result.
+    clearValidate();
   };
 
   const toStructured = (): void => {

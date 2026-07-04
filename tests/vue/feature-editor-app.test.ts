@@ -71,6 +71,33 @@ function buttonByText(wrapper: ReturnType<typeof mount>, text: string): DOMWrapp
   return match;
 }
 
+/** Deps whose SpecificationService validates with the given (or a valid) mock. */
+function validatingDeps(
+  validate = vi.fn().mockResolvedValue({ ok: true, value: { valid: true, errors: [] } }),
+): FeatureEditorDeps {
+  return makeDeps({
+    specifications: {
+      announceUpdated: vi.fn().mockResolvedValue(undefined),
+      listStepPatterns: vi.fn().mockResolvedValue([]),
+      validate,
+    },
+  });
+}
+
+const hasValidateResult = (wrapper: ReturnType<typeof mount>): boolean =>
+  wrapper.find(".e2e-test-hub-feature-editor-validate-result").exists();
+
+async function clickValidate(wrapper: ReturnType<typeof mount>): Promise<void> {
+  await wrapper.get('button[aria-label="Validate this feature"]').trigger("click");
+  await flushPromises();
+}
+
+async function editFeatureName(wrapper: ReturnType<typeof mount>): Promise<void> {
+  const name = wrapper.get('input[aria-label="Feature name"]');
+  (name.element as HTMLInputElement).value = "Renamed";
+  await name.trigger("change");
+}
+
 interface Harness {
   ctrl: FeatureEditorController;
   requestSave: ReturnType<typeof vi.fn>;
@@ -180,17 +207,40 @@ describe("FeatureEditorApp", () => {
   });
 
   it("renders the inline validate outcome after ✓ Validate", async () => {
-    const deps = makeDeps({
-      specifications: {
-        announceUpdated: vi.fn().mockResolvedValue(undefined),
-        listStepPatterns: vi.fn().mockResolvedValue([]),
-        validate: vi.fn().mockResolvedValue({ ok: true, value: { valid: true, errors: [] } }),
-      },
-    });
+    const deps = validatingDeps();
     const { wrapper } = mountEditor(FEATURE, deps);
-    await wrapper.get('button[aria-label="Validate this feature"]').trigger("click");
-    await flushPromises();
-    expect(wrapper.find(".e2e-test-hub-feature-editor-validate-result").exists()).toBe(true);
+    await clickValidate(wrapper);
+    expect(hasValidateResult(wrapper)).toBe(true);
     expect(deps.specifications.validate).toHaveBeenCalled();
+  });
+
+  it("clears a showing validate result once a structured field is edited", async () => {
+    const { wrapper } = mountEditor(FEATURE, validatingDeps());
+    await clickValidate(wrapper);
+    expect(hasValidateResult(wrapper)).toBe(true);
+
+    // Editing any structured field must retire the now-stale result — the
+    // imperative view detached it by rebuilding the editor on every commit.
+    await editFeatureName(wrapper);
+    expect(hasValidateResult(wrapper)).toBe(false);
+  });
+
+  it("drops an in-flight validate result when a structured edit lands mid-flight", async () => {
+    let resolveValidate: (result: unknown) => void = () => {};
+    const validate = vi.fn().mockReturnValue(
+      new Promise((resolve) => {
+        resolveValidate = resolve;
+      }),
+    );
+    const { wrapper } = mountEditor(FEATURE, validatingDeps(validate));
+    await clickValidate(wrapper); // validate is now awaiting (pending row showing)
+
+    // A structured edit lands before validation resolves; its result is now for
+    // pre-edit content and must be dropped, not rendered under the edited UI.
+    await editFeatureName(wrapper);
+
+    resolveValidate({ ok: true, value: { valid: true, errors: [] } });
+    await flushPromises();
+    expect(hasValidateResult(wrapper)).toBe(false);
   });
 });
