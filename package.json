@@ -7,6 +7,10 @@
   "engines": {
     "node": ">=20"
   },
+  "allowScripts": {
+    "esbuild": true,
+    "vue-demi": true
+  },
   "scripts": {
     "build": "node esbuild.config.mjs production",
     "test-build": "node scripts/test-build.mjs",
