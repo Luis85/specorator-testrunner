@@ -1,81 +1,47 @@
-import { Notice, setIcon, TextFileView, type WorkspaceLeaf } from "obsidian";
+import { TextFileView, type WorkspaceLeaf } from "obsidian";
 
-import {
-  parseFeature,
-  roundTripsLosslessly,
-  serialiseFeature,
-} from "../../application/content/gherkin";
-import type { StepDefinitionPattern } from "../../application/content/step-definitions";
-import type { FeatureInsightService } from "../../application/services/feature-insight-service";
-import type { SpecificationService } from "../../application/services/specification-service";
-import type { FeatureSpecification } from "../../domain/entities/specification";
-import type { VaultPath } from "../../domain/value-objects/identifiers";
+import { parseFeature } from "../../application/content/gherkin";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
-import type { RunLauncher } from "../run/run-launcher";
-import { renderChecklist } from "./checklist";
-import { captureFocus, restoreFocus } from "./focus-restore";
-import { validateFeatureOutcome } from "./use-case-detail-rows";
+import FeatureEditorApp from "../vue/feature-editor/FeatureEditorApp.vue";
 import {
-  asDescriptionLines,
-  newScenario,
-  newStep,
-  stepSuggestions,
-  validationDisplayEntries,
-} from "./feature-editor-format";
-import {
-  renderStepList,
-  renderTagEditor,
-  STEP_DATALIST_ID,
-  TAG_DATALIST_ID,
-  type StructuredEditorCtx,
-} from "./feature-editor-structured";
-import { renderScenarioCard } from "./feature-editor-scenario";
+  createFeatureEditorController,
+  FEATURE_EDITOR,
+  type FeatureEditorController,
+  type FeatureEditorDeps,
+} from "../vue/feature-editor/feature-editor-controller";
+import { mountVueView, type MountedVueView } from "../vue/mount-vue-view";
 
 export const FEATURE_EDITOR_VIEW_TYPE = "e2e-test-hub-feature-editor";
 
-export interface FeatureEditorDeps {
-  specifications: Pick<SpecificationService, "announceUpdated" | "listStepPatterns" | "validate">;
-  featureInsight: Pick<FeatureInsightService, "listKnownTags">;
-  // WS-C1 (03-§3.1): the editor is where authoring ends, so it must be where
-  // running begins. ▶ Run launches a Feature-scoped run through the SAME shared
-  // launcher every other surface uses (no run logic is forked).
-  runLauncher: Pick<RunLauncher, "launch">;
-}
+export type { FeatureEditorDeps } from "../vue/feature-editor/feature-editor-controller";
 
 /**
- * Structured editor for `.feature` files — the registered file handler for
- * the extension. The RAW TEXT is the single source of truth (`this.data`,
- * TextFileView's load/save lifecycle); structured mode is a projection that
- * mutates an in-memory FeatureSpecification, re-serialises on every committed
- * edit, and debounce-saves via requestSave(). Files the extended parser
- * cannot reproduce losslessly (comments, Rule: blocks, exotic spacing) open
- * in raw-text mode behind roundTripsLosslessly — the structured editor can
- * never destroy content it does not model.
+ * Structured editor for `.feature` files — the registered file handler for the
+ * extension. The RAW TEXT is the single source of truth (`this.data`,
+ * TextFileView's load/save lifecycle); structured mode is a projection the Vue
+ * editor mutates in memory and re-serialises on every committed edit.
  *
- * The scenario/step/examples sub-renderers live in feature-editor-structured.ts
- * (size budget); they drive this view through {@link structuredCtx}.
+ * Vue-migrated (ADR-0033 Phase 4): this class is now a thin Obsidian shell that
+ * mounts {@link FeatureEditorApp} into `contentEl`. It owns the
+ * {@link FeatureEditorController} — the reactive core — and wires the two
+ * directions of the TextFileView lifecycle to it: `setViewData`/`clear` push the
+ * loaded text into the controller, while the controller's hooks call back into
+ * `requestSave`/`save`/`file.path`. Because the controller binds the structured
+ * UI to the reactive spec, a committed edit updates `data` for saving WITHOUT
+ * rebuilding the inputs — Vue preserves the DOM and caret, so the whole
+ * focus-capture/restore machinery is gone.
  */
 export class FeatureEditorView extends TextFileView {
-  private mode: "structured" | "raw" = "structured";
-  private specification: FeatureSpecification | null = null;
-  /** Scenario names as last loaded from disk — the rename-advisory baseline (US-056). */
-  private baselineScenarioNames: string[] | null = null;
-  private stepPatterns: StepDefinitionPattern[] = [];
-  private knownTags: string[] = [];
-  private validationEl: HTMLElement | null = null;
-  // Handed to the extracted structured sub-renderers so they drive this view's
-  // single commit path (serialise → debounce-save → re-render) and read the
-  // live step-definition patterns for the per-row "missing step" flag.
-  private readonly structuredCtx: StructuredEditorCtx = {
-    commit: () => this.commit(),
-    stepPatterns: () => this.stepPatterns,
-  };
+  private readonly controller: FeatureEditorController;
+  private mounted: MountedVueView | null = null;
 
-  constructor(
-    leaf: WorkspaceLeaf,
-    private readonly deps: FeatureEditorDeps,
-  ) {
+  constructor(leaf: WorkspaceLeaf, deps: FeatureEditorDeps) {
     super(leaf);
+    this.controller = createFeatureEditorController(deps, {
+      requestSave: () => this.requestSave(),
+      save: () => this.save(),
+      filePath: () => this.file?.path ?? null,
+    });
   }
 
   getViewType(): string {
@@ -95,336 +61,47 @@ export class FeatureEditorView extends TextFileView {
   }
 
   getViewData(): string {
-    return this.data;
+    return this.controller.data.value;
   }
 
   setViewData(data: string, _clear: boolean): void {
-    this.data = data;
-    // Re-project on every load — an external change (sync, git) must rebuild
-    // the structured UI rather than leave a stale in-memory spec.
-    this.specification = this.project();
-    this.baselineScenarioNames = this.specification
-      ? this.specification.scenarios.map((scenario) => scenario.name)
-      : null;
-    if (this.specification === null) this.mode = "raw";
-    this.render();
+    // Re-project on every load — an external change (sync, git) rebuilds the
+    // structured UI rather than leaving a stale in-memory spec.
+    this.controller.setData(data);
   }
 
   clear(): void {
-    this.data = "";
-    this.specification = null;
+    this.controller.setData("");
   }
 
   async onOpen(): Promise<void> {
     await super.onOpen();
+    this.mounted = mountVueView(this.contentEl, FeatureEditorApp, (app) => {
+      app.provide(FEATURE_EDITOR, this.controller);
+    });
     // Authoring aids load once per view; they degrade silently on failure
     // (no suggestions, no flags) and never block editing.
-    void this.loadAids();
+    void this.controller.loadAids();
+  }
+
+  // Obsidian lifecycle hook (called by the workspace when the leaf detaches).
+  async onClose(): Promise<void> {
+    // Flush any pending debounced save via the base TextFileView close path
+    // (FileView.onClose → onUnloadFile → save) BEFORE tearing down the Vue app,
+    // so closing the leaf — or a workspace shutdown — between an edit and the
+    // debounced requestSave never drops the latest edit. save() reads
+    // getViewData() → controller.data, which holds the edit regardless of mount
+    // state (Codex P1).
+    await super.onClose();
+    this.mounted?.unmount();
+    this.mounted = null;
   }
 
   /** Announce the save so dashboards/explorers refresh (spec Part 4). */
   async save(clear = false): Promise<void> {
     await super.save(clear);
     if (!this.file) return;
-    const parsed = parseFeature(this.data, unsafeVaultPath(this.file.path));
-    if (parsed !== null) await this.deps.specifications.announceUpdated(parsed);
-  }
-
-  // --- projection ----------------------------------------------------------
-
-  /** The spec to edit, or null when the file can't be projected losslessly. */
-  private project(): FeatureSpecification | null {
-    if (!this.file) return null;
-    const path = unsafeVaultPath(this.file.path);
-    if (!roundTripsLosslessly(this.data, path)) return null;
-    return parseFeature(this.data, path);
-  }
-
-  /**
-   * Serialises the working spec, schedules a debounced save, and re-renders.
-   * Re-rendering is always safe (TD-004): focus/caret are captured by
-   * `data-focus-key` and restored after the rebuild, so call sites no longer
-   * classify their change as structural vs field-level.
-   */
-  private commit(): void {
-    if (!this.specification) return;
-    this.data = serialiseFeature(this.specification);
-    this.requestSave();
-    // `activeDocument` (not the global `document`) keeps focus capture correct
-    // when the editor is torn out into an Obsidian popout window.
-    const snapshot = captureFocus(this.contentEl, activeDocument.activeElement);
-    this.render();
-    restoreFocus(this.contentEl, snapshot);
-  }
-
-  private async loadAids(): Promise<void> {
-    const [patterns, tags] = await Promise.all([
-      this.deps.specifications.listStepPatterns(),
-      this.deps.featureInsight.listKnownTags(),
-    ]);
-    this.stepPatterns = patterns;
-    if (tags.ok) this.knownTags = tags.value;
-    // A full render would rebuild every input from the model, discarding any
-    // focused-but-uncommitted edit (fields commit on change/blur). When the
-    // user is already typing, fill the datalists in place instead — the
-    // missing-step flags re-evaluate per row on the next change anyway.
-    if (this.contentEl.querySelector("input:focus, textarea:focus, select:focus") === null) {
-      this.render();
-      return;
-    }
-    this.populateDatalists();
-  }
-
-  /** (Re)fills the shared autocomplete datalists without touching the DOM around them. */
-  private populateDatalists(): void {
-    this.fillDatalist(STEP_DATALIST_ID, stepSuggestions(this.stepPatterns));
-    this.fillDatalist(TAG_DATALIST_ID, this.knownTags);
-  }
-
-  /** Replaces one datalist's `<option>`s in place; a no-op if it isn't mounted. */
-  private fillDatalist(id: string, values: readonly string[]): void {
-    const list = this.contentEl.querySelector<HTMLElement>(`#${id}`);
-    if (!list) return;
-    list.empty();
-    for (const value of values) list.createEl("option", { attr: { value } });
-  }
-
-  // --- rendering -----------------------------------------------------------
-
-  private render(): void {
-    const root = this.contentEl;
-    root.empty();
-    root.addClass("e2e-test-hub-feature-editor");
-    this.renderToolbar(root);
-    if (this.mode === "structured" && this.specification !== null) {
-      this.renderStructured(root, this.specification);
-    } else {
-      this.renderRaw(root);
-    }
-  }
-
-  private renderToolbar(root: HTMLElement): void {
-    const bar = root.createDiv({ cls: "e2e-test-hub-feature-editor-toolbar" });
-    const structuredActive = this.mode === "structured" && this.specification !== null;
-    const make = (label: string, action: string, active: boolean): HTMLButtonElement =>
-      bar.createEl("button", {
-        text: label,
-        ...(active ? { cls: "mod-cta" } : {}),
-        attr: { "aria-pressed": String(active), "data-focus-key": `toolbar:${action}` },
-      });
-    make("Structured", "structured", structuredActive).addEventListener("click", () => {
-      const spec = this.project();
-      if (spec === null) {
-        new Notice(
-          "This file contains Gherkin the structured editor can't preserve " +
-            "(e.g. comments or Rule: blocks); keep editing it as raw text.",
-          8000,
-        );
-        return;
-      }
-      this.specification = spec;
-      this.mode = "structured";
-      this.render();
-    });
-    make("Raw text", "raw", !structuredActive).addEventListener("click", () => {
-      this.mode = "raw";
-      this.render();
-    });
-
-    // WS-C1 forward affordances: ▶ Run (this feature) and ✓ Validate live in the
-    // toolbar so the loop flows from authoring straight into running, without a
-    // hop back to the detail view or an explorer. Both reuse existing paths — the
-    // shared run launcher and the SpecificationService.validate the detail view
-    // calls — so no run/validate logic is duplicated here.
-    const forward = bar.createDiv({ cls: "e2e-test-hub-feature-editor-toolbar-forward" });
-    const run = forward.createEl("button", {
-      cls: "mod-cta",
-      attr: { "aria-label": "Run this feature", "data-focus-key": "toolbar:run" },
-    });
-    // Lucide iconography (03-§3.7) over a glyph in the label: ▶ play / ✓ check.
-    setIcon(run.createSpan({ cls: "e2e-test-hub-feature-editor-toolbar-icon" }), "play");
-    run.createSpan({ text: "Run" });
-    run.addEventListener("click", () => void this.runFeature());
-    const validate = forward.createEl("button", {
-      attr: { "aria-label": "Validate this feature", "data-focus-key": "toolbar:validate" },
-    });
-    setIcon(validate.createSpan({ cls: "e2e-test-hub-feature-editor-toolbar-icon" }), "check");
-    validate.createSpan({ text: "Validate" });
-    validate.addEventListener("click", () => void this.validateFeature());
-  }
-
-  /** Launches a Feature-scoped run for the open file through the shared launcher. */
-  private async runFeature(): Promise<void> {
-    if (!this.file) {
-      new Notice("Open a .feature file before running it.");
-      return;
-    }
-    // Flush the debounced write FIRST: the runner snapshots and executes the
-    // `.feature` from disk, so a run fired right after an edit/blur (before the
-    // debounced `requestSave` lands) would otherwise execute stale Gherkin while
-    // the editor shows the new content (Codex review).
-    await this.save();
-    await this.deps.runLauncher.launch({ scope: "feature", target: this.file.path });
-  }
-
-  /**
-   * Validates the open Feature and renders the outcome inline using the shared
-   * checklist vocabulary (✓/✗/!), reusing the detail view's validate
-   * orchestration so the editor and detail view report identically.
-   */
-  private async validateFeature(): Promise<void> {
-    if (!this.file) {
-      new Notice("Open a .feature file before validating it.");
-      return;
-    }
-    const resultEl = this.ensureValidateResultEl();
-    renderChecklist(resultEl, [{ status: "pending", icon: "…", text: "Validating…" }]);
-    const path: VaultPath = unsafeVaultPath(this.file.path);
-    // Flush the debounced write so validation reads the on-screen content from
-    // disk, not a stale snapshot (same reason as runFeature — Codex review).
-    await this.save();
-    const rows = await validateFeatureOutcome(this.deps.specifications, path);
-    // A re-render (an external change, a mode toggle) may have detached the
-    // result area while we awaited — writing into it would be invisible.
-    if (!resultEl.isConnected) return;
-    renderChecklist(resultEl, rows);
-  }
-
-  /** The dedicated, persistent result area for the ✓ Validate toolbar action. */
-  private ensureValidateResultEl(): HTMLElement {
-    const existing = this.contentEl.querySelector<HTMLElement>(
-      ".e2e-test-hub-feature-editor-validate-result",
-    );
-    if (existing) return existing;
-    // Place it directly under the toolbar so the outcome reads where the action
-    // is; the toolbar is always the first child the render writes.
-    const result = this.contentEl.createDiv({
-      cls: "e2e-test-hub-feature-editor-validate-result",
-      attr: { "aria-live": "polite" },
-    });
-    const toolbar = this.contentEl.querySelector(".e2e-test-hub-feature-editor-toolbar");
-    if (toolbar?.nextSibling) this.contentEl.insertBefore(result, toolbar.nextSibling);
-    return result;
-  }
-
-  private renderRaw(root: HTMLElement): void {
-    if (this.specification === null && this.data.trim() !== "") {
-      root.createDiv({
-        cls: "spec-banner",
-        attr: { "data-status": "warning" },
-        text:
-          "Structured editing is unavailable: the file is not a parseable Feature " +
-          "or contains constructs the editor can't preserve (comments, Rule: blocks).",
-      });
-    }
-    const textarea = root.createEl("textarea", {
-      cls: "e2e-test-hub-feature-editor-raw",
-      attr: { "aria-label": "Raw Gherkin" },
-    });
-    textarea.value = this.data;
-    textarea.addEventListener("input", () => {
-      this.data = textarea.value;
-      // Keep the projection in sync so the Structured toggle and the banner
-      // state stay truthful (features are small; per-keystroke parse is cheap).
-      this.specification = this.project();
-      this.requestSave();
-    });
-  }
-
-  private renderStructured(root: HTMLElement, spec: FeatureSpecification): void {
-    const body = root.createDiv({ cls: "e2e-test-hub-feature-editor-body" });
-
-    // Native datalist autocomplete shared by the step/tag inputs.
-    body.createEl("datalist", { attr: { id: STEP_DATALIST_ID } });
-    body.createEl("datalist", { attr: { id: TAG_DATALIST_ID } });
-    this.populateDatalists();
-
-    this.validationEl = body.createDiv({
-      cls: "e2e-test-hub-feature-editor-validation",
-      attr: { "aria-live": "polite" },
-    });
-    this.refreshValidation();
-
-    // Feature header card.
-    const header = body.createDiv({ cls: "e2e-test-hub-feature-editor-card" });
-    const name = header.createEl("input", {
-      type: "text",
-      value: spec.featureName,
-      cls: "e2e-test-hub-feature-editor-name",
-      attr: {
-        placeholder: "Feature name",
-        "aria-label": "Feature name",
-        "data-focus-key": "feature:name",
-      },
-    });
-    name.addEventListener("change", () => {
-      spec.featureName = name.value.trim();
-      this.commit();
-    });
-    renderTagEditor(this.structuredCtx, header, spec.tags, "Feature tags", "feature");
-    const description = header.createEl("textarea", {
-      cls: "e2e-test-hub-feature-editor-description",
-      attr: {
-        placeholder: "Description (optional)",
-        "aria-label": "Feature description",
-        rows: "2",
-        "data-focus-key": "feature:description",
-      },
-    });
-    description.value = (spec.description ?? []).join("\n");
-    description.addEventListener("change", () => {
-      const lines = asDescriptionLines(description.value);
-      if (lines.length > 0) spec.description = lines;
-      else delete spec.description;
-      description.value = lines.join("\n"); // reflect dropped non-description lines
-      this.commit();
-    });
-
-    // Background.
-    const backgroundCard = body.createDiv({ cls: "e2e-test-hub-feature-editor-card" });
-    backgroundCard.createEl("h3", { text: "Background" });
-    if (spec.background) {
-      const steps = spec.background;
-      renderStepList(this.structuredCtx, backgroundCard, steps, "background", () => {
-        // Serialisation omits an empty Background; drop it from the model too.
-        if (steps.length === 0) delete spec.background;
-      });
-    } else {
-      const add = backgroundCard.createEl("button", {
-        text: "+ Background",
-        attr: { "data-focus-key": "background:add" },
-      });
-      add.addEventListener("click", () => {
-        spec.background = [newStep([])];
-        this.commit();
-      });
-    }
-
-    // Scenarios.
-    spec.scenarios.forEach((scenario, index) => {
-      renderScenarioCard(this.structuredCtx, body, spec, scenario, index);
-    });
-    const addScenario = body.createEl("button", {
-      text: "+ Scenario",
-      cls: "e2e-test-hub-feature-editor-add",
-      attr: { "data-focus-key": "feature:add-scenario" },
-    });
-    addScenario.addEventListener("click", () => {
-      spec.scenarios.push(newScenario());
-      this.commit();
-    });
-  }
-
-  /** The ✓/✗/! strip, re-projected from the in-memory spec on every commit. */
-  private refreshValidation(): void {
-    if (!this.validationEl || !this.specification) return;
-    this.validationEl.empty();
-    for (const item of validationDisplayEntries(this.specification, this.baselineScenarioNames)) {
-      this.validationEl.createDiv({
-        cls: "e2e-test-hub-feature-editor-check",
-        attr: { "data-level": item.level },
-        text: `${item.symbol} ${item.message}`,
-      });
-    }
+    const parsed = parseFeature(this.controller.data.value, unsafeVaultPath(this.file.path));
+    if (parsed !== null) await this.controller.deps.specifications.announceUpdated(parsed);
   }
 }

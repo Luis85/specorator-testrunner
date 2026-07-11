@@ -158,13 +158,14 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
     (leaf) =>
       new SuiteDashboardView(leaf, {
         suiteService: s.suiteService,
-        eventBus,
         runLauncher: s.runLauncher,
         featureInsight: s.featureInsightService,
         onCreate: () => deps.openCreateSuite(),
         // WS-B4: a suite row opens through the unified deep-link port (a Suite is
         // addressed by its note path), not an ad-hoc openOrNotice.
         navigate: (target) => deps.navigate(target),
+        // The body self-subscribes via useEventBus (ADR-0033 Phase 3).
+        eventBus,
       }),
   );
   plugin.registerView(
@@ -256,15 +257,18 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           isInitialized: () => vault.exists(deps.getSettings().paths.useCasesPath),
           openEvidence: (path) => deps.openEvidence(path),
         },
+        // The Plan section's PRDs body — the Vue-native PrdExplorerBody (ADR-0033
+        // Phase 3). It self-loads and subscribes to the bus, so the hub supplies
+        // its deps MINUS `eventBus` (HubSection injects the hub's bus).
         prds: {
           prdService: s.prdService,
           useCaseService: s.useCaseService,
           openPrdBuilder: (parentPrdId) => deps.openPrdBuilder(parentPrdId),
           navigate: (target) => deps.navigate(target),
-          // The body's own `refresh` is supplied by the hub (its active-panel
-          // re-render); this placeholder is overwritten in HubView.renderBody.
-          refresh: () => undefined,
         },
+        // The Plan section's Story Maps body — the Vue-native StoryMapExplorerBody
+        // (ADR-0033 Phase 3). It self-loads and subscribes to the bus, so the hub
+        // supplies its deps MINUS `eventBus` (HubSection injects the hub's bus).
         storyMaps: {
           storyMapService: s.storyMapService,
           workspace,
@@ -272,8 +276,11 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           openMapSettings: (map) =>
             new StoryMapSettingsModal(app, map, { storyMapService: s.storyMapService }).open(),
           openStoryMapBoard: (id) => deps.openStoryMapBoard(id),
-          refresh: () => undefined,
         },
+        // The Build section's Use Cases body — the Vue-native UseCaseDashboardBody
+        // (ADR-0033 Phase 3). It self-loads and subscribes to the bus, so the hub
+        // supplies its deps MINUS `eventBus` (HubSection injects the hub's bus);
+        // the KPI funnel filter is a reactive prop from the hub store, not a dep.
         useCases: {
           traceability: s.traceabilityService,
           specificationService: s.specificationService,
@@ -281,20 +288,24 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
           runLauncher: s.runLauncher,
           onCreate: () => deps.openCreateUseCase(),
           onOpenDetail: (useCaseId) => deps.openUseCaseDetail(useCaseId),
-          refresh: () => undefined,
         },
+        // The Run section's Test Suites body — the Vue-native SuiteDashboardBody
+        // (ADR-0033 Phase 3). It self-loads and subscribes to the bus, so the hub
+        // supplies its deps MINUS `eventBus` (HubSection injects the hub's bus).
         suites: {
           suiteService: s.suiteService,
           runLauncher: s.runLauncher,
           featureInsight: s.featureInsightService,
           onCreate: () => deps.openCreateSuite(),
           navigate: (target) => deps.navigate(target),
-          refresh: () => undefined,
         },
+        // The Review section's Evidence body — the Vue-native EvidenceExplorerBody
+        // (ADR-0033 Phase 3). It self-loads and subscribes to the bus, so the hub
+        // supplies its deps MINUS `eventBus` (HubSection injects the hub's bus);
+        // filter/limit are reactive props from the hub store, not deps.
         evidence: {
           runHistory: s.runHistoryService,
           navigate: (target) => deps.navigate(target),
-          refresh: () => undefined,
         },
         // B2 PR3: the docked onboarding rail. Reuses the hero's real init signal
         // and the SAME tour-action flows as the GuidedTourView (dispatched through

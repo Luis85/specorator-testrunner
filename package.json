@@ -7,6 +7,10 @@
   "engines": {
     "node": ">=20"
   },
+  "allowScripts": {
+    "esbuild": true,
+    "vue-demi": true
+  },
   "scripts": {
     "build": "node esbuild.config.mjs production",
     "test-build": "node scripts/test-build.mjs",
@@ -14,7 +18,7 @@
     "migrate:create-prd-0": "node scripts/migrate-prd-0.mjs",
     "migrate:create-sub-prds": "node scripts/create-sub-prds.mjs",
     "dev": "node esbuild.config.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.eslint.json",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.eslint.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -30,20 +34,28 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.1.0",
+    "@vitejs/plugin-vue": "^6.0.7",
     "@vitest/coverage-v8": "^4.1.8",
     "@vitest/eslint-plugin": "^1.6.20",
+    "@vue/test-utils": "^2.4.11",
     "builtin-modules": "^5.2.0",
     "esbuild": "^0.28.1",
     "eslint": "^10.4.1",
-    "eslint-plugin-obsidianmd": "^0.3.0",
+    "eslint-plugin-obsidianmd": "^0.4.1",
     "fallow": "^2.93.0",
+    "happy-dom": "^20.10.6",
     "obsidian": "^1.13.1",
     "prettier": "^3.8.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.0",
-    "vitest": "^4.1.9"
+    "unplugin-vue": "^7.2.0",
+    "vitest": "^4.1.9",
+    "vue-tsc": "^3.3.5"
   },
   "dependencies": {
-    "interactjs": "^1.10.27"
+    "interactjs": "^1.10.27",
+    "pinia": "^2.3.1",
+    "vue": "^3.5.39",
+    "vue-router": "^4.6.4"
   }
 }

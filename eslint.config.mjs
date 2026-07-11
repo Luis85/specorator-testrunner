@@ -100,6 +100,25 @@ export default tseslint.config(
     },
   },
   {
+    // eslint-plugin-obsidianmd 0.4.x's recommended preset newly enables two
+    // `eslint-comments` meta-rules that this repo's pre-existing, deliberate
+    // inline disables predate; both are turned off here rather than churning a
+    // dozen unrelated infrastructure/UI modules:
+    //   - no-restricted-disable forbids inline-disabling obsidianmd rules, but
+    //     several disables are legitimate and NOT refactorable — most notably
+    //     the Node child-process runner's `prefer-window-timers` (there is no
+    //     `window` in that Node context), plus UI strings whose capitalization
+    //     is reconciled with the CONTEXT.md glossary via `ui/sentence-case`.
+    //   - require-description would demand a `-- reason` on every existing
+    //     disable; adding descriptions is a separate hygiene pass, not part of
+    //     a dependency bump.
+    files: ["src/**", "**/*.ts"],
+    rules: {
+      "eslint-comments/no-restricted-disable": "off",
+      "eslint-comments/require-description": "off",
+    },
+  },
+  {
     files: ["**/*.ts"],
     languageOptions: {
       parserOptions: {

@@ -1878,8 +1878,9 @@ body {
 }
 
 /* Defensive: a body that renders nothing (e.g. an early return) collapses out of
- * the flow rather than leaving a gap. The overview now fills BOTH content refs —
- * the hero body and the recent-runs body — so the E1 empty-div hack is retired. */
+ * the flow rather than leaving a gap. The Vue-native bodies (ADR-0033) that can be
+ * empty (recent-runs pre-init) render only a comment via a root `v-if`, which
+ * `:empty` ignores — so this rule collapses the slot with no extra plumbing. */
 .spec-hub-section-body:empty {
   display: none;
 }
@@ -1896,7 +1897,8 @@ body {
 }
 
 /* The onboarding-rail slot is always present and spans the hub bottom. It
- * collapses out of the flow when it renders nothing (the hidden/dismissed rail). */
+ * collapses out of the flow when the rail renders nothing (a `hidden` projection
+ * → the Vue body's root `v-if` leaves only a comment, which `:empty` ignores). */
 .spec-hub-onboarding-rail:empty {
   display: none;
 }
