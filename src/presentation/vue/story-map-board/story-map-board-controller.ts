@@ -374,6 +374,12 @@ export class StoryMapBoardController {
   // Untested view render method (views are unit-test-exempt, AGENTS.md).
   // fallow-ignore-next-line complexity
   private async render(): Promise<void> {
+    // The app opens the board fire-and-forget (onMounted can't await), so a quick
+    // open→close can dispose the scheduler while this render is queued or mid-load.
+    // Bail if closed — both before starting and again after the findById await —
+    // so we never paint / wire interact.js onto a host close() has torn down and
+    // the view is about to unmount (Codex P2).
+    if (this.closed) return;
     const container = this.host;
     this.teardownDnd();
     container.empty();
@@ -383,6 +389,8 @@ export class StoryMapBoardController {
       return;
     }
     const found = await this.deps.storyMapService.findById(this.storyMapId);
+    // Closed while we awaited the load: the host is being torn down — don't paint.
+    if (this.closed) return;
     if (!found.ok) {
       renderLoadError(
         container,
