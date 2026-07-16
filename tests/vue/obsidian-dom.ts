@@ -2,8 +2,8 @@
  * Test-env polyfill for the Obsidian HTMLElement extensions (`createEl`,
  * `createDiv`, `createSpan`, `addClass`, `empty`, `setAttr`). Obsidian injects
  * these at runtime; they are NOT standard DOM, so the reused DOM writers
- * (`renderLoopRail`, `renderChecklist`, `renderLoadError`, `renderEmptyState`)
- * throw under happy-dom without them. Importing this module (in a happy-dom test)
+ * (`renderLoopRail`, `renderChecklist`, `renderLoadError`) throw under happy-dom
+ * without them. Importing this module (in a happy-dom test)
  * installs the minimal subset those writers use. Idempotent.
  *
  * Assignments target a loosely-typed view of the prototype so they don't clash
