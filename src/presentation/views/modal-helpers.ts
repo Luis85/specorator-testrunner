@@ -60,16 +60,6 @@ export const renderLoadError = (
 };
 
 /**
- * Muted, centred "nothing here yet" placeholder — the visual sibling of
- * {@link renderLoadError} for the empty (not failed) case. Extracted because the
- * explorers and the Use Case detail each hand-rolled the same muted `<p>`; they
- * now share one `.spec-empty` primitive (02-R9).
- */
-export const renderEmptyState = (container: HTMLElement, message: string): void => {
-  container.createEl("p", { cls: "spec-empty", text: message });
-};
-
-/**
  * Formats an unknown thrown value into a `"<prefix>: <message>"` Notice string,
  * narrowing `Error` for its message and falling back otherwise. Shared by the
  * creation modals' catch blocks so each one stays a single branch (thin views).

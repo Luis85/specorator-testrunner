@@ -1,7 +1,7 @@
 ---
 type: adr
 id: ADR-0033
-status: proposed
+status: accepted
 title: Vue 3 Frontend Runtime for the Test Hub
 date: 2026-06-27
 related:
@@ -145,6 +145,36 @@ component is the new thin view.
      `save()`/`requestSave()` (`feature-editor-view.ts:58, 97-130, 149-153`); Vue
      mounts **inside** that file-view lifecycle.
 5. Modals — optional, native `Modal` may remain indefinitely.
+
+### Implementation status (as shipped)
+
+Phases 0–4 are **complete** — every Test Hub leaf now renders through Vue:
+
+- **Phase 0–1** (PR #92): toolchain (runtime-only Vue via esbuild, no `eval`),
+  the `mountVueView()` / `useEventBus()` bridge, and the first stateless
+  (Guided Tour) + stateful (Use Case Detail) leaves, with `vue-tsc` in
+  `typecheck` and `@vue/test-utils` component testing.
+- **Phase 2–3** (PR #92): the hub shell + `vue-router` rail and all explorers /
+  dashboards (Evidence, PRDs, Story Map explorer, Suites, Use Cases) as
+  Vue-native bodies, retiring the `Imperative.vue` host and the emptiness seam.
+- **Phase 4** — the three gated interactive views, each as a preserve-the-hard-part
+  wrap rather than a reactive rewrite:
+  - **Feature Editor** (PR #92): a thin `TextFileView` mounting a reactive spec
+    editor; the raw `.feature` text stays the source of truth. Retired the
+    focus-capture/restore machinery.
+  - **Test Console** (PR #99): reactive chrome + timer, with the high-frequency
+    output stream kept imperative in `ConsoleOutputStream` (manual bus
+    subscription — a stream, not a reload).
+  - **Story Map board** (PR #101): the interact.js engine, inline editors, and the
+    debounced/serialized save with origin-filtered subscriptions lifted verbatim
+    into a framework-agnostic `StoryMapBoardController` (owning its own
+    `RenderScheduler`), wrapped in a thin Vue leaf.
+
+The hand-rolled reactivity base this ADR set out to replace
+(`LiveDashboardView` / `LiveRefresh`) is now removed; `RenderScheduler` survives
+as the shared coalescing primitive behind `useEventBus()` and the board
+controller. **Phase 5 (modals) is deferred** — the native `Modal` surfaces
+remain, as the phase always allowed.
 
 ## Consequences
 
