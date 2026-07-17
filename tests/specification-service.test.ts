@@ -396,7 +396,7 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
    * limitation, step-definitions.ts — the "?" is escaped as a literal
    * character, so the bare "I have a colour" step never matches it
    * statically, though bddgen, the real cucumber-expression engine, resolves
-   * it fine), then runs `detect` once — the state BOTH #77 cache tests below
+   * it fine), then runs `detect` once — the state the #77 cache tests below
    * start from (one reads the recorded verdict as-is, the other invalidates
    * it and checks the static fallback).
    */
