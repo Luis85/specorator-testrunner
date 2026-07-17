@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAppendedStubs,
+  buildAppendedStubsLayout,
   buildStepDefinitionStubFile,
+  buildStepDefinitionStubFileLayout,
+  countNewlines,
   findMissingSteps,
   isStepDefined,
   parseStepDefinitions,
@@ -264,5 +267,40 @@ describe("buildAppendedStubs", () => {
     expect(block).toContain('import { createBdd } from "playwright-bdd";');
     expect(block).toContain("const { Given } = createBdd();");
     expect(block).toContain('Given("a fresh step"');
+  });
+});
+
+describe("stub layout (WS1 Task 1)", () => {
+  it("lays out a fresh stub file with 1-based ranges per stub", () => {
+    const layout = buildStepDefinitionStubFileLayout(["I do a thing", "I see it"]);
+    // Byte-identical to the string builder (delegation contract).
+    expect(layout.text).toBe(buildStepDefinitionStubFile(["I do a thing", "I see it"]));
+    // Header: import + destructure (lines 1-2), blank line 3; each stub is 4
+    // lines (comment, Given(, throw, `});`), blocks separated by one blank line.
+    expect(layout.insertions).toEqual([
+      { step: "I do a thing", startLine: 4, endLine: 7 },
+      { step: "I see it", startLine: 9, endLine: 12 },
+    ]);
+  });
+
+  it("lays out an append to a file that already binds Given (blocks only)", () => {
+    const existing = `import { createBdd } from "playwright-bdd";\nconst { Given } = createBdd();\n`;
+    const layout = buildAppendedStubsLayout(existing, ["I do a thing"]);
+    expect(layout.text).toBe(buildAppendedStubs(existing, ["I do a thing"]));
+    // No header: the single stub starts at line 1 of the appended text.
+    expect(layout.insertions).toEqual([{ step: "I do a thing", startLine: 1, endLine: 4 }]);
+  });
+
+  it("lays out an append that needs the import + Given binding header", () => {
+    const existing = `const helper = 1;\n`;
+    const layout = buildAppendedStubsLayout(existing, ["I do a thing"]);
+    expect(layout.text).toBe(buildAppendedStubs(existing, ["I do a thing"]));
+    // Header: import (1) + Given binding (2), blank line 3, stub 4-7.
+    expect(layout.insertions).toEqual([{ step: "I do a thing", startLine: 4, endLine: 7 }]);
+  });
+
+  it("counts newlines for the caller's file-offset math", () => {
+    expect(countNewlines("")).toBe(0);
+    expect(countNewlines("a\nb\n")).toBe(2);
   });
 });
