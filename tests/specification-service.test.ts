@@ -8,6 +8,7 @@ import { parseFeature } from "../src/application/content/gherkin";
 import { DefaultUseCaseService } from "../src/application/services/use-case-service";
 import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safety-policy";
 import type { FeatureSpecification } from "../src/domain/entities/specification";
+import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { buildNote } from "../src/shared/utils/frontmatter";
 import {
@@ -378,6 +379,25 @@ describe("DefaultSpecificationService.listStepPatterns", () => {
     const patterns = await service.listStepPatterns();
     expect(patterns).toEqual([]);
   });
+
+  it("stays scoped to src/steps even when other runner src files exist (Fix 1 — the #77 cache widened to the whole src tree, this did not)", async () => {
+    const { service, fs } = build();
+    fs.files.set(
+      ".testrunner/src/steps/demo.steps.ts",
+      'import { Given } from "@cucumber/cucumber";\nGiven("I open the local example page", async function () {});\n',
+    );
+    // A pattern-shaped string OUTSIDE src/steps must NOT be scraped — this
+    // pins listStepPatterns' public contract as unchanged by Fix 1 (which
+    // widened only the #77 cache's sources, not the static-pattern scrape).
+    fs.files.set(
+      ".testrunner/src/pages/ExamplePage.ts",
+      'Given("a pattern that must not be scraped", async () => {});',
+    );
+
+    const patterns = await service.listStepPatterns();
+
+    expect(patterns).toEqual([{ kind: "expression", source: "I open the local example page" }]);
+  });
 });
 
 describe("DefaultSpecificationService.allStepsDefined", () => {
@@ -408,6 +428,25 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
     const detected = await service.detectMissingSteps(FEATURE);
     return { service, fs, detected };
+  };
+
+  /**
+   * Seeds the runner folder + a "nothing missing" bddgen stdout, detects once
+   * for an already-arranged `path`, and asserts the resulting cache hit — the
+   * shared pre-edit baseline the Examples-row and page-object invalidation
+   * tests below both edit away from.
+   */
+  const detectAndAssertCacheHit = async (
+    service: Awaited<ReturnType<typeof build>>["service"],
+    absoluteFs: FakeAbsoluteFileSystem,
+    childProcess: FakeChildProcessRunner,
+    path: VaultPath,
+  ): Promise<void> => {
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+    expect(await service.allStepsDefined([path])).toBe(true); // cache hit, pre-edit
   };
 
   it("returns false for an empty Feature set (nothing proven)", async () => {
@@ -546,12 +585,7 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
       ".testrunner/src/steps/demo.steps.ts",
       'import { Given } from "@cucumber/cucumber";\nGiven("I have a colou?r", async function () {});\n',
     );
-    seedRunnerFolder(absoluteFs);
-    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
-
-    const detected = await service.detectMissingSteps(path);
-    expect(detected.ok).toBe(true);
-    expect(await service.allStepsDefined([path])).toBe(true); // cache hit, pre-edit
+    await detectAndAssertCacheHit(service, absoluteFs, childProcess, path);
 
     // Edit ONLY the Examples row value — the step TEMPLATE ("I have a
     // <colour>") is byte-for-byte unchanged elsewhere, so a template-only key
@@ -562,6 +596,34 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     // Raw-byte addressing (spec D6) catches the Examples-row edit and falls
     // back to static, which (deterministically, for this fixture) reports the
     // step undefined — the safe direction, never the stale recorded "true".
+    expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
+  it("falls back to static after a page object a step source imports is edited — whole runner src tree digest, not just src/steps (Codex P2 on PR #102, Fix 1)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-colour.feature");
+    const pageObjectFile = ".testrunner/src/pages/ExamplePage.ts";
+    fs.files.set(path, "Feature: Colour\n  Scenario: S\n    Given I have a colour\n");
+    // The default generated runner's own shape: a steps file importing a
+    // sibling page object via `../pages` (runner-templates.ts). Same
+    // "bddgen resolves it, static can't" colou?r asymmetry as
+    // detectColourFeature, so a fallback to static is observable.
+    fs.files.set(
+      ".testrunner/src/steps/demo.steps.ts",
+      'import { ExamplePage } from "../pages/ExamplePage";\nimport { Given } from "@cucumber/cucumber";\nGiven("I have a colou?r", async function () {});\n',
+    );
+    fs.files.set(pageObjectFile, "export class ExamplePage {}\n");
+    await detectAndAssertCacheHit(service, absoluteFs, childProcess, path);
+
+    // Edit ONLY the page object the steps file imports — the steps file's own
+    // bytes (and hence the scraped pattern set the static fallback reads) are
+    // byte-for-byte untouched.
+    fs.files.set(pageObjectFile, "export class ExamplePage { extra = true; }\n");
+
+    // A src/steps-only digest would still hit here (the steps file didn't
+    // change); the whole-runner-src-tree digest (spec D6, Fix 1) catches the
+    // page-object edit and falls back to static, which — for this colou?r
+    // fixture — reports the step undefined (the safe direction).
     expect(await service.allStepsDefined([path])).toBe(false);
   });
 
@@ -972,12 +1034,43 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
     const detected = await service.detectMissingSteps(path);
     expect(detected.ok).toBe(true);
 
-    // The recorded defsHash must reflect the PRE-spawn set (with the covering
-    // pattern still present); the actual defs are now empty, so the follow-up
-    // read hash-misses and falls back to the static heuristic, which reports
-    // the step undefined (no patterns are left at all).
+    // The steps file vanishing mid-spawn means the post-spawn runner-sources
+    // re-read (item H) no longer matches what was captured pre-spawn, so the
+    // spawn-window gate skips the record entirely — no stale verdict is ever
+    // stored. allStepsDefined then finds no cache entry and falls back to the
+    // static heuristic, which reports the step undefined (no patterns are
+    // left at all either way).
     expect(await service.allStepsDefined([path])).toBe(false);
   });
+
+  /**
+   * Arranges the shared spawn-window TOCTOU scenario: seeds the runner
+   * folder, has bddgen report "a step" missing (disagreeing with what the
+   * ORIGINAL, not-yet-mutated content matches), then wraps `childProcess.run`
+   * so its OWN spawn resolution is immediately followed by an external write
+   * of `mutatedContent` to `mutatedPath` — simulating an edit landing DURING
+   * the bddgen window. Shared by the feature-side (item B) and source-side
+   * (item H) tests below, which differ only in WHICH file this arms.
+   */
+  const armEditDuringSpawn = (
+    absoluteFs: FakeAbsoluteFileSystem,
+    childProcess: FakeChildProcessRunner,
+    fs: FakeVaultFileSystem,
+    mutatedPath: string,
+    mutatedContent: string,
+  ): void => {
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("a step", "a step from a different feature"),
+    );
+    const originalRun = childProcess.run.bind(childProcess);
+    childProcess.run = async (request) => {
+      const result = await originalRun(request);
+      fs.files.set(mutatedPath, mutatedContent);
+      return result;
+    };
+  };
 
   it("skips the record when the FEATURE is edited mid-spawn — a later revert must not serve a stale verdict (spawn-window TOCTOU, feature side, Codex P2 on PR #102)", async () => {
     // This specifically isolates the spawn-window GATE from the (already-
@@ -988,7 +1081,11 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
     // the next consult" case: without it, detectMissingSteps would record
     // covered=false (bddgen's verdict for the transiently-edited content)
     // keyed on the ORIGINAL content's hash — and the later revert would then
-    // hash-MATCH that wrongly-stored entry and serve the stale false.
+    // hash-MATCH that wrongly-stored entry and serve the stale false. bddgen
+    // (hypothetically evaluating a transiently-edited version of the file
+    // during the spawn) reports "a step" missing — even though the ORIGINAL
+    // content's "a step" exactly matches the definition (static alone would
+    // say true for `original`).
     const { service, fs, absoluteFs, childProcess } = build();
     const path = vp("Specifications/features/UC-001-demo.feature");
     const original = "Feature: Demo\n  Scenario: S\n    Given a step\n";
@@ -997,23 +1094,7 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
       ".testrunner/src/steps/demo.steps.ts",
       'import { Given } from "@cucumber/cucumber";\nGiven("a step", async function () {});\n',
     );
-    seedRunnerFolder(absoluteFs);
-    // bddgen (hypothetically evaluating a transiently-edited version of the
-    // file during the spawn) reports "a step" missing — even though the
-    // ORIGINAL content's "a step" exactly matches the definition (static
-    // alone would say true for `original`).
-    childProcess.stdouts.set(
-      "playwright-bdd",
-      bddgenTwoMissing("a step", "a step from a different feature"),
-    );
-    // Simulate an external edit landing DURING the bddgen window: the file is
-    // STILL in its edited state by the time our own post-spawn read runs.
-    const originalRun = childProcess.run.bind(childProcess);
-    childProcess.run = async (request) => {
-      const result = await originalRun(request);
-      fs.files.set(path, `${original}    When something new\n`);
-      return result;
-    };
+    armEditDuringSpawn(absoluteFs, childProcess, fs, path, `${original}    When something new\n`);
 
     const detected = await service.detectMissingSteps(path);
     expect(detected.ok).toBe(true);
@@ -1025,6 +1106,45 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
     // With the gate, no entry was ever stored (the post-spawn read did not
     // match `original` at the time detectMissingSteps checked), so this
     // falls back to static, which — for this exact-match fixture — says true.
+    expect(await service.allStepsDefined([path])).toBe(true);
+  });
+
+  it("skips the record when a RUNNER SOURCE is edited mid-spawn — a later revert must not serve a stale verdict (spawn-window TOCTOU, source side, Codex P2 on PR #102, item H)", async () => {
+    // The exact mirror of the feature-side test above, using the SAME
+    // edit-lands-then-reverts protocol: without the gate, detectMissingSteps
+    // would record bddgen's verdict for the transiently-edited SOURCE keyed
+    // on the ORIGINAL source's hash — and the later revert would then
+    // hash-MATCH that wrongly-stored entry and serve the stale verdict.
+    // bddgen (hypothetically evaluating a transiently-edited version of the
+    // steps file during the spawn) reports "a step" missing — even though the
+    // ORIGINAL steps file's pattern exactly matches (static alone would say
+    // true for the original source).
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    const stepsFile = ".testrunner/src/steps/demo.steps.ts";
+    const originalStepFile =
+      'import { Given } from "@cucumber/cucumber";\nGiven("a step", async function () {});\n';
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    fs.files.set(stepsFile, originalStepFile);
+    armEditDuringSpawn(
+      absoluteFs,
+      childProcess,
+      fs,
+      stepsFile,
+      `${originalStepFile}// mid-spawn edit\n`,
+    );
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+
+    // The edit is undone AFTER detect returns — the steps file is back to
+    // `originalStepFile`.
+    fs.files.set(stepsFile, originalStepFile);
+
+    // With the gate, no entry was ever stored (the post-spawn sources digest
+    // did not match `sourcesAtSpawn` at the time detectMissingSteps checked),
+    // so this falls back to static, which — for this exact-match fixture —
+    // says true.
     expect(await service.allStepsDefined([path])).toBe(true);
   });
 

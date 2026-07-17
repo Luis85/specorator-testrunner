@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  StepCoverageCache,
-  stepSourcesSelfContained,
-} from "../src/application/services/step-coverage-cache";
+import { StepCoverageCache } from "../src/application/services/step-coverage-cache";
 import type { StepSourceFile } from "../src/application/services/load-step-definitions";
 import { collectStepTexts, parseFeature } from "../src/application/content/gherkin";
 import { parseStepDefinitions } from "../src/application/content/step-definitions";
@@ -23,13 +20,17 @@ const src = (path: string, content: string): StepSourceFile => ({ path: vp(path)
 const givenFile = (text: string): string => `Given("${text}", async () => {});`;
 
 /**
- * A cache with ONE recorded true verdict for f.feature over a single-source
- * `sources` set — the common starting point several invalidation tests below
- * mutate exactly one input from, to isolate which input triggered the miss.
+ * A cache with ONE recorded true verdict for f.feature over `sources` (a
+ * single-source set by default) — the common starting point several
+ * invalidation tests below mutate exactly one input from, to isolate which
+ * input triggered the miss. An explicit `sources` override lets a test pin a
+ * specific source SHAPE (e.g. a `../pages` import) while still sharing this
+ * record-then-return idiom rather than repeating it inline.
  */
-const recordedCache = (): { cache: StepCoverageCache; sources: StepSourceFile[] } => {
+const recordedCache = (
+  sources: StepSourceFile[] = [src("a.ts", givenFile("a step"))],
+): { cache: StepCoverageCache; sources: StepSourceFile[] } => {
   const cache = new StepCoverageCache();
-  const sources = [src("a.ts", givenFile("a step"))];
   cache.record(vp("f.feature"), feature("a step"), sources, true);
   return { cache, sources };
 };
@@ -141,36 +142,40 @@ describe("StepCoverageCache (#77)", () => {
     expect(cache.authoritativeCovered(vp("other.feature"), feature("a step"), sources)).toBeNull();
   });
 
-  it("never records when a source escapes src/steps via a relative parent import (Codex P2 follow-up on PR #102)", () => {
-    const cache = new StepCoverageCache();
-    const sources = [src("a.ts", 'import { p } from "../support/patterns";\nGiven("a step", p);')];
-    cache.record(vp("f.feature"), feature("a step"), sources, true);
-    expect(cache.authoritativeCovered(vp("f.feature"), feature("a step"), sources)).toBeNull();
-  });
-
-  it("still records when imports stay inside the steps folder (./sibling)", () => {
-    const cache = new StepCoverageCache();
-    const sources = [src("a.ts", 'import { p } from "./helpers";\nGiven("a step", p);')];
-    cache.record(vp("f.feature"), feature("a step"), sources, true);
+  it("still records and hits when a step source imports a sibling page object via ../pages (Codex P2 on PR #102 — the default generated runner's own shape)", () => {
+    // The DEFAULT generated runner's example step imports exactly this shape
+    // (src/infrastructure/runner/templates/runner-templates.ts) — an earlier
+    // "self-containment gate" refused to record whenever a step source escaped
+    // src/steps via a relative parent import, which disabled the cache for
+    // every normal vault. There is no such gate now: a `../pages` import must
+    // not block a record.
+    const { cache, sources } = recordedCache([
+      src(
+        "src/steps/x.steps.ts",
+        'import { ExamplePage } from "../pages/ExamplePage";\nGiven("a step", async () => {});',
+      ),
+      src("src/pages/ExamplePage.ts", "export class ExamplePage {}"),
+    ]);
     expect(cache.authoritativeCovered(vp("f.feature"), feature("a step"), sources)).toBe(true);
   });
-});
 
-describe("stepSourcesSelfContained", () => {
-  it("is true for an empty source set and for ./ imports", () => {
-    expect(stepSourcesSelfContained([])).toBe(true);
-    expect(stepSourcesSelfContained([src("a.ts", 'import { p } from "./helpers";')])).toBe(true);
-  });
+  it("misses after a page object a step source imports is edited, even though the steps file itself is untouched (Codex P2 on PR #102 — whole runner src tree digest)", () => {
+    const stepsFile = src(
+      "src/steps/x.steps.ts",
+      'import { ExamplePage } from "../pages/ExamplePage";\nGiven("a step", async () => {});',
+    );
+    const originalPageObject = src("src/pages/ExamplePage.ts", "export class ExamplePage {}");
+    const { cache } = recordedCache([stepsFile, originalPageObject]);
 
-  it("is false for ../ imports across from/require/dynamic-import forms", () => {
+    // Only the page object changes — the steps file is byte-identical to what
+    // was recorded. A src/steps-only digest would miss this; the whole-tree
+    // digest (spec D6) must not.
+    const editedPageObject = src(
+      "src/pages/ExamplePage.ts",
+      "export class ExamplePage { extra = true; }",
+    );
     expect(
-      stepSourcesSelfContained([src("a.ts", 'import { p } from "../support/patterns";')]),
-    ).toBe(false);
-    expect(
-      stepSourcesSelfContained([src("a.ts", 'const p = require("../support/patterns");')]),
-    ).toBe(false);
-    expect(
-      stepSourcesSelfContained([src("a.ts", 'const p = await import("../support/patterns");')]),
-    ).toBe(false);
+      cache.authoritativeCovered(vp("f.feature"), feature("a step"), [stepsFile, editedPageObject]),
+    ).toBeNull();
   });
 });

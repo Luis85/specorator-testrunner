@@ -32,15 +32,16 @@ const app = inject(OBSIDIAN_APP)!;
 
 // The same refresh set the hand-rolled view subscribed to (Wave D): feature/
 // step/use-case lifecycle + terminal run + history + settings + story-map events.
+// Deliberately EXCLUDES "specification.missingSteps.detected": that event also
+// fires for a row-local "Detect missing steps" click, and an awaited reload
+// here would unmount the FeatureRow mid-flight and drop its inline result
+// before it renders. The rail instead refreshes after the generate action's
+// outcome resolves (see generateStepsForAll/FeatureRow's "generated" emit),
+// which already includes a post-generate re-detect (Codex P2 on PR #102).
 const REFRESH_ON: DomainEventType[] = [
   "specification.created",
   "specification.updated",
   "stepdefinition.generated",
-  // #77: the post-generate re-detect fires this AFTER stepdefinition.generated
-  // and is what actually records the coverage verdict — without subscribing
-  // here the rail would render the stale pre-verdict state until an unrelated
-  // event (Codex P2 on PR #102).
-  "specification.missingSteps.detected",
   "usecase.updated",
   "usecase.status.changed",
   "usecase.deleted",
@@ -206,7 +207,15 @@ async function generateStepsForAll(featurePaths: VaultPath[]): Promise<void> {
   const generation = loopGeneration;
   loopResult.value = [{ status: "pending", icon: "…", text: "Generating step definitions…" }];
   const rows = await collectStepGenerationRows(featurePaths);
-  if (loopGeneration === generation) loopResult.value = rows;
+  if (loopGeneration !== generation) return;
+  loopResult.value = rows;
+  // #77: the outcome above already ran a post-generate re-detect that recorded
+  // the coverage verdict — refresh so the rail (e.g. Steps → the next node)
+  // reflects it. A generate already rebuilds the rows below via reload(), so
+  // the inline result just written being cleared by that reload is expected
+  // and non-regressive, unlike a read-only detect (Codex P2 on PR #102; a
+  // fuller "re-derive only the rail" fix is Task 7 / D1 territory).
+  await refresh();
 }
 
 // One Feature reads exactly like the per-row generate; multiple Features label
@@ -376,7 +385,13 @@ const navigateArtifact = (id: string): void => deps.navigate(artifactTarget(id))
         >
           No Feature Specifications yet. Generate one to make this Use Case executable.
         </p>
-        <FeatureRow v-else v-for="row in state.model.featureRows" :key="row.path" :row="row" />
+        <FeatureRow
+          v-else
+          v-for="row in state.model.featureRows"
+          :key="row.path"
+          :row="row"
+          @generated="refresh"
+        />
       </div>
     </template>
   </div>

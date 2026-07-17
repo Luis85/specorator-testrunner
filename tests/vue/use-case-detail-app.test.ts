@@ -182,7 +182,7 @@ describe("UseCaseDetailApp", () => {
     expect(w.text()).toContain("was not found");
   });
 
-  it("renders the loop-rail generate-steps result", async () => {
+  it("re-derives the rail after the loop-rail generate-steps outcome resolves (#77, Codex P2 — scoped rail refresh, Fix 2)", async () => {
     // A Feature exists but its steps aren't defined → the rail's current node is
     // Steps, offering the generate action.
     const deps = makeDeps({
@@ -193,11 +193,33 @@ describe("UseCaseDetailApp", () => {
     });
     const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
     await flushPromises();
+    expect(deps.specificationService.allStepsDefined).toHaveBeenCalledTimes(1); // initial load
 
     await w.get(GENERATE_STEPS_BTN).trigger("click");
     await flushPromises();
-    expect(checkRows(w).some((r) => r.text().includes("Generated 1 step stub"))).toBe(true);
+
+    // The outcome's post-generate re-detect has already recorded the coverage
+    // verdict by the time it resolves; generateStepsForAll then explicitly
+    // refreshes so the rail (allStepsDefined) re-derives against it. The
+    // in-flight generate-steps result itself is superseded by that refresh's
+    // reload (loopResult is cleared at the start of every reload) — expected
+    // and non-regressive, unlike a read-only detect (see the "does not
+    // reload on specification.missingSteps.detected" pin below).
+    expect(deps.stepDefinitionService.generate).toHaveBeenCalled();
+    expect(deps.specificationService.allStepsDefined).toHaveBeenCalledTimes(2);
   });
+
+  /**
+   * Resolves a deferred generate() call and flushes it through — the shared
+   * mechanical tail of the two stale-write-guard tests below, which differ
+   * only in WHAT invalidates the in-flight generation (a re-target vs. a
+   * same-Use-Case refresh). Each caller still asserts the drop itself
+   * (vitest/expect-expect wants the `expect` local to the `it` block).
+   */
+  const resolveGenerateAndFlush = async (resolveGenerate: (v: unknown) => void): Promise<void> => {
+    resolveGenerate({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } });
+    await flushPromises();
+  };
 
   it("drops a generate-steps result that resolves AFTER a re-target (stale-write guard)", async () => {
     let resolveGenerate!: (v: unknown) => void;
@@ -232,8 +254,7 @@ describe("UseCaseDetailApp", () => {
     await flushPromises();
 
     // The stale generation now resolves — its result must NOT land under the new rail.
-    resolveGenerate({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } });
-    await flushPromises();
+    await resolveGenerateAndFlush(resolveGenerate);
     expect(checkRows(w)).toHaveLength(0);
   });
 
@@ -264,8 +285,68 @@ describe("UseCaseDetailApp", () => {
     await bus.publish({ type: "specification.updated" } as unknown as DomainEvent);
     await flushPromises();
 
-    resolveGenerate({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } });
-    await flushPromises();
+    await resolveGenerateAndFlush(resolveGenerate);
     expect(checkRows(w)).toHaveLength(0);
+  });
+
+  it("does not reload on specification.missingSteps.detected — item E's subscription was wrong (Fix 2, Codex P2 on PR #102)", async () => {
+    const bus = new InMemoryEventBus();
+    const deriveById = vi.fn(async () => ({ ok: true, value: useCase({ id: "UC-001" }) }));
+    const deps = makeDeps({ eventBus: bus, traceability: { deriveById } });
+    const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
+    await flushPromises();
+    expect(deriveById).toHaveBeenCalledTimes(1);
+
+    await bus.publish({
+      type: "specification.missingSteps.detected",
+      payload: { featurePath: PATH, missingSteps: [] },
+    } as unknown as DomainEvent);
+    await flushPromises();
+
+    // No subscriber, so no reload: the view must not even flicker to `loading`.
+    expect(deriveById).toHaveBeenCalledTimes(1);
+    expect(w.find("h2").exists()).toBe(true);
+  });
+
+  it("a row-local detect result survives — REFRESH_ON no longer reloads on specification.missingSteps.detected (Fix 2, Codex P2 on PR #102)", async () => {
+    const bus = new InMemoryEventBus();
+    const deps = makeDeps({
+      eventBus: bus,
+      traceability: {
+        deriveById: vi.fn(async () => ({ ok: true, value: useCase({ featureFiles: [PATH] }) })),
+      },
+      specificationService: {
+        ...specService(true),
+        listFeatures: vi.fn().mockResolvedValue({
+          ok: true,
+          value: [{ path: PATH, label: "UC-001-login.feature" }],
+        }),
+        // Mirrors production: detectMissingSteps publishes the detection event
+        // itself, AWAITED, before its own promise resolves.
+        detectMissingSteps: vi.fn(async (path: VaultPath) => {
+          await bus.publish({
+            type: "specification.missingSteps.detected",
+            payload: { featurePath: path, missingSteps: ["Given x"] },
+          } as unknown as DomainEvent);
+          return {
+            ok: true,
+            value: { featurePath: path, missingSteps: ["Given x"], detectionEventId: "e1" },
+          };
+        }),
+      },
+    });
+    const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
+    await flushPromises();
+
+    await w
+      .get('button[aria-label="Detect missing steps in UC-001-login.feature"]')
+      .trigger("click");
+    await flushPromises();
+
+    // Were REFRESH_ON still subscribed to the detect event (item E), the
+    // publish above would synchronously await a reload that rebuilds the
+    // FeatureRow's `row` prop, bumping its generation and dropping this
+    // write before it ever renders.
+    expect(w.text()).toContain("1 step needs a definition");
   });
 });

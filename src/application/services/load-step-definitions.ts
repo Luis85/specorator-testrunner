@@ -12,21 +12,17 @@ export interface StepSourceFile {
 }
 
 /**
- * Reads every `*.ts` under the steps folder (recursively, matching the runner's
- * `src/steps/**` glob), returning each file's path + raw content. A genuine
+ * Every `*.ts` under `dir` (recursively), path + raw content. A genuine
  * listing failure (e.g. a missing folder) yields no sources; individual
- * unreadable files are skipped best-effort. Kept separate from
- * {@link parseStepSources} so the #77 coverage cache can content-address on
- * these RAW bytes (spec D6) instead of the scraped pattern set: scraping
- * cannot see custom parameter types, regex helpers, or variable-built
- * definitions, so a cache keyed on patterns alone could miss an edit to that
- * code and serve a stale verdict (Codex P2 on PR #102).
+ * unreadable files are skipped best-effort. Shared body for
+ * {@link loadStepSources} and {@link loadRunnerSources}, which differ only in
+ * which directory they scope to.
  */
-export const loadStepSources = async (
+const loadTsSources = async (
   fs: Pick<VaultFileSystem, "listFilesRecursive" | "readFile">,
-  stepsDir: VaultPath,
+  dir: VaultPath,
 ): Promise<StepSourceFile[]> => {
-  const listed = await fs.listFilesRecursive(stepsDir);
+  const listed = await fs.listFilesRecursive(dir);
   if (!listed.ok) return []; // genuine listing failure → treat as no sources
 
   const sources: StepSourceFile[] = [];
@@ -38,6 +34,37 @@ export const loadStepSources = async (
   }
   return sources;
 };
+
+/**
+ * Reads every `*.ts` under the steps folder (recursively, matching the runner's
+ * `src/steps/**` glob), returning each file's path + raw content. Kept
+ * separate from {@link parseStepSources} so callers that content-address on
+ * these RAW bytes (spec D6) don't also need the scraped pattern set: scraping
+ * cannot see custom parameter types, regex helpers, or variable-built
+ * definitions, so a cache keyed on patterns alone could miss an edit to that
+ * code and serve a stale verdict (Codex P2 on PR #102). Scoped to `src/steps`
+ * ONLY — the static-pattern path (`listStepPatterns`, the Feature Editor's
+ * autocomplete) reads no wider than that.
+ */
+export const loadStepSources = (
+  fs: Pick<VaultFileSystem, "listFilesRecursive" | "readFile">,
+  stepsDir: VaultPath,
+): Promise<StepSourceFile[]> => loadTsSources(fs, stepsDir);
+
+/**
+ * Reads every `*.ts` under the runner's ENTIRE `src` tree (recursively:
+ * steps, pages, support, fixtures, …) — the #77 coverage cache's sources
+ * digest input (spec D6). Wider than {@link loadStepSources} (`src/steps`
+ * only) because bddgen compiles the whole runner graph: the default
+ * generated runner's example step imports `../pages/ExamplePage`, so a
+ * `src/steps`-only digest would miss a page-object/support edit bddgen
+ * recompiles against (Codex P2 on PR #102). Same best-effort semantics as
+ * {@link loadStepSources}.
+ */
+export const loadRunnerSources = (
+  fs: Pick<VaultFileSystem, "listFilesRecursive" | "readFile">,
+  runnerSrcDir: VaultPath,
+): Promise<StepSourceFile[]> => loadTsSources(fs, runnerSrcDir);
 
 /** Scrapes step-definition patterns out of an already-read set of source files. */
 export const parseStepSources = (sources: readonly StepSourceFile[]): StepDefinitionPattern[] =>

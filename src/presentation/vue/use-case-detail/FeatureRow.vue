@@ -15,6 +15,12 @@ import {
 
 const props = defineProps<{ row: FeatureRowModel }>();
 const deps = inject(USE_CASE_DETAIL_DEPS)!;
+// #77: lets the parent re-derive the loop rail after THIS row's generate
+// commits (the outcome's post-generate re-detect has already recorded the
+// coverage verdict by then) — scoped to generate only, not detect, since a
+// detect refresh would unmount this row mid-flight and drop its own inline
+// result before it renders (Codex P2 on PR #102).
+const emit = defineEmits<{ generated: [] }>();
 
 // The muted per-Feature health line (Wave F). An unreadable/unparseable Feature
 // leaves the line empty (Validate explains why).
@@ -59,14 +65,20 @@ const run = (): void => void deps.runLauncher.launch({ scope: "feature", target:
 // The inline validate/detect/generate handlers share one runner: render pending,
 // await the outcome, then commit ONLY if no refresh intervened (so a result from
 // the pre-edit Feature can't repopulate the row after the watcher cleared it).
+// `onCommitted` fires ONLY alongside that commit (never after a stale write is
+// dropped) — generate() uses it to tell the parent to re-derive the rail.
 async function runAction(
   pendingText: string,
   outcome: () => Promise<ChecklistRow[]>,
+  onCommitted?: () => void,
 ): Promise<void> {
   const gen = generation;
   result.value = pending(pendingText);
   const rows = await outcome();
-  if (gen === generation) result.value = rows;
+  if (gen === generation) {
+    result.value = rows;
+    onCommitted?.();
+  }
 }
 
 const validate = (): void =>
@@ -78,12 +90,15 @@ const detect = (): void =>
     detectMissingStepsOutcome(deps.specificationService, props.row.path),
   );
 const generate = (): void =>
-  void runAction("Generating step definitions…", () =>
-    generateStepDefinitionsOutcome(
-      deps.specificationService,
-      deps.stepDefinitionService,
-      props.row.path,
-    ),
+  void runAction(
+    "Generating step definitions…",
+    () =>
+      generateStepDefinitionsOutcome(
+        deps.specificationService,
+        deps.stepDefinitionService,
+        props.row.path,
+      ),
+    () => emit("generated"),
   );
 </script>
 

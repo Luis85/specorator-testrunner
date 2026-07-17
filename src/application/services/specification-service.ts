@@ -11,8 +11,13 @@ import {
   isStepDefined,
   type StepDefinitionPattern,
 } from "../content/step-definitions";
-import { loadStepSources, parseStepSources, type StepSourceFile } from "./load-step-definitions";
-import { StepCoverageCache } from "./step-coverage-cache";
+import {
+  loadRunnerSources,
+  loadStepSources,
+  parseStepSources,
+  type StepSourceFile,
+} from "./load-step-definitions";
+import { sourcesDigest, StepCoverageCache } from "./step-coverage-cache";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { VaultFileSystem } from "../ports/vault-file-system";
@@ -328,19 +333,38 @@ export class DefaultSpecificationService implements SpecificationService {
     return parseStepSources(await this.stepSources(settings));
   }
 
+  /** The steps folder, resolved from an already-loaded `settings` snapshot. */
+  private stepsDirFor(settings: TestHubSettings): VaultPath {
+    return joinVaultPath(settings.paths.testRunnerPath, "src/steps");
+  }
+
   /**
    * The steps folder's raw source files (path + bytes) for the ALREADY-LOADED
-   * `settings` snapshot — the #77 coverage cache's content-address input (spec
-   * D6) and, via {@link parseStepSources}, the static-heuristic input too.
+   * `settings` snapshot — {@link listStepPatterns}' static-heuristic input.
    * Takes `settings` rather than loading it itself (Codex P2, settings TOCTOU
-   * on PR #102): a caller that also derives a spawn cwd from settings (e.g.
-   * `detectMissingSteps`) must resolve BOTH from the SAME snapshot, or a
-   * settings edit landing between two independent loads could record a
-   * verdict for a runner bddgen never actually evaluated.
+   * on PR #102) for the same reason {@link runnerSources} does below.
    */
   private async stepSources(settings: TestHubSettings): Promise<StepSourceFile[]> {
-    const stepsDir = joinVaultPath(settings.paths.testRunnerPath, "src/steps");
-    return loadStepSources(this.fs, stepsDir);
+    return loadStepSources(this.fs, this.stepsDirFor(settings));
+  }
+
+  /**
+   * The runner's WHOLE `src` tree's raw source files (path + bytes) for the
+   * ALREADY-LOADED `settings` snapshot — the #77 coverage cache's
+   * content-address input (spec D6). Wider than {@link stepSources}
+   * (`src/steps` only) because bddgen compiles the whole runner graph: the
+   * default generated runner's example step imports `../pages/ExamplePage`,
+   * so a `src/steps`-only digest would miss a page-object/support edit bddgen
+   * recompiles against (Codex P2 on PR #102). Takes `settings` rather than
+   * loading it itself (Codex P2, settings TOCTOU on PR #102): a caller that
+   * also derives a spawn cwd from settings (e.g. `detectMissingSteps`) must
+   * resolve BOTH from the SAME snapshot, or a settings edit landing between
+   * two independent loads could record a verdict for a runner bddgen never
+   * actually evaluated.
+   */
+  private async runnerSources(settings: TestHubSettings): Promise<StepSourceFile[]> {
+    const runnerSrcDir = joinVaultPath(settings.paths.testRunnerPath, "src");
+    return loadRunnerSources(this.fs, runnerSrcDir);
   }
 
   async allStepsDefined(featurePaths: readonly VaultPath[]): Promise<boolean> {
@@ -348,8 +372,15 @@ export class DefaultSpecificationService implements SpecificationService {
     // ONE settings load feeds the #77 cache's sources snapshot below — no
     // per-feature reload (Codex P2, settings TOCTOU on PR #102).
     const settings = await this.settingsService.load();
-    const sources = await this.stepSources(settings);
-    const definitions = parseStepSources(sources);
+    // The #77 cache consults against the WHOLE runner src tree (spec D6); the
+    // static fallback still scrapes only src/steps (listStepPatterns' scope),
+    // filtered out of this SAME read so a cache miss doesn't re-list the
+    // folder a second time.
+    const runnerSources = await this.runnerSources(settings);
+    const stepsDir = this.stepsDirFor(settings);
+    const definitions = parseStepSources(
+      runnerSources.filter((source) => source.path.startsWith(`${stepsDir}/`)),
+    );
     let sawStep = false;
     for (const featurePath of featurePaths) {
       // A raw read per Feature feeds BOTH the #77 cache consult (raw bytes,
@@ -366,7 +397,7 @@ export class DefaultSpecificationService implements SpecificationService {
       const authoritative = this.stepCoverage.authoritativeCovered(
         featurePath,
         featureContent,
-        sources,
+        runnerSources,
       );
       if (authoritative !== null) {
         if (!authoritative) return false;
@@ -457,11 +488,12 @@ export class DefaultSpecificationService implements SpecificationService {
     const safeNode = this.commandSafety.assertSafe([settings.runner.nodeExecutable, "--version"]);
     if (!safeNode.ok) return err(safeNode.error);
 
-    // #77: the steps-folder sources bddgen is about to evaluate — the cache
-    // records against THIS set (spec D6: raw path+bytes, not scraped patterns),
-    // so a steps-dir file edited externally during or after the spawn
+    // #77: the WHOLE runner src tree's sources bddgen is about to evaluate —
+    // the cache records against THIS set (spec D6: raw path+bytes, not
+    // scraped patterns, and not just src/steps — see runnerSources' doc), so
+    // a runner-src file edited externally during or after the spawn
     // hash-misses and falls back to the static heuristic.
-    const sourcesAtSpawn = await this.stepSources(settings);
+    const sourcesAtSpawn = await this.runnerSources(settings);
 
     // Scope bddgen to THIS feature (same BDD_FEATURES env the generated config
     // reads) so a malformed/unrelated feature elsewhere can't make detection
@@ -490,18 +522,24 @@ export class DefaultSpecificationService implements SpecificationService {
     );
     const missingSteps = keepFeatureSteps(collectStepTexts(feature), missingPatterns);
 
-    // #77 spec D6: bddgen reads the .feature from disk mid-spawn. Re-read the
-    // raw bytes now and record the verdict ONLY if they still match what we
-    // sent bddgen to evaluate — an external edit landing inside the spawn
-    // window skips the record (miss-safe); an edit-and-revert entirely within
-    // the window is the accepted unobservable residual (Codex P2 on PR #102).
-    // The event published and the missingSteps returned below stay as-is
-    // either way — they describe what bddgen actually saw well enough for UI
-    // purposes; only the RECORD is gated. Checked (and, when it holds,
-    // recorded) BEFORE the publish, so a subscriber that queries
-    // allStepsDefined while handling the event sees the fresh verdict.
+    // #77 spec D6: bddgen reads the .feature AND every runner src file from
+    // disk mid-spawn. Re-read BOTH now and record the verdict ONLY if they
+    // still match what we sent bddgen to evaluate — an edit to EITHER,
+    // landing inside the spawn window, skips the record (miss-safe); an
+    // edit-and-revert entirely within the window is the accepted
+    // unobservable residual for both (Codex P2 on PR #102). The event
+    // published and the missingSteps returned below stay as-is either way —
+    // they describe what bddgen actually saw well enough for UI purposes;
+    // only the RECORD is gated. Checked (and, when it holds, recorded)
+    // BEFORE the publish, so a subscriber that queries allStepsDefined while
+    // handling the event sees the fresh verdict.
     const postSpawnRead = await this.fs.readFile(featurePath);
-    if (postSpawnRead.ok && postSpawnRead.value === featureContent) {
+    const postSpawnSources = await this.runnerSources(settings);
+    const unchangedSinceSpawn =
+      postSpawnRead.ok &&
+      postSpawnRead.value === featureContent &&
+      sourcesDigest(postSpawnSources) === sourcesDigest(sourcesAtSpawn);
+    if (unchangedSinceSpawn) {
       this.stepCoverage.record(
         featurePath,
         featureContent,

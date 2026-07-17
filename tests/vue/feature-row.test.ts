@@ -59,6 +59,8 @@ const checkRows = (w: ReturnType<typeof mountRow>) =>
   w.findAll(".e2e-test-hub-uc-detail-feature-result .e2e-test-hub-settings-check-row");
 const validateButton = (w: ReturnType<typeof mountRow>) =>
   w.get(`button[aria-label="Validate ${LABEL}"]`);
+const generateButton = (w: ReturnType<typeof mountRow>) =>
+  w.get(`button[aria-label="Generate step definitions for ${LABEL}"]`);
 
 describe("FeatureRow", () => {
   it("loads and renders the health line on mount", async () => {
@@ -133,5 +135,53 @@ describe("FeatureRow", () => {
     await w.setProps({ row: row() });
     await flushPromises();
     expect(checkRows(w)).toHaveLength(0);
+  });
+
+  it("emits generated once the generate outcome commits (#77, Fix 2 — lets the parent re-derive the loop rail)", async () => {
+    const w = mountRow(makeDeps());
+    await flushPromises();
+
+    await generateButton(w).trigger("click");
+    await flushPromises();
+
+    expect(checkRows(w).length).toBeGreaterThan(0);
+    expect(w.emitted("generated")).toHaveLength(1);
+  });
+
+  it("does not emit generated for a generate result dropped by a refresh (stale-write guard)", async () => {
+    let resolveGenerate!: (v: unknown) => void;
+    const deps = makeDeps({
+      stepDefinitionService: {
+        generate: vi.fn().mockReturnValue(
+          new Promise((resolve) => {
+            resolveGenerate = resolve;
+          }),
+        ),
+      },
+    });
+    const w = mountRow(deps);
+    await flushPromises();
+
+    await generateButton(w).trigger("click");
+    // generateStepDefinitionsOutcome awaits detectMissingSteps (an already-
+    // resolved mock) BEFORE reaching the deliberately-pending generate() call;
+    // flushPromises (not just one nextTick) drains that hop while still
+    // leaving the deferred generate() promise itself unresolved below.
+    await flushPromises();
+    expect(w.find(".e2e-test-hub-uc-detail-feature-result").text()).toContain(
+      "Generating step definitions",
+    );
+
+    // A refresh reuses the component (fresh row, same path) — clears the result
+    // and bumps the generation before the generate outcome resolves.
+    await w.setProps({ row: row() });
+    await flushPromises();
+
+    // The stale generate now resolves; it must neither repopulate the row NOR
+    // tell the parent to re-derive the rail on its behalf.
+    resolveGenerate({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } });
+    await flushPromises();
+    expect(checkRows(w)).toHaveLength(0);
+    expect(w.emitted("generated")).toBeUndefined();
   });
 });
