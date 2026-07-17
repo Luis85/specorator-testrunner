@@ -1,15 +1,6 @@
 import type { StepDefinitionPattern } from "../content/step-definitions";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
-
-/** 32-bit FNV-1a over a string; non-cryptographic, deterministic, synchronous. */
-const fnv1a = (input: string): number => {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
-};
+import { fnv1a } from "../../shared/hash/fnv1a";
 
 /** Order-sensitive digest of a string list (JSON-encoded so values can't alias). */
 const listDigest = (parts: readonly string[]): string => fnv1a(JSON.stringify(parts)).toString(36);
@@ -37,6 +28,10 @@ interface CoverageEntry {
  * the entry — the counter would have missed that (a stale "covered" is the
  * dangerous direction). A miss is always safe: callers fall back to the static
  * heuristic. Nothing is persisted (spec D7).
+ *
+ * 32-bit digests: a colliding edit could in principle serve a stale verdict
+ * (~2^-32 per changed-input read) — accepted; the verdict only gates
+ * rail/panel affordances and self-heals on the next detect.
  */
 export class StepCoverageCache {
   private readonly entries = new Map<string, CoverageEntry>();

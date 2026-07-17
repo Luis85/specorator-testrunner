@@ -64,4 +64,12 @@ describe("StepCoverageCache (#77)", () => {
       ),
     ).toBeNull();
   });
+
+  it("keys strictly by path: identical content under a different path still misses", () => {
+    const cache = new StepCoverageCache();
+    cache.record(vp("f.feature"), ["a step"], defs("a step"), true);
+    // Same stepTexts + same definitions as the recorded entry, but a DIFFERENT
+    // path — a content-keyed (rather than path-keyed) cache would wrongly hit.
+    expect(cache.authoritativeCovered(vp("other.feature"), ["a step"], defs("a step"))).toBeNull();
+  });
 });
