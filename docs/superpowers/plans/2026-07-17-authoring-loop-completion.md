@@ -1215,11 +1215,19 @@ async function load(): Promise<void> {
 }
 
 watch(target, () => void load());
-// specification.created included so a newly generated Feature appears in the
-// vault listing without a remount (same class as the Codex P2 event catches).
+// specification.created covers a newly generated Feature in the vault listing;
+// specification.linkedToUseCase covers the USE-CASE target — createFromUseCase
+// publishes `created` BEFORE writing the Use Case's featureFiles link, so a
+// panel refreshing on `created` alone reads the pre-link list and would never
+// see the new Feature until an unrelated event (Codex P2s on PR #102).
 useEventBus(
   deps.eventBus,
-  ["specification.created", "specification.updated", "stepdefinition.generated"],
+  [
+    "specification.created",
+    "specification.linkedToUseCase",
+    "specification.updated",
+    "stepdefinition.generated",
+  ],
   load,
 );
 
