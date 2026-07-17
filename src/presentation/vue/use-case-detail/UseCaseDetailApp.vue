@@ -16,6 +16,7 @@ import {
   projectUseCaseHeader,
   storyMapBacklinks,
   type FeatureRow as FeatureRowModel,
+  type GenerateStepDefinitionsOutcome,
   type StoryMapBacklink,
   type UseCaseHeaderRow,
 } from "../../views/use-case-detail-rows";
@@ -35,13 +36,23 @@ const app = inject(OBSIDIAN_APP)!;
 // Deliberately EXCLUDES "specification.missingSteps.detected": that event also
 // fires for a row-local "Detect missing steps" click, and an awaited reload
 // here would unmount the FeatureRow mid-flight and drop its inline result
-// before it renders. The rail instead refreshes after the generate action's
-// outcome resolves (see generateStepsForAll/FeatureRow's "generated" emit),
-// which already includes a post-generate re-detect (Codex P2 on PR #102).
+// before it renders. ALSO EXCLUDES "stepdefinition.generated" (Codex P2s on PR
+// #102): StepDefinitionService.generate() publishes it AWAITED, mid-call,
+// BEFORE generateStepDefinitionsOutcome's own post-generate re-detect runs —
+// and InMemoryEventBus.publish awaits subscribers, so a subscription here
+// would reload synchronously INSIDE that await, on a STALE (pre-re-detect)
+// coverage read. That reload's loopGeneration/row-generation bump then trips
+// the stale-write guards below and in FeatureRow, skipping the real, fresh
+// refresh. The rail instead refreshes after a COVERAGE-CHANGING generate
+// action's OWN outcome resolves (see generateStepsForAll/FeatureRow's
+// "generated" emit, both gated on coverageChanged) — by which point the
+// re-detect has already recorded the verdict this reload will read. Residual:
+// a generate from the command palette no longer live-refreshes an open detail
+// view — same accepted class as the detect-event exclusion above; it catches
+// up on the next interaction.
 const REFRESH_ON: DomainEventType[] = [
   "specification.created",
   "specification.updated",
-  "stepdefinition.generated",
   "usecase.updated",
   "usecase.status.changed",
   "usecase.deleted",
@@ -206,22 +217,29 @@ async function generateStepsForAll(featurePaths: VaultPath[]): Promise<void> {
   // generation and clears loopResult.
   const generation = loopGeneration;
   loopResult.value = [{ status: "pending", icon: "…", text: "Generating step definitions…" }];
-  const rows = await collectStepGenerationRows(featurePaths);
+  const { rows, coverageChanged } = await collectStepGenerationRows(featurePaths);
   if (loopGeneration !== generation) return;
   loopResult.value = rows;
-  // #77: the outcome above already ran a post-generate re-detect that recorded
-  // the coverage verdict — refresh so the rail (e.g. Steps → the next node)
-  // reflects it. A generate already rebuilds the rows below via reload(), so
-  // the inline result just written being cleared by that reload is expected
-  // and non-regressive, unlike a read-only detect (Codex P2 on PR #102; a
-  // fuller "re-derive only the rail" fix is Task 7 / D1 territory).
-  await refresh();
+  // #77: only refresh when a Feature actually wrote stubs (coverageChanged) —
+  // that's the only case whose post-generate re-detect moved the coverage
+  // verdict the rail reads. A failed or no-op generate has nothing for
+  // reload() to pick up, and refreshing anyway would wipe the error/"nothing
+  // to generate" rows just written above before the user can read them
+  // (Codex P2 on PR #102, WS1). A coverage-changing generate still rebuilds
+  // the rows below via reload(), so the inline result being replaced there is
+  // expected forward momentum, not a regression; a fuller "re-derive only the
+  // rail" fix stays Task 7 / D1 territory.
+  if (coverageChanged) await refresh();
 }
 
 // One Feature reads exactly like the per-row generate; multiple Features label
 // each before its outcome so the aggregated report stays legible (mirrors the
-// view). Pure aggregation — the stale-target guard stays in the caller.
-async function collectStepGenerationRows(featurePaths: VaultPath[]): Promise<ChecklistRow[]> {
+// view). coverageChanged ORs across Features — ANY Feature writing stubs is
+// enough to advance the rail. Pure aggregation — the stale-target guard stays
+// in the caller.
+async function collectStepGenerationRows(
+  featurePaths: VaultPath[],
+): Promise<GenerateStepDefinitionsOutcome> {
   if (featurePaths.length === 1) {
     return generateStepDefinitionsOutcome(
       deps.specificationService,
@@ -230,17 +248,18 @@ async function collectStepGenerationRows(featurePaths: VaultPath[]): Promise<Che
     );
   }
   const rows: ChecklistRow[] = [];
+  let coverageChanged = false;
   for (const featurePath of featurePaths) {
     rows.push(checklistRow("info", featurePath));
-    rows.push(
-      ...(await generateStepDefinitionsOutcome(
-        deps.specificationService,
-        deps.stepDefinitionService,
-        featurePath,
-      )),
+    const outcome = await generateStepDefinitionsOutcome(
+      deps.specificationService,
+      deps.stepDefinitionService,
+      featurePath,
     );
+    rows.push(...outcome.rows);
+    coverageChanged = coverageChanged || outcome.coverageChanged;
   }
-  return rows;
+  return { rows, coverageChanged };
 }
 
 const openExplorer = (): void => void deps.workspace.openView(USE_CASE_VIEW_TYPE);

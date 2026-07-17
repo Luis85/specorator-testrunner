@@ -319,7 +319,7 @@ describe("generateStepDefinitionsOutcome", () => {
       ok({ featurePath, missingSteps: ["a step"], detectionEventId: "evt-1" }),
   };
 
-  it("detects then generates, reporting the stubs", async () => {
+  it("detects then generates, reporting the stubs and a coverage change", async () => {
     const stepDef = {
       generate: async () =>
         ok({
@@ -329,27 +329,30 @@ describe("generateStepDefinitionsOutcome", () => {
           insertions: [],
         }),
     };
-    const rows = await generateStepDefinitionsOutcome(detected, stepDef, featurePath);
-    expect(rows[0].text).toContain("Generated 1 step stub in");
+    const outcome = await generateStepDefinitionsOutcome(detected, stepDef, featurePath);
+    expect(outcome.rows[0].text).toContain("Generated 1 step stub in");
+    expect(outcome.coverageChanged).toBe(true);
   });
 
-  it("stops at a detection failure without generating", async () => {
+  it("stops at a detection failure without generating, reporting no coverage change", async () => {
     const spec = { detectMissingSteps: async () => err(appError("VALIDATION_FAILED", "nope")) };
     const stepDef = {
       generate: async () => {
         throw new Error("generate must not be called after a detection failure");
       },
     };
-    expect(await generateStepDefinitionsOutcome(spec, stepDef, featurePath)).toEqual([
-      { status: "error", icon: "✗", text: "Detection failed: nope" },
-    ]);
+    expect(await generateStepDefinitionsOutcome(spec, stepDef, featurePath)).toEqual({
+      rows: [{ status: "error", icon: "✗", text: "Detection failed: nope" }],
+      coverageChanged: false,
+    });
   });
 
-  it("surfaces a generation failure as an error row", async () => {
+  it("surfaces a generation failure as an error row, reporting no coverage change", async () => {
     const stepDef = { generate: async () => err(appError("VALIDATION_FAILED", "kaput")) };
-    expect(await generateStepDefinitionsOutcome(detected, stepDef, featurePath)).toEqual([
-      { status: "error", icon: "✗", text: "Could not generate step definitions: kaput" },
-    ]);
+    expect(await generateStepDefinitionsOutcome(detected, stepDef, featurePath)).toEqual({
+      rows: [{ status: "error", icon: "✗", text: "Could not generate step definitions: kaput" }],
+      coverageChanged: false,
+    });
   });
 
   it("re-detects after generating stubs so the coverage verdict lands (#77)", async () => {
@@ -369,13 +372,14 @@ describe("generateStepDefinitionsOutcome", () => {
           insertions: [],
         }),
     };
-    await generateStepDefinitionsOutcome(spec, stepDef, featurePath);
+    const outcome = await generateStepDefinitionsOutcome(spec, stepDef, featurePath);
     // detect → generate → RE-detect (the re-detect records the coverage
     // verdict) — both calls target the SAME feature.
     expect(detectCalls).toEqual([featurePath, featurePath]);
+    expect(outcome.coverageChanged).toBe(true);
   });
 
-  it("skips the re-detect when nothing was generated", async () => {
+  it("skips the re-detect when nothing was generated, preserving the no-op row (Codex P2 on PR #102)", async () => {
     const detectCalls: VaultPath[] = [];
     const spec: Pick<SpecificationService, "detectMissingSteps"> = {
       detectMissingSteps: async (path) => {
@@ -392,7 +396,14 @@ describe("generateStepDefinitionsOutcome", () => {
           insertions: [],
         }),
     };
-    await generateStepDefinitionsOutcome(spec, stepDef, featurePath);
+    const outcome = await generateStepDefinitionsOutcome(spec, stepDef, featurePath);
     expect(detectCalls).toEqual([featurePath]);
+    // No stubs were written, so this is a no-op: the rail must not refresh
+    // (coverageChanged: false) and the "nothing to generate" row must survive
+    // for the caller to render rather than being replaced.
+    expect(outcome.coverageChanged).toBe(false);
+    expect(outcome.rows).toEqual([
+      { status: "ok", icon: "✓", text: "No missing steps — nothing to generate." },
+    ]);
   });
 });
