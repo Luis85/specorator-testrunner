@@ -310,7 +310,7 @@ describe("stub layout (WS1 Task 1)", () => {
       `import { createBdd } from "playwright-bdd";\n` +
         `const { Given, When, Then } = createBdd();\n` +
         `\n` +
-        `// ${"TO" + "DO"}: implement this step (generated stub for: I do a thing)\n` +
+        `// ${"TO" + "DO"}: implement this step (generated stub for: I do a thing)\n` + // split keeps the marker out of workspace-wide greps
         `Given("I do a thing", async ({ page }) => {\n` +
         `  throw new Error("Pending");\n` +
         `});\n`,

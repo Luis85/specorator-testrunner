@@ -104,13 +104,17 @@ export class DefaultStepDefinitionService implements StepDefinitionService {
       if (!read.ok) return err(read.error);
       const separator = read.value.endsWith("\n") ? "\n" : "\n\n";
       const layout = buildAppendedStubsLayout(read.value, stillMissing);
-      const offset = countNewlines(`${read.value}${separator}`);
+      // Hoisted so the range offset and the written content are computed from
+      // the SAME string — the ranges are only correct because those two stay
+      // identical, and this makes drift between them structurally impossible.
+      const prefix = `${read.value}${separator}`;
+      const offset = countNewlines(prefix);
       insertions = layout.insertions.map((entry) => ({
         step: entry.step,
         startLine: entry.startLine + offset,
         endLine: entry.endLine + offset,
       }));
-      written = await this.fs.writeFile(stepFile, `${read.value}${separator}${layout.text}`);
+      written = await this.fs.writeFile(stepFile, `${prefix}${layout.text}`);
     } else {
       const layout = buildStepDefinitionStubFileLayout(stillMissing);
       insertions = layout.insertions;
