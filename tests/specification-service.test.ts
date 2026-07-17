@@ -469,6 +469,28 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     expect(await service.allStepsDefined([FEATURE])).toBe(true);
   });
 
+  it("authoritative false overrides a static true (Task 4 review — mutation-verified gap)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    fs.files.set(FEATURE, ONE_STEP); // "Given a step" — static alone WOULD say true
+    defineStep(fs, "a step"); // exact static match
+    seedRunnerFolder(absoluteFs);
+    // bddgen disagrees with the static heuristic: reports THIS step missing.
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("a step", "a step from a different feature"),
+    );
+
+    const detected = await service.detectMissingSteps(FEATURE);
+    expect(detected.ok).toBe(true);
+    if (detected.ok) expect(detected.value.missingSteps).toEqual(["a step"]);
+
+    // The recorded covered=false must override what static alone would say
+    // (true) — pins that the authoritative branch short-circuits BEFORE the
+    // static fallback, in both directions, and that covered=false is actually
+    // recorded (not just covered=true).
+    expect(await service.allStepsDefined([FEATURE])).toBe(false);
+  });
+
   it("allStepsDefined falls back to static after the feature changes (hash miss)", async () => {
     const { service, fs, detected } = await detectColourFeature();
     expect(detected.ok).toBe(true);
@@ -482,6 +504,23 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
       "Feature: Colour\n  Scenario: S\n    Given I have a colour\n    When something undefined happens\n",
     );
 
+    expect(await service.allStepsDefined([FEATURE])).toBe(false);
+  });
+
+  it("falls back to static after a scrape-invisible edit to the step-definitions file (Codex P2 on PR #102)", async () => {
+    const { service, fs, detected } = await detectColourFeature();
+    expect(detected.ok).toBe(true);
+    expect(await service.allStepsDefined([FEATURE])).toBe(true); // cache hit, pre-edit
+
+    // Append a comment to the step-definitions file: the scraper is blind to
+    // it, so the SCRAPED pattern set is unchanged — but spec D6 digests the
+    // RAW bytes, not the scraped patterns.
+    const stepsFile = ".testrunner/src/steps/demo.steps.ts";
+    const current = fs.files.get(stepsFile) ?? "";
+    fs.files.set(stepsFile, `${current}\n// a harmless comment\n`);
+
+    // Raw-source addressing catches the edit and falls back to static, which
+    // (for this colou?r fixture) has always reported the step undefined.
     expect(await service.allStepsDefined([FEATURE])).toBe(false);
   });
 });

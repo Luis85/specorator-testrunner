@@ -11,7 +11,7 @@ import {
   isStepDefined,
   type StepDefinitionPattern,
 } from "../content/step-definitions";
-import { loadStepDefinitions } from "./load-step-definitions";
+import { loadStepSources, parseStepSources, type StepSourceFile } from "./load-step-definitions";
 import { StepCoverageCache } from "./step-coverage-cache";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
@@ -122,10 +122,10 @@ export interface SpecificationService {
    * Whether EVERY Gherkin step across the given Features already has a matching
    * step definition — the loop rail's real "steps defined" signal (WS-C1). Uses
    * the SAME static {@link listStepPatterns} source the Feature Editor's
-   * missing-step flags read, NOT `bddgen` and NOT the `automationStatus` proxy
-   * (which can't see the runner project's stubs and conflates
-   * `planned`/`failing`/`implemented` with undefined steps). Spawns no process and
-   * has no side effects, so it is safe to call on every detail-view render.
+   * missing-step flags read as its fallback tier — spawns no bddgen itself — and
+   * is NOT the `automationStatus` proxy (which can't see the runner project's
+   * stubs and conflates `planned`/`failing`/`implemented` with undefined steps).
+   * Has no side effects, so it is safe to call on every detail-view render.
    *
    * Returns `false` for an empty Feature set, when any Feature is unreadable (the
    * step coverage can't be proven), or when the Features declare no steps at all.
@@ -324,16 +324,28 @@ export class DefaultSpecificationService implements SpecificationService {
   }
 
   async listStepPatterns(): Promise<StepDefinitionPattern[]> {
+    return parseStepSources(await this.stepSources());
+  }
+
+  /**
+   * The steps folder's raw source files (path + bytes) — the #77 coverage
+   * cache's content-address input (spec D6) and, via {@link parseStepSources},
+   * `listStepPatterns`'s static-heuristic input too. Same settings → stepsDir
+   * derivation as `listStepPatterns` used before this split.
+   */
+  private async stepSources(): Promise<StepSourceFile[]> {
     const settings = await this.settingsService.load();
     const stepsDir = joinVaultPath(settings.paths.testRunnerPath, "src/steps");
-    return loadStepDefinitions(this.fs, stepsDir);
+    return loadStepSources(this.fs, stepsDir);
   }
 
   async allStepsDefined(featurePaths: readonly VaultPath[]): Promise<boolean> {
     if (featurePaths.length === 0) return false;
-    // Read the defined patterns ONCE — they both key the #77 cache lookup and
-    // feed the static fallback, so the authoritative path costs no extra I/O.
-    const definitions = await this.listStepPatterns();
+    // Read the steps-folder sources ONCE — they key the #77 cache lookup on the
+    // RAW bytes (spec D6) and, via parseStepSources, feed the static fallback
+    // too, so the authoritative path costs no extra I/O.
+    const sources = await this.stepSources();
+    const definitions = parseStepSources(sources);
     let sawStep = false;
     for (const featurePath of featurePaths) {
       const feature = await readFeatureFile(this.fs, featurePath);
@@ -342,11 +354,7 @@ export class DefaultSpecificationService implements SpecificationService {
       if (!feature.ok) return false;
       const stepTexts = collectStepTexts(feature.value);
       if (stepTexts.length > 0) sawStep = true;
-      const authoritative = this.stepCoverage.authoritativeCovered(
-        featurePath,
-        stepTexts,
-        definitions,
-      );
+      const authoritative = this.stepCoverage.authoritativeCovered(featurePath, stepTexts, sources);
       if (authoritative !== null) {
         if (!authoritative) return false;
         continue;
@@ -428,10 +436,11 @@ export class DefaultSpecificationService implements SpecificationService {
     const safeNode = this.commandSafety.assertSafe([settings.runner.nodeExecutable, "--version"]);
     if (!safeNode.ok) return err(safeNode.error);
 
-    // #77: the definition snapshot bddgen is about to evaluate — the cache
-    // records against THIS set, so a step file edited externally during or
-    // after the spawn hash-misses and falls back to the static heuristic.
-    const definitionsAtSpawn = await this.listStepPatterns();
+    // #77: the steps-folder sources bddgen is about to evaluate — the cache
+    // records against THIS set (spec D6: raw path+bytes, not scraped patterns),
+    // so a steps-dir file edited externally during or after the spawn
+    // hash-misses and falls back to the static heuristic.
+    const sourcesAtSpawn = await this.stepSources();
 
     // Scope bddgen to THIS feature (same BDD_FEATURES env the generated config
     // reads) so a malformed/unrelated feature elsewhere can't make detection
@@ -458,7 +467,20 @@ export class DefaultSpecificationService implements SpecificationService {
     const missingPatterns: StepDefinitionPattern[] = parseBddgenMissingSteps(ran.value.stdout).map(
       (source) => ({ kind: "expression", source }),
     );
-    const missingSteps = keepFeatureSteps(collectStepTexts(feature.value), missingPatterns);
+    // Hoisted: both keepFeatureSteps and the #77 cache record below need it.
+    const featureStepTexts = collectStepTexts(feature.value);
+    const missingSteps = keepFeatureSteps(featureStepTexts, missingPatterns);
+
+    // #77: record the authoritative verdict against the inputs bddgen saw
+    // (spec D6: raw step-file sources, not scraped patterns — see
+    // StepCoverageCache's doc), BEFORE the publish below, so a subscriber that
+    // queries allStepsDefined while handling the event sees the fresh verdict.
+    this.stepCoverage.record(
+      featurePath,
+      featureStepTexts,
+      sourcesAtSpawn,
+      missingSteps.length === 0,
+    );
 
     const detectionEvent = createEvent("specification.missingSteps.detected", {
       featurePath,
@@ -469,14 +491,6 @@ export class DefaultSpecificationService implements SpecificationService {
       featurePath,
       missing: missingSteps.length,
     });
-    // #77: record the authoritative verdict against the inputs bddgen saw, so
-    // the loop rail's allStepsDefined can serve it until either input changes.
-    this.stepCoverage.record(
-      featurePath,
-      collectStepTexts(feature.value),
-      definitionsAtSpawn,
-      missingSteps.length === 0,
-    );
     return ok({ featurePath, missingSteps, detectionEventId: detectionEvent.id });
   }
 
