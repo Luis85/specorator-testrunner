@@ -492,6 +492,18 @@ it("detectMissingSteps with missing steps records covered=false", async () => {
   await service.detectMissingSteps(featurePath);
   expect(await service.allStepsDefined([featurePath])).toBe(false);
 });
+
+it("records against the definitions bddgen saw, not a post-spawn edit (TOCTOU)", async () => {
+  // Arrange the covering-definitions fixture (as in the cache-hit test), but
+  // make the fake child-process run DELETE/EMPTY the step-definition file as a
+  // side effect (simulating an external edit during the bddgen window). The
+  // recorded defsHash must reflect the PRE-spawn set, so the follow-up
+  // allStepsDefined — hashing the now-changed set — hash-misses and falls back
+  // to the static heuristic, which reports the step undefined.
+  const detected = await service.detectMissingSteps(featurePath);
+  expect(detected.ok).toBe(true);
+  expect(await service.allStepsDefined([featurePath])).toBe(false);
+});
 ```
 
 (Adapt arrange details to the file's existing fixtures — the three behaviours are the contract: hit-overrides-static, feature-edit-misses, negative-verdict-recorded.)
@@ -513,7 +525,16 @@ In `src/application/services/specification-service.ts`:
   private readonly stepCoverage = new StepCoverageCache();
 ```
 
-3. At the END of `detectMissingSteps` (just before `return ok(...)`, after `missingSteps` is computed and the event is published), record the verdict:
+3. Snapshot the definition set BEFORE spawning bddgen, and record against that snapshot. Reading the set after the spawn would be a TOCTOU hole: a step file edited or deleted externally during the bddgen window would hash-match the recorded entry and serve a stale `covered=true` — exactly the direction the content-addressing exists to prevent (Codex P2 on PR #102). Immediately before the `this.childProcess.run` call add:
+
+```ts
+    // #77: the definition snapshot bddgen is about to evaluate — the cache
+    // records against THIS set, so a step file edited externally during or
+    // after the spawn hash-misses and falls back to the static heuristic.
+    const definitionsAtSpawn = await this.listStepPatterns();
+```
+
+Then at the END of `detectMissingSteps` (just before `return ok(...)`, after `missingSteps` is computed and the event is published), record the verdict:
 
 ```ts
     // #77: record the authoritative verdict against the inputs bddgen saw, so
@@ -521,7 +542,7 @@ In `src/application/services/specification-service.ts`:
     this.stepCoverage.record(
       featurePath,
       collectStepTexts(feature.value),
-      await this.listStepPatterns(),
+      definitionsAtSpawn,
       missingSteps.length === 0,
     );
 ```
