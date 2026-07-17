@@ -4,7 +4,7 @@ import {
 } from "../../application/content/step-definitions";
 import type { ExecutionScope } from "../../domain/entities/test-run";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
-import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
+import { unsafeVaultPath, vaultPath } from "../../domain/value-objects/vault-path";
 
 /**
  * The Pending Steps companion (WS1/C2, spec §3.2): pure projections behind the
@@ -40,7 +40,7 @@ export interface PendingFeatureGroup {
 /**
  * Projects one Feature's panel group. `bddgenMissing` is the authoritative
  * missing list when a detect has run (null → static tier via
- * {@link findMissingSteps}).
+ * {@link findMissingSteps}), assumed distinct.
  */
 export const projectPendingFeature = (
   path: VaultPath,
@@ -86,6 +86,12 @@ export const pendingStepsTargetForRun = (
  * an unsafe cast — the same idiom as `readPersistedActiveSection`
  * (hub-sections.ts). Null for anything that isn't one of the three shapes; the
  * view then falls back to the vault target.
+ *
+ * The feature branch runs `featurePath` through the {@link vaultPath} SMART
+ * constructor rather than {@link unsafeVaultPath}: `workspace.json` is
+ * hand-editable/sync-corruptible, exactly the untrusted-input class
+ * `vaultPath` exists to validate (ADR-0008). An unsafe path falls back to
+ * `null`, same as any other unrecognised shape.
  */
 export const readPersistedPendingStepsTarget = (state: unknown): PendingStepsTarget | null => {
   if (typeof state !== "object" || state === null) return null;
@@ -97,7 +103,8 @@ export const readPersistedPendingStepsTarget = (state: unknown): PendingStepsTar
     return { kind: "use-case", useCaseId: record.useCaseId };
   }
   if (record.kind === "feature" && typeof record.featurePath === "string") {
-    return { kind: "feature", featurePath: unsafeVaultPath(record.featurePath) };
+    const branded = vaultPath(record.featurePath);
+    return branded.ok ? { kind: "feature", featurePath: branded.value } : null;
   }
   return null;
 };

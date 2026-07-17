@@ -397,8 +397,8 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
    * character, so the bare "I have a colour" step never matches it
    * statically, though bddgen, the real cucumber-expression engine, resolves
    * it fine), then runs `detect` once — the state the #77 cache tests below
-   * start from (one reads the recorded verdict as-is, the other invalidates
-   * it and checks the static fallback).
+   * start from (one reads the recorded verdict as-is, the others invalidate
+   * it and check the static fallback).
    */
   const detectColourFeature = async () => {
     const { service, fs, absoluteFs, childProcess } = build();

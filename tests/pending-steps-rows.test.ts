@@ -49,6 +49,16 @@ describe("projectPendingFeature", () => {
       false,
     );
   });
+
+  it("counts repeated step texts per occurrence and dedupes missing first-seen", () => {
+    const group = projectPendingFeature(
+      unsafeVaultPath("f.feature"),
+      ["a", "a", "b"],
+      defs("b"),
+      null,
+    );
+    expect(group).toMatchObject({ totalSteps: 3, definedSteps: 1, missing: ["a"] });
+  });
 });
 
 describe("pendingStepsTargetForRun", () => {
