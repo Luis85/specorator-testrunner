@@ -36,6 +36,11 @@ const REFRESH_ON: DomainEventType[] = [
   "specification.created",
   "specification.updated",
   "stepdefinition.generated",
+  // #77: the post-generate re-detect fires this AFTER stepdefinition.generated
+  // and is what actually records the coverage verdict — without subscribing
+  // here the rail would render the stale pre-verdict state until an unrelated
+  // event (Codex P2 on PR #102).
+  "specification.missingSteps.detected",
   "usecase.updated",
   "usecase.status.changed",
   "usecase.deleted",

@@ -174,6 +174,12 @@ export function registerCommands(
       new Notice(`Could not generate step definitions: ${generated.error.message}`, 10000);
       return;
     }
+    if (generated.value.generatedSteps.length > 0) {
+      // #77: mirror the detail-rows outcome's post-generate re-detect (best
+      // effort) so a palette-triggered generate also lands the coverage cache
+      // verdict without a second manual Detect (Codex P2 on PR #102).
+      await deps.specificationService.detectMissingSteps(path);
+    }
     const count = generated.value.generatedSteps.length;
     new Notice(
       count === 0

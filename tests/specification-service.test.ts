@@ -61,7 +61,7 @@ const build = (
     new DefaultCommandSafetyPolicy(),
     opts?.activeRunId ?? (() => null),
   );
-  return { service, useCases, fs, absoluteFs, childProcess, events, types };
+  return { service, useCases, fs, absoluteFs, childProcess, events, types, settings };
 };
 
 /** Seeds the fake absolute filesystem so the runner folder appears to exist. */
@@ -523,6 +523,68 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     // (for this colou?r fixture) has always reported the step undefined.
     expect(await service.allStepsDefined([FEATURE])).toBe(false);
   });
+
+  it("an Examples-row edit invalidates a recorded outline verdict end-to-end (Codex P2 on PR #102)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-outline.feature");
+    const outline = (value: string): string =>
+      `Feature: Outline
+  Scenario Outline: S
+    Given I have a <colour>
+
+    Examples:
+      | colour |
+      | ${value} |
+`;
+    fs.files.set(path, outline("red"));
+    // Same "bddgen resolves it, static can't" asymmetry as the colou?r
+    // fixture: the outline placeholder substitutes to a wildcard sentinel
+    // that a literal, "?"-containing pattern never matches, so static reports
+    // the step undefined REGARDLESS of the Examples value — only the recorded
+    // bddgen verdict can say "covered" here.
+    fs.files.set(
+      ".testrunner/src/steps/demo.steps.ts",
+      'import { Given } from "@cucumber/cucumber";\nGiven("I have a colou?r", async function () {});\n',
+    );
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+    expect(await service.allStepsDefined([path])).toBe(true); // cache hit, pre-edit
+
+    // Edit ONLY the Examples row value — the step TEMPLATE ("I have a
+    // <colour>") is byte-for-byte unchanged elsewhere, so a template-only key
+    // would still hit; bddgen would now evaluate a DIFFERENT pickle ("I have
+    // a blue").
+    fs.files.set(path, outline("blue"));
+
+    // Raw-byte addressing (spec D6) catches the Examples-row edit and falls
+    // back to static, which (deterministically, for this fixture) reports the
+    // step undefined — the safe direction, never the stale recorded "true".
+    expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
+  it("loads settings exactly ONCE per allStepsDefined call, regardless of feature count (Codex P2, settings TOCTOU)", async () => {
+    const { service, fs, settings } = build();
+    const other = vp("Specifications/features/UC-001-second.feature");
+    fs.files.set(FEATURE, ONE_STEP);
+    fs.files.set(other, "Feature: Second\n  Scenario: S\n    Given a step\n");
+    defineStep(fs, "a step");
+
+    let loadCount = 0;
+    const originalLoad = settings.load.bind(settings);
+    settings.load = async () => {
+      loadCount += 1;
+      return originalLoad();
+    };
+
+    // Per-feature reads use `this.fs` directly (no settings involved); the
+    // ONE settings load derives the sources snapshot, shared across BOTH
+    // features rather than reloaded per feature.
+    expect(await service.allStepsDefined([FEATURE, other])).toBe(true);
+    expect(loadCount).toBe(1);
+  });
 });
 
 describe("parseBddgenMissingSteps", () => {
@@ -915,5 +977,85 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
     // read hash-misses and falls back to the static heuristic, which reports
     // the step undefined (no patterns are left at all).
     expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
+  it("skips the record when the FEATURE is edited mid-spawn — a later revert must not serve a stale verdict (spawn-window TOCTOU, feature side, Codex P2 on PR #102)", async () => {
+    // This specifically isolates the spawn-window GATE from the (already-
+    // covered-elsewhere) plain "the file changed and stays changed" case,
+    // where the #77 raw-byte featureHash alone would miss on its own at
+    // CONSULT time regardless of the gate. The gate's OWN job is the
+    // "edited during the spawn, then reverted to the ORIGINAL bytes before
+    // the next consult" case: without it, detectMissingSteps would record
+    // covered=false (bddgen's verdict for the transiently-edited content)
+    // keyed on the ORIGINAL content's hash — and the later revert would then
+    // hash-MATCH that wrongly-stored entry and serve the stale false.
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    const original = "Feature: Demo\n  Scenario: S\n    Given a step\n";
+    fs.files.set(path, original);
+    fs.files.set(
+      ".testrunner/src/steps/demo.steps.ts",
+      'import { Given } from "@cucumber/cucumber";\nGiven("a step", async function () {});\n',
+    );
+    seedRunnerFolder(absoluteFs);
+    // bddgen (hypothetically evaluating a transiently-edited version of the
+    // file during the spawn) reports "a step" missing — even though the
+    // ORIGINAL content's "a step" exactly matches the definition (static
+    // alone would say true for `original`).
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("a step", "a step from a different feature"),
+    );
+    // Simulate an external edit landing DURING the bddgen window: the file is
+    // STILL in its edited state by the time our own post-spawn read runs.
+    const originalRun = childProcess.run.bind(childProcess);
+    childProcess.run = async (request) => {
+      const result = await originalRun(request);
+      fs.files.set(path, `${original}    When something new\n`);
+      return result;
+    };
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+
+    // The edit is undone AFTER detect returns (e.g. an editor autosave raced
+    // the spawn and then reconciled) — the file is back to `original`.
+    fs.files.set(path, original);
+
+    // With the gate, no entry was ever stored (the post-spawn read did not
+    // match `original` at the time detectMissingSteps checked), so this
+    // falls back to static, which — for this exact-match fixture — says true.
+    expect(await service.allStepsDefined([path])).toBe(true);
+  });
+
+  it("loads settings exactly ONCE for the whole detect — a later settings change cannot poison the recorded verdict (Codex P2, settings TOCTOU)", async () => {
+    const { service, fs, absoluteFs, childProcess, settings } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a step\n");
+    fs.files.set(
+      ".testrunner/src/steps/demo.steps.ts",
+      'import { Given } from "@cucumber/cucumber";\nGiven("a step", async function () {});\n',
+    );
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    let loadCount = 0;
+    const originalLoad = settings.load.bind(settings);
+    settings.load = async () => {
+      loadCount += 1;
+      return originalLoad();
+    };
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+    // Exactly ONE settings.load() for the whole detect: cwd/BDD_FEATURES
+    // resolution AND the sources snapshot both come from the SAME loaded
+    // settings — nothing re-loads mid-detect and could observe an edit.
+    expect(loadCount).toBe(1);
+
+    // Confirms the snapshot was actually usable: a subsequent allStepsDefined
+    // (its own fresh, but here unchanged, load) still hits the recorded
+    // verdict computed from that one snapshot.
+    expect(await service.allStepsDefined([path])).toBe(true);
   });
 });

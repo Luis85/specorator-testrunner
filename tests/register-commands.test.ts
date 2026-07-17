@@ -15,7 +15,14 @@ interface RecordedCommand {
   checkCallback?: (checking: boolean) => boolean | undefined;
 }
 
-const buildPlugin = () => {
+/**
+ * `activeFile` defaults to `null` so `activeFeaturePath()` returns early (new
+ * Notice + return null) and command bodies never reach a service call — the
+ * shape almost every test here wants. Pass `{ extension: "feature", path }`
+ * for the few tests that need a command body to actually run past that guard
+ * (e.g. the palette generate re-detect parity regression).
+ */
+const buildPlugin = (activeFile: { extension: string; path: string } | null = null) => {
   const commands: RecordedCommand[] = [];
   const plugin = {
     addCommand: (command: RecordedCommand) => {
@@ -24,10 +31,7 @@ const buildPlugin = () => {
     },
     app: {
       workspace: {
-        // getActiveFile(): return null so activeFeaturePath() returns early
-        // (new Notice + return null); no .feature extension means it won't
-        // proceed to service calls.
-        getActiveFile: vi.fn(() => null),
+        getActiveFile: vi.fn(() => activeFile),
       },
     },
   } as unknown as Plugin;
@@ -260,5 +264,72 @@ describe("registerCommands (smoke)", () => {
         await expect(Promise.resolve(command.callback())).resolves.not.toThrow();
       if (command.checkCallback) expect(() => command.checkCallback?.(true)).not.toThrow();
     }
+  });
+
+  const FEATURE_PATH = "Specifications/features/UC-001-happy-path.feature";
+
+  /**
+   * A fresh `detectMissingSteps` mock reporting one missing step — the common
+   * starting point both generate-step-definitions palette regressions below
+   * arrange (a NEW mock per call: vitest call-state can't be shared across
+   * tests). Returned as a plain local, not read back off `deps...`, so
+   * `expect()` targets a Mock rather than an interface method reference
+   * (@typescript-eslint/unbound-method).
+   */
+  const detectOneMissing = () =>
+    vi.fn(async () =>
+      ok({ featurePath: vp(FEATURE_PATH), missingSteps: ["a step"], detectionEventId: "evt-1" }),
+    );
+
+  it("Build — generate step definitions re-detects after a successful generate (#77 palette parity, Codex P2 on PR #102)", async () => {
+    const { plugin, commands } = buildPlugin({ extension: "feature", path: FEATURE_PATH });
+    const deps = buildDeps();
+    const detectMissingSteps = detectOneMissing();
+    deps.specificationService.detectMissingSteps = detectMissingSteps;
+    deps.stepDefinitionService.generate = vi.fn(async () =>
+      ok({
+        generatedSteps: ["a step"],
+        stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
+        appended: false,
+        insertions: [],
+      }),
+    );
+    registerCommands(plugin, deps);
+
+    commands.find((c) => c.id === "generate-step-definitions")?.callback?.();
+
+    // The command callback is void-wrapped (Obsidian's `() => void asyncFn()`
+    // convention), so it returns synchronously while the chain still runs —
+    // poll until the fire-and-forgotten detect → generate → re-detect settles.
+    await vi.waitFor(() => {
+      expect(detectMissingSteps).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("Build — generate step definitions skips the re-detect when nothing was generated", async () => {
+    const { plugin, commands } = buildPlugin({ extension: "feature", path: FEATURE_PATH });
+    const deps = buildDeps();
+    const detectMissingSteps = detectOneMissing();
+    const generate = vi.fn(async () =>
+      ok({
+        generatedSteps: [] as string[],
+        stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
+        appended: false,
+        insertions: [],
+      }),
+    );
+    deps.specificationService.detectMissingSteps = detectMissingSteps;
+    deps.stepDefinitionService.generate = generate;
+    registerCommands(plugin, deps);
+
+    commands.find((c) => c.id === "generate-step-definitions")?.callback?.();
+
+    await vi.waitFor(() => {
+      expect(generate).toHaveBeenCalledTimes(1);
+    });
+    // generate() has resolved with nothing generated; the remainder of the
+    // command body is synchronous from there (no further await before the
+    // re-detect branch), so by now the skip decision has already been made.
+    expect(detectMissingSteps).toHaveBeenCalledTimes(1);
   });
 });

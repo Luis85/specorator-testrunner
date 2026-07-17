@@ -91,5 +91,11 @@ describe("readPersistedPendingStepsTarget", () => {
     expect(readPersistedPendingStepsTarget(undefined)).toBeNull();
     expect(readPersistedPendingStepsTarget({ target: { kind: "nope" } })).toBeNull();
     expect(readPersistedPendingStepsTarget({ target: { kind: "use-case" } })).toBeNull();
+    // Pins the smart-constructor rejection branch: a hand-edited/sync-
+    // corrupted workspace.json carrying an unsafe featurePath (here, an
+    // escape via "..") must fall back to null, not a branded-but-unsafe path.
+    expect(
+      readPersistedPendingStepsTarget({ target: { kind: "feature", featurePath: "../escape" } }),
+    ).toBeNull();
   });
 });
