@@ -1115,6 +1115,7 @@ import {
 } from "../../views/pending-steps-rows";
 import { collectStepTexts } from "../../../application/content/gherkin";
 import { readFeatureFile } from "../../../application/services/feature-loading";
+import type { StepDefinitionPattern } from "../../../application/content/step-definitions";
 import type { VaultPath } from "../../../domain/value-objects/identifiers";
 
 const deps = inject(PENDING_STEPS_DEPS)!;
@@ -1157,10 +1158,12 @@ async function resolvePaths(value: PendingStepsTarget): Promise<VaultPath[]> {
 }
 
 /** Static-tier group for one Feature (no process spawn — spec D8). */
-async function staticGroup(path: VaultPath): Promise<PendingFeatureGroup | null> {
+async function staticGroup(
+  path: VaultPath,
+  definitions: StepDefinitionPattern[],
+): Promise<PendingFeatureGroup | null> {
   const feature = await readFeatureFile(deps.fs, path);
   if (!feature.ok) return null;
-  const definitions = await deps.specificationService.listStepPatterns();
   return projectPendingFeature(path, collectStepTexts(feature.value), definitions, null);
 }
 
@@ -1169,9 +1172,14 @@ async function load(): Promise<void> {
   const value = target.value;
   state.value = { kind: "loading" };
   const paths = await resolvePaths(value);
+  // Load the step-definition patterns ONCE per render, not once per Feature —
+  // listStepPatterns re-scans `.testrunner/src/steps` on every call, so a
+  // per-group load would repeat that scan N times on a vault target (Codex P2
+  // on PR #102).
+  const definitions = await deps.specificationService.listStepPatterns();
   const groups: GroupState[] = [];
   for (const path of paths) {
-    const group = await staticGroup(path);
+    const group = await staticGroup(path, definitions);
     if (group === null) continue;
     // The vault-wide listing shows only incomplete Features (spec §3.2).
     if (value.kind === "vault" && group.complete) continue;
@@ -1186,7 +1194,13 @@ async function load(): Promise<void> {
 }
 
 watch(target, () => void load());
-useEventBus(deps.eventBus, ["specification.updated", "stepdefinition.generated"], load);
+// specification.created included so a newly generated Feature appears in the
+// vault listing without a remount (same class as the Codex P2 event catches).
+useEventBus(
+  deps.eventBus,
+  ["specification.created", "specification.updated", "stepdefinition.generated"],
+  load,
+);
 
 /** Re-projects one group after a bddgen detect (authoritative tier). */
 async function verify(entry: GroupState): Promise<void> {
@@ -1506,11 +1520,18 @@ const mountApp = (target: PendingStepsTarget, deps: PendingStepsDeps) =>
 describe("PendingStepsApp", () => {
   it("lists statically-incomplete features for the vault target without spawning", async () => {
     const detectCalls: string[] = [];
+    let patternLoads = 0;
     const deps = makeDeps({
       specificationService: {
         listFeatures: async () =>
-          ok([{ path: "features/UC-001-a.feature", label: "UC-001-a.feature" }]),
-        listStepPatterns: async () => [],
+          ok([
+            { path: "features/UC-001-a.feature", label: "UC-001-a.feature" },
+            { path: "features/UC-002-b.feature", label: "UC-002-b.feature" },
+          ]),
+        listStepPatterns: async () => {
+          patternLoads += 1;
+          return [];
+        },
         detectMissingSteps: async (path) => {
           detectCalls.push(path);
           return ok({ featurePath: path, missingSteps: [], detectionEventId: "e1" });
@@ -1521,8 +1542,11 @@ describe("PendingStepsApp", () => {
     await flushPromises();
     expect(w.text()).toContain("UC-001-a.feature");
     expect(w.text()).toContain("0 of 1 steps defined");
-    // Vault target never runs bddgen (spec D8).
+    // Vault target never runs bddgen (spec D8)…
     expect(detectCalls).toHaveLength(0);
+    // …and the step-definition scan runs ONCE per render, not once per Feature
+    // (Codex P2 on PR #102).
+    expect(patternLoads).toBe(1);
   });
 
   it("auto-verifies a feature-targeted open (one bddgen run) and flips to verified", async () => {
@@ -2355,7 +2379,12 @@ Run: `npx vitest run tests/vue/scenario-card-membership.test.ts` → FAIL.
 
 ```ts
 import { useEventBus } from "../use-event-bus";
-useEventBus(ctrl.deps.eventBus, ["suite.created"], () => ctrl.loadAids());
+// All three suite events: an edited Tag Expression or a deleted suite changes
+// membership just as much as a created one (Codex P2 on PR #102) — the same
+// set SuiteDashboardBody subscribes to.
+useEventBus(ctrl.deps.eventBus, ["suite.created", "suite.updated", "suite.deleted"], () =>
+  ctrl.loadAids(),
+);
 ```
 
 3. `ScenarioCard.vue`: add to the script:
@@ -2562,7 +2591,14 @@ async function load(): Promise<void> {
   rows.value = usage.ok && suites.ok ? projectTagGlossary(usage.value, suites.value) : [];
 }
 
-useEventBus(props.deps.eventBus, ["specification.updated", "suite.created"], load);
+// The full set of events that can change tagUsage() or findAll(): Feature
+// created/edited, suite created/updated/deleted (Codex P2 on PR #102) — the
+// same set SuiteDashboardBody subscribes to.
+useEventBus(
+  props.deps.eventBus,
+  ["specification.created", "specification.updated", "suite.created", "suite.updated", "suite.deleted"],
+  load,
+);
 </script>
 
 <template>
