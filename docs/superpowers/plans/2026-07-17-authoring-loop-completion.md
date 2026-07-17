@@ -382,8 +382,10 @@ const fnv1a = (input: string): number => {
 /** Order-sensitive digest of a string list (JSON-encoded so values can't alias). */
 const listDigest = (parts: readonly string[]): string => fnv1a(JSON.stringify(parts)).toString(36);
 
+// JSON-encode each pattern's fields so no separator can alias across them
+// (source "a b" + no flags vs source "a" + flags "b" must digest differently).
 const patternsDigest = (patterns: readonly StepDefinitionPattern[]): string =>
-  listDigest(patterns.map((p) => `${p.kind} ${p.source} ${p.flags ?? ""}`));
+  listDigest(patterns.map((p) => JSON.stringify([p.kind, p.source, p.flags ?? ""])));
 
 interface CoverageEntry {
   stepTextsHash: string;
@@ -1215,6 +1217,27 @@ async function load(): Promise<void> {
 }
 
 watch(target, () => void load());
+
+// Panel actions (Verify/Generate) publish the very events this panel
+// subscribes to, and InMemoryEventBus.publish AWAITS handlers straight through
+// RenderScheduler's returned chain — so an inline event reload would bump
+// `generation` MID-action and drop the action's own success path (re-detect,
+// success rows, stub viewer) every single time (Codex P1 on PR #102). While a
+// panel action is in flight, self-caused events are deliberately SWALLOWED,
+// not deferred: the action leaves its group MORE accurate (authoritative
+// bddgen tier) than the static reload would, and a trailing reload would wipe
+// the just-rendered viewer. An external edit landing exactly inside that
+// window self-heals on its next event.
+let actionDepth = 0;
+async function withAction(run: () => Promise<void>): Promise<void> {
+  actionDepth += 1;
+  try {
+    await run();
+  } finally {
+    actionDepth -= 1;
+  }
+}
+
 // specification.created covers a newly generated Feature in the vault listing;
 // specification.linkedToUseCase covers the USE-CASE target — createFromUseCase
 // publishes `created` BEFORE writing the Use Case's featureFiles link, so a
@@ -1228,11 +1251,15 @@ useEventBus(
     "specification.updated",
     "stepdefinition.generated",
   ],
-  load,
+  () => (actionDepth > 0 ? undefined : load()),
 );
 
+/** Public actions: wrapped so self-caused events are swallowed (Codex P1). */
+const verify = (entry: GroupState): Promise<void> => withAction(() => verifyInner(entry));
+const generate = (entry: GroupState): Promise<void> => withAction(() => generateInner(entry));
+
 /** Re-projects one group after a bddgen detect (authoritative tier). */
-async function verify(entry: GroupState): Promise<void> {
+async function verifyInner(entry: GroupState): Promise<void> {
   const gen = generation;
   entry.busy = true;
   entry.result = [checklistRow("pending", "Verifying with bddgen…")];
@@ -1261,7 +1288,7 @@ async function verify(entry: GroupState): Promise<void> {
 }
 
 /** Detect → generate → re-detect → show the written stubs (spec §3.2). */
-async function generate(entry: GroupState): Promise<void> {
+async function generateInner(entry: GroupState): Promise<void> {
   const gen = generation;
   entry.busy = true;
   entry.result = [checklistRow("pending", "Generating step stubs…")];
@@ -1513,6 +1540,7 @@ import {
 } from "../../src/presentation/vue/pending-steps/pending-steps-deps";
 import type { PendingStepsTarget } from "../../src/presentation/views/pending-steps-rows";
 import { InMemoryEventBus } from "../../src/shared/event-bus/event-bus";
+import { createEvent } from "../../src/shared/event-bus/create-event";
 import { ok, err } from "../../src/shared/result/result";
 import { appError } from "../../src/shared/errors/errors";
 
@@ -1597,10 +1625,17 @@ describe("PendingStepsApp", () => {
     expect(w.text()).toContain("Every step has a definition.");
   });
 
-  it("generate runs detect → generate → re-detect and shows the stub viewer", async () => {
+  it("generate survives its own stepdefinition.generated event and shows the viewer", async () => {
     const detectCalls: string[] = [];
     const stubFile = `import { createBdd } from "playwright-bdd";\nconst { Given, When, Then } = createBdd();\n\n// stub\nGiven("I do a thing", async ({ page }) => {\n  throw new Error("Pending");\n});\n`;
+    // A SHARED bus the generate fake publishes on, exactly like the real
+    // service — InMemoryEventBus.publish awaits the panel's own subscription,
+    // so without the actionDepth swallow this bumps `generation` mid-action
+    // and the success path/viewer never renders (Codex P1 on PR #102). This
+    // test FAILS against the unguarded implementation.
+    const bus = new InMemoryEventBus();
     const deps = makeDeps({
+      eventBus: bus,
       specificationService: {
         listFeatures: async () => ok([]),
         listStepPatterns: async () => [],
@@ -1614,13 +1649,21 @@ describe("PendingStepsApp", () => {
         },
       },
       stepDefinitionService: {
-        generate: async () =>
-          ok({
+        generate: async () => {
+          await bus.publish(
+            createEvent("stepdefinition.generated", {
+              featurePath: "features/UC-001-a.feature",
+              stepFile: "steps/UC-001-a.steps.ts",
+              generatedSteps: ["I do a thing"],
+            }),
+          );
+          return ok({
             generatedSteps: ["I do a thing"],
             stepFile: "steps/UC-001-a.steps.ts",
             appended: false,
             insertions: [{ step: "I do a thing", startLine: 4, endLine: 7 }],
-          }),
+          });
+        },
       },
       fs: {
         readFile: async (path: string) => ok(path.endsWith(".steps.ts") ? stubFile : FEATURE),
@@ -1628,7 +1671,7 @@ describe("PendingStepsApp", () => {
     });
     const w = mountApp({ kind: "feature", featurePath: "features/UC-001-a.feature" }, deps);
     await flushPromises(); // initial load + auto-verify (detect #1)
-    await w.find("button.mod-cta").trigger("click"); // Generate (detect #2, re-detect #3)
+    await w.find(".spec-pending-feature-actions button.mod-cta").trigger("click"); // Generate (detect #2, re-detect #3)
     await flushPromises();
     expect(detectCalls).toHaveLength(3);
     expect(w.text()).toContain("Generated 1 step stub in steps/UC-001-a.steps.ts.");
