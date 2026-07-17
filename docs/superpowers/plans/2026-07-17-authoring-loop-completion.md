@@ -2546,6 +2546,21 @@ describe("projectTagGlossary", () => {
       },
     ]);
   });
+
+  it("includes suite-only tags with a zero scenario count (union, not usage-only)", () => {
+    const rows = projectTagGlossary(
+      [{ tag: "@smoke", scenarioCount: 1 }],
+      [suite("Regression", "@regression")],
+    );
+    expect(rows).toEqual([
+      {
+        tag: "@regression",
+        scenarioCount: 0,
+        suites: [{ name: "Regression", path: "Test Suites/Regression.md" }],
+      },
+      { tag: "@smoke", scenarioCount: 1, suites: [] },
+    ]);
+  });
 });
 ```
 
@@ -2595,13 +2610,23 @@ export const projectTagGlossary = (
       };
     })
     .filter((entry) => entry.tags.size > 0);
-  return usage.map(({ tag, scenarioCount }) => ({
-    tag,
-    scenarioCount,
-    suites: suiteTags
-      .filter((entry) => entry.tags.has(tag))
-      .map((entry) => ({ name: entry.suite.name, path: entry.suite.path })),
-  }));
+  // UNION of corpus usage and suite-referenced tags: a suite-only tag (e.g. a
+  // fresh @regression suite before any scenario carries it) must still row up
+  // with 0 scenarios and its referencing suites — building from `usage` alone
+  // silently omits it (Codex P2 on PR #102).
+  const counts = new Map(usage.map((row) => [row.tag, row.scenarioCount]));
+  for (const entry of suiteTags) {
+    for (const tag of entry.tags) if (!counts.has(tag)) counts.set(tag, 0);
+  }
+  return [...counts.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([tag, scenarioCount]) => ({
+      tag,
+      scenarioCount,
+      suites: suiteTags
+        .filter((entry) => entry.tags.has(tag))
+        .map((entry) => ({ name: entry.suite.name, path: entry.suite.path })),
+    }));
 };
 ```
 
@@ -2947,10 +2972,12 @@ export type RenameGuardVerdict =
 /**
  * Decide whether committing `newName` over `oldName` needs a confirm.
  * `historyRefs` is the set of Scenario References with recorded history
- * (latestStatuses keys); `recentRunsByRef` the per-ref recent-window run count
- * (flakiness `runs`) — both loaded once per editor open. An Outline's history
- * lives under `…::row-<digest>` refs, so the match covers the exact ref AND
- * the row-ref prefix, and the weight sums across them.
+ * (latestStatuses keys); `recentRunsByRef` the per-ref recent-window ENTRY
+ * count (the history index's `recent.length`, INCLUDING skipped results —
+ * flakiness()'s `runs` drops skips and would undercount, Codex P2 on PR #102)
+ * — both loaded once per editor open. An Outline's history lives under
+ * `…::row-<digest>` refs, so the match covers the exact ref AND the row-ref
+ * prefix, and the weight sums across them.
  */
 export const renameGuardVerdict = (
   featurePath: string,
@@ -3074,33 +3101,46 @@ describe("ScenarioCard rename guard", () => {
 
 Run: `npx vitest run tests/vue/scenario-card-rename.test.ts` → FAIL (the current `v-model.lazy` commits immediately).
 
+- [ ] **Step 1b: Add `recentRunCounts()` to `ScenarioHistoryService`**
+
+The C5 copy promises the recent-window count, and `flakiness().runs` undercounts it (`computeFlakiness` filters `skipped` before counting — Codex P2 on PR #102). Add a small additive read to `src/application/services/scenario-history-service.ts` — still window-capped, so this is NOT the exact-total API D3 rules out:
+
+```ts
+  /**
+   * Recent-window entry count per Scenario Reference — the index's
+   * `recent.length` INCLUDING skipped results (flakiness()'s `runs` drops
+   * skips and would undercount) — the rename guard's "(N recent runs)"
+   * weight (C5/D3). Queue-serialized and index-rebuilding like
+   * {@link latestStatuses}.
+   */
+  recentRunCounts(): Promise<Result<Map<string, number>>>;
+```
+
+Implement it on `DefaultScenarioHistoryService` mirroring `latestStatusesInternal`'s queue + fresh-index pattern exactly (same `queue.run`, same `loadFreshIndex()` null → empty-map degradation), mapping each indexed scenario record to its `recent.length`. Extend `tests/scenario-history-service.test.ts` (reuse its existing record/fixture helpers) with one case: record a run where one scenario has a `skipped` and a `passed` entry in its window → `recentRunCounts()` reports 2 for that ref while `flakiness()` reports `runs: 1` — pinning the skip-inclusive contract.
+
 - [ ] **Step 2: Controller history state**
 
 In `feature-editor-controller.ts`:
 
-1. Deps: add `scenarioHistory: Pick<ScenarioHistoryService, "latestStatuses" | "flakiness">;` (+ `import type { ScenarioHistoryService } from "../../../application/services/scenario-history-service";`).
+1. Deps: add `scenarioHistory: Pick<ScenarioHistoryService, "latestStatuses" | "recentRunCounts">;` (+ `import type { ScenarioHistoryService } from "../../../application/services/scenario-history-service";`).
 2. Controller interface: add
 
 ```ts
   /** Scenario References with recorded history — the rename guard's gate (C5). */
   historyRefs: Ref<Set<string>>;
-  /** Recent-window run count per reference (flakiness `runs`) — the confirm's weight. */
+  /** Recent-window entry count per reference (skip-inclusive) — the confirm's weight. */
   historyRuns: Ref<Map<string, number>>;
 ```
 
 3. Factory: `const historyRefs = ref(new Set<string>());`, `const historyRuns = ref(new Map<string, number>());`, and extend `loadAids` (best-effort — a history read failure just leaves the guard silent, matching its advisory backstop):
 
 ```ts
-    const [statuses, flakiness] = await Promise.all([
+    const [statuses, recentCounts] = await Promise.all([
       deps.scenarioHistory.latestStatuses(),
-      deps.scenarioHistory.flakiness(),
+      deps.scenarioHistory.recentRunCounts(),
     ]);
     if (statuses.ok) historyRefs.value = new Set(statuses.value.keys());
-    if (flakiness.ok) {
-      historyRuns.value = new Map(
-        [...flakiness.value.entries()].map(([ref, score]) => [ref, score.runs]),
-      );
-    }
+    if (recentCounts.ok) historyRuns.value = recentCounts.value;
 ```
 
 4. Return both refs from the factory.
