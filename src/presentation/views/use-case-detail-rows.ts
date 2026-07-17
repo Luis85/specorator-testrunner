@@ -270,5 +270,12 @@ export const generateStepDefinitionsOutcome = async (
       checklistRow("error", `Could not generate step definitions: ${generated.error.message}`),
     ];
   }
+  if (generated.value.generatedSteps.length > 0) {
+    // #77: one post-generate re-detect so bddgen confirms the stubs cover the
+    // feature and the coverage cache records it — the rail advances off Steps
+    // without a second manual Detect. Best-effort: a refusal (e.g. a run
+    // started meanwhile) leaves the static heuristic in charge.
+    await specificationService.detectMissingSteps(featurePath);
+  }
   return stepGenerationRows(generated.value);
 };

@@ -12,6 +12,7 @@ import {
   type StepDefinitionPattern,
 } from "../content/step-definitions";
 import { loadStepDefinitions } from "./load-step-definitions";
+import { StepCoverageCache } from "./step-coverage-cache";
 import type { AbsoluteFileSystem } from "../ports/absolute-file-system";
 import type { ChildProcessRunner } from "../ports/child-process-runner";
 import type { VaultFileSystem } from "../ports/vault-file-system";
@@ -129,6 +130,9 @@ export interface SpecificationService {
    * Returns `false` for an empty Feature set, when any Feature is unreadable (the
    * step coverage can't be proven), or when the Features declare no steps at all.
    * Best-effort and infallible — it answers the boolean directly.
+   *
+   * Prefers a content-address-matched bddgen verdict recorded by
+   * `detectMissingSteps` (#77); falls back to the static heuristic on any miss.
    */
   allStepsDefined(featurePaths: readonly VaultPath[]): Promise<boolean>;
 }
@@ -200,6 +204,9 @@ const keepFeatureSteps = (
 };
 
 export class DefaultSpecificationService implements SpecificationService {
+  // #77: bddgen coverage verdicts, content-addressed by (feature steps, defs).
+  private readonly stepCoverage = new StepCoverageCache();
+
   constructor(
     private readonly settingsService: SettingsService,
     private readonly useCaseService: UseCaseService,
@@ -324,20 +331,31 @@ export class DefaultSpecificationService implements SpecificationService {
 
   async allStepsDefined(featurePaths: readonly VaultPath[]): Promise<boolean> {
     if (featurePaths.length === 0) return false;
-    // Read the defined patterns ONCE, then gather every Feature's Gherkin steps —
-    // the same static source as the Feature Editor's flags, no bddgen spawn.
+    // Read the defined patterns ONCE — they both key the #77 cache lookup and
+    // feed the static fallback, so the authoritative path costs no extra I/O.
     const definitions = await this.listStepPatterns();
-    const stepTexts: string[] = [];
+    let sawStep = false;
     for (const featurePath of featurePaths) {
       const feature = await readFeatureFile(this.fs, featurePath);
       // An unreadable Feature means we can't prove its steps are covered: don't
-      // claim "defined" (the rail keeps offering Generate step definitions).
+      // claim "defined" (the rail keeps offering the Steps action).
       if (!feature.ok) return false;
-      stepTexts.push(...collectStepTexts(feature.value));
+      const stepTexts = collectStepTexts(feature.value);
+      if (stepTexts.length > 0) sawStep = true;
+      const authoritative = this.stepCoverage.authoritativeCovered(
+        featurePath,
+        stepTexts,
+        definitions,
+      );
+      if (authoritative !== null) {
+        if (!authoritative) return false;
+        continue;
+      }
+      if (findMissingSteps(stepTexts, definitions).length > 0) return false;
     }
-    // Require at least one step (a step-less Feature set proves nothing) AND no
-    // step left unmatched by a definition.
-    return stepTexts.length > 0 && findMissingSteps(stepTexts, definitions).length === 0;
+    // Require at least one step across the set (a step-less Feature set proves
+    // nothing), matching the pre-cache semantics.
+    return sawStep;
   }
 
   /** UC-007 / US-020: parse the Feature and report structural errors. */
@@ -410,6 +428,11 @@ export class DefaultSpecificationService implements SpecificationService {
     const safeNode = this.commandSafety.assertSafe([settings.runner.nodeExecutable, "--version"]);
     if (!safeNode.ok) return err(safeNode.error);
 
+    // #77: the definition snapshot bddgen is about to evaluate — the cache
+    // records against THIS set, so a step file edited externally during or
+    // after the spawn hash-misses and falls back to the static heuristic.
+    const definitionsAtSpawn = await this.listStepPatterns();
+
     // Scope bddgen to THIS feature (same BDD_FEATURES env the generated config
     // reads) so a malformed/unrelated feature elsewhere can't make detection
     // fail and report RUNNER_NOT_INSTALLED. BDD_TAGS is cleared explicitly: the
@@ -446,6 +469,14 @@ export class DefaultSpecificationService implements SpecificationService {
       featurePath,
       missing: missingSteps.length,
     });
+    // #77: record the authoritative verdict against the inputs bddgen saw, so
+    // the loop rail's allStepsDefined can serve it until either input changes.
+    this.stepCoverage.record(
+      featurePath,
+      collectStepTexts(feature.value),
+      definitionsAtSpawn,
+      missingSteps.length === 0,
+    );
     return ok({ featurePath, missingSteps, detectionEventId: detectionEvent.id });
   }
 

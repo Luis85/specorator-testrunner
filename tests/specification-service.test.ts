@@ -390,6 +390,26 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     );
   };
 
+  /**
+   * Arranges a Feature step bddgen can resolve but the static matcher can't
+   * (Cucumber's optional syntax "colou?r" is a documented static-matcher
+   * limitation, step-definitions.ts — the "?" is escaped as a literal
+   * character, so the bare "I have a colour" step never matches it
+   * statically, though bddgen, the real cucumber-expression engine, resolves
+   * it fine), then runs `detect` once — the state BOTH #77 cache tests below
+   * start from (one reads the recorded verdict as-is, the other invalidates
+   * it and checks the static fallback).
+   */
+  const detectColourFeature = async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    fs.files.set(FEATURE, "Feature: Colour\n  Scenario: S\n    Given I have a colour\n");
+    defineStep(fs, "I have a colou?r");
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+    const detected = await service.detectMissingSteps(FEATURE);
+    return { service, fs, detected };
+  };
+
   it("returns false for an empty Feature set (nothing proven)", async () => {
     const { service, fs } = build();
     defineStep(fs, "a step");
@@ -437,6 +457,32 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     fs.files.set(other, "Feature: Second\n  Scenario: S\n    Given another step\n");
     defineStep(fs, "a step"); // covers FEATURE but not `another step`
     expect(await service.allStepsDefined([FEATURE, other])).toBe(false);
+  });
+
+  it("allStepsDefined serves the bddgen verdict after a detect (cache hit)", async () => {
+    const { service, detected } = await detectColourFeature();
+    expect(detected.ok).toBe(true);
+    if (detected.ok) expect(detected.value.missingSteps).toEqual([]);
+
+    // The detect recorded covered=true; the static heuristic (which would say
+    // false here) is now overridden by the recorded bddgen verdict.
+    expect(await service.allStepsDefined([FEATURE])).toBe(true);
+  });
+
+  it("allStepsDefined falls back to static after the feature changes (hash miss)", async () => {
+    const { service, fs, detected } = await detectColourFeature();
+    expect(detected.ok).toBe(true);
+
+    // Rewrite the feature, adding a step with no definition at all — the step
+    // texts no longer hash-match the recorded cache entry, so the recorded
+    // verdict is no longer served and the static heuristic (which reports
+    // BOTH steps undefined) takes back over.
+    fs.files.set(
+      FEATURE,
+      "Feature: Colour\n  Scenario: S\n    Given I have a colour\n    When something undefined happens\n",
+    );
+
+    expect(await service.allStepsDefined([FEATURE])).toBe(false);
   });
 });
 
@@ -779,5 +825,56 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
     const result = await service.detectMissingSteps(path);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("detectMissingSteps with missing steps records covered=false", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Demo\n  Scenario: S\n    Given a totally undefined step\n");
+    seedRunnerFolder(absoluteFs);
+    // No step-definitions file is seeded at all, so the static heuristic ALSO
+    // reports this step missing — the assertion below holds under either tier.
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("a totally undefined step", "a step from a different feature"),
+    );
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+    if (detected.ok) expect(detected.value.missingSteps).toEqual(["a totally undefined step"]);
+
+    expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
+  it("records against the definitions bddgen saw, not a post-spawn edit (TOCTOU)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    const stepsFile = ".testrunner/src/steps/demo.steps.ts";
+    fs.files.set(path, "Feature: Colour\n  Scenario: S\n    Given I have a colour\n");
+    // Same "bddgen resolves it, the static matcher can't" fixture as the
+    // allStepsDefined cache-hit test.
+    fs.files.set(
+      stepsFile,
+      'import { Given } from "@cucumber/cucumber";\nGiven("I have a colou?r", async function () {});\n',
+    );
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+    // Simulate an external edit to the step-definitions file happening DURING
+    // the bddgen window: by the time the spawn resolves, the file is gone.
+    const originalRun = childProcess.run.bind(childProcess);
+    childProcess.run = async (request) => {
+      const result = await originalRun(request);
+      fs.files.delete(stepsFile);
+      return result;
+    };
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+
+    // The recorded defsHash must reflect the PRE-spawn set (with the covering
+    // pattern still present); the actual defs are now empty, so the follow-up
+    // read hash-misses and falls back to the static heuristic, which reports
+    // the step undefined (no patterns are left at all).
+    expect(await service.allStepsDefined([path])).toBe(false);
   });
 });

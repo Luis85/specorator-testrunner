@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import type {
   FeatureFileEntry,
   MissingStepResult,
+  SpecificationService,
   SpecificationValidationResult,
 } from "../src/application/services/specification-service";
 import type { GenerateStepDefinitionsResult } from "../src/application/services/step-definition-service";
 import type { UseCase } from "../src/domain/entities/use-case";
+import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import {
   detectMissingStepsOutcome,
   featureHealthLine,
@@ -348,5 +350,49 @@ describe("generateStepDefinitionsOutcome", () => {
     expect(await generateStepDefinitionsOutcome(detected, stepDef, featurePath)).toEqual([
       { status: "error", icon: "✗", text: "Could not generate step definitions: kaput" },
     ]);
+  });
+
+  it("re-detects after generating stubs so the coverage verdict lands (#77)", async () => {
+    const detectCalls: VaultPath[] = [];
+    const spec: Pick<SpecificationService, "detectMissingSteps"> = {
+      detectMissingSteps: async (path) => {
+        detectCalls.push(path);
+        return ok({ featurePath: path, missingSteps: ["a step"], detectionEventId: "evt-1" });
+      },
+    };
+    const stepDef = {
+      generate: async () =>
+        ok({
+          generatedSteps: ["a step"],
+          stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
+          appended: false,
+          insertions: [],
+        }),
+    };
+    await generateStepDefinitionsOutcome(spec, stepDef, featurePath);
+    // detect → generate → RE-detect (the re-detect records the coverage
+    // verdict) — both calls target the SAME feature.
+    expect(detectCalls).toEqual([featurePath, featurePath]);
+  });
+
+  it("skips the re-detect when nothing was generated", async () => {
+    const detectCalls: VaultPath[] = [];
+    const spec: Pick<SpecificationService, "detectMissingSteps"> = {
+      detectMissingSteps: async (path) => {
+        detectCalls.push(path);
+        return ok({ featurePath: path, missingSteps: [], detectionEventId: "evt-1" });
+      },
+    };
+    const stepDef = {
+      generate: async () =>
+        ok({
+          generatedSteps: [],
+          stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
+          appended: false,
+          insertions: [],
+        }),
+    };
+    await generateStepDefinitionsOutcome(spec, stepDef, featurePath);
+    expect(detectCalls).toEqual([featurePath]);
   });
 });
