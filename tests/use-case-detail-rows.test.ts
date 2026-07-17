@@ -241,6 +241,7 @@ describe("stepGenerationRows", () => {
       generatedSteps: [],
       stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
       appended: false,
+      insertions: [],
     };
     expect(stepGenerationRows(result)).toEqual([
       { status: "ok", icon: "✓", text: "No missing steps — nothing to generate." },
@@ -252,6 +253,7 @@ describe("stepGenerationRows", () => {
       generatedSteps: ["a", "b"],
       stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
       appended: true,
+      insertions: [],
     };
     expect(stepGenerationRows(result)).toEqual([
       {
@@ -267,6 +269,7 @@ describe("stepGenerationRows", () => {
       generatedSteps: ["a"],
       stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
       appended: false,
+      insertions: [],
     };
     expect(stepGenerationRows(result)[0].text).toContain("1 step stub in");
   });
@@ -321,6 +324,7 @@ describe("generateStepDefinitionsOutcome", () => {
           generatedSteps: ["a step"],
           stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
           appended: true,
+          insertions: [],
         }),
     };
     const rows = await generateStepDefinitionsOutcome(detected, stepDef, featurePath);

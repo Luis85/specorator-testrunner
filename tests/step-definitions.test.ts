@@ -303,4 +303,17 @@ describe("stub layout (WS1 Task 1)", () => {
     expect(countNewlines("")).toBe(0);
     expect(countNewlines("a\nb\n")).toBe(2);
   });
+
+  it("pins the exact bytes of a minimal fresh stub file", () => {
+    const layout = buildStepDefinitionStubFileLayout(["I do a thing"]);
+    expect(layout.text).toBe(
+      `import { createBdd } from "playwright-bdd";\n` +
+        `const { Given, When, Then } = createBdd();\n` +
+        `\n` +
+        `// ${"TO" + "DO"}: implement this step (generated stub for: I do a thing)\n` +
+        `Given("I do a thing", async ({ page }) => {\n` +
+        `  throw new Error("Pending");\n` +
+        `});\n`,
+    );
+  });
 });

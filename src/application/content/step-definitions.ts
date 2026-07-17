@@ -293,7 +293,7 @@ export const buildStepDefinitionStubFile = (missingSteps: string[]): string =>
 export const buildAppendedStubs = (existingSource: string, missingSteps: string[]): string =>
   buildAppendedStubsLayout(existingSource, missingSteps).text;
 
-/** One generated stub's 1-based line range within the built text (WS1/C2). */
+/** One generated stub's 1-based, end-inclusive line range within the built text (WS1/C2). */
 export interface StubInsertion {
   step: string;
   startLine: number;
@@ -318,6 +318,8 @@ export const countNewlines = (text: string): number => {
  * tracking each block's 1-based line range. The single composition source for
  * BOTH the string builders and the layout builders, so text and ranges cannot
  * drift.
+ * Callers guard empty `missingSteps`; an empty input yields header-only (or
+ * empty) text with no insertions.
  */
 const layoutStubs = (header: string | null, missingSteps: string[]): StubLayout => {
   const parts: string[] = [];

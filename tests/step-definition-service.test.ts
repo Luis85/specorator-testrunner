@@ -44,6 +44,20 @@ describe("DefaultStepDefinitionService.generate", () => {
     });
   });
 
+  it("returns file-absolute insertion ranges for a fresh stub file", async () => {
+    const { service } = build();
+
+    const result = await service.generate(FEATURE, ["step one", "step two"]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Fresh file: ranges are the layout's own (header lines 1-3 precede).
+    expect(result.value.insertions).toEqual([
+      { step: "step one", startLine: 4, endLine: 7 },
+      { step: "step two", startLine: 9, endLine: 12 },
+    ]);
+  });
+
   it("publishes stepdefinition.generated with causationId set to the detection event id", async () => {
     const { service, events } = build();
 
@@ -102,6 +116,7 @@ describe("DefaultStepDefinitionService.generate", () => {
     if (!result.ok) return;
     expect(result.value.generatedSteps).toEqual([]);
     expect(result.value.appended).toBe(false);
+    expect(result.value.insertions).toEqual([]);
     // No file written and no event published when there is nothing to stub.
     expect(fs.files.has(STEP_FILE)).toBe(false);
     expect(types()).not.toContain("stepdefinition.generated");
@@ -126,6 +141,20 @@ describe("DefaultStepDefinitionService.generate", () => {
     // would be a duplicate top-level binding and the module would fail to load.
     const headers = written.match(/from\s*["']playwright-bdd["']/g);
     expect(headers).toHaveLength(1);
+  });
+
+  it("offsets insertion ranges by the existing file content on append", async () => {
+    const { service, fs } = build();
+    const existing = `import { createBdd } from "playwright-bdd";\nconst { Given } = createBdd();\n`;
+    fs.files.set(STEP_FILE, existing);
+
+    const result = await service.generate(FEATURE, ["step one"]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Existing content = 2 newlines; separator (content ends with \n) = "\n" (1
+    // more). Appended layout starts its stub at line 1 → file line 3 + 1 = 4.
+    expect(result.value.insertions).toEqual([{ step: "step one", startLine: 4, endLine: 7 }]);
   });
 
   it("includes the createBdd header when appending to a file that lacks it", async () => {

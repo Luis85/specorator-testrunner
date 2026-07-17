@@ -1,7 +1,9 @@
 import {
-  buildAppendedStubs,
-  buildStepDefinitionStubFile,
+  buildAppendedStubsLayout,
+  buildStepDefinitionStubFileLayout,
+  countNewlines,
   findMissingSteps,
+  type StubInsertion,
 } from "../content/step-definitions";
 import { loadStepDefinitions } from "./load-step-definitions";
 import type { VaultFileSystem } from "../ports/vault-file-system";
@@ -21,6 +23,13 @@ export interface GenerateStepDefinitionsResult {
   stepFile: VaultPath;
   /** True when the stub file already existed and stubs were appended to it. */
   appended: boolean;
+  /**
+   * 1-based, end-inclusive line ranges of each generated stub IN THE WRITTEN
+   * FILE, in write order (WS1/C2): computed from the exact composed content,
+   * covering the appended-to-existing-file and multi-stub cases. Empty when
+   * nothing was generated.
+   */
+  insertions: StubInsertion[];
 }
 
 /**
@@ -78,25 +87,34 @@ export class DefaultStepDefinitionService implements StepDefinitionService {
       // Nothing to write — surface an empty, successful result so the command
       // can report "no missing steps" without a spurious event/file write.
       this.logger.info("No undefined steps to stub", { featurePath, stepFile });
-      return ok({ generatedSteps: [], stepFile, appended: false });
+      return ok({ generatedSteps: [], stepFile, appended: false, insertions: [] });
     }
 
     const exists = await this.fs.exists(stepFile);
 
     let written: Result<void>;
+    let insertions: StubInsertion[];
     if (exists) {
       // Append to (never overwrite) a hand-edited steps file: read its current
-      // content and add the new stubs below it. buildAppendedStubs prepends the
-      // `createBdd()` header only when the file does not already have it, so a
-      // file the generator previously wrote (or any file already calling
-      // createBdd()) does not get a duplicate Given/When/Then binding.
+      // content and add the new stubs below it. buildAppendedStubsLayout prepends
+      // the `createBdd()` header only when the file does not already bind Given,
+      // and reports each stub's line range within the appended text; offsetting
+      // by the existing content + separator yields file-absolute lines.
       const read = await this.fs.readFile(stepFile);
       if (!read.ok) return err(read.error);
       const separator = read.value.endsWith("\n") ? "\n" : "\n\n";
-      const block = buildAppendedStubs(read.value, stillMissing);
-      written = await this.fs.writeFile(stepFile, `${read.value}${separator}${block}`);
+      const layout = buildAppendedStubsLayout(read.value, stillMissing);
+      const offset = countNewlines(`${read.value}${separator}`);
+      insertions = layout.insertions.map((entry) => ({
+        step: entry.step,
+        startLine: entry.startLine + offset,
+        endLine: entry.endLine + offset,
+      }));
+      written = await this.fs.writeFile(stepFile, `${read.value}${separator}${layout.text}`);
     } else {
-      written = await this.fs.createFile(stepFile, buildStepDefinitionStubFile(stillMissing));
+      const layout = buildStepDefinitionStubFileLayout(stillMissing);
+      insertions = layout.insertions;
+      written = await this.fs.createFile(stepFile, layout.text);
     }
     if (!written.ok) {
       return err(
@@ -122,6 +140,6 @@ export class DefaultStepDefinitionService implements StepDefinitionService {
       generated: stillMissing.length,
       appended: exists,
     });
-    return ok({ generatedSteps: stillMissing, stepFile, appended: exists });
+    return ok({ generatedSteps: stillMissing, stepFile, appended: exists, insertions });
   }
 }

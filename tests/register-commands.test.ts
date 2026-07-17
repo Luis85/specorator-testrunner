@@ -165,6 +165,7 @@ const buildDeps = (): TestHubCommandDeps => ({
         generatedSteps: [],
         stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
         appended: false,
+        insertions: [],
       }),
     ),
   },
