@@ -118,13 +118,14 @@ describe("PendingStepsApp", () => {
         detectMissingSteps: async (path) => {
           detectCalls.push(path);
           // Detect #1 is the feature-open AUTO-verify and #2 the Generate's own
-          // detect — both must report the step still MISSING so the group stays
+          // pre-detect — both report the step MISSING so the group stays
           // incomplete and the mod-cta Generate button is ENABLED for the click
-          // (the card disables Generate once `missing` is empty). #3 is the
-          // post-generate re-detect: now covered, so the group flips complete.
+          // (the card disables Generate once `missing` is empty). There is NO
+          // third, post-generate re-detect (tour-safe, Codex P2 on PR #102) —
+          // generate re-projects from the static tier instead.
           return ok({
             featurePath: path,
-            missingSteps: detectCalls.length <= 2 ? ["I do a thing"] : [],
+            missingSteps: ["I do a thing"],
             detectionEventId: "e1",
           });
         },
@@ -152,9 +153,12 @@ describe("PendingStepsApp", () => {
     });
     const w = mountApp({ kind: "feature", featurePath: vp("features/UC-001-a.feature") }, deps);
     await flushPromises(); // initial load + auto-verify (detect #1)
-    await w.find(".spec-pending-feature-actions button.mod-cta").trigger("click"); // Generate (detect #2, re-detect #3)
+    await w.find(".spec-pending-feature-actions button.mod-cta").trigger("click"); // Generate (detect #2, NO post-generate re-detect)
     await flushPromises();
-    expect(detectCalls).toHaveLength(3);
+    // Exactly TWO detects: the open auto-verify and the Generate pre-detect. A
+    // third, post-generate re-detect would zero-miss on the pending stubs and
+    // prematurely complete the Guided Tour's implement-steps step (Codex P2).
+    expect(detectCalls).toHaveLength(2);
     expect(w.text()).toContain("Generated 1 step stub in steps/UC-001-a.steps.ts.");
     const inserted = w.findAll(".spec-pending-stub-line.is-inserted");
     expect(inserted).toHaveLength(4); // lines 4-7

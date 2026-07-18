@@ -219,11 +219,18 @@ async function generateInner(entry: GroupState): Promise<void> {
     patch(entry);
     return;
   }
-  // Post-generate re-detect: flips the coverage cache to covered (#77) and
-  // refreshes this group's authoritative picture.
-  const redetected = await deps.specificationService.detectMissingSteps(entry.group.path);
-  if (!(await reprojectGroup(entry, gen, redetected.ok ? redetected.value.missingSteps : null)))
-    return;
+  // Re-project from the STATIC tier — deliberately NO bddgen re-detect here.
+  // The just-written stubs are already in `src/steps`, so the static matcher
+  // sees them defined (and the loop rail, subscribed to stepdefinition.generated,
+  // advances off Steps the same way). A re-detect would instead publish a
+  // zero-missing `specification.missingSteps.detected` that completes the Guided
+  // Tour's implement-steps step straight from the generated `throw new
+  // Error("Pending")` stubs — before the user implements anything (bddgen counts
+  // a pending stub as defined). The user implements, then clicks Verify (a REAL
+  // detect) to record the #77 covered verdict and complete the tour (tour-safe,
+  // Codex P2 on PR #102 — the same reason the old inline generate never
+  // re-detected).
+  if (!(await reprojectGroup(entry, gen, null))) return;
   entry.busy = false;
   entry.result = [generatedResultRow(generated.value)];
   // The read-only stub viewer: the written file, highlighted at the returned
