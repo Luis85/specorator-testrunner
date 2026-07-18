@@ -403,4 +403,44 @@ describe("PendingStepsApp", () => {
     expect(w.text()).toContain("0 of 1 steps defined");
     expect(w.text()).not.toContain("Every step has a definition.");
   });
+
+  it("DEFERS an external refresh that arrives mid-action and replays it once the action finishes (Codex P2 on PR #102)", async () => {
+    const bus = new InMemoryEventBus();
+    let listCalls = 0;
+    let finishDetect: () => void = () => {};
+    const deps = makeDeps({
+      eventBus: bus,
+      specificationService: {
+        listFeatures: async () => {
+          listCalls += 1;
+          return ok([{ path: vp("features/UC-001-a.feature"), label: "UC-001-a.feature" }]);
+        },
+        listStepPatterns: async () => [],
+        // Verify's detect HANGS until finishDetect() — so an external event can
+        // land while the action is in flight.
+        detectMissingSteps: (path) =>
+          new Promise((resolve) => {
+            finishDetect = () =>
+              resolve(ok({ featurePath: path, missingSteps: [], detectionEventId: "e1" }));
+          }),
+      },
+    });
+    const w = mountApp({ kind: "vault" }, deps);
+    await flushPromises();
+    expect(listCalls).toBe(1); // initial mount load
+
+    await w.find('button[aria-label^="Verify"]').trigger("click"); // Verify → its detect hangs
+    await flushPromises();
+
+    // An external use-case change lands WHILE Verify is awaiting bddgen.
+    await bus.publish(
+      createEvent("usecase.updated", { useCaseId: "UC-001", path: "x", changedFields: ["status"] }),
+    );
+    await flushPromises();
+    expect(listCalls).toBe(1); // deferred — NOT dropped, NOT run mid-action
+
+    finishDetect();
+    await flushPromises();
+    expect(listCalls).toBe(2); // the deferred reload replays once the action ends
+  });
 });

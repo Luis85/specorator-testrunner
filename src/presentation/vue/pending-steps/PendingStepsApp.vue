@@ -5,7 +5,7 @@
  * explicit actions (a feature-targeted open counts as one — spec D8). Owns all
  * async work; PendingFeatureCard is a dumb renderer.
  */
-import { inject, shallowRef, watch } from "vue";
+import { inject, onMounted, onUnmounted, shallowRef, watch } from "vue";
 import { PENDING_STEPS_DEPS, PENDING_STEPS_TARGET } from "./pending-steps-deps";
 import PendingFeatureCard, { type StubViewerState } from "./PendingFeatureCard.vue";
 import { useEventBus } from "../use-event-bus";
@@ -22,6 +22,8 @@ import type { GenerateStepDefinitionsResult } from "../../../application/service
 import type { VaultPath } from "../../../domain/value-objects/identifiers";
 import { err, ok, type Result } from "../../../shared/result/result";
 import { appError } from "../../../shared/errors/errors";
+import type { Unsubscribe } from "../../../shared/event-bus/event-bus";
+import type { DomainEventType } from "../../../domain/events/domain-event";
 
 const deps = inject(PENDING_STEPS_DEPS)!;
 const target = inject(PENDING_STEPS_TARGET)!;
@@ -155,49 +157,74 @@ async function load(): Promise<void> {
 
 watch(target, () => void load());
 
-// Panel actions (Verify/Generate) publish the very events this panel
-// subscribes to, and InMemoryEventBus.publish AWAITS handlers straight through
-// RenderScheduler's returned chain — so an inline event reload would bump
-// `generation` MID-action and drop the action's own success path (re-detect,
-// success rows, stub viewer) every single time (Codex P1 on PR #102). While a
-// panel action is in flight, self-caused events are deliberately SWALLOWED,
-// not deferred: the action leaves its group MORE accurate (authoritative
-// bddgen tier) than the static reload would, and a trailing reload would wipe
-// the just-rendered viewer. An external edit landing exactly inside that
-// window self-heals on its next event.
+// Panel actions (Verify/Generate) publish events this panel subscribes to, and
+// InMemoryEventBus.publish AWAITS handlers straight through RenderScheduler's
+// chain — so an inline reload would bump `generation` MID-action and drop the
+// action's own success path (re-detect, success rows, stub viewer) (Codex P1 on
+// PR #102). The action's OWN event (generate's stepdefinition.generated) is
+// therefore SWALLOWED while in flight — a trailing reload would wipe the
+// just-rendered viewer, and reprojectSiblings already refreshes the rest. An
+// EXTERNAL input event (settings/use-case/spec lifecycle) arriving mid-action is
+// instead DEFERRED and replayed as ONE trailing reload when the action finishes,
+// so a feature-folder/runner-path or use-case change isn't left stale under the
+// action's pre-event patches (Codex P2 on PR #102).
 let actionDepth = 0;
+let deferredRefresh = false;
 async function withAction(run: () => Promise<void>): Promise<void> {
   actionDepth += 1;
   try {
     await run();
   } finally {
     actionDepth -= 1;
+    if (actionDepth === 0 && deferredRefresh) {
+      deferredRefresh = false;
+      void load();
+    }
   }
 }
 
-// specification.created covers a newly generated Feature in the vault listing;
-// specification.linkedToUseCase covers the USE-CASE target — createFromUseCase
-// publishes `created` BEFORE writing the Use Case's featureFiles link, so a
-// panel refreshing on `created` alone reads the pre-link list and would never
-// see the new Feature until an unrelated event (Codex P2s on PR #102).
-useEventBus(
-  deps.eventBus,
-  [
+// stepdefinition.generated is the ONLY subscribed event Verify/Generate cause
+// themselves (generate publishes it). This binding also drives the initial mount
+// load; during an action it is swallowed (see withAction) — an external generate
+// (command palette / another panel) still refreshes when idle.
+useEventBus(deps.eventBus, ["stepdefinition.generated"], () =>
+  actionDepth > 0 ? undefined : load(),
+);
+
+// External inputs are never self-caused by Verify/Generate: feature/spec
+// lifecycle (specification.created covers a newly generated Feature in the vault
+// listing; specification.linkedToUseCase covers the USE-CASE target —
+// createFromUseCase publishes `created` BEFORE writing the featureFiles link, so
+// refreshing on `created` alone would read the pre-link list), settings
+// (listFeatures/listStepPatterns read featureFilesPath/testRunnerPath), and the
+// targeted Use Case (findById). Subscribed manually — no extra mount load (the
+// binding above already did that): refresh immediately when idle, or DEFER to a
+// trailing reload when an action is in flight (Codex P2 on PR #102).
+const externalUnsubscribes: Unsubscribe[] = [];
+onMounted(() => {
+  const refreshOrDefer = (): void => {
+    if (actionDepth > 0) {
+      deferredRefresh = true;
+      return;
+    }
+    void load();
+  };
+  const externalEvents: DomainEventType[] = [
     "specification.created",
     "specification.linkedToUseCase",
     "specification.updated",
-    "stepdefinition.generated",
-    // The panel's inputs also come from settings (listFeatures/listStepPatterns
-    // read featureFilesPath/testRunnerPath) and, for a use-case target, from the
-    // Use Case itself (findById) — so a feature-folder/runner-path change or an
-    // edit/delete of the targeted Use Case must re-resolve, not keep stale rows
-    // that a later Verify/Generate would act on with fresh settings (Codex P2).
     "settings.updated",
     "usecase.updated",
     "usecase.deleted",
-  ],
-  () => (actionDepth > 0 ? undefined : load()),
-);
+  ];
+  for (const type of externalEvents) {
+    externalUnsubscribes.push(deps.eventBus.subscribe(type, refreshOrDefer));
+  }
+});
+onUnmounted(() => {
+  externalUnsubscribes.forEach((unsubscribe) => unsubscribe());
+  externalUnsubscribes.length = 0;
+});
 
 /** Public actions: wrapped so self-caused events are swallowed (Codex P1). */
 const verify = (entry: GroupState): Promise<void> => withAction(() => verifyInner(entry));
