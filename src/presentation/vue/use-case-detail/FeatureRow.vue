@@ -16,12 +16,13 @@ import {
 const props = defineProps<{ row: FeatureRowModel }>();
 const deps = inject(USE_CASE_DETAIL_DEPS)!;
 // #77: lets the parent re-derive the loop rail after THIS row's generate
-// commits AND actually wrote stubs (coverageChanged) — scoped to generate
-// only, not detect, since a detect refresh would unmount this row mid-flight
-// and drop its own inline result before it renders. A failed or no-op
-// generate does NOT emit, so its error/"nothing to generate" row stays
-// readable instead of being wiped by the parent's refresh (Codex P2 on PR
-// #102, WS1).
+// commits — scoped to generate only, not detect, since a detect refresh
+// would unmount this row mid-flight and drop its own inline result before it
+// renders. Emits UNCONDITIONALLY on any committed outcome (success, no-op,
+// or error): the parent binds this to refreshRail(), which re-derives ONLY
+// the rail and never rebuilds this row or clears its inline result, so
+// there's nothing left here to protect by gating the emit (root-fix pass,
+// Codex P2s on PR #102).
 const emit = defineEmits<{ generated: [] }>();
 
 // The muted per-Feature health line (Wave F). An unreadable/unparseable Feature
@@ -68,8 +69,7 @@ const run = (): void => void deps.runLauncher.launch({ scope: "feature", target:
 // await the outcome, then commit ONLY if no refresh intervened (so a result from
 // the pre-edit Feature can't repopulate the row after the watcher cleared it).
 // `onCommitted` fires ONLY alongside that commit (never after a stale write is
-// dropped) — generate() uses it to conditionally tell the parent to re-derive
-// the rail (only when the generate actually changed coverage).
+// dropped) — generate() uses it to tell the parent to re-derive the rail.
 async function runAction(
   pendingText: string,
   outcome: () => Promise<ChecklistRow[]>,
@@ -92,27 +92,17 @@ const detect = (): void =>
   void runAction("Detecting…", () =>
     detectMissingStepsOutcome(deps.specificationService, props.row.path),
   );
-const generate = (): void => {
-  // Captured by the outcome closure below, then read by onCommitted — runAction
-  // itself stays outcome-shape-agnostic (outcome: () => Promise<ChecklistRow[]>),
-  // so the coverageChanged gate lives here rather than widening its contract.
-  let coverageChanged = false;
+const generate = (): void =>
   void runAction(
     "Generating step definitions…",
-    async () => {
-      const outcome = await generateStepDefinitionsOutcome(
+    () =>
+      generateStepDefinitionsOutcome(
         deps.specificationService,
         deps.stepDefinitionService,
         props.row.path,
-      );
-      coverageChanged = outcome.coverageChanged;
-      return outcome.rows;
-    },
-    () => {
-      if (coverageChanged) emit("generated");
-    },
+      ),
+    () => emit("generated"),
   );
-};
 </script>
 
 <template>

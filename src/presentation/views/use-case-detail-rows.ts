@@ -249,59 +249,38 @@ export const detectMissingStepsOutcome = async (
 };
 
 /**
- * Outcome of {@link generateStepDefinitionsOutcome}: the rendered rows plus
- * whether the generate actually wrote new stubs. Callers (FeatureRow's
- * per-row action, the loop rail's generate-steps action) gate their rail
- * refresh / "generated" emit on `coverageChanged` — a failed or no-op
- * generate must leave its rows in place instead of being immediately wiped by
- * a refresh that clears them before the user can read them (Codex P2 on PR
- * #102, WS1).
- */
-export interface GenerateStepDefinitionsOutcome {
-  rows: ChecklistRow[];
-  coverageChanged: boolean;
-}
-
-/**
  * Detect-then-generate (UC-010 / RV-4): detect the Feature's undefined steps,
  * then generate non-destructive step-definition stubs — the same two-call
- * orchestration the command palette uses — projected to rows. `coverageChanged`
- * is true only for a SUCCESSFUL generate that wrote at least one stub; a
- * detection failure, a generation failure, and a "nothing to generate" no-op
- * are all `false` (Codex P2 on PR #102).
+ * orchestration the command palette uses — projected to rows.
+ *
+ * Deliberately does NOT re-detect after a successful generate (dropped in the
+ * root-fix pass, Codex P2s on PR #102): that auto re-detect published a
+ * premature, zero-missing `specification.missingSteps.detected` — which the
+ * Guided Tour's implement-steps step treats as done (bddgen counts the
+ * generated `throw new Error("Pending")` stubs as defined), so the tour would
+ * complete right after Generate, before the user implements anything — and it
+ * forced the caller into a full, clobbering refresh just to pick up the
+ * verdict. The #77 coverage cache instead records on the next REAL detect (a
+ * manual Detect, or the Pending Steps panel's Verify — Task 7 / D1
+ * territory); a cache miss there just falls back to the static heuristic,
+ * which is always safe.
  */
 export const generateStepDefinitionsOutcome = async (
   specificationService: Pick<SpecificationService, "detectMissingSteps">,
   stepDefinitionService: Pick<StepDefinitionService, "generate">,
   featurePath: VaultPath,
-): Promise<GenerateStepDefinitionsOutcome> => {
+): Promise<ChecklistRow[]> => {
   const detected = await specificationService.detectMissingSteps(featurePath);
-  if (!detected.ok) {
-    return {
-      rows: [checklistRow("error", `Detection failed: ${detected.error.message}`)],
-      coverageChanged: false,
-    };
-  }
+  if (!detected.ok) return [checklistRow("error", `Detection failed: ${detected.error.message}`)];
   const generated = await stepDefinitionService.generate(
     featurePath,
     detected.value.missingSteps,
     detected.value.detectionEventId,
   );
   if (!generated.ok) {
-    return {
-      rows: [
-        checklistRow("error", `Could not generate step definitions: ${generated.error.message}`),
-      ],
-      coverageChanged: false,
-    };
+    return [
+      checklistRow("error", `Could not generate step definitions: ${generated.error.message}`),
+    ];
   }
-  const coverageChanged = generated.value.generatedSteps.length > 0;
-  if (coverageChanged) {
-    // #77: one post-generate re-detect so bddgen confirms the stubs cover the
-    // feature and the coverage cache records it — the rail advances off Steps
-    // without a second manual Detect. Best-effort: a refusal (e.g. a run
-    // started meanwhile) leaves the static heuristic in charge.
-    await specificationService.detectMissingSteps(featurePath);
-  }
-  return { rows: stepGenerationRows(generated.value), coverageChanged };
+  return stepGenerationRows(generated.value);
 };

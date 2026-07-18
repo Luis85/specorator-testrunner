@@ -97,45 +97,6 @@ const GENERATE_STEPS_BTN =
   'button[aria-label="Generate step definitions — the next step for this Use Case"]';
 const checkRows = (w: ReturnType<typeof mountApp>) => w.findAll(".e2e-test-hub-settings-check-row");
 
-/**
- * Mounts the detail view on a Use Case with ONE Feature whose steps aren't
- * defined yet (the rail's current node is Steps, offering generate-steps),
- * then clicks that action — the shared arrange+act behind the three
- * generate-steps-outcome tests below, which differ only in what
- * stepDefinitionService.generate() resolves to and their own trailing
- * assertions (kept in each `it` per vitest/expect-expect).
- */
-async function mountAndClickGenerateSteps(
-  stepDefinitionService: Record<string, unknown>,
-): Promise<{ w: ReturnType<typeof mountApp>; deps: UseCaseDetailDeps }> {
-  const deps = makeDeps({
-    traceability: {
-      deriveById: vi.fn(async () => ({ ok: true, value: useCase({ featureFiles: [PATH] }) })),
-    },
-    specificationService: specService(false),
-    stepDefinitionService,
-  });
-  const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
-  await flushPromises();
-  expect(deps.specificationService.allStepsDefined).toHaveBeenCalledTimes(1); // initial load
-
-  await w.get(GENERATE_STEPS_BTN).trigger("click");
-  await flushPromises();
-  return { w, deps };
-}
-
-/**
- * Asserts a generate-steps outcome did NOT refresh the rail: still just the
- * one initial-load `allStepsDefined` call, and the outcome's own row survived
- * instead of being cleared by a reload — the shared assertion behind the
- * failed/no-op tests, which then each check their own row's text (kept
- * local to the `it` block per vitest/expect-expect).
- */
-function expectNoRailRefresh(w: ReturnType<typeof mountApp>, deps: UseCaseDetailDeps): void {
-  expect(deps.specificationService.allStepsDefined).toHaveBeenCalledTimes(1);
-  expect(checkRows(w)).toHaveLength(1);
-}
-
 describe("UseCaseDetailApp", () => {
   it("shows the empty prompt when no Use Case is targeted", async () => {
     const w = mountApp(makeDeps(), ref<UseCaseId | null>(null));
@@ -221,80 +182,49 @@ describe("UseCaseDetailApp", () => {
     expect(w.text()).toContain("was not found");
   });
 
-  it("re-derives the rail after the loop-rail generate-steps outcome resolves (#77, Codex P2 — scoped rail refresh, Fix 2)", async () => {
-    // A Feature exists but its steps aren't defined → the rail's current node is
-    // Steps, offering the generate action.
-    const { deps } = await mountAndClickGenerateSteps({
-      generate: vi
-        .fn()
-        .mockResolvedValue({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } }),
-    });
-
-    // The outcome's post-generate re-detect has already recorded the coverage
-    // verdict by the time it resolves; generateStepsForAll then explicitly
-    // refreshes so the rail (allStepsDefined) re-derives against it. The
-    // in-flight generate-steps result itself is superseded by that refresh's
-    // reload (loopResult is cleared at the start of every reload) — expected
-    // and non-regressive, unlike a read-only detect (see the "does not
-    // reload on specification.missingSteps.detected" pin below).
-    expect(deps.stepDefinitionService.generate).toHaveBeenCalled();
-    expect(deps.specificationService.allStepsDefined).toHaveBeenCalledTimes(2);
-  });
-
-  it("does NOT refresh the rail after a FAILED generate-steps outcome, and its error row survives (Codex P2 on PR #102, WS1)", async () => {
-    const { w, deps } = await mountAndClickGenerateSteps({
-      generate: vi.fn().mockResolvedValue({
-        ok: false,
-        error: { code: "RUNNER_NOT_INSTALLED", message: "bddgen is not installed" },
-      }),
-    });
-
-    // A failed generate has nothing for reload() to pick up — refreshing
-    // anyway would clear loopResult/rebuild the rail and wipe this actionable
-    // error before the user can read it.
-    expectNoRailRefresh(w, deps);
-    expect(checkRows(w)[0].text()).toContain("Could not generate step definitions");
-  });
-
-  it("does NOT refresh the rail after a NO-OP generate-steps outcome, and its row survives (Codex P2 on PR #102, WS1)", async () => {
-    const { w, deps } = await mountAndClickGenerateSteps({
-      generate: vi
-        .fn()
-        .mockResolvedValue({ ok: true, value: { generatedSteps: [], stepFile: "s" } }),
-    });
-
-    expectNoRailRefresh(w, deps);
-    expect(checkRows(w)[0].text()).toContain("nothing to generate");
-  });
-
-  it("re-derives the rail with FRESH coverage even though generate() publishes stepdefinition.generated mid-flight (Codex P2s on PR #102, WS1)", async () => {
-    const bus = new InMemoryEventBus();
-    // Models the #77 coverage cache: the rail only sees stepsDefined=true once
-    // the POST-GENERATE re-detect (the second detectMissingSteps call) has
-    // recorded it. A premature read — the mid-flight reload the old
-    // REFRESH_ON entry triggered — would still see the pre-re-detect false.
-    let detectCalls = 0;
-    let stepsDefined = false;
+  /**
+   * Mounts the detail view on a Use Case with ONE Feature whose steps aren't
+   * defined yet (the rail's current node is Steps, offering generate-steps),
+   * clicks that action, and waits for the resulting allStepsDefined re-read
+   * (refreshRail is unconditional, so this always happens) — the shared
+   * arrange+act+assert behind the two rail-only-refresh tests below, which
+   * differ only in `stepDefinitionService` and their own trailing row
+   * assertion (kept local to each `it` per vitest/expect-expect).
+   */
+  const generateStepsAndExpectRailRefresh = async (
+    stepDefinitionService: Record<string, unknown>,
+    eventBus?: InMemoryEventBus,
+  ): Promise<ReturnType<typeof mountApp>> => {
     const deps = makeDeps({
-      eventBus: bus,
+      ...(eventBus ? { eventBus } : {}),
       traceability: {
         deriveById: vi.fn(async () => ({ ok: true, value: useCase({ featureFiles: [PATH] }) })),
       },
-      specificationService: {
-        allStepsDefined: vi.fn(async () => stepsDefined),
-        listFeatures: vi.fn().mockResolvedValue({ ok: true, value: [] }),
-        validate: vi.fn(),
-        detectMissingSteps: vi.fn(async () => {
-          detectCalls += 1;
-          if (detectCalls === 2) stepsDefined = true;
-          return { ok: true, value: { missingSteps: ["Given x"], detectionEventId: "e" } };
-        }),
-      },
-      stepDefinitionService: {
+      specificationService: specService(false),
+      stepDefinitionService,
+    });
+    const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
+    await flushPromises();
+    expect(deps.specificationService.allStepsDefined).toHaveBeenCalledTimes(1); // initial load
+
+    await w.get(GENERATE_STEPS_BTN).trigger("click");
+    await flushPromises();
+
+    // refreshRail() is unconditional — the rail re-derives (a second
+    // allStepsDefined read) regardless of the generate's outcome.
+    expect(deps.specificationService.allStepsDefined).toHaveBeenCalledTimes(2);
+    return w;
+  };
+
+  it("refreshes ONLY the rail after a generate — loopResult is preserved, not cleared (Codex P2s on PR #102, root fix)", async () => {
+    const bus = new InMemoryEventBus();
+    const w = await generateStepsAndExpectRailRefresh(
+      {
         // Mirrors DefaultStepDefinitionService.generate: publishes
-        // stepdefinition.generated on the SHARED bus, AWAITED, before
-        // resolving — the exact mid-flight publish that (pre-fix) tripped the
-        // stale-write guards via a self-triggered reload.
+        // stepdefinition.generated on the SHARED bus before resolving.
+        // REFRESH_ON does not subscribe to it, so this must NOT trigger a
+        // full reload — only the explicit refreshRail() call inside the
+        // helper above.
         generate: vi.fn(async () => {
           await bus.publish({
             type: "stepdefinition.generated",
@@ -303,22 +233,69 @@ describe("UseCaseDetailApp", () => {
           return { ok: true, value: { generatedSteps: ["x"], stepFile: "s" } };
         }),
       },
+      bus,
+    );
+
+    // loopResult (the outcome's own row) was never cleared: refreshRail()
+    // touches only the rail, unlike a full reload() which zeroes loopResult at
+    // its very first line.
+    expect(checkRows(w)).toHaveLength(1);
+    expect(checkRows(w)[0].text()).toContain("Generated 1 step stub in");
+  });
+
+  it("multi-feature mixed outcome: one Feature's error AND another's success both survive in loopResult, and the rail stays on Steps (Codex P2 #2 regression, root fix)", async () => {
+    const pathA = "Features/UC-001-a.feature" as VaultPath;
+    const pathB = "Features/UC-001-b.feature" as VaultPath;
+    const deps = makeDeps({
+      traceability: {
+        deriveById: vi.fn(async () => ({
+          ok: true,
+          value: useCase({ featureFiles: [pathA, pathB] }),
+        })),
+      },
+      specificationService: specService(false),
+      stepDefinitionService: {
+        generate: vi.fn(async (path: VaultPath) =>
+          path === pathA
+            ? {
+                ok: false,
+                error: { code: "RUNNER_NOT_INSTALLED", message: "bddgen is not installed" },
+              }
+            : { ok: true, value: { generatedSteps: ["x"], stepFile: "s" } },
+        ),
+      },
     });
     const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
     await flushPromises();
-    expect(w.find(GENERATE_STEPS_BTN).exists()).toBe(true);
 
     await w.get(GENERATE_STEPS_BTN).trigger("click");
     await flushPromises();
 
-    // The rail must reflect the POST-re-detect verdict (stepsDefined now
-    // true, the Steps node done) — not a stale mid-flight snapshot read
-    // before the re-detect ran. Fails under the old REFRESH_ON: the
-    // self-triggered reload reads stepsDefined BEFORE the re-detect runs,
-    // then its loopGeneration bump trips generateStepsForAll's stale-write
-    // guard, skipping the real post-outcome refresh — the button never
-    // disappears.
-    expect(w.find(GENERATE_STEPS_BTN).exists()).toBe(false);
+    // BOTH outcomes survive together: pathA's error did not wipe pathB's
+    // success, and vice versa — the exact multi-feature clobber the #102
+    // review's second P2 flagged (a full reload() would have cleared
+    // loopResult and shown neither).
+    const text = checkRows(w).map((row) => row.text());
+    expect(text.some((t) => t.includes("Could not generate step definitions"))).toBe(true);
+    expect(text.some((t) => t.includes("Generated 1 step stub in"))).toBe(true);
+    // The rail stays on Steps: pathA still has an undefined step (its
+    // generate failed), so allStepsDefined is (still) false and the action
+    // remains — refreshRail() reports current truth, not a verdict "earned"
+    // by this generate.
+    expect(w.find(GENERATE_STEPS_BTN).exists()).toBe(true);
+  });
+
+  it("a failed generate still triggers a rail-only refresh, and its error row survives (Codex P2 on PR #102, root fix: refreshRail is unconditional)", async () => {
+    const w = await generateStepsAndExpectRailRefresh({
+      generate: vi.fn().mockResolvedValue({
+        ok: false,
+        error: { code: "RUNNER_NOT_INSTALLED", message: "bddgen is not installed" },
+      }),
+    });
+
+    // refreshRail() never touches loopResult, so the error row survives.
+    expect(checkRows(w)).toHaveLength(1);
+    expect(checkRows(w)[0].text()).toContain("Could not generate step definitions");
   });
 
   /**

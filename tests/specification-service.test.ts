@@ -599,6 +599,47 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     expect(await service.allStepsDefined([path])).toBe(false);
   });
 
+  it("caches covered=false on bddgen's RAW missing count, not the filtered list — an undefined Outline step's CONCRETE pickle miss doesn't map back to its <template> (Codex P2 on PR #102)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-outline.feature");
+    fs.files.set(
+      path,
+      `Feature: Outline
+  Scenario Outline: S
+    Given I have a <colour>
+
+    Examples:
+      | colour |
+      | red    |
+`,
+    );
+    // No step definition for "colour" at all — genuinely undefined. bddgen
+    // (the real cucumber-expression engine) evaluates the SUBSTITUTED pickle
+    // and reports the CONCRETE text ("I have a red"), not the feature's own
+    // <colour> template.
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("I have a red", "an unrelated step from a different feature"),
+    );
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+
+    // keepFeatureSteps compares the feature's own TEMPLATE text ("I have a
+    // <colour>", substituted to the wildcard sentinel) against bddgen's
+    // reported pattern — a plain LITERAL "I have a red" with no {param} slot
+    // for the sentinel to match — so they never line up and the FILTERED
+    // missingSteps comes out empty even though bddgen's raw report is not.
+    if (detected.ok) expect(detected.value.missingSteps).toEqual([]);
+
+    // If the cache recorded `covered` on that filtered emptiness (the bug),
+    // allStepsDefined would wrongly report true for a feature that still has
+    // a genuinely undefined step — the dangerous direction. Gated on
+    // bddgen's OWN raw verdict instead, it must stay false.
+    expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
   it("falls back to static after a page object a step source imports is edited — whole runner src tree digest, not just src/steps (Codex P2 on PR #102, Fix 1)", async () => {
     const { service, fs, absoluteFs, childProcess } = build();
     const path = vp("Specifications/features/UC-001-colour.feature");

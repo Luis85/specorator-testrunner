@@ -152,6 +152,15 @@ export function registerCommands(
    * `causationId` of `stepdefinition.generated` (Event Catalog §5), so a future
    * auto-path can reuse the same wiring. Logic lives in the services — this only
    * orchestrates the two calls and surfaces the outcome as a Notice.
+   *
+   * Deliberately does NOT re-detect after a successful generate (dropped in
+   * the root-fix pass, Codex P2s on PR #102): a second, now-zero-missing
+   * detect publishes `specification.missingSteps.detected`, which the Guided
+   * Tour's implement-steps step treats as done — bddgen counts the generated
+   * `throw new Error("Pending")` stubs as defined, so the tour would
+   * prematurely complete right after Generate. The coverage cache instead
+   * records on the next REAL detect (a manual Detect, or the Pending Steps
+   * panel's Verify).
    */
   const generateStepDefinitions = async (): Promise<void> => {
     const path = activeFeaturePath();
@@ -173,12 +182,6 @@ export function registerCommands(
     if (!generated.ok) {
       new Notice(`Could not generate step definitions: ${generated.error.message}`, 10000);
       return;
-    }
-    if (generated.value.generatedSteps.length > 0) {
-      // #77: mirror the detail-rows outcome's post-generate re-detect (best
-      // effort) so a palette-triggered generate also lands the coverage cache
-      // verdict without a second manual Detect (Codex P2 on PR #102).
-      await deps.specificationService.detectMissingSteps(path);
     }
     const count = generated.value.generatedSteps.length;
     new Notice(

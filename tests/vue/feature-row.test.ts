@@ -151,7 +151,7 @@ describe("FeatureRow", () => {
     expect(checkRows(w)).toHaveLength(0);
   });
 
-  it("emits generated once a COVERAGE-CHANGING generate outcome commits (#77, Fix 2 — lets the parent re-derive the loop rail)", async () => {
+  it("emits generated once the generate outcome commits (#77, root fix: refreshRail() doesn't rebuild this row, so the emit no longer needs gating)", async () => {
     const deps = makeDeps({
       stepDefinitionService: {
         generate: vi
@@ -169,17 +169,16 @@ describe("FeatureRow", () => {
     expect(w.emitted("generated")).toHaveLength(1);
   });
 
-  it("does not emit generated for a NO-OP generate (nothing to generate) and keeps its row readable (Codex P2 on PR #102)", async () => {
-    // makeDeps' default generate mock resolves ok with an EMPTY generatedSteps
-    // — the "nothing to generate" no-op the refresh must not wipe.
+  it("emits generated for a NO-OP generate too, and its row still renders (Codex P2s on PR #102, root fix)", async () => {
+    // makeDeps' default generate mock resolves ok with an EMPTY generatedSteps.
     const w = await mountAndGenerate(makeDeps());
 
     expect(checkRows(w)).toHaveLength(1);
     expect(checkRows(w)[0].text()).toContain("nothing to generate");
-    expect(w.emitted("generated")).toBeUndefined();
+    expect(w.emitted("generated")).toHaveLength(1);
   });
 
-  it("does not emit generated for a FAILED generate and keeps its error row readable (Codex P2 on PR #102)", async () => {
+  it("emits generated for a FAILED generate too, and its error row still renders (Codex P2s on PR #102, root fix)", async () => {
     const deps = makeDeps({
       stepDefinitionService: {
         generate: vi.fn().mockResolvedValue({
@@ -192,7 +191,7 @@ describe("FeatureRow", () => {
 
     expect(checkRows(w)).toHaveLength(1);
     expect(checkRows(w)[0].text()).toContain("Could not generate step definitions");
-    expect(w.emitted("generated")).toBeUndefined();
+    expect(w.emitted("generated")).toHaveLength(1);
   });
 
   it("does not emit generated for a generate result dropped by a refresh (stale-write guard)", async () => {

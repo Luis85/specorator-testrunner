@@ -16,7 +16,6 @@ import {
   projectUseCaseHeader,
   storyMapBacklinks,
   type FeatureRow as FeatureRowModel,
-  type GenerateStepDefinitionsOutcome,
   type StoryMapBacklink,
   type UseCaseHeaderRow,
 } from "../../views/use-case-detail-rows";
@@ -36,20 +35,22 @@ const app = inject(OBSIDIAN_APP)!;
 // Deliberately EXCLUDES "specification.missingSteps.detected": that event also
 // fires for a row-local "Detect missing steps" click, and an awaited reload
 // here would unmount the FeatureRow mid-flight and drop its inline result
-// before it renders. ALSO EXCLUDES "stepdefinition.generated" (Codex P2s on PR
-// #102): StepDefinitionService.generate() publishes it AWAITED, mid-call,
-// BEFORE generateStepDefinitionsOutcome's own post-generate re-detect runs —
-// and InMemoryEventBus.publish awaits subscribers, so a subscription here
-// would reload synchronously INSIDE that await, on a STALE (pre-re-detect)
-// coverage read. That reload's loopGeneration/row-generation bump then trips
-// the stale-write guards below and in FeatureRow, skipping the real, fresh
-// refresh. The rail instead refreshes after a COVERAGE-CHANGING generate
-// action's OWN outcome resolves (see generateStepsForAll/FeatureRow's
-// "generated" emit, both gated on coverageChanged) — by which point the
-// re-detect has already recorded the verdict this reload will read. Residual:
-// a generate from the command palette no longer live-refreshes an open detail
-// view — same accepted class as the detect-event exclusion above; it catches
-// up on the next interaction.
+// before it renders. ALSO EXCLUDES "stepdefinition.generated": a full reload
+// here would clear loopResult and rebuild every FeatureRow, wiping the very
+// outcome rows a generate just wrote (success, no-op, OR error) — exactly the
+// clobbering the #102 review flagged, worse across a multi-feature batch where
+// one Feature's error and another's success both need to survive together.
+// The generate paths refresh through refreshRail() instead (see
+// generateStepsForAll / FeatureRow's "generated" emit) — a narrower, rail-only
+// re-derivation that leaves loopResult and the FeatureRows alone (root-fix
+// pass, Codex P2s on PR #102). generateStepDefinitionsOutcome also no longer
+// re-detects after generating (that auto re-detect published a premature
+// zero-missing specification.missingSteps.detected that could complete the
+// Guided Tour's implement-steps step right after Generate — bddgen counts the
+// Pending-stub throws as defined); the coverage cache instead records on the
+// next REAL detect. Residual: a generate from the command palette no longer
+// live-refreshes an open detail view's rail — same accepted class as the
+// detect-event exclusion above; it catches up on the next interaction.
 const REFRESH_ON: DomainEventType[] = [
   "specification.created",
   "specification.updated",
@@ -92,8 +93,21 @@ const loopResult = ref<ChecklistRow[] | null>(null);
 // since — so a same-Use-Case refresh (e.g. specification.updated rebuilding the
 // rail) drops the pre-refresh rows too, not just a re-target. The Vue equivalent
 // of the pre-Vue captured-resultEl isConnected guard, which a full re-render
-// detached on every refresh.
+// detached on every refresh. refreshRail() reads (but never bumps) the same
+// counter to detect whether a reload replaced state.value.model out from under
+// its own awaited allStepsDefined read.
 let loopGeneration = 0;
+
+/**
+ * The loop rail's derivation: whether all the Use Case's steps are defined
+ * (an awaited cache/heuristic read) projected through projectLoopRail. Shared
+ * by the full reload() and the generate paths' rail-only refreshRail() below
+ * so the two derivations can't drift (root-fix pass, Codex P2s on PR #102).
+ */
+async function deriveLoopRail(useCase: UseCase, railPaths: VaultPath[]): Promise<LoopRail> {
+  const stepsDefined = await deps.specificationService.allStepsDefined(railPaths);
+  return projectLoopRail(useCase, { featureCount: railPaths.length, stepsDefined });
+}
 
 // Mirrors the hand-rolled render() orchestration exactly; all decisions stay in
 // the pure projections (projectUseCaseHeader/projectLoopRail/projectFeatureRows/
@@ -137,7 +151,7 @@ async function reload(): Promise<void> {
   const backlinks = maps.ok ? storyMapBacklinks(useCase.id, maps.value) : [];
 
   const railPaths = useCase.featureFiles;
-  const stepsDefined = await deps.specificationService.allStepsDefined(railPaths);
+  const loopRail = await deriveLoopRail(useCase, railPaths);
   const listed = await deps.specificationService.listFeatures();
 
   state.value = {
@@ -149,7 +163,7 @@ async function reload(): Promise<void> {
       prdBreadcrumb: prdBreadcrumbLabel(useCase, prdTitleById),
       backlinks,
       railPaths,
-      loopRail: projectLoopRail(useCase, { featureCount: railPaths.length, stepsDefined }),
+      loopRail,
       featureRows: listed.ok ? projectFeatureRows(useCase.id, listed.value) : null,
       featuresError: listed.ok ? null : listed.error.message,
     },
@@ -207,6 +221,25 @@ function runLoopAction(action: Exclude<LoopRailAction, null>, model: LoadedModel
   }
 }
 
+/**
+ * Re-derives ONLY the loop rail — not loopResult, not the FeatureRows, not
+ * the rest of the loaded model — the generate paths' refresh target (root-fix
+ * pass, Codex P2s on PR #102): a full reload() clears loopResult and rebuilds
+ * every FeatureRow, which would wipe the very outcome rows a generate just
+ * wrote. No-ops outside the loaded state; if a reload (re-target or a
+ * same-Use-Case refresh) replaces the model while this awaits, the
+ * loopGeneration check below discards this stale computation rather than
+ * writing it under the fresher model.
+ */
+async function refreshRail(): Promise<void> {
+  if (state.value.kind !== "loaded") return;
+  const generation = loopGeneration;
+  const { useCase, railPaths } = state.value.model;
+  const loopRail = await deriveLoopRail(useCase, railPaths);
+  if (loopGeneration !== generation || state.value.kind !== "loaded") return;
+  state.value = { kind: "loaded", model: { ...state.value.model, loopRail } };
+}
+
 // Generate step definitions for EVERY Feature the Use Case owns (the rail's Steps
 // action), labelling each when there is more than one — mirrors the view.
 async function generateStepsForAll(featurePaths: VaultPath[]): Promise<void> {
@@ -217,29 +250,24 @@ async function generateStepsForAll(featurePaths: VaultPath[]): Promise<void> {
   // generation and clears loopResult.
   const generation = loopGeneration;
   loopResult.value = [{ status: "pending", icon: "…", text: "Generating step definitions…" }];
-  const { rows, coverageChanged } = await collectStepGenerationRows(featurePaths);
+  const rows = await collectStepGenerationRows(featurePaths);
   if (loopGeneration !== generation) return;
   loopResult.value = rows;
-  // #77: only refresh when a Feature actually wrote stubs (coverageChanged) —
-  // that's the only case whose post-generate re-detect moved the coverage
-  // verdict the rail reads. A failed or no-op generate has nothing for
-  // reload() to pick up, and refreshing anyway would wipe the error/"nothing
-  // to generate" rows just written above before the user can read them
-  // (Codex P2 on PR #102, WS1). A coverage-changing generate still rebuilds
-  // the rows below via reload(), so the inline result being replaced there is
-  // expected forward momentum, not a regression; a fuller "re-derive only the
-  // rail" fix stays Task 7 / D1 territory.
-  if (coverageChanged) await refresh();
+  // Root fix (Codex P2s on PR #102): refresh ONLY the rail, unconditionally.
+  // refreshRail() never touches loopResult or the FeatureRows, so it can't
+  // clobber the rows just written above — a mixed multi-feature batch keeps
+  // BOTH a written Feature's success row and a failed Feature's error row
+  // readable. generateStepDefinitionsOutcome no longer re-detects after
+  // generating, so this allStepsDefined read is simply the first fresh look
+  // at whatever the last REAL detect recorded, not something this generate
+  // itself needs to have "earned".
+  await refreshRail();
 }
 
 // One Feature reads exactly like the per-row generate; multiple Features label
 // each before its outcome so the aggregated report stays legible (mirrors the
-// view). coverageChanged ORs across Features — ANY Feature writing stubs is
-// enough to advance the rail. Pure aggregation — the stale-target guard stays
-// in the caller.
-async function collectStepGenerationRows(
-  featurePaths: VaultPath[],
-): Promise<GenerateStepDefinitionsOutcome> {
+// view). Pure aggregation — the stale-target guard stays in the caller.
+async function collectStepGenerationRows(featurePaths: VaultPath[]): Promise<ChecklistRow[]> {
   if (featurePaths.length === 1) {
     return generateStepDefinitionsOutcome(
       deps.specificationService,
@@ -248,18 +276,17 @@ async function collectStepGenerationRows(
     );
   }
   const rows: ChecklistRow[] = [];
-  let coverageChanged = false;
   for (const featurePath of featurePaths) {
     rows.push(checklistRow("info", featurePath));
-    const outcome = await generateStepDefinitionsOutcome(
-      deps.specificationService,
-      deps.stepDefinitionService,
-      featurePath,
+    rows.push(
+      ...(await generateStepDefinitionsOutcome(
+        deps.specificationService,
+        deps.stepDefinitionService,
+        featurePath,
+      )),
     );
-    rows.push(...outcome.rows);
-    coverageChanged = coverageChanged || outcome.coverageChanged;
   }
-  return { rows, coverageChanged };
+  return rows;
 }
 
 const openExplorer = (): void => void deps.workspace.openView(USE_CASE_VIEW_TYPE);
@@ -409,7 +436,7 @@ const navigateArtifact = (id: string): void => deps.navigate(artifactTarget(id))
           v-for="row in state.model.featureRows"
           :key="row.path"
           :row="row"
-          @generated="refresh"
+          @generated="refreshRail"
         />
       </div>
     </template>

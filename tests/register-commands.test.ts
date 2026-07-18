@@ -20,7 +20,7 @@ interface RecordedCommand {
  * Notice + return null) and command bodies never reach a service call — the
  * shape almost every test here wants. Pass `{ extension: "feature", path }`
  * for the few tests that need a command body to actually run past that guard
- * (e.g. the palette generate re-detect parity regression).
+ * (e.g. the palette generate detect-count regressions).
  */
 const buildPlugin = (activeFile: { extension: string; path: string } | null = null) => {
   const commands: RecordedCommand[] = [];
@@ -281,38 +281,23 @@ describe("registerCommands (smoke)", () => {
       ok({ featurePath: vp(FEATURE_PATH), missingSteps: ["a step"], detectionEventId: "evt-1" }),
     );
 
-  it("Build — generate step definitions re-detects after a successful generate (#77 palette parity, Codex P2 on PR #102)", async () => {
-    const { plugin, commands } = buildPlugin({ extension: "feature", path: FEATURE_PATH });
-    const deps = buildDeps();
-    const detectMissingSteps = detectOneMissing();
-    deps.specificationService.detectMissingSteps = detectMissingSteps;
-    deps.stepDefinitionService.generate = vi.fn(async () =>
-      ok({
-        generatedSteps: ["a step"],
-        stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
-        appended: false,
-        insertions: [],
-      }),
-    );
-    registerCommands(plugin, deps);
-
-    commands.find((c) => c.id === "generate-step-definitions")?.callback?.();
-
-    // The command callback is void-wrapped (Obsidian's `() => void asyncFn()`
-    // convention), so it returns synchronously while the chain still runs —
-    // poll until the fire-and-forgotten detect → generate → re-detect settles.
-    await vi.waitFor(() => {
-      expect(detectMissingSteps).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  it("Build — generate step definitions skips the re-detect when nothing was generated", async () => {
+  /**
+   * Registers the palette generate command with a fresh detectMissingSteps
+   * spy and a generate() resolving `generatedSteps`, fires the command, and
+   * waits for generate() to settle — the shared arrange+act behind the two
+   * detect-count regressions below, which differ only in `generatedSteps`
+   * and share the SAME trailing assertion (kept local to each `it` per
+   * vitest/expect-expect).
+   */
+  const runGenerateStepDefinitionsCommand = async (
+    generatedSteps: string[],
+  ): Promise<ReturnType<typeof detectOneMissing>> => {
     const { plugin, commands } = buildPlugin({ extension: "feature", path: FEATURE_PATH });
     const deps = buildDeps();
     const detectMissingSteps = detectOneMissing();
     const generate = vi.fn(async () =>
       ok({
-        generatedSteps: [] as string[],
+        generatedSteps,
         stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
         appended: false,
         insertions: [],
@@ -324,12 +309,28 @@ describe("registerCommands (smoke)", () => {
 
     commands.find((c) => c.id === "generate-step-definitions")?.callback?.();
 
+    // The command callback is void-wrapped (Obsidian's `() => void asyncFn()`
+    // convention), so it returns synchronously while the chain still runs —
+    // poll until the fire-and-forgotten detect → generate settles.
     await vi.waitFor(() => {
       expect(generate).toHaveBeenCalledTimes(1);
     });
-    // generate() has resolved with nothing generated; the remainder of the
-    // command body is synchronous from there (no further await before the
-    // re-detect branch), so by now the skip decision has already been made.
+    return detectMissingSteps;
+  };
+
+  it("Build — generate step definitions does NOT re-detect after a successful generate — tour regression: a second, now-zero-missing detect would prematurely complete the Guided Tour's implement-steps step (Codex P2s on PR #102, root fix)", async () => {
+    const detectMissingSteps = await runGenerateStepDefinitionsCommand(["a step"]);
+
+    // No re-detect: the palette generate is detect → generate → Notice only.
+    // A second (now zero-missing) detect would publish
+    // specification.missingSteps.detected and prematurely complete the Guided
+    // Tour's implement-steps step — bddgen counts the generated Pending-stub
+    // throws as defined — the root cause of the #102 regression this pins.
+    expect(detectMissingSteps).toHaveBeenCalledTimes(1);
+  });
+
+  it("Build — generate step definitions does NOT re-detect when nothing was generated either", async () => {
+    const detectMissingSteps = await runGenerateStepDefinitionsCommand([]);
     expect(detectMissingSteps).toHaveBeenCalledTimes(1);
   });
 });

@@ -517,9 +517,11 @@ export class DefaultSpecificationService implements SpecificationService {
     // bddgen reports cucumber EXPRESSIONS; treat each as a step-definition
     // pattern so a parameterized feature step (`… "test"`) matches its
     // reported expression (`… {string}`).
-    const missingPatterns: StepDefinitionPattern[] = parseBddgenMissingSteps(ran.value.stdout).map(
-      (source) => ({ kind: "expression", source }),
-    );
+    const rawMissing = parseBddgenMissingSteps(ran.value.stdout);
+    const missingPatterns: StepDefinitionPattern[] = rawMissing.map((source) => ({
+      kind: "expression",
+      source,
+    }));
     const missingSteps = keepFeatureSteps(collectStepTexts(feature), missingPatterns);
 
     // #77 spec D6: bddgen reads the .feature AND every runner src file from
@@ -540,11 +542,21 @@ export class DefaultSpecificationService implements SpecificationService {
       postSpawnRead.value === featureContent &&
       sourcesDigest(postSpawnSources) === sourcesDigest(sourcesAtSpawn);
     if (unchangedSinceSpawn) {
+      // The cache trusts bddgen's OWN authoritative zero-missing report
+      // (rawMissing), NOT the filtered `missingSteps` list: keepFeatureSteps
+      // is a lossy feature-step projection — for a Scenario Outline, bddgen
+      // reports the CONCRETE pickle text (e.g. "I have red") while
+      // collectStepTexts yields the TEMPLATE ("I have <colour>"), so an
+      // undefined Outline step's concrete miss never maps back to its
+      // template and `missingSteps` comes out empty. Gating `covered` on
+      // that emptiness would record a false covered=true for a feature that
+      // still has a genuinely undefined step — the dangerous direction
+      // (Codex P2 on PR #102).
       this.stepCoverage.record(
         featurePath,
         featureContent,
         sourcesAtSpawn,
-        missingSteps.length === 0,
+        rawMissing.length === 0,
       );
     }
 
