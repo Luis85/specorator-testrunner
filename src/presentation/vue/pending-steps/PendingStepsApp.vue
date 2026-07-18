@@ -392,18 +392,25 @@ async function generateInner(entry: GroupState): Promise<void> {
   if (generated.value.generatedSteps.length > 0) await reprojectSiblings(entry, gen);
 }
 
-function openFile(entry: GroupState): void {
+async function openFile(entry: GroupState): Promise<void> {
   const stepFile = entry.viewer?.stepFile;
-  if (stepFile !== undefined) {
-    void deps.workspace.openInSystemEditor(stepFile);
+  if (stepFile === undefined) {
+    // The step-file path is minted by the generator (service-owned convention),
+    // so before a generate there is nothing reliable to open — say so inline.
+    entry.result = [
+      checklistRow("info", "Generate stubs first — Generate creates/locates the step file."),
+    ];
+    patch(entry);
     return;
   }
-  // The step-file path is minted by the generator (service-owned convention),
-  // so before a generate there is nothing reliable to open — say so inline.
-  entry.result = [
-    checklistRow("info", "Generate stubs first — Generate creates/locates the step file."),
-  ];
-  patch(entry);
+  // Surface a system-editor failure (openWithDefaultApp missing or throwing)
+  // instead of a silent no-op that would strand the implement-stubs loop with no
+  // feedback or recovery path (Codex P2 on PR #102).
+  const opened = await deps.workspace.openInSystemEditor(stepFile);
+  if (!opened.ok) {
+    entry.result = [checklistRow("error", `Couldn't open the step file: ${opened.error.message}`)];
+    patch(entry);
+  }
 }
 
 /** shallowRef state: re-set the loaded object so Vue re-renders the group. */

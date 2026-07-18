@@ -443,4 +443,48 @@ describe("PendingStepsApp", () => {
     await flushPromises();
     expect(listCalls).toBe(2); // the deferred reload replays once the action ends
   });
+
+  it("surfaces a system-editor open failure as an error row, not a silent no-op (Codex P2 on PR #102)", async () => {
+    const stubFile = 'Given("I do a thing", async () => {\n  throw new Error("Pending");\n});\n';
+    const bus = new InMemoryEventBus();
+    const deps = makeDeps({
+      eventBus: bus,
+      specificationService: {
+        listFeatures: async () => ok([]),
+        listStepPatterns: async () => [],
+        detectMissingSteps: async (path) =>
+          ok({ featurePath: path, missingSteps: ["I do a thing"], detectionEventId: "e1" }),
+      },
+      stepDefinitionService: {
+        generate: async () => {
+          await bus.publish(
+            createEvent("stepdefinition.generated", {
+              featurePath: "features/UC-001-a.feature",
+              stepFile: "steps/UC-001-a.steps.ts",
+              generatedSteps: ["I do a thing"],
+            }),
+          );
+          return ok({
+            generatedSteps: ["I do a thing"],
+            stepFile: vp("steps/UC-001-a.steps.ts"),
+            appended: false,
+            insertions: [{ step: "I do a thing", startLine: 1, endLine: 3 }],
+          });
+        },
+      },
+      fs: { readFile: async (path: string) => ok(path.endsWith(".steps.ts") ? stubFile : FEATURE) },
+      // The system editor fails to open (openWithDefaultApp missing / throwing).
+      workspace: { openInSystemEditor: async () => err(appError("RUNNER_MISSING_FILE", "no app")) },
+    });
+    const w = mountApp({ kind: "feature", featurePath: vp("features/UC-001-a.feature") }, deps);
+    await flushPromises(); // load + auto-verify
+    await w.find(".spec-pending-feature-actions button.mod-cta").trigger("click"); // Generate → viewer
+    await flushPromises();
+
+    await w.find('button[aria-label^="Open the step file"]').trigger("click");
+    await flushPromises();
+
+    expect(w.text()).toContain("Couldn't open the step file");
+    expect(w.text()).toContain("no app");
+  });
 });
