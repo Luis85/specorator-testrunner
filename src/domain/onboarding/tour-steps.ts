@@ -43,6 +43,7 @@ export type TourActionId =
   | "run-demo"
   | "open-create-use-case"
   | "open-use-cases"
+  | "open-pending-steps"
   | "open-create-suite"
   | "open-suites"
   | "open-latest-evidence"
@@ -218,10 +219,10 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
     id: "detect-missing-steps",
     title: "Detect missing steps",
     teach:
-      "Gherkin lines only run when a step definition implements them. Detect Missing Steps " +
-      "compares your Feature against the runner's steps — your three greeting steps are new, " +
-      "so it should find them.",
-    action: { id: "open-use-cases", label: "Open Use Cases" },
+      "Gherkin lines only run when a step definition implements them. Open Pending Steps, find " +
+      "your @tour Feature, and click Verify — bddgen compares it against the runner's steps; " +
+      "your three greeting steps are new, so it should find them missing.",
+    action: { id: "open-pending-steps", label: "Open pending steps" },
     completion: {
       // Anchored on the @tour Feature's validation (PR #31 Codex review):
       // detecting missing steps on some OTHER feature file must not advance
@@ -249,11 +250,11 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
     id: "implement-steps",
     title: "Generate and implement the step definitions",
     teach:
-      "Generate Step Definitions writes a TypeScript scaffold for the missing steps into the " +
-      "runner's src/steps/ folder. Open that file, replace the stubs with the implementation " +
-      "below, then run Detect Missing Steps again. Zero missing completes this step — that " +
-      "means every step is now defined; your run in the later step proves the implementation.",
-    action: { id: "open-use-cases", label: "Open Use Cases" },
+      "In Pending Steps, click Generate stubs to scaffold the missing steps into the runner's " +
+      "src/steps/ folder, open the step file and replace the stubs with the implementation " +
+      "below, then click Verify. Zero missing completes this step — every step is now defined; " +
+      "your run in the later step proves the implementation.",
+    action: { id: "open-pending-steps", label: "Open pending steps" },
     snippets: [{ title: "Step implementation", language: "typescript", code: TOUR_STEPS_SNIPPET }],
     completion: {
       // Anchored on the @tour Feature's validation, then ITS stub generation,

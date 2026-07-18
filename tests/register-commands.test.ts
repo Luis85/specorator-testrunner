@@ -15,7 +15,14 @@ interface RecordedCommand {
   checkCallback?: (checking: boolean) => boolean | undefined;
 }
 
-const buildPlugin = () => {
+/**
+ * `activeFile` defaults to `null` so `activeFeaturePath()` returns early (new
+ * Notice + return null) and command bodies never reach a service call — the
+ * shape almost every test here wants. Pass `{ extension: "feature", path }`
+ * for the few tests that need a command body to actually run past that guard
+ * (e.g. the palette generate detect-count regressions).
+ */
+const buildPlugin = (activeFile: { extension: string; path: string } | null = null) => {
   const commands: RecordedCommand[] = [];
   const plugin = {
     addCommand: (command: RecordedCommand) => {
@@ -24,10 +31,7 @@ const buildPlugin = () => {
     },
     app: {
       workspace: {
-        // getActiveFile(): return null so activeFeaturePath() returns early
-        // (new Notice + return null); no .feature extension means it won't
-        // proceed to service calls.
-        getActiveFile: vi.fn(() => null),
+        getActiveFile: vi.fn(() => activeFile),
       },
     },
   } as unknown as Plugin;
@@ -165,6 +169,7 @@ const buildDeps = (): TestHubCommandDeps => ({
         generatedSteps: [],
         stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
         appended: false,
+        insertions: [],
       }),
     ),
   },
@@ -198,12 +203,14 @@ const buildDeps = (): TestHubCommandDeps => ({
   workspace: {
     openFile: vi.fn(async () => ok(undefined)),
     openView: vi.fn(async () => ok(undefined)),
+    openInSystemEditor: vi.fn(async () => ok(undefined)),
   },
 
   openHub: vi.fn(() => undefined),
   openWizard: vi.fn(() => undefined),
   openCreateUseCase: vi.fn(() => undefined),
   openCreateSuite: vi.fn(() => undefined),
+  openPendingSteps: vi.fn(() => undefined),
   openPrdBuilder: vi.fn(() => undefined),
   openStoryMapBuilder: vi.fn(() => undefined),
   openDocumentation: vi.fn(async () => undefined),
@@ -214,7 +221,7 @@ describe("registerCommands (smoke)", () => {
     const { plugin, commands } = buildPlugin();
     registerCommands(plugin, buildDeps());
     const ids = commands.map((command) => command.id);
-    // register-commands.ts currently registers 29 commands; the >=25 floor
+    // register-commands.ts currently registers 30 commands; the >=25 floor
     // catches meaningful registration loss while giving V2 room to add more.
     // The id spot-check below is the tighter guard against silent removal.
     expect(commands.length).toBeGreaterThanOrEqual(25);
@@ -234,6 +241,7 @@ describe("registerCommands (smoke)", () => {
       "import-report-last-run",
       "generate-documentation",
       "generate-step-definitions",
+      "open-pending-steps",
       "open-test-console",
       "create-prd",
     ];
@@ -259,5 +267,73 @@ describe("registerCommands (smoke)", () => {
         await expect(Promise.resolve(command.callback())).resolves.not.toThrow();
       if (command.checkCallback) expect(() => command.checkCallback?.(true)).not.toThrow();
     }
+  });
+
+  const FEATURE_PATH = "Specifications/features/UC-001-happy-path.feature";
+
+  /**
+   * A fresh `detectMissingSteps` mock reporting one missing step — the common
+   * starting point both generate-step-definitions palette regressions below
+   * arrange (a NEW mock per call: vitest call-state can't be shared across
+   * tests). Returned as a plain local, not read back off `deps...`, so
+   * `expect()` targets a Mock rather than an interface method reference
+   * (@typescript-eslint/unbound-method).
+   */
+  const detectOneMissing = () =>
+    vi.fn(async () =>
+      ok({ featurePath: vp(FEATURE_PATH), missingSteps: ["a step"], detectionEventId: "evt-1" }),
+    );
+
+  /**
+   * Registers the palette generate command with a fresh detectMissingSteps
+   * spy and a generate() resolving `generatedSteps`, fires the command, and
+   * waits for generate() to settle — the shared arrange+act behind the two
+   * detect-count regressions below, which differ only in `generatedSteps`
+   * and share the SAME trailing assertion (kept local to each `it` per
+   * vitest/expect-expect).
+   */
+  const runGenerateStepDefinitionsCommand = async (
+    generatedSteps: string[],
+  ): Promise<ReturnType<typeof detectOneMissing>> => {
+    const { plugin, commands } = buildPlugin({ extension: "feature", path: FEATURE_PATH });
+    const deps = buildDeps();
+    const detectMissingSteps = detectOneMissing();
+    const generate = vi.fn(async () =>
+      ok({
+        generatedSteps,
+        stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
+        appended: false,
+        insertions: [],
+      }),
+    );
+    deps.specificationService.detectMissingSteps = detectMissingSteps;
+    deps.stepDefinitionService.generate = generate;
+    registerCommands(plugin, deps);
+
+    commands.find((c) => c.id === "generate-step-definitions")?.callback?.();
+
+    // The command callback is void-wrapped (Obsidian's `() => void asyncFn()`
+    // convention), so it returns synchronously while the chain still runs —
+    // poll until the fire-and-forgotten detect → generate settles.
+    await vi.waitFor(() => {
+      expect(generate).toHaveBeenCalledTimes(1);
+    });
+    return detectMissingSteps;
+  };
+
+  it("Build — generate step definitions does NOT re-detect after a successful generate — tour regression: a second, now-zero-missing detect would prematurely complete the Guided Tour's implement-steps step (Codex P2s on PR #102, root fix)", async () => {
+    const detectMissingSteps = await runGenerateStepDefinitionsCommand(["a step"]);
+
+    // No re-detect: the palette generate is detect → generate → Notice only.
+    // A second (now zero-missing) detect would publish
+    // specification.missingSteps.detected and prematurely complete the Guided
+    // Tour's implement-steps step — bddgen counts the generated Pending-stub
+    // throws as defined — the root cause of the #102 regression this pins.
+    expect(detectMissingSteps).toHaveBeenCalledTimes(1);
+  });
+
+  it("Build — generate step definitions does NOT re-detect when nothing was generated either", async () => {
+    const detectMissingSteps = await runGenerateStepDefinitionsCommand([]);
+    expect(detectMissingSteps).toHaveBeenCalledTimes(1);
   });
 });

@@ -33,17 +33,10 @@ function makeDeps(over: Record<string, unknown> = {}): UseCaseDetailDeps {
     featureInsight: { healthFor: vi.fn().mockResolvedValue(health()) },
     specificationService: {
       validate: vi.fn().mockResolvedValue({ ok: true, value: { valid: true, errors: [] } }),
-      detectMissingSteps: vi
-        .fn()
-        .mockResolvedValue({ ok: true, value: { missingSteps: [], detectionEventId: "e1" } }),
-    },
-    stepDefinitionService: {
-      generate: vi
-        .fn()
-        .mockResolvedValue({ ok: true, value: { generatedSteps: [], stepFile: "s" } }),
     },
     runLauncher: { launch: vi.fn().mockResolvedValue(undefined) },
     navigate: vi.fn(),
+    openPendingSteps: vi.fn(),
     ...over,
   } as unknown as UseCaseDetailDeps;
 }
@@ -59,6 +52,17 @@ const checkRows = (w: ReturnType<typeof mountRow>) =>
   w.findAll(".e2e-test-hub-uc-detail-feature-result .e2e-test-hub-settings-check-row");
 const validateButton = (w: ReturnType<typeof mountRow>) =>
   w.get(`button[aria-label="Validate ${LABEL}"]`);
+const stepsButton = (w: ReturnType<typeof mountRow>) =>
+  w.get(`button[aria-label="Open pending steps for ${LABEL}"]`);
+
+/** Same shape as the other mount-and-click helpers, for the Validate button. */
+async function mountAndValidate(deps: UseCaseDetailDeps): Promise<ReturnType<typeof mountRow>> {
+  const w = mountRow(deps);
+  await flushPromises();
+  await validateButton(w).trigger("click");
+  await flushPromises();
+  return w;
+}
 
 describe("FeatureRow", () => {
   it("loads and renders the health line on mount", async () => {
@@ -85,10 +89,7 @@ describe("FeatureRow", () => {
   });
 
   it("renders the inline validate outcome", async () => {
-    const w = mountRow(makeDeps());
-    await flushPromises();
-    await validateButton(w).trigger("click");
-    await flushPromises();
+    const w = await mountAndValidate(makeDeps());
     expect(checkRows(w)).toHaveLength(1);
     expect(checkRows(w)[0].text()).toContain("valid");
   });
@@ -102,7 +103,6 @@ describe("FeatureRow", () => {
             resolveValidate = resolve;
           }),
         ),
-        detectMissingSteps: vi.fn(),
       },
     });
     const w = mountRow(deps);
@@ -124,14 +124,21 @@ describe("FeatureRow", () => {
   });
 
   it("clears an existing inline result on refresh", async () => {
-    const w = mountRow(makeDeps());
-    await flushPromises();
-    await validateButton(w).trigger("click");
-    await flushPromises();
+    const w = await mountAndValidate(makeDeps());
     expect(checkRows(w).length).toBeGreaterThan(0);
 
     await w.setProps({ row: row() });
     await flushPromises();
     expect(checkRows(w)).toHaveLength(0);
+  });
+
+  it("the merged Steps button opens the Pending Steps companion for this Feature (WS1/C2)", async () => {
+    const openPendingSteps = vi.fn();
+    const w = mountRow(makeDeps({ openPendingSteps }));
+    await flushPromises();
+
+    await stepsButton(w).trigger("click");
+
+    expect(openPendingSteps).toHaveBeenCalledWith({ kind: "feature", featurePath: PATH });
   });
 });

@@ -30,6 +30,10 @@ class FakeWorkspace implements WorkspacePort {
   async openView(): Promise<Result<void>> {
     return ok(undefined);
   }
+
+  async openInSystemEditor(): Promise<Result<void>> {
+    return ok(undefined);
+  }
 }
 
 const makeService = () => {

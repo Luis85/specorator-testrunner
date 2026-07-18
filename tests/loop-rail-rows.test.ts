@@ -139,9 +139,7 @@ describe("projectLoopRail", () => {
     expect(stateOf(uc, f, "feature")).toBe("done");
     expect(rail.currentStage).toBe("steps");
     expect(rail.currentAction).toBe("generate-steps");
-    expect(rail.nodes.find((n) => n.stage === "steps")?.actionLabel).toBe(
-      "Generate step definitions",
-    );
+    expect(rail.nodes.find((n) => n.stage === "steps")?.actionLabel).toBe("Open pending steps");
   });
 
   it("advances current to Run once steps are defined — Suite is optional and never blocks", () => {

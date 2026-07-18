@@ -61,7 +61,7 @@ export const summaryHint = (summaryLines: readonly string[]): string | null =>
     const match = BDDGEN_MISSING_STEPS.exec(line.trim());
     return match !== null && Number(match[1]) > 0;
   })
-    ? "Some steps have no step definition. Open the Use Case and use “Generate step definitions”, then implement the stubs in .testrunner/src/steps."
+    ? "Some steps have no step definition — open Pending Steps to generate and implement them."
     : null;
 
 /**

@@ -5,9 +5,7 @@ import ChecklistRows from "../ChecklistRows.vue";
 import type { ChecklistRow } from "../../views/checklist";
 import { featureTarget } from "../../navigation/navigation-target";
 import {
-  detectMissingStepsOutcome,
   featureHealthLine,
-  generateStepDefinitionsOutcome,
   validateFeatureOutcome,
   type FeatureHealthLine,
   type FeatureRow as FeatureRowModel,
@@ -19,7 +17,7 @@ const deps = inject(USE_CASE_DETAIL_DEPS)!;
 // The muted per-Feature health line (Wave F). An unreadable/unparseable Feature
 // leaves the line empty (Validate explains why).
 const health = ref<FeatureHealthLine | null>(null);
-// The inline validate/detect/generate outcome (the wizard's ✓/✗/! vocabulary).
+// The inline Validate outcome (the wizard's ✓/✗/! vocabulary).
 const result = ref<ChecklistRow[] | null>(null);
 
 // A monotonic generation counter, bumped on every refresh (row-prop change). Any
@@ -56,9 +54,9 @@ const pending = (text: string): ChecklistRow[] => [{ status: "pending", icon: "�
 const open = (): void => deps.navigate(featureTarget(props.row.path));
 const run = (): void => void deps.runLauncher.launch({ scope: "feature", target: props.row.path });
 
-// The inline validate/detect/generate handlers share one runner: render pending,
-// await the outcome, then commit ONLY if no refresh intervened (so a result from
-// the pre-edit Feature can't repopulate the row after the watcher cleared it).
+// The inline Validate handler renders pending, awaits the outcome, then commits
+// ONLY if no refresh intervened (so a result from the pre-edit Feature can't
+// repopulate the row after the watcher cleared it).
 async function runAction(
   pendingText: string,
   outcome: () => Promise<ChecklistRow[]>,
@@ -73,18 +71,11 @@ const validate = (): void =>
   void runAction("Validating…", () =>
     validateFeatureOutcome(deps.specificationService, props.row.path),
   );
-const detect = (): void =>
-  void runAction("Detecting…", () =>
-    detectMissingStepsOutcome(deps.specificationService, props.row.path),
-  );
-const generate = (): void =>
-  void runAction("Generating step definitions…", () =>
-    generateStepDefinitionsOutcome(
-      deps.specificationService,
-      deps.stepDefinitionService,
-      props.row.path,
-    ),
-  );
+
+// WS1/C2: the merged Steps action opens the Pending Steps companion (which owns
+// detect/generate + the read-only stub viewer) targeted at THIS Feature, instead
+// of detecting/generating inline on the row.
+const steps = (): void => deps.openPendingSteps({ kind: "feature", featurePath: props.row.path });
 </script>
 
 <template>
@@ -95,12 +86,7 @@ const generate = (): void =>
         <button :aria-label="`Open ${row.label}`" @click="open">Open</button>
         <button :aria-label="`Run ${row.label}`" @click="run">Run</button>
         <button :aria-label="`Validate ${row.label}`" @click="validate">Validate</button>
-        <button :aria-label="`Detect missing steps in ${row.label}`" @click="detect">
-          Detect missing steps
-        </button>
-        <button :aria-label="`Generate step definitions for ${row.label}`" @click="generate">
-          Generate step definitions
-        </button>
+        <button :aria-label="`Open pending steps for ${row.label}`" @click="steps">Steps</button>
       </div>
     </div>
     <div v-if="health" class="e2e-test-hub-uc-detail-feature-health">

@@ -270,13 +270,9 @@ const bindsGiven = (source: string): boolean => {
   return false;
 };
 
-/** Renders ONLY the step-definition stub blocks (no import header). */
-const buildStepDefinitionStubBlocks = (missingSteps: string[]): string =>
-  missingSteps.map(renderStub).join("\n\n");
-
 /** A complete, loadable steps module: full import header + stub blocks (new files). */
 export const buildStepDefinitionStubFile = (missingSteps: string[]): string =>
-  `${STEP_DEFINITION_IMPORTS}\n\n${buildStepDefinitionStubBlocks(missingSteps)}\n`;
+  buildStepDefinitionStubFileLayout(missingSteps).text;
 
 /**
  * Builds the content to APPEND to an existing steps file: the stub blocks, plus
@@ -294,12 +290,68 @@ export const buildStepDefinitionStubFile = (missingSteps: string[]): string =>
  * playwright-bdd" — so an aliased/partial import doesn't leave `createBdd`
  * undefined.
  */
-export const buildAppendedStubs = (existingSource: string, missingSteps: string[]): string => {
-  const blocks = buildStepDefinitionStubBlocks(missingSteps);
-  if (bindsGiven(existingSource)) return `${blocks}\n`;
+export const buildAppendedStubs = (existingSource: string, missingSteps: string[]): string =>
+  buildAppendedStubsLayout(existingSource, missingSteps).text;
+
+/** One generated stub's 1-based, end-inclusive line range within the built text (WS1/C2). */
+export interface StubInsertion {
+  step: string;
+  startLine: number;
+  endLine: number;
+}
+
+/** A built stub text plus where each stub landed inside it. */
+export interface StubLayout {
+  text: string;
+  insertions: StubInsertion[];
+}
+
+/** Number of `\n` characters — the caller's line-offset unit for appends. */
+export const countNewlines = (text: string): number => {
+  let count = 0;
+  for (const char of text) if (char === "\n") count += 1;
+  return count;
+};
+
+/**
+ * Composes `header?\n\n` + stub blocks (blank-line separated) + trailing `\n`,
+ * tracking each block's 1-based line range. The single composition source for
+ * BOTH the string builders and the layout builders, so text and ranges cannot
+ * drift.
+ * Callers guard empty `missingSteps`; an empty input yields header-only (or
+ * empty) text with no insertions.
+ */
+const layoutStubs = (header: string | null, missingSteps: string[]): StubLayout => {
+  const parts: string[] = [];
+  const insertions: StubInsertion[] = [];
+  let line = 1;
+  const push = (text: string): void => {
+    parts.push(text);
+    line += countNewlines(text);
+  };
+  if (header !== null) push(`${header}\n\n`);
+  missingSteps.forEach((step, index) => {
+    const block = renderStub(step);
+    const startLine = line;
+    push(index < missingSteps.length - 1 ? `${block}\n\n` : `${block}\n`);
+    insertions.push({ step, startLine, endLine: startLine + countNewlines(block) });
+  });
+  return { text: parts.join(""), insertions };
+};
+
+/** {@link buildStepDefinitionStubFile} plus per-stub line ranges. */
+export const buildStepDefinitionStubFileLayout = (missingSteps: string[]): StubLayout =>
+  layoutStubs(STEP_DEFINITION_IMPORTS, missingSteps);
+
+/** {@link buildAppendedStubs} plus per-stub line ranges (within the appended text). */
+export const buildAppendedStubsLayout = (
+  existingSource: string,
+  missingSteps: string[],
+): StubLayout => {
+  if (bindsGiven(existingSource)) return layoutStubs(null, missingSteps);
   const givenBinding = createBddGiven(existingCreateBddArgs(existingSource));
   const header = bindsCreateBdd(existingSource)
     ? givenBinding
     : `${CREATE_BDD_IMPORT}\n${givenBinding}`;
-  return `${header}\n\n${blocks}\n`;
+  return layoutStubs(header, missingSteps);
 };

@@ -12,4 +12,10 @@ export interface WorkspacePort {
    * An already-open leaf is revealed wherever the user moved it.
    */
   openView(viewType: string, location?: "main" | "sidebar"): Promise<Result<void>>;
+  /**
+   * Opens a vault file in the OS default application (WS1/C2) — the step-file
+   * jump for `.testrunner/src/steps/*.ts`, which Obsidian itself cannot edit
+   * (unindexed dot-folder). Desktop-only plugin, so unconditional.
+   */
+  openInSystemEditor(path: VaultPath): Promise<Result<void>>;
 }

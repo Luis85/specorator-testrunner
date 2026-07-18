@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import "./obsidian-dom";
 import { describe, expect, it, vi } from "vitest";
-import { nextTick, ref } from "vue";
+import { ref } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 import UseCaseDetailApp from "../../src/presentation/vue/use-case-detail/UseCaseDetailApp.vue";
 import {
@@ -29,7 +29,7 @@ const useCase = (over: Record<string, unknown> = {}): Record<string, unknown> =>
 });
 
 // A fresh SpecificationService slice; `allStepsDefined` drives whether the loop
-// rail's current node is Steps (false → the generate-steps action appears).
+// rail's current node is Steps (false → the "Open pending steps" action appears).
 const specService = (allStepsDefined: boolean): Record<string, unknown> => ({
   allStepsDefined: vi.fn().mockResolvedValue(allStepsDefined),
   listFeatures: vi.fn().mockResolvedValue({ ok: true, value: [] }),
@@ -50,11 +50,6 @@ function makeDeps(over: Record<string, unknown> = {}): UseCaseDetailDeps {
     },
     storyMapService: { findAll: vi.fn().mockResolvedValue({ ok: true, value: [] }) },
     specificationService: specService(true),
-    stepDefinitionService: {
-      generate: vi
-        .fn()
-        .mockResolvedValue({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } }),
-    },
     featureInsight: {
       healthFor: vi.fn().mockResolvedValue({
         ok: true,
@@ -70,6 +65,7 @@ function makeDeps(over: Record<string, unknown> = {}): UseCaseDetailDeps {
     runLauncher: { launch: vi.fn().mockResolvedValue(undefined) },
     openGenerateFeature: vi.fn(),
     openCreateSuite: vi.fn(),
+    openPendingSteps: vi.fn(),
     navigate: vi.fn(),
     workspace: {
       openView: vi.fn(),
@@ -93,9 +89,9 @@ function mountApp(deps: UseCaseDetailDeps, id: ReturnType<typeof ref<UseCaseId |
   });
 }
 
-const GENERATE_STEPS_BTN =
-  'button[aria-label="Generate step definitions — the next step for this Use Case"]';
-const checkRows = (w: ReturnType<typeof mountApp>) => w.findAll(".e2e-test-hub-settings-check-row");
+// WS1/C2: the loop rail's Steps stage now opens the Pending Steps companion.
+const OPEN_PENDING_STEPS_BTN =
+  'button[aria-label="Open pending steps — the next step for this Use Case"]';
 
 describe("UseCaseDetailApp", () => {
   it("shows the empty prompt when no Use Case is targeted", async () => {
@@ -182,90 +178,81 @@ describe("UseCaseDetailApp", () => {
     expect(w.text()).toContain("was not found");
   });
 
-  it("renders the loop-rail generate-steps result", async () => {
-    // A Feature exists but its steps aren't defined → the rail's current node is
-    // Steps, offering the generate action.
+  it("the loop rail's Steps action opens the Pending Steps companion for this Use Case (WS1/C2)", async () => {
+    const openPendingSteps = vi.fn();
     const deps = makeDeps({
       traceability: {
         deriveById: vi.fn(async () => ({ ok: true, value: useCase({ featureFiles: [PATH] }) })),
       },
+      // steps NOT defined → the rail's current node is Steps, offering the action.
       specificationService: specService(false),
+      openPendingSteps,
     });
     const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
     await flushPromises();
 
-    await w.get(GENERATE_STEPS_BTN).trigger("click");
-    await flushPromises();
-    expect(checkRows(w).some((r) => r.text().includes("Generated 1 step stub"))).toBe(true);
+    await w.get(OPEN_PENDING_STEPS_BTN).trigger("click");
+
+    expect(openPendingSteps).toHaveBeenCalledWith({ kind: "use-case", useCaseId: "UC-001" });
   });
 
-  it("drops a generate-steps result that resolves AFTER a re-target (stale-write guard)", async () => {
-    let resolveGenerate!: (v: unknown) => void;
+  it("a Feature row's merged Steps button opens the companion for that Feature (WS1/C2)", async () => {
+    const openPendingSteps = vi.fn();
     const deps = makeDeps({
       traceability: {
-        deriveById: vi.fn(async (id: string) => ({
+        deriveById: vi.fn(async () => ({ ok: true, value: useCase({ featureFiles: [PATH] }) })),
+      },
+      specificationService: {
+        ...specService(true),
+        listFeatures: vi.fn().mockResolvedValue({
           ok: true,
-          value:
-            id === "UC-002"
-              ? useCase({ id: "UC-002", featureFiles: [] })
-              : useCase({ featureFiles: [PATH] }),
-        })),
+          value: [{ path: PATH, label: "UC-001-login.feature" }],
+        }),
       },
-      specificationService: specService(false),
-      stepDefinitionService: {
-        generate: vi.fn().mockReturnValue(
-          new Promise((resolve) => {
-            resolveGenerate = resolve;
-          }),
-        ),
-      },
+      openPendingSteps,
     });
-    const id = ref<UseCaseId | null>("UC-001" as UseCaseId);
-    const w = mountApp(deps, id);
+    const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
     await flushPromises();
 
-    await w.get(GENERATE_STEPS_BTN).trigger("click");
-    await nextTick();
+    await w
+      .get('button[aria-label="Open pending steps for UC-001-login.feature"]')
+      .trigger("click");
 
-    // Re-target to another Use Case before the generation resolves.
-    id.value = "UC-002";
-    await flushPromises();
-
-    // The stale generation now resolves — its result must NOT land under the new rail.
-    resolveGenerate({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } });
-    await flushPromises();
-    expect(checkRows(w)).toHaveLength(0);
+    expect(openPendingSteps).toHaveBeenCalledWith({ kind: "feature", featurePath: PATH });
   });
 
-  it("drops a generate-steps result after a same-Use-Case refresh", async () => {
-    let resolveGenerate!: (v: unknown) => void;
+  it("re-derives ONLY the loop rail on a companion generate/detect — advances off Steps without a full reload (WS1/C2, spec §3.4)", async () => {
     const bus = new InMemoryEventBus();
+    const deriveById = vi.fn(async () => ({
+      ok: true,
+      value: useCase({ id: "UC-001", featureFiles: [PATH] }),
+    }));
+    // Steps start undefined → the rail is on Steps; the companion's generate
+    // (in its own leaf) records coverage and flips this to defined.
+    let covered = false;
+    const allStepsDefined = vi.fn(async () => covered);
     const deps = makeDeps({
       eventBus: bus,
-      traceability: {
-        deriveById: vi.fn(async () => ({ ok: true, value: useCase({ featureFiles: [PATH] }) })),
-      },
-      specificationService: specService(false),
-      stepDefinitionService: {
-        generate: vi.fn().mockReturnValue(
-          new Promise((resolve) => {
-            resolveGenerate = resolve;
-          }),
-        ),
-      },
+      traceability: { deriveById },
+      specificationService: { ...specService(false), allStepsDefined },
     });
     const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
     await flushPromises();
+    expect(w.find(OPEN_PENDING_STEPS_BTN).exists()).toBe(true); // rail on Steps
+    expect(deriveById).toHaveBeenCalledTimes(1);
 
-    await w.get(GENERATE_STEPS_BTN).trigger("click");
-    await nextTick();
-
-    // A same-Use-Case refresh (not a re-target) rebuilds the rail mid-generation.
-    await bus.publish({ type: "specification.updated" } as unknown as DomainEvent);
+    covered = true;
+    await bus.publish({
+      type: "stepdefinition.generated",
+      payload: { featurePath: PATH },
+    } as unknown as DomainEvent);
     await flushPromises();
 
-    resolveGenerate({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } });
-    await flushPromises();
-    expect(checkRows(w)).toHaveLength(0);
+    // The rail advanced off Steps via a rail-ONLY re-derivation: NO full reload
+    // (deriveById still once, so the FeatureRows / any in-flight Validate are
+    // untouched and the view never flickered to `loading`).
+    expect(deriveById).toHaveBeenCalledTimes(1);
+    expect(w.find("h2").exists()).toBe(true);
+    expect(w.find(OPEN_PENDING_STEPS_BTN).exists()).toBe(false);
   });
 });

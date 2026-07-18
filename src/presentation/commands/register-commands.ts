@@ -13,6 +13,7 @@ import type { UseCaseService } from "../../application/services/use-case-service
 import type { TestHubSettings } from "../../domain/settings/settings";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
 import { unsafeVaultPath } from "../../domain/value-objects/vault-path";
+import type { PendingStepsTarget } from "../views/pending-steps-rows";
 import type { RunLauncher } from "../run/run-launcher";
 import { EVIDENCE_EXPLORER_VIEW_TYPE } from "../views/evidence-explorer-view";
 import { GenerateFeatureModal } from "../views/generate-feature-modal";
@@ -55,6 +56,8 @@ export interface TestHubCommandDeps {
   openWizard(): void;
   openCreateUseCase(): void;
   openCreateSuite(): void;
+  /** WS1/C2: opens the Pending Steps sidebar companion at a target. */
+  openPendingSteps: (target: PendingStepsTarget) => void;
   openPrdBuilder(): void;
   openStoryMapBuilder(): void;
   openDocumentation(
@@ -152,6 +155,15 @@ export function registerCommands(
    * `causationId` of `stepdefinition.generated` (Event Catalog §5), so a future
    * auto-path can reuse the same wiring. Logic lives in the services — this only
    * orchestrates the two calls and surfaces the outcome as a Notice.
+   *
+   * Deliberately does NOT re-detect after a successful generate (dropped in
+   * the root-fix pass, Codex P2s on PR #102): a second, now-zero-missing
+   * detect publishes `specification.missingSteps.detected`, which the Guided
+   * Tour's implement-steps step treats as done — bddgen counts the generated
+   * `throw new Error("Pending")` stubs as defined, so the tour would
+   * prematurely complete right after Generate. The coverage cache instead
+   * records on the next REAL detect (a manual Detect, or the Pending Steps
+   * panel's Verify).
    */
   const generateStepDefinitions = async (): Promise<void> => {
     const path = activeFeaturePath();
@@ -363,6 +375,14 @@ export function registerCommands(
     id: "generate-step-definitions",
     name: "Build — generate step definitions",
     callback: () => void generateStepDefinitions(),
+  });
+  // WS1/C2: open the Pending Steps companion vault-wide (the palette has no
+  // scope context); scoped opens come from the loop rail, the Feature row's
+  // Steps button, and the Test Console hint.
+  plugin.addCommand({
+    id: "open-pending-steps",
+    name: "Build — open pending steps",
+    callback: () => deps.openPendingSteps({ kind: "vault" }),
   });
 
   registerRunCommands(plugin, deps);

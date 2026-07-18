@@ -69,7 +69,9 @@ const NODE_LABEL: Record<LoopRailStage, string> = {
 
 const ACTION_LABEL: Record<Exclude<LoopRailAction, null>, string> = {
   "generate-feature": "Generate feature",
-  "generate-steps": "Generate step definitions",
+  // WS1/C2: the Steps stage now opens the Pending Steps companion (which owns
+  // detect/generate + the stub viewer) rather than blind-generating in place.
+  "generate-steps": "Open pending steps",
   "create-suite": "Create suite",
   run: "Run",
 };
@@ -108,13 +110,15 @@ export interface LoopCapabilities {
  *   repaired — the rail deliberately doesn't speak for it (Codex review).
  *
  * - `stepsDefined` — whether EVERY Gherkin step across those Features already has a
- *   matching step definition (`SpecificationService.allStepsDefined`, the static
- *   `listStepPatterns` signal). This replaces the old `automationStatus` proxy,
- *   which could not see the runner project's step-definition stubs: `planned` is
- *   reached before any stub exists, and both `failing` and `implemented` can carry
- *   a scenario whose stubs are missing (an undefined step imports as `failed`; a
- *   newly-added scenario rolls up `implemented` while still unrun). Reading the
- *   actual step definitions tells the rail the truth instead.
+ *   matching step definition (`SpecificationService.allStepsDefined`). Prefers a
+ *   content-addressed bddgen verdict recorded by a prior detect (#77) and falls
+ *   back to the static `listStepPatterns` signal on a miss. This replaces the old
+ *   `automationStatus` proxy, which could not see the runner project's
+ *   step-definition stubs: `planned` is reached before any stub exists, and both
+ *   `failing` and `implemented` can carry a scenario whose stubs are missing (an
+ *   undefined step imports as `failed`; a newly-added scenario rolls up
+ *   `implemented` while still unrun). Reading the actual step definitions (or the
+ *   recorded bddgen verdict) tells the rail the truth instead.
  *
  * `inSuite` and `hasRun` still derive from the entity below — those are reliable.
  */

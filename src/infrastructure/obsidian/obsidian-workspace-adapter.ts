@@ -47,4 +47,26 @@ export class ObsidianWorkspaceAdapter implements WorkspacePort {
     void workspace.revealLeaf(leaf);
     return ok(undefined);
   }
+
+  async openInSystemEditor(path: VaultPath): Promise<Result<void>> {
+    // `openWithDefaultApp` ships on desktop `App` builds but is not declared
+    // in the installed obsidian typings — probe it via the same narrow-record
+    // idiom as `readPersistedActiveSection` (hub-sections.ts) instead of an
+    // unsafe blanket `as any`/`as App` cast.
+    const app: unknown = this.app;
+    const candidate: unknown = (app as Record<string, unknown>).openWithDefaultApp;
+    if (typeof candidate !== "function") {
+      return err(
+        appError("VALIDATION_FAILED", "Opening files in the system editor is not supported here."),
+      );
+    }
+    try {
+      await candidate.call(this.app, normalizePath(path));
+      return ok(undefined);
+    } catch (cause) {
+      return err(
+        appError("INIT_FAILED", `Could not open "${path}" in the system editor.`, { cause }),
+      );
+    }
+  }
 }

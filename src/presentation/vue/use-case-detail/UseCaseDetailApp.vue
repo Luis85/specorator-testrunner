@@ -3,14 +3,11 @@ import { inject, ref, watch } from "vue";
 import { USE_CASE_DETAIL_DEPS, USE_CASE_DETAIL_ID } from "./use-case-detail-deps";
 import { OBSIDIAN_APP } from "../obsidian-app";
 import { useEventBus } from "../use-event-bus";
-import ChecklistRows from "../ChecklistRows.vue";
 import FeatureRow from "./FeatureRow.vue";
 import LoopRailBar from "./LoopRailBar.vue";
-import { checklistRow, type ChecklistRow } from "../../views/checklist";
 import { openOrNotice } from "../../views/modal-helpers";
 import { projectLoopRail, type LoopRail, type LoopRailAction } from "../../views/loop-rail-rows";
 import {
-  generateStepDefinitionsOutcome,
   prdBreadcrumbLabel,
   projectFeatureRows,
   projectUseCaseHeader,
@@ -32,10 +29,17 @@ const app = inject(OBSIDIAN_APP)!;
 
 // The same refresh set the hand-rolled view subscribed to (Wave D): feature/
 // step/use-case lifecycle + terminal run + history + settings + story-map events.
+// Deliberately EXCLUDES "specification.missingSteps.detected" and
+// "stepdefinition.generated": those fire from the Pending Steps companion
+// (WS1/C2) — the merged Steps action and the loop rail's Steps CTA open it
+// rather than detecting/generating in place — and a FULL reload here would
+// rebuild every FeatureRow, dropping an in-progress inline Validate result. The
+// loop RAIL still reflects a companion Verify/Generate: a narrower rail-only
+// re-derivation (below, NOT a reload) advances it off Steps (spec §3.4) without
+// touching the FeatureRows.
 const REFRESH_ON: DomainEventType[] = [
   "specification.created",
   "specification.updated",
-  "stepdefinition.generated",
   "usecase.updated",
   "usecase.status.changed",
   "usecase.deleted",
@@ -69,14 +73,21 @@ type DetailState =
   | { kind: "loaded"; model: LoadedModel };
 
 const state = ref<DetailState>({ kind: "empty" });
-const loopResult = ref<ChecklistRow[] | null>(null);
-// Bumped on EVERY reload (any refresh or re-target). An in-flight generate-steps
-// captures the current generation and drops its write if a reload has happened
-// since — so a same-Use-Case refresh (e.g. specification.updated rebuilding the
-// rail) drops the pre-refresh rows too, not just a re-target. The Vue equivalent
-// of the pre-Vue captured-resultEl isConnected guard, which a full re-render
-// detached on every refresh.
-let loopGeneration = 0;
+
+// Bumped as the FIRST line of every full reload/re-target. The rail-only
+// re-derivation below captures this and drops its write if a full reload landed
+// while it awaited allStepsDefined — the one race useEventBus's per-binding
+// RenderScheduler can't serialize (reload runs on a separate binding).
+let railGeneration = 0;
+
+/**
+ * The loop rail's derivation: whether all the Use Case's steps are defined
+ * (an awaited cache/heuristic read) projected through projectLoopRail.
+ */
+async function deriveLoopRail(useCase: UseCase, railPaths: VaultPath[]): Promise<LoopRail> {
+  const stepsDefined = await deps.specificationService.allStepsDefined(railPaths);
+  return projectLoopRail(useCase, { featureCount: railPaths.length, stepsDefined });
+}
 
 // Mirrors the hand-rolled render() orchestration exactly; all decisions stay in
 // the pure projections (projectUseCaseHeader/projectLoopRail/projectFeatureRows/
@@ -86,12 +97,9 @@ let loopGeneration = 0;
 // carried, and not meaningfully reducible without obscuring the sequence.
 // fallow-ignore-next-line complexity
 async function reload(): Promise<void> {
-  // Any refresh/re-target clears the rail's inline generate-steps result and
-  // invalidates an in-flight generate (via loopGeneration) — the pre-Vue full
-  // re-render rebuilt a fresh (empty) result element each time, so a prior result
-  // never lingered under a rebuilt rail.
-  loopResult.value = null;
-  loopGeneration += 1;
+  // Invalidates any rail-only re-derivation still awaiting allStepsDefined, so a
+  // stale rail can't land under the fresh model this reload is about to build.
+  railGeneration += 1;
   const id = useCaseId.value;
   if (id === null) {
     state.value = { kind: "empty" };
@@ -120,7 +128,7 @@ async function reload(): Promise<void> {
   const backlinks = maps.ok ? storyMapBacklinks(useCase.id, maps.value) : [];
 
   const railPaths = useCase.featureFiles;
-  const stepsDefined = await deps.specificationService.allStepsDefined(railPaths);
+  const loopRail = await deriveLoopRail(useCase, railPaths);
   const listed = await deps.specificationService.listFeatures();
 
   state.value = {
@@ -132,7 +140,7 @@ async function reload(): Promise<void> {
       prdBreadcrumb: prdBreadcrumbLabel(useCase, prdTitleById),
       backlinks,
       railPaths,
-      loopRail: projectLoopRail(useCase, { featureCount: railPaths.length, stepsDefined }),
+      loopRail,
       featureRows: listed.ok ? projectFeatureRows(useCase.id, listed.value) : null,
       featuresError: listed.ok ? null : listed.error.message,
     },
@@ -158,6 +166,26 @@ const prdLinkLabelFor = (useCase: UseCase, prdTitleById: Map<string, string>): s
 };
 
 const { refresh } = useEventBus(deps.eventBus, REFRESH_ON, reload);
+
+// Rail-only re-derivation for the Pending Steps companion's coverage-changing
+// events (WS1/C2, spec §3.4): a companion Verify/Generate records a fresh #77
+// verdict and publishes these two events, but a FULL reload would clobber an
+// in-flight FeatureRow Validate (why REFRESH_ON excludes them). Re-derive ONLY
+// the loop rail — not the FeatureRows — so it advances off Steps as soon as the
+// steps are defined. useEventBus's RenderScheduler coalesces an event burst into
+// one trailing derive; railGeneration guards the rail-derive-vs-full-reload race.
+useEventBus(
+  deps.eventBus,
+  ["stepdefinition.generated", "specification.missingSteps.detected"],
+  async () => {
+    if (state.value.kind !== "loaded") return;
+    const generation = railGeneration;
+    const { useCase, railPaths } = state.value.model;
+    const loopRail = await deriveLoopRail(useCase, railPaths);
+    if (railGeneration !== generation || state.value.kind !== "loaded") return;
+    state.value = { kind: "loaded", model: { ...state.value.model, loopRail } };
+  },
+);
 // Re-target (leaf reused for another Use Case) reloads through the same
 // serialized scheduler; the ref already held the new id before onOpen on restore.
 watch(useCaseId, () => void refresh());
@@ -179,7 +207,9 @@ function runLoopAction(action: Exclude<LoopRailAction, null>, model: LoadedModel
       deps.openGenerateFeature(model.useCase, () => void refresh());
       return;
     case "generate-steps":
-      void generateStepsForAll(model.railPaths);
+      // WS1/C2: the guided flow opens the Pending Steps companion (which owns
+      // detect/generate + the stub viewer) instead of blind-generating here.
+      deps.openPendingSteps({ kind: "use-case", useCaseId: model.useCase.id });
       return;
     case "create-suite":
       deps.openCreateSuite();
@@ -188,45 +218,6 @@ function runLoopAction(action: Exclude<LoopRailAction, null>, model: LoadedModel
       void deps.runLauncher.launch({ scope: "use-case", target: model.useCase.id });
       return;
   }
-}
-
-// Generate step definitions for EVERY Feature the Use Case owns (the rail's Steps
-// action), labelling each when there is more than one — mirrors the view.
-async function generateStepsForAll(featurePaths: VaultPath[]): Promise<void> {
-  // Capture the reload generation: if ANY reload happens while this awaits — a
-  // re-target OR a same-Use-Case refresh that rebuilds the rail — the result is
-  // stale and must not be written under the rebuilt rail (the pre-Vue path guarded
-  // the same race with a captured-element isConnected check). reload() bumps the
-  // generation and clears loopResult.
-  const generation = loopGeneration;
-  loopResult.value = [{ status: "pending", icon: "…", text: "Generating step definitions…" }];
-  const rows = await collectStepGenerationRows(featurePaths);
-  if (loopGeneration === generation) loopResult.value = rows;
-}
-
-// One Feature reads exactly like the per-row generate; multiple Features label
-// each before its outcome so the aggregated report stays legible (mirrors the
-// view). Pure aggregation — the stale-target guard stays in the caller.
-async function collectStepGenerationRows(featurePaths: VaultPath[]): Promise<ChecklistRow[]> {
-  if (featurePaths.length === 1) {
-    return generateStepDefinitionsOutcome(
-      deps.specificationService,
-      deps.stepDefinitionService,
-      featurePaths[0],
-    );
-  }
-  const rows: ChecklistRow[] = [];
-  for (const featurePath of featurePaths) {
-    rows.push(checklistRow("info", featurePath));
-    rows.push(
-      ...(await generateStepDefinitionsOutcome(
-        deps.specificationService,
-        deps.stepDefinitionService,
-        featurePath,
-      )),
-    );
-  }
-  return rows;
 }
 
 const openExplorer = (): void => void deps.workspace.openView(USE_CASE_VIEW_TYPE);
@@ -268,9 +259,6 @@ const navigateArtifact = (id: string): void => deps.navigate(artifactTarget(id))
     <template v-else-if="state.kind === 'loaded'">
       <div>
         <LoopRailBar :rail="state.model.loopRail" @action="onLoopAction" />
-        <div class="e2e-test-hub-uc-detail-feature-result" aria-live="polite">
-          <ChecklistRows v-if="loopResult" :rows="loopResult" />
-        </div>
       </div>
 
       <div class="e2e-test-hub-uc-detail-header">

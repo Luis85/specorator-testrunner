@@ -51,6 +51,7 @@ describe("Create PRD command", () => {
     openWizard: vi.fn(),
     openCreateUseCase: vi.fn(),
     openCreateSuite: vi.fn(),
+    openPendingSteps: vi.fn(),
     openDocumentation: vi.fn(),
     openPrdBuilder: vi.fn(),
     openStoryMapBuilder: vi.fn(),

@@ -22,6 +22,8 @@ import {
 import { generateFeatureForUseCase } from "./presentation/views/generate-feature-modal";
 import { GUIDED_TOUR_VIEW_TYPE, GuidedTourView } from "./presentation/views/guided-tour-view";
 import { dispatchTourAction, type TourActionFlows } from "./presentation/views/tour-actions";
+import { PENDING_STEPS_VIEW_TYPE, PendingStepsView } from "./presentation/views/pending-steps-view";
+import type { PendingStepsTarget } from "./presentation/views/pending-steps-rows";
 import { PRD_VIEW_TYPE, PrdExplorerView } from "./presentation/views/prd-explorer-view";
 import {
   STORY_MAP_VIEW_TYPE,
@@ -67,6 +69,13 @@ export interface ViewWiringDeps {
    */
   navigate: (target: NavigationTarget) => void;
   openCreateSuite: () => void;
+  /**
+   * WS1/C2: open (or re-target) the Pending Steps sidebar companion at a target
+   * (use-case / feature / vault). The entry points that call this — the Feature
+   * row's Steps button, the loop rail, the Test Console hint, the command — are
+   * wired in a follow-up; this leaf + opener make it reachable.
+   */
+  openPendingSteps: (target: PendingStepsTarget) => void;
   openPrdBuilder: (parentPrdId?: string) => void;
   openStoryMapBuilder: () => void;
   openStoryMapBoard: (storyMapId: string) => void;
@@ -96,6 +105,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
     runDemo: () => s.runLauncher.launch({ scope: "demo", target: "demo" }),
     openCreateUseCase: () => deps.openCreateUseCase(),
     openUseCases: () => void workspace.openView(USE_CASE_VIEW_TYPE),
+    openPendingSteps: () => deps.openPendingSteps({ kind: "vault" }),
     openCreateSuite: () => deps.openCreateSuite(),
     openSuites: () => void workspace.openView(SUITE_VIEW_TYPE),
     openLatestEvidence: () => deps.openLatestEvidence(),
@@ -133,12 +143,12 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         prdService: s.prdService,
         storyMapService: s.storyMapService,
         specificationService: s.specificationService,
-        stepDefinitionService: s.stepDefinitionService,
         featureInsight: s.featureInsightService,
         workspace,
         eventBus,
         runLauncher: s.runLauncher,
         openCreateSuite: () => deps.openCreateSuite(),
+        openPendingSteps: (target) => deps.openPendingSteps(target),
         navigate: (target) => deps.navigate(target),
         openGenerateFeature: (useCase, onGenerated) =>
           generateFeatureForUseCase(
@@ -218,6 +228,24 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         // "the last generated evidence note" when the console opens.
         lastEvidence: () => s.postRunCoordinator.lastEvidence(),
         openEvidence: (path) => deps.openEvidence(path),
+        openPendingSteps: (target) => deps.openPendingSteps(target),
+      }),
+  );
+  // WS1/C2: the Pending Steps right-sidebar companion — undefined-step listing,
+  // stub generation with the read-only viewer, and the system-editor jump. A
+  // targeted leaf (use-case / feature / vault); its narrow deps are the
+  // detect/generate services, the Use Case lookup (use-case target → Features),
+  // the vault fs (read-only stub viewer), and the workspace's system-editor jump.
+  plugin.registerView(
+    PENDING_STEPS_VIEW_TYPE,
+    (leaf) =>
+      new PendingStepsView(leaf, {
+        specificationService: s.specificationService,
+        stepDefinitionService: s.stepDefinitionService,
+        useCaseService: s.useCaseService,
+        fs: vault,
+        workspace,
+        eventBus,
       }),
   );
   // WS-B1 / ADR-0031: the Test Hub home shell — the SINGLE leaf hosting all the

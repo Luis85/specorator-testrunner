@@ -30,6 +30,7 @@ function makeDeps(over: Partial<TestConsoleDeps> = {}): TestConsoleDeps {
     lastRun: vi.fn().mockReturnValue(null),
     lastEvidence: vi.fn().mockReturnValue(null),
     openEvidence: vi.fn(),
+    openPendingSteps: vi.fn(),
     ...over,
   };
 }
@@ -176,6 +177,29 @@ describe("TestConsoleApp", () => {
     await publish(bus, "testrun.completed", { runId: "run-1", status: "passed", durationMs: 500 });
     await button(wrapper, "Re-run").trigger("click");
     expect(d.runLauncher.launch).toHaveBeenCalledWith({ scope: "suite", target: "Smoke" });
+  });
+
+  it("the missing-steps hint button opens the Pending Steps companion at the run's scope (WS1/C2)", async () => {
+    const openPendingSteps = vi.fn();
+    const deps = makeDeps({
+      lastRun: vi.fn().mockReturnValue(testRun({ scope: "use-case", target: "UC-001" })),
+      openPendingSteps,
+    });
+    const { wrapper, bus } = mountConsole(deps);
+    await publish(bus, "testrun.started", { runId: "run-1", command: "run" });
+    await publish(bus, "testrun.output.received", {
+      runId: "run-1",
+      stream: "stdout",
+      line: "Missing step definitions: 2",
+    });
+    await publish(bus, "testrun.completed", { runId: "run-1", status: "failed", durationMs: 1000 });
+
+    // The terminal banner now carries the actionable hint AND its button.
+    expect(bannerText(wrapper)).toContain("open Pending Steps");
+    await button(wrapper, "Open pending steps").trigger("click");
+
+    // The finished run was use-case scoped, so the panel targets that Use Case.
+    expect(openPendingSteps).toHaveBeenCalledWith({ kind: "use-case", useCaseId: "UC-001" });
   });
 
   it("seeds a running state when opened mid-run", async () => {

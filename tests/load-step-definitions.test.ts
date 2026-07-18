@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { loadStepDefinitions } from "../src/application/services/load-step-definitions";
+import {
+  loadRunnerCoverageSources,
+  loadStepDefinitions,
+} from "../src/application/services/load-step-definitions";
 import type { VaultFileSystem } from "../src/application/ports/vault-file-system";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
 import { err, ok, type Result } from "../src/shared/result/result";
 
-type FsSlice = Pick<VaultFileSystem, "listFilesRecursive" | "readFile">;
+type FsSlice = Pick<VaultFileSystem, "listFilesRecursive" | "readFile" | "exists">;
 
 const STEPS = vp(".testrunner/src/steps");
 
@@ -13,14 +16,20 @@ const STEPS = vp(".testrunner/src/steps");
  * Minimal fs stub: `listing` is the recursive-listing result, `files` maps a
  * path to its contents. A listed path absent from `files` reads as an
  * unreadable file (the FakeVaultFileSystem can't fail a listing, which is one of
- * the branches under test).
+ * the branches under test). `alsoExisting` marks paths that EXIST but are
+ * unreadable (absent from `files`) — used to drive the config-abstain branch.
  */
-const stubFs = (listing: Result<VaultPath[]>, files: Record<string, string> = {}): FsSlice => ({
+const stubFs = (
+  listing: Result<VaultPath[]>,
+  files: Record<string, string> = {},
+  alsoExisting: readonly string[] = [],
+): FsSlice => ({
   listFilesRecursive: async () => listing,
   readFile: async (path) =>
     path in files
       ? ok(files[path])
       : err({ code: "RUNNER_MISSING_FILE", message: `missing ${path}` }),
+  exists: async (path) => path in files || alsoExisting.includes(path),
 });
 
 describe("loadStepDefinitions", () => {
@@ -54,6 +63,115 @@ describe("loadStepDefinitions", () => {
     expect(await loadStepDefinitions(fs, STEPS)).toEqual([
       { kind: "expression", source: "first" },
       { kind: "expression", source: "second" },
+    ]);
+  });
+});
+
+describe("loadRunnerCoverageSources", () => {
+  const RUNNER = vp(".testrunner");
+
+  it("returns null when the src-dir LISTING itself fails — distinct from a genuinely empty tree (WS1: abstain on listing failure, Codex P2)", async () => {
+    const fs = stubFs(err({ code: "RUNNER_MISSING_FILE", message: "src listing failed" }));
+
+    expect(await loadRunnerCoverageSources(fs, RUNNER)).toBeNull();
+  });
+
+  it("returns an empty array, NOT null, when the src dir lists cleanly with zero files (a listing failure must not be conflated with a legitimately empty tree)", async () => {
+    const fs = stubFs(ok([]));
+
+    expect(await loadRunnerCoverageSources(fs, RUNNER)).toEqual([]);
+  });
+
+  it("returns null when a listed src .ts file cannot be READ — an incomplete snapshot must abstain, not hash a partial (WS1, Codex P2 on PR #102)", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const b = vp(".testrunner/src/steps/b.ts");
+    // Both listed, but `b` is absent from `files` → readFile fails. A partial
+    // snapshot that silently dropped `b` would digest stably and keep matching a
+    // stale coverage verdict even as `b` is edited on disk (while the spawned
+    // bddgen reads it fine) — so the coverage path abstains instead of the
+    // best-effort skip the static-pattern path uses.
+    const fs = stubFs(ok([a, b]), { [a]: 'Given("a step", async () => {});' });
+
+    expect(await loadRunnerCoverageSources(fs, RUNNER)).toBeNull();
+  });
+
+  it("includes the runner-root playwright.config.ts alongside the whole src tree (Codex P2, closes the outermost digest ring)", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const config = vp(".testrunner/playwright.config.ts");
+    const fs = stubFs(ok([a]), {
+      [a]: 'Given("a step", async () => {});',
+      [config]: 'const testDir = defineBddConfig({ features: "x" });',
+    });
+
+    const sources = await loadRunnerCoverageSources(fs, RUNNER);
+
+    expect(sources).toEqual([
+      { path: a, content: 'Given("a step", async () => {});' },
+      { path: config, content: 'const testDir = defineBddConfig({ features: "x" });' },
+    ]);
+  });
+
+  it("skips the config file, best-effort, when the runner hasn't been initialized yet", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const fs = stubFs(ok([a]), { [a]: 'Given("a step", async () => {});' });
+    // playwright.config.ts is ABSENT (not in files, and exists() is false) →
+    // skipped best-effort: skipping a file that isn't there can't hide a later
+    // change to it, and an uninitialized runner legitimately has none.
+    const sources = await loadRunnerCoverageSources(fs, RUNNER);
+
+    expect(sources).toEqual([{ path: a, content: 'Given("a step", async () => {});' }]);
+  });
+
+  it("returns null when an EXISTING runner config can't be read — abstain, don't hash a snapshot that omits it (Codex P2 on PR #102)", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const config = vp(".testrunner/playwright.config.ts");
+    // The config EXISTS (exists() true via alsoExisting) but is unreadable
+    // (absent from `files`). Skipping it would digest a snapshot that omits it,
+    // so a later change to that config would keep matching a stale verdict —
+    // abstain instead, exactly like an unreadable `src` file.
+    const fs = stubFs(ok([a]), { [a]: 'Given("a step", async () => {});' }, [config]);
+
+    expect(await loadRunnerCoverageSources(fs, RUNNER)).toBeNull();
+  });
+
+  it("includes the runner-root tsconfig.json alongside playwright.config.ts and the whole src tree (Codex P2s — paths aliases/module resolution are also a bddgen input)", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const config = vp(".testrunner/playwright.config.ts");
+    const tsconfig = vp(".testrunner/tsconfig.json");
+    const fs = stubFs(ok([a]), {
+      [a]: 'Given("a step", async () => {});',
+      [config]: 'const testDir = defineBddConfig({ features: "x" });',
+      [tsconfig]: '{ "compilerOptions": { "paths": { "@steps/*": ["src/steps/*"] } } }',
+    });
+
+    const sources = await loadRunnerCoverageSources(fs, RUNNER);
+
+    expect(sources).toEqual([
+      { path: a, content: 'Given("a step", async () => {});' },
+      { path: config, content: 'const testDir = defineBddConfig({ features: "x" });' },
+      {
+        path: tsconfig,
+        content: '{ "compilerOptions": { "paths": { "@steps/*": ["src/steps/*"] } } }',
+      },
+    ]);
+  });
+
+  it("skips tsconfig.json, best-effort, when it doesn't exist yet — independently of playwright.config.ts", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const config = vp(".testrunner/playwright.config.ts");
+    const fs = stubFs(ok([a]), {
+      [a]: 'Given("a step", async () => {});',
+      [config]: 'const testDir = defineBddConfig({ features: "x" });',
+      // No tsconfig.json in `files` → readFile fails → skipped, the same
+      // best-effort treatment as playwright.config.ts above — and the config
+      // file being present must not affect this independent skip.
+    });
+
+    const sources = await loadRunnerCoverageSources(fs, RUNNER);
+
+    expect(sources).toEqual([
+      { path: a, content: 'Given("a step", async () => {});' },
+      { path: config, content: 'const testDir = defineBddConfig({ features: "x" });' },
     ]);
   });
 });
