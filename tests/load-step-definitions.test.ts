@@ -64,6 +64,18 @@ describe("loadStepDefinitions", () => {
 describe("loadRunnerCoverageSources", () => {
   const RUNNER = vp(".testrunner");
 
+  it("returns null when the src-dir LISTING itself fails — distinct from a genuinely empty tree (WS1: abstain on listing failure, Codex P2)", async () => {
+    const fs = stubFs(err({ code: "RUNNER_MISSING_FILE", message: "src listing failed" }));
+
+    expect(await loadRunnerCoverageSources(fs, RUNNER)).toBeNull();
+  });
+
+  it("returns an empty array, NOT null, when the src dir lists cleanly with zero files (a listing failure must not be conflated with a legitimately empty tree)", async () => {
+    const fs = stubFs(ok([]));
+
+    expect(await loadRunnerCoverageSources(fs, RUNNER)).toEqual([]);
+  });
+
   it("includes the runner-root playwright.config.ts alongside the whole src tree (Codex P2, closes the outermost digest ring)", async () => {
     const a = vp(".testrunner/src/steps/a.ts");
     const config = vp(".testrunner/playwright.config.ts");

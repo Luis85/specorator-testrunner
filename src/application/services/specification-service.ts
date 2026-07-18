@@ -365,8 +365,17 @@ export class DefaultSpecificationService implements SpecificationService {
    * `detectMissingSteps`) must resolve BOTH from the SAME snapshot, or a
    * settings edit landing between two independent loads could record a
    * verdict for a runner bddgen never actually evaluated.
+   *
+   * Returns `null` when the `.testrunner/src` LISTING itself fails (WS1,
+   * Codex P2 on PR #102) — kept distinct from a successful-but-empty
+   * listing so both callers below can abstain rather than digest a snapshot
+   * that would look identical whether or not the fault persists across an
+   * unrelated source edit: `detectMissingSteps` skips its record entirely,
+   * and `allStepsDefined` skips the cache consult and falls straight to the
+   * static heuristic (which, with no sources to scrape either, safely
+   * reports "not covered" rather than risk a false "defined").
    */
-  private async runnerSources(settings: TestHubSettings): Promise<StepSourceFile[]> {
+  private async runnerSources(settings: TestHubSettings): Promise<StepSourceFile[] | null> {
     return loadRunnerCoverageSources(this.fs, settings.paths.testRunnerPath);
   }
 
@@ -379,12 +388,13 @@ export class DefaultSpecificationService implements SpecificationService {
     // root playwright.config.ts and tsconfig.json (spec D6); the static
     // fallback still scrapes only src/steps (listStepPatterns' scope),
     // filtered out of this SAME read so a cache miss doesn't re-list the
-    // folder a second time.
+    // folder a second time. `null` means the `.testrunner/src` LISTING
+    // itself failed (WS1): the snapshot is unreliable, so BOTH tiers below
+    // abstain rather than treat it as "nothing here" — see
+    // `staticDefinitionsFrom`/`cachedVerdict`, which each fold the null check
+    // in once so the loop below doesn't repeat it.
     const runnerSources = await this.runnerSources(settings);
-    const stepsDir = this.stepsDirFor(settings);
-    const definitions = parseStepSources(
-      runnerSources.filter((source) => source.path.startsWith(`${stepsDir}/`)),
-    );
+    const definitions = this.staticDefinitionsFrom(runnerSources, this.stepsDirFor(settings));
     let sawStep = false;
     for (const featurePath of featurePaths) {
       // A raw read per Feature feeds BOTH the #77 cache consult (raw bytes,
@@ -398,11 +408,7 @@ export class DefaultSpecificationService implements SpecificationService {
       const { content: featureContent, feature } = read.value;
       const stepTexts = collectStepTexts(feature);
       if (stepTexts.length > 0) sawStep = true;
-      const authoritative = this.stepCoverage.authoritativeCovered(
-        featurePath,
-        featureContent,
-        runnerSources,
-      );
+      const authoritative = this.cachedVerdict(featurePath, featureContent, runnerSources);
       if (authoritative !== null) {
         if (!authoritative) return false;
         continue;
@@ -412,6 +418,44 @@ export class DefaultSpecificationService implements SpecificationService {
     // Require at least one step across the set (a step-less Feature set proves
     // nothing), matching the pre-cache semantics.
     return sawStep;
+  }
+
+  /**
+   * The static fallback's step-definition patterns, scraped from `src/steps`
+   * only (`listStepPatterns`' scope) out of the ALREADY-LOADED runner
+   * sources. `null` (WS1: the `.testrunner/src` LISTING itself failed, as
+   * opposed to a successful-but-empty listing) yields NO definitions rather
+   * than guessing from a partial/absent snapshot — the static tier then
+   * safely reports every step missing, the same "can't prove it" answer as
+   * an unreadable Feature.
+   */
+  private staticDefinitionsFrom(
+    runnerSources: readonly StepSourceFile[] | null,
+    stepsDir: VaultPath,
+  ): StepDefinitionPattern[] {
+    return runnerSources === null
+      ? []
+      : parseStepSources(runnerSources.filter((source) => source.path.startsWith(`${stepsDir}/`)));
+  }
+
+  /**
+   * The #77 cache's authoritative verdict for one Feature against the
+   * ALREADY-LOADED `runnerSources`, or `null` to fall back to the static
+   * heuristic — either no recorded/matching cache entry, or (WS1)
+   * `runnerSources` itself is `null` (the `.testrunner/src` LISTING failed),
+   * in which case the cache is skipped entirely: hashing an empty snapshot
+   * here could coincidentally match a stale entry recorded under the very
+   * same failure, serving a verdict that no longer reflects the (currently
+   * unreadable) source tree.
+   */
+  private cachedVerdict(
+    featurePath: VaultPath,
+    featureContent: string,
+    runnerSources: readonly StepSourceFile[] | null,
+  ): boolean | null {
+    return runnerSources === null
+      ? null
+      : this.stepCoverage.authoritativeCovered(featurePath, featureContent, runnerSources);
   }
 
   /** UC-007 / US-020: parse the Feature and report structural errors. */
@@ -497,7 +541,11 @@ export class DefaultSpecificationService implements SpecificationService {
     // records against THIS set (spec D6: raw path+bytes, not scraped
     // patterns, and not just src/steps — see runnerSources' doc), so a
     // runner-src, config, or tsconfig file edited externally during or after
-    // the spawn hash-misses and falls back to the static heuristic.
+    // the spawn hash-misses and falls back to the static heuristic. `null`
+    // means the `.testrunner/src` LISTING itself failed (WS1, Codex P2 on PR
+    // #102) — the record block below abstains entirely rather than key a
+    // verdict to a fake-empty snapshot that could keep matching for as long
+    // as the fault persists.
     const sourcesAtSpawn = await this.runnerSources(settings);
 
     // Scope bddgen to THIS feature (same BDD_FEATURES env the generated config
@@ -542,45 +590,59 @@ export class DefaultSpecificationService implements SpecificationService {
     // handling the event sees the fresh verdict.
     const postSpawnRead = await this.fs.readFile(featurePath);
     const postSpawnSources = await this.runnerSources(settings);
-    const unchangedSinceSpawn =
-      postSpawnRead.ok &&
-      postSpawnRead.value === featureContent &&
-      sourcesDigest(postSpawnSources) === sourcesDigest(sourcesAtSpawn);
-    if (unchangedSinceSpawn) {
-      // bddgen's `Missing step definitions:` report is NOT reliably scoped to
-      // just the targeted feature — that's exactly why `missingSteps` above
-      // is `keepFeatureSteps`-filtered down to THIS feature's own step texts
-      // in the first place ("bddgen lists a step from another feature" is a
-      // real, tested case). So neither raw signal is safe to gate on alone:
-      // the RAW header can carry another feature's misses (would read this
-      // covered feature as not-covered — false negative); the FILTERED
-      // `missingSteps` list can drop a genuine miss of its own — for a
-      // Scenario Outline, bddgen reports the CONCRETE pickle text (e.g. "I
-      // have red") while collectStepTexts yields the TEMPLATE ("I have
-      // <colour>"), so an undefined Outline step's concrete miss never maps
-      // back to its template and `missingSteps` comes out empty (Codex P2 on
-      // PR #102) — would read a genuinely-undefined feature as covered, the
-      // dangerous direction.
-      //
-      // So the cache records `covered` ONLY when bddgen's report is
-      // UNAMBIGUOUS for this feature, and abstains (records nothing)
-      // otherwise — `allStepsDefined` then falls back to the static
-      // heuristic, which is independently correct in both ambiguous cases:
-      // cross-feature noise doesn't touch this feature's own static
-      // patterns, and a genuinely-undefined Outline template step is still
-      // caught by matching the TEMPLATE text (Codex P2s on PR #102).
-      const missingHeaderPresent = ran.value.stdout.includes(BDDGEN_MISSING_HEADER);
-      if (!missingHeaderPresent) {
-        // bddgen reported NOTHING missing, for any feature — confident covered.
-        this.stepCoverage.record(featurePath, featureContent, sourcesAtSpawn, true);
-      } else if (missingSteps.length > 0) {
-        // At least one reported miss matched THIS feature's own step text
-        // (post-filter) — confident not-covered.
-        this.stepCoverage.record(featurePath, featureContent, sourcesAtSpawn, false);
+    // A `.testrunner/src` listing failure (WS1, Codex P2 on PR #102) at
+    // EITHER end of the spawn window makes the source snapshot unreliable —
+    // abstain from recording altogether, the same direction as an outright
+    // feature/sources mismatch below, rather than digest a `null`-turned
+    // placeholder that a later, still-failing consult could wrongly match.
+    if (sourcesAtSpawn !== null && postSpawnSources !== null) {
+      const unchangedSinceSpawn =
+        postSpawnRead.ok &&
+        postSpawnRead.value === featureContent &&
+        sourcesDigest(postSpawnSources) === sourcesDigest(sourcesAtSpawn);
+      if (unchangedSinceSpawn) {
+        // Safety invariant: never record (and so never later SERVE) a
+        // `covered=true` verdict unless confident. The ONLY confident-covered
+        // signal is bddgen printing NO `Missing step definitions:` header at
+        // all — scoped to this feature's detect (BDD_FEATURES), it found
+        // nothing missing anywhere. Any header present records covered=FALSE,
+        // regardless of whether `missingSteps` (the `keepFeatureSteps`-
+        // filtered, THIS-feature-only list, still computed above for the
+        // returned result/event) mapped anything back to this feature.
+        //
+        // A three-way record that ABSTAINED on "header present but nothing
+        // mapped" (cross-feature noise vs. an unmappable Outline miss — was
+        // tried and is UNSAFE: for a Scenario Outline `Given I have <count>`
+        // with Examples value `red` against an existing def `I have {int}`,
+        // bddgen (the real cucumber-expression engine) reports the CONCRETE
+        // miss `I have red` — `red` fails `{int}` — but `keepFeatureSteps`
+        // compares against the FEATURE's own TEMPLATE text ("I have <count>",
+        // sentinel-substituted), which never lines up with that concrete
+        // literal, so `missingSteps` reads empty and the record would abstain.
+        // Falling back to static then FALSE-GREENS: the static matcher's
+        // outline-sentinel deliberately accepts ANY parameter class for a
+        // `<placeholder>` (so a genuinely-unimplemented outline step is still
+        // caught in the common case), which means it also wrongly accepts the
+        // sentinel for a TYPED `{int}` param — independent of what the actual
+        // Examples value is (Codex P2s on PR #102).
+        //
+        // Recording covered=false on ANY header is monotonically safe: the
+        // sole covered-producing branch (header absent) can't false-green.
+        // The accepted cost is the OTHER direction — cross-feature noise (a
+        // header whose misses all belong to other features) now
+        // conservatively holds an actually-covered feature on Steps instead
+        // of the static heuristic correctly clearing it — safe and
+        // self-healing (the next detect, once the vault's other misses
+        // clear, records covered=true), never the dangerous stale-"defined"
+        // direction.
+        const missingHeaderPresent = ran.value.stdout.includes(BDDGEN_MISSING_HEADER);
+        this.stepCoverage.record(
+          featurePath,
+          featureContent,
+          sourcesAtSpawn,
+          !missingHeaderPresent,
+        );
       }
-      // else: header present but nothing maps back to this feature —
-      // ambiguous (cross-feature noise or an unmappable Outline miss).
-      // Recording either verdict here could be wrong; abstain instead.
     }
 
     const detectionEvent = createEvent("specification.missingSteps.detected", {

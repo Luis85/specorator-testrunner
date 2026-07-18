@@ -71,6 +71,25 @@ const seedRunnerFolder = (absoluteFs: FakeAbsoluteFileSystem): void => {
   absoluteFs.existing.add("/vault/.testrunner");
 };
 
+/**
+ * Makes `.testrunner/src` LISTING fail (a transient/adapter fault, WS1)
+ * while every other `listFilesRecursive` call keeps behaving normally —
+ * distinct from the directory genuinely being empty, which the fake already
+ * represents faithfully by returning `ok([])` when nothing was seeded under
+ * that prefix. Returns a restore function so a test can simulate the fault
+ * later clearing.
+ */
+const armFailingSrcListing = (fs: FakeVaultFileSystem): (() => void) => {
+  const realList = fs.listFilesRecursive.bind(fs);
+  fs.listFilesRecursive = async (path) =>
+    path === ".testrunner/src"
+      ? { ok: false, error: { code: "RUNNER_MISSING_FILE", message: "src listing failed" } }
+      : realList(path);
+  return () => {
+    fs.listFilesRecursive = realList;
+  };
+};
+
 const seedUseCase = (fs: FakeVaultFileSystem, id = "UC-001", title = "Open Example Page") => {
   fs.files.set(
     `Use Cases/${id} ${title}.md`,
@@ -530,7 +549,7 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     expect(await service.allStepsDefined([FEATURE])).toBe(false);
   });
 
-  it("header present but an indented-snippet format shift maps nothing to this feature — ambiguous report abstains; no defs anywhere means static independently agrees it's undefined (Codex P2 on PR #102 / Codex P2s)", async () => {
+  it("header present but an indented-snippet format shift maps nothing to this feature — records covered=false directly on the header alone (Codex P2 on PR #102 / Codex P2s)", async () => {
     const { service, fs, absoluteFs, childProcess } = build();
     const path = vp("Specifications/features/UC-001-happy-path.feature");
     fs.files.set(path, "Feature: Happy\n  Scenario: S\n    Given a step\n");
@@ -557,22 +576,21 @@ Use snippets above to create missing steps.
     const detected = await service.detectMissingSteps(path);
     expect(detected.ok).toBe(true);
 
-    // Header present but the format shift means NOTHING maps back to this
-    // feature's own step text (`missingSteps` reads empty too) — ambiguous,
-    // so the cache abstains rather than guessing. allStepsDefined then falls
-    // back to the static heuristic, which (no step definition is seeded
-    // anywhere in this fixture) independently agrees the step is undefined.
-    // A gate that recorded covered=true whenever the parsed/filtered count
-    // read zero (the pre-fix bug) would instead wrongly cache this feature
-    // as covered — the dangerous direction.
+    // Header present — regardless of the format shift meaning NOTHING
+    // parses/maps back to this feature's own step text (`missingSteps` reads
+    // empty too) — records covered=false directly (never abstains): the
+    // only confident-covered signal is a header-absent report, and this
+    // report has a header. A gate that instead recorded covered=true
+    // whenever the parsed/filtered count read zero (the pre-fix bug) would
+    // wrongly cache this feature as covered — the dangerous direction.
     expect(await service.allStepsDefined([path])).toBe(false);
   });
 
-  it("bddgen misses belonging to ANOTHER feature don't poison this feature's cache — ambiguous report abstains, static independently still covers it (Codex P2s)", async () => {
+  it("header present due to cross-feature noise still records covered=false — conservative, never a false-green (Codex P2s)", async () => {
     const { service, fs, absoluteFs, childProcess } = build();
     const path = vp("Specifications/features/UC-001-happy-path.feature");
     fs.files.set(path, ONE_STEP); // "Given a step"
-    defineStep(fs, "a step"); // exact static match: the static heuristic alone says covered
+    defineStep(fs, "a step"); // exact static match: the static heuristic ALONE would say covered
     seedRunnerFolder(absoluteFs);
     // The header IS present (bddgen found missing steps SOMEWHERE), but
     // BD_FEATURES-scoping notwithstanding, bddgen's report is not reliably
@@ -589,13 +607,47 @@ Use snippets above to create missing steps.
     expect(detected.ok).toBe(true);
     if (detected.ok) expect(detected.value.missingSteps).toEqual([]); // prove the premise
 
-    // A gate that records covered=false on the header's mere PRESENCE would
-    // wrongly poison this (actually covered) feature — the dangerous
-    // direction the OTHER way. The ambiguous case (header present, nothing
-    // maps to THIS feature) must instead abstain, so allStepsDefined falls
-    // back to the static heuristic, which correctly reports this feature
-    // covered.
-    expect(await service.allStepsDefined([path])).toBe(true);
+    // The ONLY confident-covered signal is bddgen printing NO header at all;
+    // any header present — even one whose misses all belong to OTHER
+    // features — now records covered=false (an earlier "abstain when nothing
+    // maps to this feature, let static decide" design was reverted: it
+    // false-greened a Scenario Outline miss against a typed def, see the
+    // load-bearing pin below). The accepted cost here is the OTHER
+    // direction: this actually-covered feature conservatively stays off
+    // Steps until the vault's other misses clear on a later detect — safe
+    // and self-healing, never the dangerous stale-"defined" direction.
+    expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
+  it("does not serve a stale covered=true once the src-dir listing starts FAILING outright — conflating 'listed empty' with 'listing failed' would let it (WS1, Codex P2)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-happy-path.feature");
+    fs.files.set(path, "Feature: Happy\n  Scenario: S\n    Given a step\n");
+    // No `.testrunner/src` files seeded at all: the src dir lists cleanly as
+    // EMPTY (`ok([])`) — a legitimate, successful listing finding nothing,
+    // NOT a failure. bddgen's fake verdict below is the only reason this
+    // records covered=true; there is no real step definition anywhere.
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+    // Recorded covered=true, keyed to the (successfully-listed) EMPTY
+    // sources digest — listing is still working at this point.
+    expect(await service.allStepsDefined([path])).toBe(true); // cache hit, listing still working
+
+    // NOW the src-dir listing starts genuinely FAILING — a transient/adapter
+    // fault, not "still empty". A pre-fix digest that treats a listing
+    // failure the same as "listed, found nothing" (`return []`) recomputes
+    // the SAME empty digest here and would wrongly re-serve the stale
+    // recorded verdict for as long as the fault persists — even across a
+    // real source edit/deletion we can no longer see. The fix must instead
+    // abstain: no reliable snapshot → skip the cache consult entirely and
+    // fall to the static heuristic, which (no step definitions it can
+    // reliably scrape either) reports the step undefined.
+    armFailingSrcListing(fs);
+
+    expect(await service.allStepsDefined([path])).toBe(false);
   });
 
   it("allStepsDefined falls back to static after the feature changes (hash miss)", async () => {
@@ -667,7 +719,7 @@ Use snippets above to create missing steps.
     expect(await service.allStepsDefined([path])).toBe(false);
   });
 
-  it("an undefined Outline step's CONCRETE pickle miss doesn't map back to its <template> — ambiguous report abstains, static independently still catches it (Codex P2 on PR #102 / Codex P2s)", async () => {
+  it("an undefined Outline step's CONCRETE pickle miss doesn't map back to its <template> — the header alone still records covered=false (Codex P2 on PR #102 / Codex P2s)", async () => {
     const { service, fs, absoluteFs, childProcess } = build();
     const path = vp("Specifications/features/UC-001-outline.feature");
     fs.files.set(
@@ -701,15 +753,65 @@ Use snippets above to create missing steps.
     // missingSteps comes out empty even though bddgen's raw report is not.
     if (detected.ok) expect(detected.value.missingSteps).toEqual([]);
 
-    // Header present but nothing maps back to this feature's own step text —
-    // ambiguous (indistinguishable, from inside detectMissingSteps, from
-    // cross-feature noise), so the cache abstains rather than guessing.
-    // allStepsDefined then falls back to the static heuristic, which — since
-    // no step definition for "colour" exists at all — independently and
-    // correctly reports the templated step undefined. If the cache instead
-    // recorded `covered=true` on that filtered emptiness (the pre-fix bug),
-    // allStepsDefined would wrongly report this feature covered — the
-    // dangerous direction.
+    // Header present — regardless of nothing mapping back to this feature's
+    // own step text (indistinguishable, from inside detectMissingSteps, from
+    // cross-feature noise) — records covered=false directly. For THIS
+    // fixture (no step definition for "colour" exists at all) the static
+    // heuristic would independently agree anyway; the load-bearing case
+    // where it would NOT (a typed def the outline sentinel wrongly
+    // satisfies) is pinned by the next test.
+    expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
+  it("an Outline miss the static matcher would FALSE-GREEN (typed {int} def, sentinel matches any class) still records covered=false — the load-bearing reason abstain-to-static was reverted (Codex P2s)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-outline.feature");
+    fs.files.set(
+      path,
+      `Feature: Outline
+  Scenario Outline: S
+    Given I have <count>
+
+    Examples:
+      | count |
+      | red   |
+`,
+    );
+    // A def typed to {int}: bddgen (the real cucumber-expression engine)
+    // rejects the Examples value "red" against {int} and reports it missing.
+    // The STATIC matcher's outline-sentinel, however, is DELIBERATELY lenient
+    // — it accepts any parameter class (including {int}) for a
+    // `<placeholder>` so a genuinely-unimplemented outline step is still
+    // caught in the common case (step-definitions.ts) — so "I have <count>"
+    // statically reads as COVERED regardless of what the Examples row
+    // actually substitutes. This is the concrete false-green a fallback to
+    // static would produce.
+    fs.files.set(
+      ".testrunner/src/steps/demo.steps.ts",
+      'import { Given } from "@cucumber/cucumber";\nGiven("I have {int}", async function () {});\n',
+    );
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("I have red", "an unrelated step from a different feature"),
+    );
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+    // keepFeatureSteps compares the feature's own TEMPLATE text ("I have
+    // <count>", sentinel-substituted) against bddgen's reported pattern — a
+    // plain LITERAL "I have red" with no {param} slot for the sentinel to
+    // match — so they never line up and the FILTERED missingSteps comes out
+    // empty even though bddgen's raw report is not (same mechanism as the
+    // untyped Outline case above).
+    if (detected.ok) expect(detected.value.missingSteps).toEqual([]);
+
+    // Red-check: an "abstain when nothing maps to this feature, let static
+    // decide" gate would fall back to the static heuristic here, which (per
+    // the fixture comment above) WRONGLY reads this as covered — a real
+    // bddgen-reported miss served as `allStepsDefined() === true`, the
+    // dangerous direction. Recording covered=false directly on the header's
+    // mere presence — never abstaining — closes it.
     expect(await service.allStepsDefined([path])).toBe(false);
   });
 
@@ -1182,6 +1284,37 @@ describe("DefaultSpecificationService.detectMissingSteps", () => {
     expect(detected.ok).toBe(true);
     if (detected.ok) expect(detected.value.missingSteps).toEqual(["a totally undefined step"]);
 
+    expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
+  it("does not record a verdict when the src-dir listing fails during detect (WS1, Codex P2) — a later working-listing allStepsDefined finds no cache entry and falls back to static", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-demo.feature");
+    fs.files.set(path, "Feature: Colour\n  Scenario: S\n    Given I have a colour\n");
+    // Same "bddgen resolves it, the static matcher can't" colou?r asymmetry
+    // as detectColourFeature: a wrongly-recorded covered=true cache entry
+    // would read this step as covered, while the static fallback alone
+    // reads it as undefined — an observable difference either way.
+    fs.files.set(
+      ".testrunner/src/steps/demo.steps.ts",
+      'import { Given } from "@cucumber/cucumber";\nGiven("I have a colou?r", async function () {});\n',
+    );
+    seedRunnerFolder(absoluteFs);
+    childProcess.stdouts.set("playwright-bdd", bddgenNoneMissing());
+    // The src-dir listing fails for the WHOLE detect (both the pre- and
+    // post-spawn snapshots) — an outright fault, not "listed empty".
+    const restoreListing = armFailingSrcListing(fs);
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true); // bddgen still ran fine — only OUR listing is broken
+
+    // The fault clears before the next consult.
+    restoreListing();
+
+    // allStepsDefined must find NO cache entry at all (the abstain skipped
+    // the whole record block during detect) and fall back to the static
+    // heuristic, which — for this colou?r fixture — reports the step
+    // undefined.
     expect(await service.allStepsDefined([path])).toBe(false);
   });
 
