@@ -1,9 +1,11 @@
 # Authoring Loop Completion (C2/C4/C5 + #77) — Design
 
 **Date:** 2026-07-17
-**Status:** Approved (brainstorming) — pending implementation plan
+**Status:** Approved — **implementation in progress** (plan: `docs/superpowers/plans/2026-07-17-authoring-loop-completion.md`), executed task-by-task on this branch.
 **Branch:** `claude/plugin-ux-usability-9kaf4a`
 **Sources:** `docs/ux-review/00-redesign-plan.md` (WS-C2/C4/C5), `docs/ux-review/03-authoring-loop.md` (R2/R6/R7, §3.2/3.4/3.5), GitHub issue #77.
+
+> **This is the full-increment DESIGN, not a shipped-state description.** Implementation lands task-by-task (18 tasks in the plan); a surface described here is not necessarily wired yet on the branch. **Built so far (WS1):** the stub-layout/`insertions` service work, the `StepCoverageCache` + `allStepsDefined` wiring (#77), and the pure `pending-steps-rows` projections (plan Tasks 1–5), plus the ongoing cache/rail-refresh hardening. **Not yet wired (expected):** the **Pending Steps** sidebar leaf + its entry points (Tasks 6–9), **WS2** tag palette / "In N suites" badge / Tag glossary (Tasks 10–15), and **WS3** rename-history guard (Tasks 16–18). Automated reviews flagging these surfaces as "not wired" are anticipated until their tasks land — this is not a defect.
 
 ## 1. Summary
 
