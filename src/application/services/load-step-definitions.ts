@@ -33,6 +33,31 @@ const readTsSources = async (
 };
 
 /**
+ * Coverage-path variant of {@link readTsSources}: a listed-but-UNREADABLE `.ts`
+ * file makes the snapshot INCOMPLETE, so return `null` (abstain) rather than a
+ * hashable partial. The #77 coverage cache content-addresses on the source set;
+ * a partial snapshot that silently OMITS a file Obsidian's adapter couldn't read
+ * (while the spawned `bddgen` reads it fine from disk) would digest stably and
+ * keep matching a stale verdict even as that omitted file is edited — the same
+ * failure mode {@link loadTsSourcesOrNull} guards for a LISTING fault, extended
+ * to a per-file READ fault (WS1, Codex P2 on PR #102). Non-`.ts` entries are
+ * still skipped.
+ */
+const readTsSourcesStrict = async (
+  fs: Pick<VaultFileSystem, "readFile">,
+  paths: readonly VaultPath[],
+): Promise<StepSourceFile[] | null> => {
+  const sources: StepSourceFile[] = [];
+  for (const path of paths) {
+    if (!path.endsWith(".ts")) continue;
+    const read = await fs.readFile(path);
+    if (!read.ok) return null; // incomplete snapshot — abstain, don't hash a partial
+    sources.push({ path, content: read.value });
+  }
+  return sources;
+};
+
+/**
  * Every `*.ts` under `dir` (recursively), path + raw content. A genuine
  * listing failure (e.g. a missing folder) yields no sources; individual
  * unreadable files are skipped best-effort. Backs {@link loadStepSources},
@@ -54,9 +79,10 @@ const loadTsSources = async (
 };
 
 /**
- * Same as {@link loadTsSources}, except a LISTING failure returns `null`
- * instead of silently collapsing to `[]` — kept distinct from a directory
- * that lists cleanly and simply has zero files. Backs
+ * Same as {@link loadTsSources}, except a LISTING failure — OR any per-file
+ * READ fault (via {@link readTsSourcesStrict}) — returns `null` instead of
+ * silently collapsing to `[]` / a partial snapshot, kept distinct from a
+ * directory that lists cleanly and simply has zero files. Backs
  * {@link loadRunnerSources}/{@link loadRunnerCoverageSources}, the #77
  * coverage-cache path: that cache content-addresses on the source set, so
  * conflating "the listing failed" with "there are zero files" would let a
@@ -72,7 +98,7 @@ const loadTsSourcesOrNull = async (
 ): Promise<StepSourceFile[] | null> => {
   const listed = await fs.listFilesRecursive(dir);
   if (!listed.ok) return null; // listing failure — kept distinct from "listed, empty"
-  return readTsSources(fs, listed.value);
+  return readTsSourcesStrict(fs, listed.value); // a per-file read fault also abstains (Codex P2)
 };
 
 /**
@@ -134,9 +160,11 @@ const loadRunnerSources = (
  * the sources" apart from "there are none" and abstain (skip recording /
  * skip the cache consult) rather than address a snapshot that would look
  * identical regardless of what actually changes on disk while the fault
- * persists. A config-file read failure does NOT propagate `null` — only the
- * `src` directory LISTING does; a missing/unreadable `playwright.config.ts`
- * or `tsconfig.json` is still just skipped, best-effort, as before.
+ * persists. The `src` LISTING failing OR any `src` `.ts` file failing to READ
+ * (Codex P2 on PR #102) both propagate `null`. Only the runner-root CONFIG
+ * reads stay best-effort — a missing/unreadable `playwright.config.ts` or
+ * `tsconfig.json` is still just skipped, since an uninitialized runner
+ * legitimately has neither yet.
  */
 export const loadRunnerCoverageSources = async (
   fs: Pick<VaultFileSystem, "listFilesRecursive" | "readFile">,

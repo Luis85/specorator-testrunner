@@ -20,18 +20,18 @@ const src = (path: string, content: string): StepSourceFile => ({ path: vp(path)
 const givenFile = (text: string): string => `Given("${text}", async () => {});`;
 
 /**
- * A cache with ONE recorded true verdict for f.feature over `sources` (a
- * single-source set by default) — the common starting point several
- * invalidation tests below mutate exactly one input from, to isolate which
- * input triggered the miss. An explicit `sources` override lets a test pin a
- * specific source SHAPE (e.g. a `../pages` import) while still sharing this
+ * A cache with ONE recorded confirmed-covered verdict for f.feature over
+ * `sources` (a single-source set by default) — the common starting point several
+ * invalidation tests below mutate exactly one input from, to isolate which input
+ * triggered the miss. An explicit `sources` override lets a test pin a specific
+ * source SHAPE (e.g. a `../pages` import) while still sharing this
  * record-then-return idiom rather than repeating it inline.
  */
 const recordedCache = (
   sources: StepSourceFile[] = [src("a.ts", givenFile("a step"))],
 ): { cache: StepCoverageCache; sources: StepSourceFile[] } => {
   const cache = new StepCoverageCache();
-  cache.record(vp("f.feature"), feature("a step"), sources, true);
+  cache.recordCovered(vp("f.feature"), feature("a step"), sources);
   return { cache, sources };
 };
 
@@ -45,11 +45,16 @@ describe("StepCoverageCache (#77)", () => {
     ).toBeNull();
   });
 
-  it("hits with the recorded verdict when feature bytes AND sources match", () => {
+  it("hits (true) with the recorded verdict when feature bytes AND sources match", () => {
     const { cache, sources } = recordedCache();
     expect(cache.authoritativeCovered(vp("f.feature"), feature("a step"), sources)).toBe(true);
-    cache.record(vp("g.feature"), feature("other"), sources, false);
-    expect(cache.authoritativeCovered(vp("g.feature"), feature("other"), sources)).toBe(false);
+  });
+
+  it("is positive-only: an unrecorded Feature misses (null), never a stored not-covered", () => {
+    const { cache, sources } = recordedCache();
+    // There is no way to record a not-covered verdict — a Feature the cache
+    // never confirmed simply misses, so `allStepsDefined` asks the static tier.
+    expect(cache.authoritativeCovered(vp("g.feature"), feature("other"), sources)).toBeNull();
   });
 
   it("misses after the feature's raw bytes change (external edit safety)", () => {
@@ -71,7 +76,7 @@ describe("StepCoverageCache (#77)", () => {
       parsedEdited && collectStepTexts(parsedEdited),
     );
 
-    cache.record(vp("f.feature"), original, [], true);
+    cache.recordCovered(vp("f.feature"), original, []);
     // Raw-byte addressing (spec D6) catches the Examples-row edit a
     // template-only digest would have missed.
     expect(cache.authoritativeCovered(vp("f.feature"), edited, [])).toBeNull();
@@ -81,7 +86,7 @@ describe("StepCoverageCache (#77)", () => {
     const cache = new StepCoverageCache();
     const ab = "Feature: F\n  Scenario: S\n    Given a\n    When b\n";
     const ba = "Feature: F\n  Scenario: S\n    Given b\n    When a\n";
-    cache.record(vp("f.feature"), ab, [], true);
+    cache.recordCovered(vp("f.feature"), ab, []);
     expect(cache.authoritativeCovered(vp("f.feature"), ba, [])).toBeNull();
   });
 
@@ -100,7 +105,7 @@ describe("StepCoverageCache (#77)", () => {
     // scraped pattern set is IDENTICAL before and after the edit.
     expect(parseStepDefinitions(original)).toEqual(parseStepDefinitions(edited));
 
-    cache.record(vp("f.feature"), feature("a step"), [src("helpers.ts", original)], true);
+    cache.recordCovered(vp("f.feature"), feature("a step"), [src("helpers.ts", original)]);
     // Raw-byte addressing (spec D6) catches the edit a pattern-only digest
     // would have missed, which would otherwise serve a stale "covered" verdict.
     expect(
@@ -108,19 +113,22 @@ describe("StepCoverageCache (#77)", () => {
     ).toBeNull();
   });
 
-  it("re-records over a prior entry", () => {
+  it("re-records over a prior entry (latest sources win)", () => {
     const cache = new StepCoverageCache();
-    cache.record(vp("f.feature"), feature("a step"), [], false);
-    const sources = [src("a.ts", givenFile("a step"))];
-    cache.record(vp("f.feature"), feature("a step"), sources, true);
-    expect(cache.authoritativeCovered(vp("f.feature"), feature("a step"), sources)).toBe(true);
+    const stale = [src("a.ts", givenFile("old"))];
+    const fresh = [src("a.ts", givenFile("a step"))];
+    cache.recordCovered(vp("f.feature"), feature("a step"), stale);
+    cache.recordCovered(vp("f.feature"), feature("a step"), fresh);
+    // The latest record wins: the fresh sources hit, the stale ones no longer do.
+    expect(cache.authoritativeCovered(vp("f.feature"), feature("a step"), fresh)).toBe(true);
+    expect(cache.authoritativeCovered(vp("f.feature"), feature("a step"), stale)).toBeNull();
   });
 
   it("keeps hitting when sources are listed in a different order (sorted internally)", () => {
     const cache = new StepCoverageCache();
     const a = src("a.ts", givenFile("a"));
     const b = src("b.ts", givenFile("b"));
-    cache.record(vp("f.feature"), feature("a step"), [a, b], true);
+    cache.recordCovered(vp("f.feature"), feature("a step"), [a, b]);
     // listFilesRecursive's listing order is adapter-dependent; the digest sorts
     // by path first so the SAME file set still hits regardless of order.
     expect(cache.authoritativeCovered(vp("f.feature"), feature("a step"), [b, a])).toBe(true);
@@ -130,7 +138,7 @@ describe("StepCoverageCache (#77)", () => {
     const cache = new StepCoverageCache();
     // path "a" + content "b c" vs path "a b" + content "c" must digest
     // differently — a naive separator-free join could conflate the two.
-    cache.record(vp("f.feature"), feature("x"), [src("a", "b c")], true);
+    cache.recordCovered(vp("f.feature"), feature("x"), [src("a", "b c")]);
     expect(cache.authoritativeCovered(vp("f.feature"), feature("x"), [src("a b", "c")])).toBeNull();
   });
 

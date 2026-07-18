@@ -408,11 +408,10 @@ export class DefaultSpecificationService implements SpecificationService {
       const { content: featureContent, feature } = read.value;
       const stepTexts = collectStepTexts(feature);
       if (stepTexts.length > 0) sawStep = true;
-      const authoritative = this.cachedVerdict(featurePath, featureContent, runnerSources);
-      if (authoritative !== null) {
-        if (!authoritative) return false;
-        continue;
-      }
+      // Positive-only cache (spec D6): a confirmed-covered hit clears this
+      // Feature; otherwise fall to the static heuristic. The cache upgrades a
+      // static miss but never blocks it, so there is no covered=false branch.
+      if (this.cachedVerdict(featurePath, featureContent, runnerSources) === true) continue;
       if (findMissingSteps(stepTexts, definitions).length > 0) return false;
     }
     // Require at least one step across the set (a step-less Feature set proves
@@ -439,20 +438,21 @@ export class DefaultSpecificationService implements SpecificationService {
   }
 
   /**
-   * The #77 cache's authoritative verdict for one Feature against the
-   * ALREADY-LOADED `runnerSources`, or `null` to fall back to the static
-   * heuristic — either no recorded/matching cache entry, or (WS1)
-   * `runnerSources` itself is `null` (the `.testrunner/src` LISTING failed),
-   * in which case the cache is skipped entirely: hashing an empty snapshot
-   * here could coincidentally match a stale entry recorded under the very
-   * same failure, serving a verdict that no longer reflects the (currently
+   * The #77 cache's confirmed-covered verdict (`true`) for one Feature against
+   * the ALREADY-LOADED `runnerSources`, or `null` to fall back to the static
+   * heuristic. `null` covers three cases: no recorded/matching cache entry, an
+   * input that has changed since (positive-only cache — see StepCoverageCache),
+   * or (WS1) `runnerSources` itself is `null` (the `.testrunner/src` LISTING
+   * failed), in which case the cache is skipped entirely: hashing an empty
+   * snapshot here could coincidentally match a stale entry recorded under the
+   * very same failure, serving a verdict that no longer reflects the (currently
    * unreadable) source tree.
    */
   private cachedVerdict(
     featurePath: VaultPath,
     featureContent: string,
     runnerSources: readonly StepSourceFile[] | null,
-  ): boolean | null {
+  ): true | null {
     return runnerSources === null
       ? null
       : this.stepCoverage.authoritativeCovered(featurePath, featureContent, runnerSources);
@@ -577,73 +577,18 @@ export class DefaultSpecificationService implements SpecificationService {
     }));
     const missingSteps = keepFeatureSteps(collectStepTexts(feature), missingPatterns);
 
-    // #77 spec D6: bddgen reads the .feature AND every runner src file from
-    // disk mid-spawn. Re-read BOTH now and record the verdict ONLY if they
-    // still match what we sent bddgen to evaluate — an edit to EITHER,
-    // landing inside the spawn window, skips the record (miss-safe); an
-    // edit-and-revert entirely within the window is the accepted
-    // unobservable residual for both (Codex P2 on PR #102). The event
-    // published and the missingSteps returned below stay as-is either way —
-    // they describe what bddgen actually saw well enough for UI purposes;
-    // only the RECORD is gated. Checked (and, when it holds, recorded)
-    // BEFORE the publish, so a subscriber that queries allStepsDefined while
-    // handling the event sees the fresh verdict.
-    const postSpawnRead = await this.fs.readFile(featurePath);
-    const postSpawnSources = await this.runnerSources(settings);
-    // A `.testrunner/src` listing failure (WS1, Codex P2 on PR #102) at
-    // EITHER end of the spawn window makes the source snapshot unreliable —
-    // abstain from recording altogether, the same direction as an outright
-    // feature/sources mismatch below, rather than digest a `null`-turned
-    // placeholder that a later, still-failing consult could wrongly match.
-    if (sourcesAtSpawn !== null && postSpawnSources !== null) {
-      const unchangedSinceSpawn =
-        postSpawnRead.ok &&
-        postSpawnRead.value === featureContent &&
-        sourcesDigest(postSpawnSources) === sourcesDigest(sourcesAtSpawn);
-      if (unchangedSinceSpawn) {
-        // Safety invariant: never record (and so never later SERVE) a
-        // `covered=true` verdict unless confident. The ONLY confident-covered
-        // signal is bddgen printing NO `Missing step definitions:` header at
-        // all — scoped to this feature's detect (BDD_FEATURES), it found
-        // nothing missing anywhere. Any header present records covered=FALSE,
-        // regardless of whether `missingSteps` (the `keepFeatureSteps`-
-        // filtered, THIS-feature-only list, still computed above for the
-        // returned result/event) mapped anything back to this feature.
-        //
-        // A three-way record that ABSTAINED on "header present but nothing
-        // mapped" (cross-feature noise vs. an unmappable Outline miss — was
-        // tried and is UNSAFE: for a Scenario Outline `Given I have <count>`
-        // with Examples value `red` against an existing def `I have {int}`,
-        // bddgen (the real cucumber-expression engine) reports the CONCRETE
-        // miss `I have red` — `red` fails `{int}` — but `keepFeatureSteps`
-        // compares against the FEATURE's own TEMPLATE text ("I have <count>",
-        // sentinel-substituted), which never lines up with that concrete
-        // literal, so `missingSteps` reads empty and the record would abstain.
-        // Falling back to static then FALSE-GREENS: the static matcher's
-        // outline-sentinel deliberately accepts ANY parameter class for a
-        // `<placeholder>` (so a genuinely-unimplemented outline step is still
-        // caught in the common case), which means it also wrongly accepts the
-        // sentinel for a TYPED `{int}` param — independent of what the actual
-        // Examples value is (Codex P2s on PR #102).
-        //
-        // Recording covered=false on ANY header is monotonically safe: the
-        // sole covered-producing branch (header absent) can't false-green.
-        // The accepted cost is the OTHER direction — cross-feature noise (a
-        // header whose misses all belong to other features) now
-        // conservatively holds an actually-covered feature on Steps instead
-        // of the static heuristic correctly clearing it — safe and
-        // self-healing (the next detect, once the vault's other misses
-        // clear, records covered=true), never the dangerous stale-"defined"
-        // direction.
-        const missingHeaderPresent = ran.value.stdout.includes(BDDGEN_MISSING_HEADER);
-        this.stepCoverage.record(
-          featurePath,
-          featureContent,
-          sourcesAtSpawn,
-          !missingHeaderPresent,
-        );
-      }
-    }
+    // Record the #77 coverage verdict (positive-only, gated by a post-spawn
+    // revalidation) BEFORE the publish, so a subscriber that queries
+    // allStepsDefined while handling the event sees the fresh verdict. The
+    // event published and the missingSteps returned below are unaffected —
+    // only the RECORD is gated.
+    await this.recordCoverageIfConfirmed(
+      settings,
+      featurePath,
+      featureContent,
+      sourcesAtSpawn,
+      ran.value.stdout,
+    );
 
     const detectionEvent = createEvent("specification.missingSteps.detected", {
       featurePath,
@@ -655,6 +600,47 @@ export class DefaultSpecificationService implements SpecificationService {
       missing: missingSteps.length,
     });
     return ok({ featurePath, missingSteps, detectionEventId: detectionEvent.id });
+  }
+
+  /**
+   * The #77 coverage record (positive-only, spec D6), gated by a post-spawn
+   * revalidation. Records a covered verdict ONLY when:
+   *
+   * - bddgen printed NO `Missing step definitions:` header — the only
+   *   confident-covered signal. A header records NOTHING (never covered=false):
+   *   the cache can only UPGRADE the static heuristic, never block it, so this
+   *   feature falls through to static in `allStepsDefined`. bddgen's misses
+   *   conflate a genuinely-ABSENT definition with a runtime DATA mismatch (a
+   *   Scenario Outline Examples value that won't match an existing typed param),
+   *   a line the static tier draws and the "Steps" stage cares about — so
+   *   deferring a header to static is correct, not a false-green. (Header
+   *   present short-circuits BEFORE the revalidation reads.)
+   * - AND a post-spawn re-read still matches BOTH the pre-spawn feature bytes
+   *   and the pre-spawn source set. bddgen read the `.feature` and compiled the
+   *   runner sources from disk mid-spawn; an edit to either inside the spawn
+   *   window skips the record (miss-safe). A `.testrunner/src` listing failure
+   *   (WS1) at either end makes the snapshot unreliable — abstain too, rather
+   *   than digest a `null`-turned placeholder a later still-failing consult
+   *   could wrongly match.
+   */
+  private async recordCoverageIfConfirmed(
+    settings: TestHubSettings,
+    featurePath: VaultPath,
+    featureContent: string,
+    sourcesAtSpawn: readonly StepSourceFile[] | null,
+    bddgenStdout: string,
+  ): Promise<void> {
+    if (bddgenStdout.includes(BDDGEN_MISSING_HEADER)) return;
+    const postSpawnRead = await this.fs.readFile(featurePath);
+    const postSpawnSources = await this.runnerSources(settings);
+    if (sourcesAtSpawn === null || postSpawnSources === null) return;
+    const unchangedSinceSpawn =
+      postSpawnRead.ok &&
+      postSpawnRead.value === featureContent &&
+      sourcesDigest(postSpawnSources) === sourcesDigest(sourcesAtSpawn);
+    if (unchangedSinceSpawn) {
+      this.stepCoverage.recordCovered(featurePath, featureContent, sourcesAtSpawn);
+    }
   }
 
   /**

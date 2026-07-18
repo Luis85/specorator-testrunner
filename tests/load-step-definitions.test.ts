@@ -76,6 +76,19 @@ describe("loadRunnerCoverageSources", () => {
     expect(await loadRunnerCoverageSources(fs, RUNNER)).toEqual([]);
   });
 
+  it("returns null when a listed src .ts file cannot be READ — an incomplete snapshot must abstain, not hash a partial (WS1, Codex P2 on PR #102)", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const b = vp(".testrunner/src/steps/b.ts");
+    // Both listed, but `b` is absent from `files` → readFile fails. A partial
+    // snapshot that silently dropped `b` would digest stably and keep matching a
+    // stale coverage verdict even as `b` is edited on disk (while the spawned
+    // bddgen reads it fine) — so the coverage path abstains instead of the
+    // best-effort skip the static-pattern path uses.
+    const fs = stubFs(ok([a, b]), { [a]: 'Given("a step", async () => {});' });
+
+    expect(await loadRunnerCoverageSources(fs, RUNNER)).toBeNull();
+  });
+
   it("includes the runner-root playwright.config.ts alongside the whole src tree (Codex P2, closes the outermost digest ring)", async () => {
     const a = vp(".testrunner/src/steps/a.ts");
     const config = vp(".testrunner/playwright.config.ts");
