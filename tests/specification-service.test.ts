@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import {
   DefaultSpecificationService,
-  parseBddgenMissingCount,
   parseBddgenMissingSteps,
 } from "../src/application/services/specification-service";
 import { parseFeature } from "../src/application/content/gherkin";
@@ -531,7 +530,7 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     expect(await service.allStepsDefined([FEATURE])).toBe(false);
   });
 
-  it("caches covered=false on bddgen's HEADER count, not the parsed snippet count — a snippet-format shift must not be read as covered (Codex P2 on PR #102, priority)", async () => {
+  it("header present but an indented-snippet format shift maps nothing to this feature — ambiguous report abstains; no defs anywhere means static independently agrees it's undefined (Codex P2 on PR #102 / Codex P2s)", async () => {
     const { service, fs, absoluteFs, childProcess } = build();
     const path = vp("Specifications/features/UC-001-happy-path.feature");
     fs.files.set(path, "Feature: Happy\n  Scenario: S\n    Given a step\n");
@@ -558,11 +557,45 @@ Use snippets above to create missing steps.
     const detected = await service.detectMissingSteps(path);
     expect(detected.ok).toBe(true);
 
-    // If the cache gated `covered` on the parsed snippet count (wrongly 0),
-    // it would record covered=true even though bddgen's own header says 2
-    // are missing — the dangerous direction. Gated on the header instead, it
-    // must stay false.
+    // Header present but the format shift means NOTHING maps back to this
+    // feature's own step text (`missingSteps` reads empty too) — ambiguous,
+    // so the cache abstains rather than guessing. allStepsDefined then falls
+    // back to the static heuristic, which (no step definition is seeded
+    // anywhere in this fixture) independently agrees the step is undefined.
+    // A gate that recorded covered=true whenever the parsed/filtered count
+    // read zero (the pre-fix bug) would instead wrongly cache this feature
+    // as covered — the dangerous direction.
     expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
+  it("bddgen misses belonging to ANOTHER feature don't poison this feature's cache — ambiguous report abstains, static independently still covers it (Codex P2s)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-happy-path.feature");
+    fs.files.set(path, ONE_STEP); // "Given a step"
+    defineStep(fs, "a step"); // exact static match: the static heuristic alone says covered
+    seedRunnerFolder(absoluteFs);
+    // The header IS present (bddgen found missing steps SOMEWHERE), but
+    // BD_FEATURES-scoping notwithstanding, bddgen's report is not reliably
+    // scoped to just this feature ("bddgen lists a step from another
+    // feature" below) — neither reported miss is this feature's own step
+    // text, so keepFeatureSteps filters both out and `missingSteps` reads
+    // empty for THIS feature even though the header is present.
+    childProcess.stdouts.set(
+      "playwright-bdd",
+      bddgenTwoMissing("step from another feature entirely", "yet another feature's step"),
+    );
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+    if (detected.ok) expect(detected.value.missingSteps).toEqual([]); // prove the premise
+
+    // A gate that records covered=false on the header's mere PRESENCE would
+    // wrongly poison this (actually covered) feature — the dangerous
+    // direction the OTHER way. The ambiguous case (header present, nothing
+    // maps to THIS feature) must instead abstain, so allStepsDefined falls
+    // back to the static heuristic, which correctly reports this feature
+    // covered.
+    expect(await service.allStepsDefined([path])).toBe(true);
   });
 
   it("allStepsDefined falls back to static after the feature changes (hash miss)", async () => {
@@ -634,7 +667,7 @@ Use snippets above to create missing steps.
     expect(await service.allStepsDefined([path])).toBe(false);
   });
 
-  it("caches covered=false on bddgen's RAW missing count, not the filtered list — an undefined Outline step's CONCRETE pickle miss doesn't map back to its <template> (Codex P2 on PR #102)", async () => {
+  it("an undefined Outline step's CONCRETE pickle miss doesn't map back to its <template> — ambiguous report abstains, static independently still catches it (Codex P2 on PR #102 / Codex P2s)", async () => {
     const { service, fs, absoluteFs, childProcess } = build();
     const path = vp("Specifications/features/UC-001-outline.feature");
     fs.files.set(
@@ -668,10 +701,15 @@ Use snippets above to create missing steps.
     // missingSteps comes out empty even though bddgen's raw report is not.
     if (detected.ok) expect(detected.value.missingSteps).toEqual([]);
 
-    // If the cache recorded `covered` on that filtered emptiness (the bug),
-    // allStepsDefined would wrongly report true for a feature that still has
-    // a genuinely undefined step — the dangerous direction. Gated on
-    // bddgen's OWN raw verdict instead, it must stay false.
+    // Header present but nothing maps back to this feature's own step text —
+    // ambiguous (indistinguishable, from inside detectMissingSteps, from
+    // cross-feature noise), so the cache abstains rather than guessing.
+    // allStepsDefined then falls back to the static heuristic, which — since
+    // no step definition for "colour" exists at all — independently and
+    // correctly reports the templated step undefined. If the cache instead
+    // recorded `covered=true` on that filtered emptiness (the pre-fix bug),
+    // allStepsDefined would wrongly report this feature covered — the
+    // dangerous direction.
     expect(await service.allStepsDefined([path])).toBe(false);
   });
 
@@ -731,6 +769,37 @@ Use snippets above to create missing steps.
     // changed); the config-inclusive digest (Codex P2, closes the outermost
     // ring) catches the edit and falls back to static, which — for this
     // colou?r fixture — reports the step undefined (the safe direction).
+    expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
+  it("falls back to static after the runner-root tsconfig.json is edited — its paths aliases/module resolution are also a bddgen input (Codex P2s, digests tsconfig.json too)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-colour.feature");
+    const tsconfigFile = ".testrunner/tsconfig.json";
+    fs.files.set(path, "Feature: Colour\n  Scenario: S\n    Given I have a colour\n");
+    // Same "bddgen resolves it, static can't" colou?r asymmetry as
+    // detectColourFeature, so a fallback to static is observable.
+    defineStep(fs, "I have a colou?r");
+    fs.files.set(
+      tsconfigFile,
+      '{ "compilerOptions": { "paths": { "@steps/*": ["src/steps/*"] } } }',
+    );
+    await detectAndAssertCacheHit(service, absoluteFs, childProcess, path);
+
+    // Edit ONLY the runner-root tsconfig.json — the steps file (and hence the
+    // scraped pattern set the static fallback reads) is byte-for-byte
+    // untouched. tsconfig.json's `paths` aliases/module resolution are ALSO a
+    // bddgen input (unlike playwright.config.ts's globs, unhashed before this
+    // fix); an edit can make bddgen resolve the SAME step source differently.
+    fs.files.set(
+      tsconfigFile,
+      '{ "compilerOptions": { "paths": { "@steps/*": ["src/other-steps/*"] } } }',
+    );
+
+    // A digest that omits tsconfig.json would still hit here (nothing under
+    // src/ or playwright.config.ts changed); the tsconfig-inclusive digest
+    // catches the edit and falls back to static, which — for this colou?r
+    // fixture — reports the step undefined (the safe direction).
     expect(await service.allStepsDefined([path])).toBe(false);
   });
 
@@ -803,26 +872,6 @@ Use snippets above to create missing steps.
     // stripped so the result equals the feature's raw `I can't log in`.
     const stdout = `Missing step definitions: 1\n\nGiven('I can\\'t log in', async ({}) => {});\n`;
     expect(parseBddgenMissingSteps(stdout)).toEqual(["I can't log in"]);
-  });
-});
-
-describe("parseBddgenMissingCount", () => {
-  it("extracts the count from bddgen's header, independent of the snippet body", () => {
-    const stdout = `Missing step definitions: 2\n\nGiven('a step', async ({}) => {});\n`;
-    expect(parseBddgenMissingCount(stdout)).toBe(2);
-  });
-
-  it("extracts a multi-digit count", () => {
-    expect(parseBddgenMissingCount("Missing step definitions: 42\n")).toBe(42);
-  });
-
-  it("returns 0 when there is no header (all steps defined)", () => {
-    const stdout = `BDD generator started\nAll steps are defined.\n`;
-    expect(parseBddgenMissingCount(stdout)).toBe(0);
-  });
-
-  it("returns 0 for an empty string", () => {
-    expect(parseBddgenMissingCount("")).toBe(0);
   });
 });
 

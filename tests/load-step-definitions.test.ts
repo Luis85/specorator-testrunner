@@ -89,4 +89,45 @@ describe("loadRunnerCoverageSources", () => {
 
     expect(sources).toEqual([{ path: a, content: 'Given("a step", async () => {});' }]);
   });
+
+  it("includes the runner-root tsconfig.json alongside playwright.config.ts and the whole src tree (Codex P2s — paths aliases/module resolution are also a bddgen input)", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const config = vp(".testrunner/playwright.config.ts");
+    const tsconfig = vp(".testrunner/tsconfig.json");
+    const fs = stubFs(ok([a]), {
+      [a]: 'Given("a step", async () => {});',
+      [config]: 'const testDir = defineBddConfig({ features: "x" });',
+      [tsconfig]: '{ "compilerOptions": { "paths": { "@steps/*": ["src/steps/*"] } } }',
+    });
+
+    const sources = await loadRunnerCoverageSources(fs, RUNNER);
+
+    expect(sources).toEqual([
+      { path: a, content: 'Given("a step", async () => {});' },
+      { path: config, content: 'const testDir = defineBddConfig({ features: "x" });' },
+      {
+        path: tsconfig,
+        content: '{ "compilerOptions": { "paths": { "@steps/*": ["src/steps/*"] } } }',
+      },
+    ]);
+  });
+
+  it("skips tsconfig.json, best-effort, when it doesn't exist yet — independently of playwright.config.ts", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const config = vp(".testrunner/playwright.config.ts");
+    const fs = stubFs(ok([a]), {
+      [a]: 'Given("a step", async () => {});',
+      [config]: 'const testDir = defineBddConfig({ features: "x" });',
+      // No tsconfig.json in `files` → readFile fails → skipped, the same
+      // best-effort treatment as playwright.config.ts above — and the config
+      // file being present must not affect this independent skip.
+    });
+
+    const sources = await loadRunnerCoverageSources(fs, RUNNER);
+
+    expect(sources).toEqual([
+      { path: a, content: 'Given("a step", async () => {});' },
+      { path: config, content: 'const testDir = defineBddConfig({ features: "x" });' },
+    ]);
+  });
 });

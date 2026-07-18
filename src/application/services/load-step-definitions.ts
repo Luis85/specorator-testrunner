@@ -62,7 +62,8 @@ export const loadStepSources = (
  * page-object/support edit bddgen recompiles against (Codex P2 on PR #102).
  * Same best-effort semantics as {@link loadStepSources}. NOT exported: every
  * external caller wants the FULL #77 coverage-cache input (this PLUS the
- * runner-root `playwright.config.ts`) — use {@link loadRunnerCoverageSources}.
+ * runner-root `playwright.config.ts` and `tsconfig.json`) — use
+ * {@link loadRunnerCoverageSources}.
  */
 const loadRunnerSources = (
   fs: Pick<VaultFileSystem, "listFilesRecursive" | "readFile">,
@@ -70,15 +71,18 @@ const loadRunnerSources = (
 ): Promise<StepSourceFile[]> => loadTsSources(fs, runnerSrcDir);
 
 /**
- * {@link loadRunnerSources} PLUS the runner-root `playwright.config.ts` (path +
- * bytes), when it exists — the #77 coverage cache's FULL sources digest input
- * (spec D6, closing the outermost ring, Codex P2 on PR #102). The config file
- * owns bddgen's `defineBddConfig` call (`features`/`featuresRoot`/`steps`/
- * `tags` globs), which lives OUTSIDE `src/` entirely — editing it changes what
- * bddgen evaluates, invisibly to a src-only digest, which would then serve a
- * stale `covered=true`. Best-effort like {@link loadRunnerSources}: an
- * uninitialized runner (the config not yet written) or an unreadable config
- * is skipped — same treatment as any other unreadable source file, never an
+ * {@link loadRunnerSources} PLUS the runner-root `playwright.config.ts` and
+ * `tsconfig.json` (path + bytes each), when they exist — the #77 coverage
+ * cache's FULL sources digest input (spec D6, closing the outermost ring,
+ * Codex P2 on PR #102). `playwright.config.ts` owns bddgen's
+ * `defineBddConfig` call (`features`/`featuresRoot`/`steps`/`tags` globs);
+ * `tsconfig.json` owns `paths` aliases and other module-resolution settings
+ * bddgen also consults, so it can resolve the SAME step source differently
+ * after an edit. Both live OUTSIDE `src/` entirely — editing either changes
+ * what/how bddgen evaluates, invisibly to a src-only digest, which would then
+ * serve a stale `covered=true`. Best-effort like {@link loadRunnerSources}:
+ * an uninitialized runner (a file not yet written) or an unreadable file is
+ * skipped — same treatment as any other unreadable source file, never an
  * error.
  */
 export const loadRunnerCoverageSources = async (
@@ -86,9 +90,18 @@ export const loadRunnerCoverageSources = async (
   testRunnerPath: VaultPath,
 ): Promise<StepSourceFile[]> => {
   const sources = await loadRunnerSources(fs, joinVaultPath(testRunnerPath, "src"));
+
   const configPath = joinVaultPath(testRunnerPath, "playwright.config.ts");
-  const read = await fs.readFile(configPath);
-  return read.ok ? [...sources, { path: configPath, content: read.value }] : sources;
+  const configRead = await fs.readFile(configPath);
+  const withConfig = configRead.ok
+    ? [...sources, { path: configPath, content: configRead.value }]
+    : sources;
+
+  const tsconfigPath = joinVaultPath(testRunnerPath, "tsconfig.json");
+  const tsconfigRead = await fs.readFile(tsconfigPath);
+  return tsconfigRead.ok
+    ? [...withConfig, { path: tsconfigPath, content: tsconfigRead.value }]
+    : withConfig;
 };
 
 /** Scrapes step-definition patterns out of an already-read set of source files. */
