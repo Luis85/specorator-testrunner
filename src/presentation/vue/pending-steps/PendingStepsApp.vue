@@ -241,6 +241,36 @@ async function verifyInner(entry: GroupState): Promise<void> {
   patch(entry);
 }
 
+/**
+ * After a generate WROTE stubs, a step it defined may also be listed as pending
+ * by a SIBLING group (a shared step). Re-project every OTHER loaded group from
+ * the static tier so they pick up the new definition — the action swallowed the
+ * `stepdefinition.generated` event that would otherwise refresh them, and doing
+ * it here (not a full reload) keeps the clicked entry's result/viewer intact
+ * (Codex P2 on PR #102).
+ */
+async function reprojectSiblings(clicked: GroupState, gen: number): Promise<void> {
+  if (state.value.kind !== "loaded") return;
+  const definitions = await deps.specificationService.listStepPatterns();
+  if (gen !== generation || state.value.kind !== "loaded") return;
+  const refreshed = await Promise.all(
+    state.value.groups.map(async (candidate) => {
+      if (candidate.group.path === clicked.group.path) return candidate;
+      const feature = await readFeatureFile(deps.fs, candidate.group.path);
+      if (!feature.ok) return candidate;
+      const group = projectPendingFeature(
+        candidate.group.path,
+        collectStepTexts(feature.value),
+        definitions,
+        null,
+      );
+      return { ...candidate, group };
+    }),
+  );
+  if (gen !== generation || state.value.kind !== "loaded") return;
+  state.value = { ...state.value, groups: refreshed };
+}
+
 /** Detect → generate → re-detect → show the written stubs (spec §3.2). */
 async function generateInner(entry: GroupState): Promise<void> {
   const gen = generation;
@@ -267,24 +297,23 @@ async function generateInner(entry: GroupState): Promise<void> {
     patch(entry);
     return;
   }
-  // Re-project after generate — deliberately NO bddgen re-detect here. TWO cases:
-  // - STUBS WRITTEN (generatedSteps non-empty): re-project from the STATIC tier
-  //   (null). The stubs are already in `src/steps`, so static sees them defined
-  //   (and the loop rail, subscribed to stepdefinition.generated, advances the
-  //   same way). A re-detect would publish a zero-missing
-  //   specification.missingSteps.detected that completes the Guided Tour's
-  //   implement-steps step straight from the generated `throw new Error("Pending")`
-  //   stubs — before the user implements anything. The user implements, then
-  //   clicks Verify (a REAL detect) to complete the tour (tour-safe, Codex P2).
-  // - NO-OP (generatedSteps empty): bddgen already resolved every step — a custom
-  //   parameter type / optional syntax the static matcher CAN'T model — so nothing
-  //   was written. Re-project with the PRE-generate bddgen verdict (empty here),
-  //   NOT static, which would wrongly re-flag the resolved step as pending and
-  //   leave Generate enabled right after "nothing to generate" (Codex P2 on PR
-  //   #102). Reusing the already-published pre-detect list projects UI only — it
-  //   publishes no new event, so the tour is unaffected.
-  const wrote = generated.value.generatedSteps.length > 0;
-  if (!(await reprojectGroup(entry, gen, wrote ? null : detected.value.missingSteps))) return;
+  // Re-project after generate — deliberately NO bddgen re-detect here (it would
+  // publish a zero-missing specification.missingSteps.detected that prematurely
+  // completes the Guided Tour's implement-steps step from the generated
+  // `throw new Error("Pending")` stubs). Pick the tier by what bddgen ORIGINALLY
+  // detected, not by whether a write happened:
+  // - detect was EMPTY: bddgen already resolved every step — a custom parameter
+  //   type / optional syntax the static matcher CAN'T model — so trust that
+  //   verdict (covered). Falling to static would wrongly re-flag the resolved
+  //   step as pending and re-enable Generate right after "nothing to generate".
+  // - detect was NON-empty: reproject from STATIC. It sees the just-written stubs
+  //   (normal case) OR the now-implemented steps when generate re-diffed to a
+  //   no-op because the misses were implemented between detect and write (a race)
+  //   — reusing the stale detected list there would keep them shown pending. This
+  //   is also the tour-safe path. (Codex P2s on PR #102.)
+  const bddgenResolvedAll = detected.value.missingSteps.length === 0;
+  if (!(await reprojectGroup(entry, gen, bddgenResolvedAll ? detected.value.missingSteps : null)))
+    return;
   entry.busy = false;
   entry.result = [generatedResultRow(generated.value)];
   // The read-only stub viewer: the written file, highlighted at the returned
@@ -301,6 +330,10 @@ async function generateInner(entry: GroupState): Promise<void> {
     }
   }
   patch(entry);
+  // A written stub may define a step a SIBLING group also lists as pending (a
+  // shared step); refresh the other loaded groups so they pick it up, since the
+  // action swallowed the stepdefinition.generated event that would (Codex P2).
+  if (generated.value.generatedSteps.length > 0) await reprojectSiblings(entry, gen);
 }
 
 function openFile(entry: GroupState): void {

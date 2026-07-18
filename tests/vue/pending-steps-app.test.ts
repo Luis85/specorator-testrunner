@@ -270,4 +270,83 @@ describe("PendingStepsApp", () => {
     expect(w.text()).toContain("UC-001-gone");
     expect(w.text()).not.toContain("No Features with pending steps");
   });
+
+  it("refreshes SIBLING groups after a generate defines a shared step (vault target, Codex P2 on PR #102)", async () => {
+    let defined = false;
+    const deps = makeDeps({
+      specificationService: {
+        listFeatures: async () =>
+          ok([
+            { path: vp("features/UC-001-a.feature"), label: "UC-001-a.feature" },
+            { path: vp("features/UC-002-b.feature"), label: "UC-002-b.feature" },
+          ]),
+        // Both Features share the step "I do a thing"; generating for A defines
+        // it for BOTH (the pattern appears once the write lands).
+        listStepPatterns: async () =>
+          defined ? [{ kind: "expression" as const, source: "I do a thing" }] : [],
+        detectMissingSteps: async (path) =>
+          ok({ featurePath: path, missingSteps: ["I do a thing"], detectionEventId: "e1" }),
+      },
+      stepDefinitionService: {
+        generate: async () => {
+          defined = true; // the write defines the shared step
+          return ok({
+            generatedSteps: ["I do a thing"],
+            stepFile: vp("steps.ts"),
+            appended: false,
+            insertions: [],
+          });
+        },
+      },
+    });
+    const w = mountApp({ kind: "vault" }, deps);
+    await flushPromises();
+    expect(w.findAll(".spec-pending-feature")).toHaveLength(2);
+    expect(w.text()).toContain("0 of 1 steps defined");
+
+    await w.findAll("button.mod-cta")[0].trigger("click"); // Generate for Feature A
+    await flushPromises();
+
+    // The SIBLING (B) picked up the shared definition — no card is still pending.
+    // Without the sibling refresh, B would keep showing "0 of 1".
+    expect(w.text()).not.toContain("0 of 1 steps defined");
+  });
+
+  it("a re-diff no-op (misses implemented between detect and write) reprojects from CURRENT definitions, not the stale detect (Codex P2 on PR #102)", async () => {
+    let implemented = false;
+    const deps = makeDeps({
+      specificationService: {
+        listFeatures: async () =>
+          ok([{ path: vp("features/UC-001-a.feature"), label: "UC-001-a.feature" }]),
+        // The step is implemented out-of-band between detect and the write.
+        listStepPatterns: async () =>
+          implemented ? [{ kind: "expression" as const, source: "I do a thing" }] : [],
+        detectMissingSteps: async (path) =>
+          ok({ featurePath: path, missingSteps: ["I do a thing"], detectionEventId: "e1" }),
+      },
+      stepDefinitionService: {
+        generate: async () => {
+          implemented = true; // misses implemented before the write → re-diff no-op
+          return ok({
+            generatedSteps: [],
+            stepFile: vp("steps.ts"),
+            appended: false,
+            insertions: [],
+          });
+        },
+      },
+    });
+    const w = mountApp({ kind: "vault" }, deps);
+    await flushPromises();
+    expect(w.text()).toContain("0 of 1 steps defined");
+
+    await w.find("button.mod-cta").trigger("click"); // Generate → re-diff no-op
+    await flushPromises();
+
+    // Reprojected from CURRENT static definitions (which now see the impl) — NOT
+    // the stale non-empty detect list, which would keep the card pending.
+    expect(w.text()).toContain("Every step has a definition.");
+    expect(w.text()).not.toContain("0 of 1 steps defined");
+    expect(w.text()).toContain("nothing to generate");
+  });
 });
