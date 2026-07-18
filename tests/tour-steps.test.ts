@@ -49,6 +49,17 @@ describe("TOUR_STEPS table", () => {
     ]);
   });
 
+  it("routes BOTH the detect and implement steps to the Pending Steps flow (Task 8 merged the row's Detect/Generate buttons into Steps, so neither can route to a removed action)", () => {
+    expect(step("detect-missing-steps").action).toEqual({
+      id: "open-pending-steps",
+      label: "Open pending steps",
+    });
+    expect(step("implement-steps").action).toEqual({
+      id: "open-pending-steps",
+      label: "Open pending steps",
+    });
+  });
+
   it("marks exactly the spec's skippable steps", () => {
     const skippable = TOUR_STEPS.filter((s) => s.skippable).map((s) => s.id);
     expect(skippable).toEqual([

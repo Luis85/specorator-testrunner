@@ -219,10 +219,10 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
     id: "detect-missing-steps",
     title: "Detect missing steps",
     teach:
-      "Gherkin lines only run when a step definition implements them. Detect Missing Steps " +
-      "compares your Feature against the runner's steps — your three greeting steps are new, " +
-      "so it should find them.",
-    action: { id: "open-use-cases", label: "Open Use Cases" },
+      "Gherkin lines only run when a step definition implements them. Open Pending Steps, find " +
+      "your @tour Feature, and click Verify — bddgen compares it against the runner's steps; " +
+      "your three greeting steps are new, so it should find them missing.",
+    action: { id: "open-pending-steps", label: "Open pending steps" },
     completion: {
       // Anchored on the @tour Feature's validation (PR #31 Codex review):
       // detecting missing steps on some OTHER feature file must not advance
