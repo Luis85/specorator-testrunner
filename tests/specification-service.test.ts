@@ -10,6 +10,8 @@ import { DefaultCommandSafetyPolicy } from "../src/domain/policies/command-safet
 import type { FeatureSpecification } from "../src/domain/entities/specification";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
+import { err } from "../src/shared/result/result";
+import { appError } from "../src/shared/errors/errors";
 import { buildNote } from "../src/shared/utils/frontmatter";
 import {
   FakeAbsoluteFileSystem,
@@ -478,6 +480,24 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     const { service, fs } = build();
     fs.files.set(FEATURE, ONE_STEP);
     defineStep(fs, "a step");
+    expect(await service.allStepsDefined([FEATURE])).toBe(true);
+  });
+
+  it("stays TRUE when a NON-step runner source (src/pages) is unreadable — the #77 snapshot nulls, but the static tier scrapes src/steps directly (Codex P2 on PR #102)", async () => {
+    const { service, fs, absoluteFs } = build();
+    fs.files.set(FEATURE, ONE_STEP); // "Given a step"
+    defineStep(fs, "a step"); // src/steps/demo.steps.ts DEFINES it and stays readable
+    // A non-step source listed under src but unreadable → loadRunnerCoverageSources
+    // returns null (the #77 coverage snapshot abstains), while src/steps is fine.
+    const pagePath = vp(".testrunner/src/pages/Page.ts");
+    fs.files.set(pagePath, "export class Page {}");
+    const realRead = fs.readFile.bind(fs);
+    fs.readFile = async (p) =>
+      p === pagePath ? err(appError("RUNNER_MISSING_FILE", "page unreadable")) : realRead(p);
+    seedRunnerFolder(absoluteFs);
+
+    // The cache abstains (null snapshot), but the static tier must still prove
+    // coverage from the readable src/steps — not false-negative the rail.
     expect(await service.allStepsDefined([FEATURE])).toBe(true);
   });
 

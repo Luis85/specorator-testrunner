@@ -395,17 +395,20 @@ export class DefaultSpecificationService implements SpecificationService {
     // ONE settings load feeds the #77 cache's sources snapshot below — no
     // per-feature reload (Codex P2, settings TOCTOU on PR #102).
     const settings = await this.settingsService.load();
-    // The #77 cache consults against the WHOLE runner src tree PLUS the
-    // root playwright.config.ts and tsconfig.json (spec D6); the static
-    // fallback still scrapes only src/steps (listStepPatterns' scope),
-    // filtered out of this SAME read so a cache miss doesn't re-list the
-    // folder a second time. `null` means the `.testrunner/src` LISTING
-    // itself failed (WS1): the snapshot is unreliable, so BOTH tiers below
-    // abstain rather than treat it as "nothing here" — see
-    // `staticDefinitionsFrom`/`cachedVerdict`, which each fold the null check
-    // in once so the loop below doesn't repeat it.
+    // The #77 cache consults against the WHOLE runner src tree PLUS the root
+    // playwright.config.ts and tsconfig.json (spec D6). `null` means that
+    // snapshot is unreliable — a `.testrunner/src` listing failure OR any src
+    // file that can't be read, INCLUDING a non-step source like src/pages — so
+    // the cache consult below (`cachedVerdict`) abstains.
     const runnerSources = await this.runnerSources(settings);
-    const definitions = this.staticDefinitionsFrom(runnerSources, this.stepsDirFor(settings));
+    // The static fallback scrapes src/steps DIRECTLY (`listStepPatterns`'
+    // scope), independent of the coverage snapshot's completeness (Codex P2 on
+    // PR #102): an unreadable NON-step source (e.g. src/pages/*.ts) must only
+    // skip the cache, not blank the static tier — src/steps is still readable,
+    // so the heuristic can still prove coverage. If src/steps ITSELF is
+    // unreadable, `loadStepSources` yields [] and static safely reports every
+    // step missing — the same "can't prove it" answer as an unreadable Feature.
+    const definitions = parseStepSources(await this.stepSources(settings));
     let sawStep = false;
     for (const featurePath of featurePaths) {
       // A raw read per Feature feeds BOTH the #77 cache consult (raw bytes,
@@ -428,24 +431,6 @@ export class DefaultSpecificationService implements SpecificationService {
     // Require at least one step across the set (a step-less Feature set proves
     // nothing), matching the pre-cache semantics.
     return sawStep;
-  }
-
-  /**
-   * The static fallback's step-definition patterns, scraped from `src/steps`
-   * only (`listStepPatterns`' scope) out of the ALREADY-LOADED runner
-   * sources. `null` (WS1: the `.testrunner/src` LISTING itself failed, as
-   * opposed to a successful-but-empty listing) yields NO definitions rather
-   * than guessing from a partial/absent snapshot — the static tier then
-   * safely reports every step missing, the same "can't prove it" answer as
-   * an unreadable Feature.
-   */
-  private staticDefinitionsFrom(
-    runnerSources: readonly StepSourceFile[] | null,
-    stepsDir: VaultPath,
-  ): StepDefinitionPattern[] {
-    return runnerSources === null
-      ? []
-      : parseStepSources(runnerSources.filter((source) => source.path.startsWith(`${stepsDir}/`)));
   }
 
   /**
