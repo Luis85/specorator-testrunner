@@ -14,6 +14,7 @@ import { createEvent } from "../../src/shared/event-bus/create-event";
 import { ok, err } from "../../src/shared/result/result";
 import { appError } from "../../src/shared/errors/errors";
 import type { VaultPath } from "../../src/domain/value-objects/identifiers";
+import type { UseCase } from "../../src/domain/entities/use-case";
 
 // Brand a plain string as a VaultPath for the fakes — the services return
 // branded paths, and tests may use `as` (the use-case-detail-app.test idiom).
@@ -359,5 +360,47 @@ describe("PendingStepsApp", () => {
     expect(w.text()).toContain("UC-404");
     expect(w.text()).toContain("not found");
     expect(w.text()).not.toContain("No Features with pending steps");
+  });
+
+  it("surfaces an unreadable LINKED Feature for a use-case target as an error — a scoped target's broken link isn't silently dropped (Codex P2 on PR #102)", async () => {
+    const linked = vp("features/UC-001-a.feature");
+    const deps = makeDeps({
+      useCaseService: {
+        findById: async () => ok({ featureFiles: [linked] } as unknown as UseCase),
+      },
+      // The single linked Feature can't be read (deleted/renamed link).
+      fs: { readFile: async () => err(appError("RUNNER_MISSING_FILE", "linked feature deleted")) },
+    });
+    const w = mountApp({ kind: "use-case", useCaseId: "UC-001" }, deps);
+    await flushPromises();
+
+    expect(w.text()).toContain("Couldn't load");
+    expect(w.text()).toContain("UC-001-a.feature");
+    expect(w.text()).not.toContain("No Features with pending steps");
+  });
+
+  it("Verify does NOT mark a feature covered when bddgen reported misses that didn't map to it (Codex P2 on PR #102)", async () => {
+    const deps = makeDeps({
+      specificationService: {
+        listFeatures: async () => ok([]),
+        listStepPatterns: async () => [], // static sees the step as MISSING
+        // bddgen printed its header (reported misses) but none mapped to this
+        // feature's templates → the filtered list is empty.
+        detectMissingSteps: async (path) =>
+          ok({
+            featurePath: path,
+            missingSteps: [],
+            detectionEventId: "e1",
+            bddgenReportedMisses: true,
+          }),
+      },
+    });
+    const w = mountApp({ kind: "feature", featurePath: vp("features/UC-001-a.feature") }, deps);
+    await flushPromises(); // feature-open auto-verify runs
+
+    // The empty-but-header report must NOT clear the static miss — the card stays
+    // on the static tier showing the step pending, not falsely "verified".
+    expect(w.text()).toContain("0 of 1 steps defined");
+    expect(w.text()).not.toContain("Every step has a definition.");
   });
 });

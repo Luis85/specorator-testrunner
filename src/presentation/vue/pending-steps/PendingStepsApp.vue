@@ -111,7 +111,13 @@ async function buildGroups(
   for (const path of paths) {
     const group = await staticGroup(path, definitions);
     if (!group.ok) {
-      if (value.kind === "feature") return err(group.error);
+      // A feature target is its one file; a use-case target is a SCOPED set of
+      // linked files — a broken/unreadable link in EITHER is a real error to
+      // surface, named by path (Codex P2 on PR #102). Only a vault target (an
+      // unbounded listing) skips one unreadable file and shows the rest.
+      if (value.kind !== "vault") {
+        return err(appError("VALIDATION_FAILED", `Couldn't load ${path}: ${group.error.message}`));
+      }
       continue;
     }
     if (value.kind === "vault" && group.value.complete) continue;
@@ -136,8 +142,8 @@ async function load(): Promise<void> {
   const built = await buildGroups(value, resolved.value);
   if (gen !== generation) return;
   if (!built.ok) {
-    const what = value.kind === "feature" ? value.featurePath : "Pending Steps";
-    state.value = { kind: "error", message: `Couldn't load ${what}: ${built.error.message}` };
+    // buildGroups already frames the message with the failing feature's path.
+    state.value = { kind: "error", message: built.error.message };
     return;
   }
   state.value = { kind: "loaded", title: targetTitle(value), groups: built.value };
@@ -247,7 +253,16 @@ async function verifyInner(entry: GroupState): Promise<void> {
     patch(entry);
     return;
   }
-  if (!(await reprojectGroup(entry, gen, detected.value.missingSteps))) return;
+  // Mapped misses show at the bddgen tier. An empty filtered list is
+  // verified-covered ONLY if bddgen printed no header; an empty list WITH a
+  // header means bddgen's misses didn't map to this feature (cross-feature or a
+  // Scenario Outline concrete-pickle) → defer to static, don't assert coverage
+  // (Codex P2 on PR #102).
+  const verifyTier =
+    detected.value.missingSteps.length === 0 && detected.value.bddgenReportedMisses === true
+      ? null
+      : detected.value.missingSteps;
+  if (!(await reprojectGroup(entry, gen, verifyTier))) return;
   entry.result = null;
   patch(entry);
 }
@@ -322,9 +337,12 @@ async function generateInner(entry: GroupState): Promise<void> {
   //   no-op because the misses were implemented between detect and write (a race)
   //   — reusing the stale detected list there would keep them shown pending. This
   //   is also the tour-safe path. (Codex P2s on PR #102.)
-  const bddgenResolvedAll = detected.value.missingSteps.length === 0;
-  if (!(await reprojectGroup(entry, gen, bddgenResolvedAll ? detected.value.missingSteps : null)))
-    return;
+  //   Verified-covered ALSO requires bddgen to have printed no header — an
+  //   empty filtered list WITH a header is an unmapped report, not coverage, so
+  //   it too defers to static (Codex P2 on PR #102).
+  const bddgenVerifiedCovered =
+    detected.value.missingSteps.length === 0 && detected.value.bddgenReportedMisses !== true;
+  if (!(await reprojectGroup(entry, gen, bddgenVerifiedCovered ? [] : null))) return;
   entry.busy = false;
   entry.result = [generatedResultRow(generated.value)];
   // The read-only stub viewer: the written file, highlighted at the returned

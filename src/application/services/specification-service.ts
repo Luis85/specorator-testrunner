@@ -75,6 +75,17 @@ export interface MissingStepResult {
    * triggered them.
    */
   detectionEventId: string;
+  /**
+   * Whether bddgen printed its `Missing step definitions:` header at all —
+   * distinct from whether `missingSteps` (the `keepFeatureSteps`-filtered,
+   * THIS-feature list) came out non-empty. A header WITH an empty filtered list
+   * means bddgen reported misses that didn't map to this feature's step
+   * templates (cross-feature noise, or a Scenario Outline concrete-pickle miss),
+   * so an empty list is NOT proof of coverage — the Pending Steps panel uses
+   * this to avoid marking such a report bddgen-verified (Codex P2 on PR #102).
+   * Optional: absent (legacy/fakes) reads as "no header reported".
+   */
+  bddgenReportedMisses?: boolean;
 }
 
 /**
@@ -599,7 +610,12 @@ export class DefaultSpecificationService implements SpecificationService {
       featurePath,
       missing: missingSteps.length,
     });
-    return ok({ featurePath, missingSteps, detectionEventId: detectionEvent.id });
+    return ok({
+      featurePath,
+      missingSteps,
+      detectionEventId: detectionEvent.id,
+      bddgenReportedMisses: ran.value.stdout.includes(BDDGEN_MISSING_HEADER),
+    });
   }
 
   /**
