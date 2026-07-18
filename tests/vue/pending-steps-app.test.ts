@@ -163,4 +163,64 @@ describe("PendingStepsApp", () => {
     const inserted = w.findAll(".spec-pending-stub-line.is-inserted");
     expect(inserted).toHaveLength(4); // lines 4-7
   });
+
+  it("surfaces a vault listing failure as an error — NOT the 'everything defined' empty state (Codex P2 on PR #102)", async () => {
+    const deps = makeDeps({
+      specificationService: {
+        listFeatures: async () => err(appError("RUNNER_MISSING_FILE", "bad featureFilesPath")),
+        listStepPatterns: async () => [],
+        detectMissingSteps: async (path) =>
+          ok({ featurePath: path, missingSteps: [], detectionEventId: "e1" }),
+      },
+    });
+    const w = mountApp({ kind: "vault" }, deps);
+    await flushPromises();
+
+    // A listing/config/I-O failure must not be hidden as "coverage complete".
+    expect(w.text()).toContain("Couldn't load Pending Steps");
+    expect(w.text()).toContain("bad featureFilesPath");
+    expect(w.text()).not.toContain("No Features with pending steps");
+  });
+
+  it("surfaces a failed Use-Case load as an error (Codex P2 on PR #102)", async () => {
+    const deps = makeDeps({
+      useCaseService: {
+        findById: async () => err(appError("VALIDATION_FAILED", "uc load failed")),
+      },
+    });
+    const w = mountApp({ kind: "use-case", useCaseId: "UC-001" }, deps);
+    await flushPromises();
+
+    expect(w.text()).toContain("Couldn't load Pending Steps");
+    expect(w.text()).toContain("uc load failed");
+  });
+
+  it("re-resolves when the targeted Use Case is deleted (Codex P2 on PR #102 — inputs come from settings/use-case, not just specs)", async () => {
+    const bus = new InMemoryEventBus();
+    let listCalls = 0;
+    const deps = makeDeps({
+      eventBus: bus,
+      specificationService: {
+        listFeatures: async () => {
+          listCalls += 1;
+          return ok([]);
+        },
+        listStepPatterns: async () => [],
+        detectMissingSteps: async (path) =>
+          ok({ featurePath: path, missingSteps: [], detectionEventId: "e1" }),
+      },
+    });
+    const w = mountApp({ kind: "vault" }, deps);
+    await flushPromises();
+    expect(listCalls).toBe(1); // initial load
+
+    // usecase.deleted is now in the refresh set — the panel must re-resolve
+    // rather than keep rows/coverage from the old inputs.
+    await bus.publish(
+      createEvent("usecase.deleted", { useCaseId: "UC-001", path: "UseCases/UC-001.md" }),
+    );
+    await flushPromises();
+    expect(listCalls).toBe(2);
+    expect(w).toBeTruthy();
+  });
 });

@@ -20,6 +20,7 @@ import { readFeatureFile } from "../../../application/services/feature-loading";
 import type { StepDefinitionPattern } from "../../../application/content/step-definitions";
 import type { GenerateStepDefinitionsResult } from "../../../application/services/step-definition-service";
 import type { VaultPath } from "../../../domain/value-objects/identifiers";
+import { err, ok, type Result } from "../../../shared/result/result";
 
 const deps = inject(PENDING_STEPS_DEPS)!;
 const target = inject(PENDING_STEPS_TARGET)!;
@@ -49,15 +50,23 @@ const targetTitle = (value: PendingStepsTarget): string =>
       ? `Pending steps — ${value.featurePath.split("/").pop() ?? value.featurePath}`
       : "Pending steps — vault";
 
-/** The Feature paths the current target spans (empty list is a valid answer). */
-async function resolvePaths(value: PendingStepsTarget): Promise<VaultPath[]> {
-  if (value.kind === "feature") return [value.featurePath];
+/**
+ * The Feature paths the current target spans (an empty list is a valid answer).
+ * A lookup/listing FAILURE (a bad `featureFilesPath`, an adapter I/O fault, a
+ * failed Use-Case load) returns `err` so `load` surfaces it in the error state
+ * rather than collapsing to `[]` — which would render "everything defined" and
+ * hide an actionable config/I-O failure (Codex P2 on PR #102).
+ */
+async function resolvePaths(value: PendingStepsTarget): Promise<Result<VaultPath[]>> {
+  if (value.kind === "feature") return ok([value.featurePath]);
   if (value.kind === "use-case") {
     const useCase = await deps.useCaseService.findById(value.useCaseId);
-    return useCase.ok && useCase.value !== null ? useCase.value.featureFiles : [];
+    if (!useCase.ok) return err(useCase.error);
+    // A not-FOUND Use Case (null) is a legitimately-empty answer, not a failure.
+    return ok(useCase.value !== null ? useCase.value.featureFiles : []);
   }
   const listed = await deps.specificationService.listFeatures();
-  return listed.ok ? listed.value.map((entry) => entry.path) : [];
+  return listed.ok ? ok(listed.value.map((entry) => entry.path)) : err(listed.error);
 }
 
 /** Static-tier group for one Feature (no process spawn — spec D8). */
@@ -74,14 +83,22 @@ async function load(): Promise<void> {
   const gen = ++generation;
   const value = target.value;
   state.value = { kind: "loading" };
-  const paths = await resolvePaths(value);
+  const resolved = await resolvePaths(value);
+  if (gen !== generation) return;
+  if (!resolved.ok) {
+    state.value = {
+      kind: "error",
+      message: `Couldn't load Pending Steps: ${resolved.error.message}`,
+    };
+    return;
+  }
   // Load the step-definition patterns ONCE per render, not once per Feature —
   // listStepPatterns re-scans `.testrunner/src/steps` on every call, so a
   // per-group load would repeat that scan N times on a vault target (Codex P2
   // on PR #102).
   const definitions = await deps.specificationService.listStepPatterns();
   const groups: GroupState[] = [];
-  for (const path of paths) {
+  for (const path of resolved.value) {
     const group = await staticGroup(path, definitions);
     if (group === null) continue;
     // The vault-wide listing shows only incomplete Features (spec §3.2).
@@ -130,6 +147,14 @@ useEventBus(
     "specification.linkedToUseCase",
     "specification.updated",
     "stepdefinition.generated",
+    // The panel's inputs also come from settings (listFeatures/listStepPatterns
+    // read featureFilesPath/testRunnerPath) and, for a use-case target, from the
+    // Use Case itself (findById) — so a feature-folder/runner-path change or an
+    // edit/delete of the targeted Use Case must re-resolve, not keep stale rows
+    // that a later Verify/Generate would act on with fresh settings (Codex P2).
+    "settings.updated",
+    "usecase.updated",
+    "usecase.deleted",
   ],
   () => (actionDepth > 0 ? undefined : load()),
 );
