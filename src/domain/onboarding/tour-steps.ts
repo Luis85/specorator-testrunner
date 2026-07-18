@@ -250,10 +250,10 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
     id: "implement-steps",
     title: "Generate and implement the step definitions",
     teach:
-      "Generate Step Definitions writes a TypeScript scaffold for the missing steps into the " +
-      "runner's src/steps/ folder. Open that file, replace the stubs with the implementation " +
-      "below, then run Detect Missing Steps again. Zero missing completes this step — that " +
-      "means every step is now defined; your run in the later step proves the implementation.",
+      "In Pending Steps, click Generate stubs to scaffold the missing steps into the runner's " +
+      "src/steps/ folder, open the step file and replace the stubs with the implementation " +
+      "below, then click Verify. Zero missing completes this step — every step is now defined; " +
+      "your run in the later step proves the implementation.",
     action: { id: "open-pending-steps", label: "Open pending steps" },
     snippets: [{ title: "Step implementation", language: "typescript", code: TOUR_STEPS_SNIPPET }],
     completion: {
