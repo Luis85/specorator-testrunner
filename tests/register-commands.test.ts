@@ -203,6 +203,7 @@ const buildDeps = (): TestHubCommandDeps => ({
   workspace: {
     openFile: vi.fn(async () => ok(undefined)),
     openView: vi.fn(async () => ok(undefined)),
+    openInSystemEditor: vi.fn(async () => ok(undefined)),
   },
 
   openHub: vi.fn(() => undefined),
