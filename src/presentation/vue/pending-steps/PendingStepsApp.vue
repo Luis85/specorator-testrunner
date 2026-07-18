@@ -21,6 +21,7 @@ import type { StepDefinitionPattern } from "../../../application/content/step-de
 import type { GenerateStepDefinitionsResult } from "../../../application/services/step-definition-service";
 import type { VaultPath } from "../../../domain/value-objects/identifiers";
 import { err, ok, type Result } from "../../../shared/result/result";
+import { appError } from "../../../shared/errors/errors";
 
 const deps = inject(PENDING_STEPS_DEPS)!;
 const target = inject(PENDING_STEPS_TARGET)!;
@@ -62,8 +63,18 @@ async function resolvePaths(value: PendingStepsTarget): Promise<Result<VaultPath
   if (value.kind === "use-case") {
     const useCase = await deps.useCaseService.findById(value.useCaseId);
     if (!useCase.ok) return err(useCase.error);
-    // A not-FOUND Use Case (null) is a legitimately-empty answer, not a failure.
-    return ok(useCase.value !== null ? useCase.value.featureFiles : []);
+    // A not-FOUND Use Case (null) — the leaf was restored or re-targeted to a
+    // Use Case since deleted or renamed — is an error, not "everything covered"
+    // (Codex P2 on PR #102). A FOUND Use Case with zero Features stays empty.
+    if (useCase.value === null) {
+      return err(
+        appError(
+          "VALIDATION_FAILED",
+          `Use Case ${value.useCaseId} not found — it may have been deleted or renamed.`,
+        ),
+      );
+    }
+    return ok(useCase.value.featureFiles);
   }
   const listed = await deps.specificationService.listFeatures();
   return listed.ok ? ok(listed.value.map((entry) => entry.path)) : err(listed.error);

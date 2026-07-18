@@ -349,4 +349,15 @@ describe("PendingStepsApp", () => {
     expect(w.text()).not.toContain("0 of 1 steps defined");
     expect(w.text()).toContain("nothing to generate");
   });
+
+  it("a use-case target whose Use Case was deleted (findById → null) surfaces a not-found error, not 'everything defined' (Codex P2 on PR #102)", async () => {
+    const deps = makeDeps({ useCaseService: { findById: async () => ok(null) } });
+    const w = mountApp({ kind: "use-case", useCaseId: "UC-404" }, deps);
+    await flushPromises();
+
+    expect(w.text()).toContain("Couldn't load");
+    expect(w.text()).toContain("UC-404");
+    expect(w.text()).toContain("not found");
+    expect(w.text()).not.toContain("No Features with pending steps");
+  });
 });

@@ -148,10 +148,9 @@ const loadRunnerSources = (
  * bddgen also consults, so it can resolve the SAME step source differently
  * after an edit. Both live OUTSIDE `src/` entirely — editing either changes
  * what/how bddgen evaluates, invisibly to a src-only digest, which would then
- * serve a stale `covered=true`. The config-file reads stay best-effort like
- * {@link loadRunnerSources}: an uninitialized runner (a file not yet
- * written) or an unreadable file is skipped — same treatment as any other
- * unreadable source file, never an error.
+ * serve a stale `covered=true`. A config that doesn't exist yet (uninitialized
+ * runner) is skipped, best-effort; a config that EXISTS but can't be read
+ * abstains (`null`) like an unreadable `src` file — see below.
  *
  * Returns `null`, instead of a (possibly empty) array, when the `src`
  * LISTING itself failed (WS1, Codex P2 on PR #102) — kept distinct from a
@@ -160,30 +159,36 @@ const loadRunnerSources = (
  * the sources" apart from "there are none" and abstain (skip recording /
  * skip the cache consult) rather than address a snapshot that would look
  * identical regardless of what actually changes on disk while the fault
- * persists. The `src` LISTING failing OR any `src` `.ts` file failing to READ
- * (Codex P2 on PR #102) both propagate `null`. Only the runner-root CONFIG
- * reads stay best-effort — a missing/unreadable `playwright.config.ts` or
- * `tsconfig.json` is still just skipped, since an uninitialized runner
- * legitimately has neither yet.
+ * persists. The `src` LISTING failing, any `src` `.ts` file failing to READ, OR
+ * a runner-root config that EXISTS but can't be read (Codex P2s on PR #102) all
+ * propagate `null`. Only a config that is genuinely ABSENT is skipped
+ * best-effort — an uninitialized runner legitimately has no
+ * `playwright.config.ts`/`tsconfig.json` yet, and skipping a file that isn't
+ * there can't hide a later change to it.
  */
 export const loadRunnerCoverageSources = async (
-  fs: Pick<VaultFileSystem, "listFilesRecursive" | "readFile">,
+  fs: Pick<VaultFileSystem, "listFilesRecursive" | "readFile" | "exists">,
   testRunnerPath: VaultPath,
 ): Promise<StepSourceFile[] | null> => {
   const sources = await loadRunnerSources(fs, joinVaultPath(testRunnerPath, "src"));
-  if (sources === null) return null; // src listing failed — unreliable snapshot, propagate
+  if (sources === null) return null; // src listing/read failed — unreliable snapshot, propagate
 
-  const configPath = joinVaultPath(testRunnerPath, "playwright.config.ts");
-  const configRead = await fs.readFile(configPath);
-  const withConfig = configRead.ok
-    ? [...sources, { path: configPath, content: configRead.value }]
-    : sources;
-
-  const tsconfigPath = joinVaultPath(testRunnerPath, "tsconfig.json");
-  const tsconfigRead = await fs.readFile(tsconfigPath);
-  return tsconfigRead.ok
-    ? [...withConfig, { path: tsconfigPath, content: tsconfigRead.value }]
-    : withConfig;
+  const withConfigs = [...sources];
+  for (const name of ["playwright.config.ts", "tsconfig.json"] as const) {
+    const path = joinVaultPath(testRunnerPath, name);
+    const read = await fs.readFile(path);
+    if (read.ok) {
+      withConfigs.push({ path, content: read.value });
+      continue;
+    }
+    // A read failure on a config that EXISTS makes the snapshot unreliable —
+    // abstain (null), the same as an unreadable `src` file: if that config later
+    // changes, a digest that silently omitted it would keep matching the stale
+    // covered verdict (Codex P2 on PR #102). A config that simply doesn't exist
+    // yet (an uninitialized runner) is skipped, best-effort.
+    if (await fs.exists(path)) return null;
+  }
+  return withConfigs;
 };
 
 /** Scrapes step-definition patterns out of an already-read set of source files. */
