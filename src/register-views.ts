@@ -143,7 +143,6 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         prdService: s.prdService,
         storyMapService: s.storyMapService,
         specificationService: s.specificationService,
-        stepDefinitionService: s.stepDefinitionService,
         featureInsight: s.featureInsightService,
         workspace,
         eventBus,

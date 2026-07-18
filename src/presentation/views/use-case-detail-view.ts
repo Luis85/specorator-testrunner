@@ -4,7 +4,6 @@ import type { WorkspacePort } from "../../application/ports/workspace-port";
 import type { FeatureInsightService } from "../../application/services/feature-insight-service";
 import type { SpecificationService } from "../../application/services/specification-service";
 import type { TraceabilityService } from "../../application/services/traceability-service";
-import type { StepDefinitionService } from "../../application/services/step-definition-service";
 import type { UseCaseService } from "../../application/services/use-case-service";
 import type { PrdService } from "../../application/services/prd-service";
 import type { StoryMapService } from "../../application/services/story-map-service";
@@ -49,11 +48,7 @@ export interface UseCaseDetailDeps {
   // Computes the "Referenced by Story Maps" backlink (maps own the forward
   // card reference; nothing is stored on the Use Case).
   storyMapService: Pick<StoryMapService, "findAll">;
-  specificationService: Pick<
-    SpecificationService,
-    "listFeatures" | "validate" | "detectMissingSteps" | "allStepsDefined"
-  >;
-  stepDefinitionService: Pick<StepDefinitionService, "generate">;
+  specificationService: Pick<SpecificationService, "listFeatures" | "validate" | "allStepsDefined">;
   // Wave F insight: per-Feature health (scenario count, @wip work, the
   // feature-level @wip badge) rendered as a muted line on each Feature row.
   featureInsight: Pick<FeatureInsightService, "healthFor">;

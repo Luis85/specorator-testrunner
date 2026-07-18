@@ -241,6 +241,7 @@ describe("registerCommands (smoke)", () => {
       "import-report-last-run",
       "generate-documentation",
       "generate-step-definitions",
+      "open-pending-steps",
       "open-test-console",
       "create-prd",
     ];

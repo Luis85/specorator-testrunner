@@ -1,22 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type {
   FeatureFileEntry,
-  MissingStepResult,
-  SpecificationService,
   SpecificationValidationResult,
 } from "../src/application/services/specification-service";
-import type { GenerateStepDefinitionsResult } from "../src/application/services/step-definition-service";
 import type { UseCase } from "../src/domain/entities/use-case";
-import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import {
-  detectMissingStepsOutcome,
   featureHealthLine,
   featureValidationRows,
-  generateStepDefinitionsOutcome,
-  missingStepsRows,
   projectFeatureRows,
   projectUseCaseHeader,
-  stepGenerationRows,
   storyMapBacklinks,
   validateFeatureOutcome,
 } from "../src/presentation/views/use-case-detail-rows";
@@ -204,79 +196,6 @@ describe("featureValidationRows", () => {
   });
 });
 
-describe("missingStepsRows", () => {
-  it("renders an ok row when every step is defined", () => {
-    const result: MissingStepResult = {
-      featurePath: vp("Features/UC-001-happy-path.feature"),
-      missingSteps: [],
-      detectionEventId: "evt-1",
-    };
-    expect(missingStepsRows(result)).toEqual([
-      { status: "ok", icon: "✓", text: "All steps are defined." },
-    ]);
-  });
-
-  it("summarises the undefined steps and lists each one", () => {
-    const result: MissingStepResult = {
-      featurePath: vp("Features/UC-001-happy-path.feature"),
-      missingSteps: ["the user clicks save", "the page reloads"],
-      detectionEventId: "evt-1",
-    };
-    const rows = missingStepsRows(result);
-    expect(rows[0]).toEqual({ status: "warning", icon: "!", text: "2 steps need a definition:" });
-    expect(rows.slice(1).map((r) => r.text)).toEqual(["the user clicks save", "the page reloads"]);
-  });
-
-  it("uses the singular phrasing for a single missing step", () => {
-    const result: MissingStepResult = {
-      featurePath: vp("Features/UC-001-happy-path.feature"),
-      missingSteps: ["the user clicks save"],
-      detectionEventId: "evt-1",
-    };
-    expect(missingStepsRows(result)[0].text).toBe("1 step needs a definition:");
-  });
-});
-
-describe("stepGenerationRows", () => {
-  it("reports nothing to generate when no steps were stubbed", () => {
-    const result: GenerateStepDefinitionsResult = {
-      generatedSteps: [],
-      stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
-      appended: false,
-      insertions: [],
-    };
-    expect(stepGenerationRows(result)).toEqual([
-      { status: "ok", icon: "✓", text: "No missing steps — nothing to generate." },
-    ]);
-  });
-
-  it("reports the count and target file for generated stubs", () => {
-    const result: GenerateStepDefinitionsResult = {
-      generatedSteps: ["a", "b"],
-      stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
-      appended: true,
-      insertions: [],
-    };
-    expect(stepGenerationRows(result)).toEqual([
-      {
-        status: "ok",
-        icon: "✓",
-        text: "Generated 2 step stubs in .testrunner/src/steps/UC-001-happy-path.steps.ts.",
-      },
-    ]);
-  });
-
-  it("uses the singular noun for a single generated stub", () => {
-    const result: GenerateStepDefinitionsResult = {
-      generatedSteps: ["a"],
-      stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
-      appended: false,
-      insertions: [],
-    };
-    expect(stepGenerationRows(result)[0].text).toContain("1 step stub in");
-  });
-});
-
 const featurePath = vp("Features/UC-001-happy-path.feature");
 
 describe("validateFeatureOutcome", () => {
@@ -295,109 +214,12 @@ describe("validateFeatureOutcome", () => {
   });
 });
 
-describe("detectMissingStepsOutcome", () => {
-  it("projects the detected steps to rows", async () => {
-    const spec = {
-      detectMissingSteps: async () =>
-        ok({ featurePath, missingSteps: ["the page reloads"], detectionEventId: "evt-1" }),
-    };
-    const rows = await detectMissingStepsOutcome(spec, featurePath);
-    expect(rows[0]).toEqual({ status: "warning", icon: "!", text: "1 step needs a definition:" });
-  });
-
-  it("surfaces a service failure as an error row", async () => {
-    const spec = { detectMissingSteps: async () => err(appError("VALIDATION_FAILED", "nope")) };
-    expect(await detectMissingStepsOutcome(spec, featurePath)).toEqual([
-      { status: "error", icon: "✗", text: "Detection failed: nope" },
-    ]);
-  });
-});
-
-describe("generateStepDefinitionsOutcome", () => {
-  const detected = {
-    detectMissingSteps: async () =>
-      ok({ featurePath, missingSteps: ["a step"], detectionEventId: "evt-1" }),
-  };
-
-  it("detects then generates, reporting the stubs", async () => {
-    const stepDef = {
-      generate: async () =>
-        ok({
-          generatedSteps: ["a step"],
-          stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
-          appended: true,
-          insertions: [],
-        }),
-    };
-    const rows = await generateStepDefinitionsOutcome(detected, stepDef, featurePath);
-    expect(rows[0].text).toContain("Generated 1 step stub in");
-  });
-
-  it("stops at a detection failure without generating", async () => {
-    const spec = { detectMissingSteps: async () => err(appError("VALIDATION_FAILED", "nope")) };
-    const stepDef = {
-      generate: async () => {
-        throw new Error("generate must not be called after a detection failure");
-      },
-    };
-    expect(await generateStepDefinitionsOutcome(spec, stepDef, featurePath)).toEqual([
-      { status: "error", icon: "✗", text: "Detection failed: nope" },
-    ]);
-  });
-
-  it("surfaces a generation failure as an error row", async () => {
-    const stepDef = { generate: async () => err(appError("VALIDATION_FAILED", "kaput")) };
-    expect(await generateStepDefinitionsOutcome(detected, stepDef, featurePath)).toEqual([
-      { status: "error", icon: "✗", text: "Could not generate step definitions: kaput" },
-    ]);
-  });
-
-  it("does NOT re-detect after a successful generate — tour regression: a second, now-zero-missing detect would prematurely complete the Guided Tour's implement-steps step (Codex P2s on PR #102, root fix)", async () => {
-    const detectCalls: VaultPath[] = [];
-    const spec: Pick<SpecificationService, "detectMissingSteps"> = {
-      detectMissingSteps: async (path) => {
-        detectCalls.push(path);
-        return ok({ featurePath: path, missingSteps: ["a step"], detectionEventId: "evt-1" });
-      },
-    };
-    const stepDef = {
-      generate: async () =>
-        ok({
-          generatedSteps: ["a step"],
-          stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
-          appended: false,
-          insertions: [],
-        }),
-    };
-    await generateStepDefinitionsOutcome(spec, stepDef, featurePath);
-    // Exactly ONE detect — the pre-generate detect — even though stubs were
-    // written. A second call here would (in production) be a zero-missing
-    // detect that publishes specification.missingSteps.detected, which the
-    // Guided Tour's implement-steps step treats as done before the user has
-    // implemented anything (bddgen counts the generated Pending-stub throws
-    // as defined). The #77 coverage cache instead records on the next REAL
-    // detect (a manual Detect, or the Pending Steps panel's Verify).
-    expect(detectCalls).toEqual([featurePath]);
-  });
-
-  it("does NOT re-detect when nothing was generated either", async () => {
-    const detectCalls: VaultPath[] = [];
-    const spec: Pick<SpecificationService, "detectMissingSteps"> = {
-      detectMissingSteps: async (path) => {
-        detectCalls.push(path);
-        return ok({ featurePath: path, missingSteps: [], detectionEventId: "evt-1" });
-      },
-    };
-    const stepDef = {
-      generate: async () =>
-        ok({
-          generatedSteps: [],
-          stepFile: vp(".testrunner/src/steps/UC-001-happy-path.steps.ts"),
-          appended: false,
-          insertions: [],
-        }),
-    };
-    await generateStepDefinitionsOutcome(spec, stepDef, featurePath);
-    expect(detectCalls).toEqual([featurePath]);
+describe("validateFeatureOutcome remains the only inline Feature-row action", () => {
+  it("no longer exports detect/generate outcome helpers — the Pending Steps companion owns those flows (WS1/C2)", async () => {
+    const mod = await import("../src/presentation/views/use-case-detail-rows");
+    expect("detectMissingStepsOutcome" in mod).toBe(false);
+    expect("generateStepDefinitionsOutcome" in mod).toBe(false);
+    expect("missingStepsRows" in mod).toBe(false);
+    expect("stepGenerationRows" in mod).toBe(false);
   });
 });

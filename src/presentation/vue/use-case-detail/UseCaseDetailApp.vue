@@ -30,13 +30,13 @@ const app = inject(OBSIDIAN_APP)!;
 // The same refresh set the hand-rolled view subscribed to (Wave D): feature/
 // step/use-case lifecycle + terminal run + history + settings + story-map events.
 // Deliberately EXCLUDES "specification.missingSteps.detected" and
-// "stepdefinition.generated": those now fire from the Pending Steps companion
+// "stepdefinition.generated": those fire from the Pending Steps companion
 // (WS1/C2) — the merged Steps action and the loop rail's Steps CTA open it
-// rather than detecting/generating in place — and an awaited reload here would
-// rebuild every FeatureRow, dropping any in-progress inline Validate result.
-// The rail's step-coverage read (allStepsDefined) catches up on the next
-// interaction instead — the same accepted staleness the command-palette
-// detect/generate already had.
+// rather than detecting/generating in place — and a FULL reload here would
+// rebuild every FeatureRow, dropping an in-progress inline Validate result. The
+// loop RAIL still reflects a companion Verify/Generate: a narrower rail-only
+// re-derivation (below, NOT a reload) advances it off Steps (spec §3.4) without
+// touching the FeatureRows.
 const REFRESH_ON: DomainEventType[] = [
   "specification.created",
   "specification.updated",
@@ -74,6 +74,12 @@ type DetailState =
 
 const state = ref<DetailState>({ kind: "empty" });
 
+// Bumped as the FIRST line of every full reload/re-target. The rail-only
+// re-derivation below captures this and drops its write if a full reload landed
+// while it awaited allStepsDefined — the one race useEventBus's per-binding
+// RenderScheduler can't serialize (reload runs on a separate binding).
+let railGeneration = 0;
+
 /**
  * The loop rail's derivation: whether all the Use Case's steps are defined
  * (an awaited cache/heuristic read) projected through projectLoopRail.
@@ -91,6 +97,9 @@ async function deriveLoopRail(useCase: UseCase, railPaths: VaultPath[]): Promise
 // carried, and not meaningfully reducible without obscuring the sequence.
 // fallow-ignore-next-line complexity
 async function reload(): Promise<void> {
+  // Invalidates any rail-only re-derivation still awaiting allStepsDefined, so a
+  // stale rail can't land under the fresh model this reload is about to build.
+  railGeneration += 1;
   const id = useCaseId.value;
   if (id === null) {
     state.value = { kind: "empty" };
@@ -157,6 +166,26 @@ const prdLinkLabelFor = (useCase: UseCase, prdTitleById: Map<string, string>): s
 };
 
 const { refresh } = useEventBus(deps.eventBus, REFRESH_ON, reload);
+
+// Rail-only re-derivation for the Pending Steps companion's coverage-changing
+// events (WS1/C2, spec §3.4): a companion Verify/Generate records a fresh #77
+// verdict and publishes these two events, but a FULL reload would clobber an
+// in-flight FeatureRow Validate (why REFRESH_ON excludes them). Re-derive ONLY
+// the loop rail — not the FeatureRows — so it advances off Steps as soon as the
+// steps are defined. useEventBus's RenderScheduler coalesces an event burst into
+// one trailing derive; railGeneration guards the rail-derive-vs-full-reload race.
+useEventBus(
+  deps.eventBus,
+  ["stepdefinition.generated", "specification.missingSteps.detected"],
+  async () => {
+    if (state.value.kind !== "loaded") return;
+    const generation = railGeneration;
+    const { useCase, railPaths } = state.value.model;
+    const loopRail = await deriveLoopRail(useCase, railPaths);
+    if (railGeneration !== generation || state.value.kind !== "loaded") return;
+    state.value = { kind: "loaded", model: { ...state.value.model, loopRail } };
+  },
+);
 // Re-target (leaf reused for another Use Case) reloads through the same
 // serialized scheduler; the ref already held the new id before onOpen on restore.
 watch(useCaseId, () => void refresh());

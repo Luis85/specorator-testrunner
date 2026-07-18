@@ -50,11 +50,6 @@ function makeDeps(over: Record<string, unknown> = {}): UseCaseDetailDeps {
     },
     storyMapService: { findAll: vi.fn().mockResolvedValue({ ok: true, value: [] }) },
     specificationService: specService(true),
-    stepDefinitionService: {
-      generate: vi
-        .fn()
-        .mockResolvedValue({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } }),
-    },
     featureInsight: {
       healthFor: vi.fn().mockResolvedValue({
         ok: true,
@@ -226,22 +221,38 @@ describe("UseCaseDetailApp", () => {
     expect(openPendingSteps).toHaveBeenCalledWith({ kind: "feature", featurePath: PATH });
   });
 
-  it("does not reload on specification.missingSteps.detected — REFRESH_ON deliberately excludes it (Fix 2, Codex P2 on PR #102)", async () => {
+  it("re-derives ONLY the loop rail on a companion generate/detect — advances off Steps without a full reload (WS1/C2, spec §3.4)", async () => {
     const bus = new InMemoryEventBus();
-    const deriveById = vi.fn(async () => ({ ok: true, value: useCase({ id: "UC-001" }) }));
-    const deps = makeDeps({ eventBus: bus, traceability: { deriveById } });
+    const deriveById = vi.fn(async () => ({
+      ok: true,
+      value: useCase({ id: "UC-001", featureFiles: [PATH] }),
+    }));
+    // Steps start undefined → the rail is on Steps; the companion's generate
+    // (in its own leaf) records coverage and flips this to defined.
+    let covered = false;
+    const allStepsDefined = vi.fn(async () => covered);
+    const deps = makeDeps({
+      eventBus: bus,
+      traceability: { deriveById },
+      specificationService: { ...specService(false), allStepsDefined },
+    });
     const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
     await flushPromises();
+    expect(w.find(OPEN_PENDING_STEPS_BTN).exists()).toBe(true); // rail on Steps
     expect(deriveById).toHaveBeenCalledTimes(1);
 
+    covered = true;
     await bus.publish({
-      type: "specification.missingSteps.detected",
-      payload: { featurePath: PATH, missingSteps: [] },
+      type: "stepdefinition.generated",
+      payload: { featurePath: PATH },
     } as unknown as DomainEvent);
     await flushPromises();
 
-    // No subscriber, so no reload: the view must not even flicker to `loading`.
+    // The rail advanced off Steps via a rail-ONLY re-derivation: NO full reload
+    // (deriveById still once, so the FeatureRows / any in-flight Validate are
+    // untouched and the view never flickered to `loading`).
     expect(deriveById).toHaveBeenCalledTimes(1);
     expect(w.find("h2").exists()).toBe(true);
+    expect(w.find(OPEN_PENDING_STEPS_BTN).exists()).toBe(false);
   });
 });

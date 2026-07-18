@@ -2,14 +2,9 @@ import { useCaseIdFromPath } from "../../application/content/gherkin";
 import type { FeatureHealth } from "../../application/services/feature-insight-service";
 import type {
   FeatureFileEntry,
-  MissingStepResult,
   SpecificationService,
   SpecificationValidationResult,
 } from "../../application/services/specification-service";
-import type {
-  GenerateStepDefinitionsResult,
-  StepDefinitionService,
-} from "../../application/services/step-definition-service";
 import type { UseCase } from "../../domain/entities/use-case";
 import type { UseCaseId, VaultPath } from "../../domain/value-objects/identifiers";
 import { type ChecklistRow, checklistRow } from "./checklist";
@@ -185,42 +180,6 @@ export const featureValidationRows = (result: SpecificationValidationResult): Ch
   return result.errors.map((error) => checklistRow("error", error.message));
 };
 
-/**
- * Maps a missing-steps detection result to checklist rows: a single ✓ row when
- * every step is defined, else a ! summary row plus one info row per undefined
- * step so the user can see exactly what needs step definitions.
- */
-export const missingStepsRows = (result: MissingStepResult): ChecklistRow[] => {
-  if (result.missingSteps.length === 0) return [checklistRow("ok", "All steps are defined.")];
-  return [
-    checklistRow(
-      "warning",
-      `${result.missingSteps.length} ${
-        result.missingSteps.length === 1 ? "step needs" : "steps need"
-      } a definition:`,
-    ),
-    ...result.missingSteps.map((step) => checklistRow("info", step)),
-  ];
-};
-
-/**
- * Maps a step-definition generation result to checklist rows. An empty
- * `generatedSteps` means detection found nothing undefined (or every step has
- * since been implemented), so report that rather than a spurious "generated 0".
- */
-export const stepGenerationRows = (result: GenerateStepDefinitionsResult): ChecklistRow[] => {
-  if (result.generatedSteps.length === 0) {
-    return [checklistRow("ok", "No missing steps — nothing to generate.")];
-  }
-  const count = result.generatedSteps.length;
-  return [
-    checklistRow(
-      "ok",
-      `Generated ${count} step ${count === 1 ? "stub" : "stubs"} in ${result.stepFile}.`,
-    ),
-  ];
-};
-
 // ── Per-Feature action outcomes ──────────────────────────────────────────────
 // The async orchestration behind each Feature row's inline action: call the
 // service, then map success/failure to the SAME ChecklistRow vocabulary above.
@@ -236,51 +195,4 @@ export const validateFeatureOutcome = async (
   const result = await specificationService.validate(featurePath);
   if (!result.ok) return [checklistRow("error", `Validation failed: ${result.error.message}`)];
   return featureValidationRows(result.value);
-};
-
-/** Detect the chosen Feature's undefined steps (UC-010) and project to rows. */
-export const detectMissingStepsOutcome = async (
-  specificationService: Pick<SpecificationService, "detectMissingSteps">,
-  featurePath: VaultPath,
-): Promise<ChecklistRow[]> => {
-  const result = await specificationService.detectMissingSteps(featurePath);
-  if (!result.ok) return [checklistRow("error", `Detection failed: ${result.error.message}`)];
-  return missingStepsRows(result.value);
-};
-
-/**
- * Detect-then-generate (UC-010 / RV-4): detect the Feature's undefined steps,
- * then generate non-destructive step-definition stubs — the same two-call
- * orchestration the command palette uses — projected to rows.
- *
- * Deliberately does NOT re-detect after a successful generate (dropped in the
- * root-fix pass, Codex P2s on PR #102): that auto re-detect published a
- * premature, zero-missing `specification.missingSteps.detected` — which the
- * Guided Tour's implement-steps step treats as done (bddgen counts the
- * generated `throw new Error("Pending")` stubs as defined), so the tour would
- * complete right after Generate, before the user implements anything — and it
- * forced the caller into a full, clobbering refresh just to pick up the
- * verdict. The #77 coverage cache instead records on the next REAL detect (a
- * manual Detect, or the Pending Steps panel's Verify — Task 7 / D1
- * territory); a cache miss there just falls back to the static heuristic,
- * which is always safe.
- */
-export const generateStepDefinitionsOutcome = async (
-  specificationService: Pick<SpecificationService, "detectMissingSteps">,
-  stepDefinitionService: Pick<StepDefinitionService, "generate">,
-  featurePath: VaultPath,
-): Promise<ChecklistRow[]> => {
-  const detected = await specificationService.detectMissingSteps(featurePath);
-  if (!detected.ok) return [checklistRow("error", `Detection failed: ${detected.error.message}`)];
-  const generated = await stepDefinitionService.generate(
-    featurePath,
-    detected.value.missingSteps,
-    detected.value.detectionEventId,
-  );
-  if (!generated.ok) {
-    return [
-      checklistRow("error", `Could not generate step definitions: ${generated.error.message}`),
-    ];
-  }
-  return stepGenerationRows(generated.value);
 };
