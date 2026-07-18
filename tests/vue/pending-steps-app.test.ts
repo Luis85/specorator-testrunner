@@ -223,4 +223,51 @@ describe("PendingStepsApp", () => {
     expect(listCalls).toBe(2);
     expect(w).toBeTruthy();
   });
+
+  it("a no-op Generate (bddgen resolves a step the static matcher flags) stays on the bddgen tier — the card flips covered, not back to pending (Codex P2 on PR #102)", async () => {
+    const deps = makeDeps({
+      specificationService: {
+        // Static sees NO patterns → it flags the feature's step as pending, so
+        // the vault listing shows it and Generate is enabled.
+        listFeatures: async () =>
+          ok([{ path: vp("features/UC-001-a.feature"), label: "UC-001-a.feature" }]),
+        listStepPatterns: async () => [],
+        // bddgen, however, RESOLVES the step (a custom param type / optional
+        // syntax the static matcher can't model) → zero missing.
+        detectMissingSteps: async (path) =>
+          ok({ featurePath: path, missingSteps: [], detectionEventId: "e1" }),
+      },
+      stepDefinitionService: {
+        // Nothing to generate — bddgen already resolved everything.
+        generate: async () =>
+          ok({ generatedSteps: [], stepFile: vp("steps.ts"), appended: false, insertions: [] }),
+      },
+    });
+    const w = mountApp({ kind: "vault" }, deps);
+    await flushPromises();
+    // Static flagged it pending → Generate enabled.
+    expect(w.find("button.mod-cta").attributes("disabled")).toBeUndefined();
+
+    await w.find("button.mod-cta").trigger("click"); // Generate → no-op
+    await flushPromises();
+
+    // The card flips to the bddgen "covered" verdict (empty missing), NOT back
+    // to the static tier — which would re-flag the step pending and re-enable
+    // Generate right after saying there was nothing to generate.
+    expect(w.text()).toContain("Every step has a definition.");
+    expect(w.text()).toContain("nothing to generate");
+    expect(w.find("button.mod-cta").attributes("disabled")).toBeDefined();
+  });
+
+  it("surfaces a Feature read failure for a feature-targeted panel as an error — not the empty 'everything defined' state (Codex P2 on PR #102)", async () => {
+    const deps = makeDeps({
+      fs: { readFile: async () => err(appError("RUNNER_MISSING_FILE", "feature deleted")) },
+    });
+    const w = mountApp({ kind: "feature", featurePath: vp("features/UC-001-gone.feature") }, deps);
+    await flushPromises();
+
+    expect(w.text()).toContain("Couldn't load");
+    expect(w.text()).toContain("UC-001-gone");
+    expect(w.text()).not.toContain("No Features with pending steps");
+  });
 });

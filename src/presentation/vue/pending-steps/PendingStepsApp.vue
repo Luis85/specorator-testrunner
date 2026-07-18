@@ -69,14 +69,44 @@ async function resolvePaths(value: PendingStepsTarget): Promise<Result<VaultPath
   return listed.ok ? ok(listed.value.map((entry) => entry.path)) : err(listed.error);
 }
 
-/** Static-tier group for one Feature (no process spawn — spec D8). */
+/** Static-tier group for one Feature (no process spawn — spec D8). An
+ * unreadable/unparseable Feature returns `err` so `load` can surface it for a
+ * feature-targeted panel (Codex P2 on PR #102). */
 async function staticGroup(
   path: VaultPath,
   definitions: StepDefinitionPattern[],
-): Promise<PendingFeatureGroup | null> {
+): Promise<Result<PendingFeatureGroup>> {
   const feature = await readFeatureFile(deps.fs, path);
-  if (!feature.ok) return null;
-  return projectPendingFeature(path, collectStepTexts(feature.value), definitions, null);
+  if (!feature.ok) return err(feature.error);
+  return ok(projectPendingFeature(path, collectStepTexts(feature.value), definitions, null));
+}
+
+/**
+ * Project each resolved Feature path to a static-tier group. A feature-TARGETED
+ * panel is entirely about its one file, so a read/parse failure returns `err`
+ * for `load` to surface (Codex P2 on PR #102); a vault/use-case target spans
+ * many files, so an unreadable one is skipped and the rest still show. The
+ * vault listing additionally drops already-complete Features (spec §3.2).
+ */
+async function buildGroups(
+  value: PendingStepsTarget,
+  paths: readonly VaultPath[],
+): Promise<Result<GroupState[]>> {
+  // Load the step-definition patterns ONCE per render, not once per Feature —
+  // listStepPatterns re-scans `.testrunner/src/steps` on every call, so a
+  // per-group load would repeat that scan N times on a vault target (Codex P2).
+  const definitions = await deps.specificationService.listStepPatterns();
+  const groups: GroupState[] = [];
+  for (const path of paths) {
+    const group = await staticGroup(path, definitions);
+    if (!group.ok) {
+      if (value.kind === "feature") return err(group.error);
+      continue;
+    }
+    if (value.kind === "vault" && group.value.complete) continue;
+    groups.push({ group: group.value, busy: false, result: null, viewer: null });
+  }
+  return ok(groups);
 }
 
 async function load(): Promise<void> {
@@ -92,25 +122,18 @@ async function load(): Promise<void> {
     };
     return;
   }
-  // Load the step-definition patterns ONCE per render, not once per Feature —
-  // listStepPatterns re-scans `.testrunner/src/steps` on every call, so a
-  // per-group load would repeat that scan N times on a vault target (Codex P2
-  // on PR #102).
-  const definitions = await deps.specificationService.listStepPatterns();
-  const groups: GroupState[] = [];
-  for (const path of resolved.value) {
-    const group = await staticGroup(path, definitions);
-    if (group === null) continue;
-    // The vault-wide listing shows only incomplete Features (spec §3.2).
-    if (value.kind === "vault" && group.complete) continue;
-    groups.push({ group, busy: false, result: null, viewer: null });
-  }
+  const built = await buildGroups(value, resolved.value);
   if (gen !== generation) return;
-  state.value = { kind: "loaded", title: targetTitle(value), groups };
+  if (!built.ok) {
+    const what = value.kind === "feature" ? value.featurePath : "Pending Steps";
+    state.value = { kind: "error", message: `Couldn't load ${what}: ${built.error.message}` };
+    return;
+  }
+  state.value = { kind: "loaded", title: targetTitle(value), groups: built.value };
   // A feature-targeted open is an explicit user action: run ONE authoritative
   // verify automatically (spec D8); use-case / vault targets stay static until
   // a per-feature action.
-  if (value.kind === "feature" && groups.length === 1) void verify(groups[0]);
+  if (value.kind === "feature" && built.value.length === 1) void verify(built.value[0]);
 }
 
 watch(target, () => void load());
@@ -244,18 +267,24 @@ async function generateInner(entry: GroupState): Promise<void> {
     patch(entry);
     return;
   }
-  // Re-project from the STATIC tier — deliberately NO bddgen re-detect here.
-  // The just-written stubs are already in `src/steps`, so the static matcher
-  // sees them defined (and the loop rail, subscribed to stepdefinition.generated,
-  // advances off Steps the same way). A re-detect would instead publish a
-  // zero-missing `specification.missingSteps.detected` that completes the Guided
-  // Tour's implement-steps step straight from the generated `throw new
-  // Error("Pending")` stubs — before the user implements anything (bddgen counts
-  // a pending stub as defined). The user implements, then clicks Verify (a REAL
-  // detect) to record the #77 covered verdict and complete the tour (tour-safe,
-  // Codex P2 on PR #102 — the same reason the old inline generate never
-  // re-detected).
-  if (!(await reprojectGroup(entry, gen, null))) return;
+  // Re-project after generate — deliberately NO bddgen re-detect here. TWO cases:
+  // - STUBS WRITTEN (generatedSteps non-empty): re-project from the STATIC tier
+  //   (null). The stubs are already in `src/steps`, so static sees them defined
+  //   (and the loop rail, subscribed to stepdefinition.generated, advances the
+  //   same way). A re-detect would publish a zero-missing
+  //   specification.missingSteps.detected that completes the Guided Tour's
+  //   implement-steps step straight from the generated `throw new Error("Pending")`
+  //   stubs — before the user implements anything. The user implements, then
+  //   clicks Verify (a REAL detect) to complete the tour (tour-safe, Codex P2).
+  // - NO-OP (generatedSteps empty): bddgen already resolved every step — a custom
+  //   parameter type / optional syntax the static matcher CAN'T model — so nothing
+  //   was written. Re-project with the PRE-generate bddgen verdict (empty here),
+  //   NOT static, which would wrongly re-flag the resolved step as pending and
+  //   leave Generate enabled right after "nothing to generate" (Codex P2 on PR
+  //   #102). Reusing the already-published pre-detect list projects UI only — it
+  //   publishes no new event, so the tour is unaffected.
+  const wrote = generated.value.generatedSteps.length > 0;
+  if (!(await reprojectGroup(entry, gen, wrote ? null : detected.value.missingSteps))) return;
   entry.busy = false;
   entry.result = [generatedResultRow(generated.value)];
   // The read-only stub viewer: the written file, highlighted at the returned
