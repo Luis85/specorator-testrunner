@@ -13,6 +13,7 @@ import type { UseCaseId } from "../../domain/value-objects/identifiers";
 import type { EventBus } from "../../shared/event-bus/event-bus";
 import type { RunLauncher } from "../run/run-launcher";
 import type { NavigationTarget } from "../navigation/navigation-target";
+import type { PendingStepsTarget } from "./pending-steps-rows";
 import { OBSIDIAN_APP } from "../vue/obsidian-app";
 import UseCaseDetailApp from "../vue/use-case-detail/UseCaseDetailApp.vue";
 import {
@@ -70,6 +71,8 @@ export interface UseCaseDetailDeps {
   // create-Suite flow (the rail reuses the same modal the dashboard/explorer
   // open — no suite-creation logic is duplicated here).
   openCreateSuite: () => void;
+  /** WS1/C2: opens the Pending Steps sidebar companion at a target. */
+  openPendingSteps: (target: PendingStepsTarget) => void;
   // WS-A4/B4 deep-link port: the PRD breadcrumb opens the SPECIFIC parent PRD
   // (by id, 01-§3.2), a Feature row opens by its vault path, and a Story Map
   // backlink opens its board (by id) — all through the one unified navigator.

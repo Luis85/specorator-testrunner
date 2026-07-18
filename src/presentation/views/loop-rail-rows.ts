@@ -69,7 +69,9 @@ const NODE_LABEL: Record<LoopRailStage, string> = {
 
 const ACTION_LABEL: Record<Exclude<LoopRailAction, null>, string> = {
   "generate-feature": "Generate feature",
-  "generate-steps": "Generate step definitions",
+  // WS1/C2: the Steps stage now opens the Pending Steps companion (which owns
+  // detect/generate + the stub viewer) rather than blind-generating in place.
+  "generate-steps": "Open pending steps",
   "create-suite": "Create suite",
   run: "Run",
 };

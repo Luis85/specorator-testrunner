@@ -28,6 +28,7 @@ import {
   formatStatusBanner,
   summaryHint,
 } from "../../views/test-console-format";
+import { pendingStepsTargetForRun } from "../../views/pending-steps-rows";
 
 /** Subset of the `testrun.requested` payload — carries the scope/target label. */
 interface RequestedPayload {
@@ -221,6 +222,17 @@ const onOpenEvidence = (): void => {
 };
 const onClear = (): void => output.value?.clear();
 
+// WS1/C2: the missing-steps hint's action — open the Pending Steps companion
+// targeted at the finished run's scope (a use-case / feature run points the
+// panel at that scope; suite/all/demo runs span features, so they open the
+// vault-wide listing), falling back to vault-wide when no run has finished yet.
+const openPendingSteps = (): void => {
+  const last = lastRunSnap.value;
+  deps.openPendingSteps(
+    last === null ? { kind: "vault" } : pendingStepsTargetForRun(last.scope, last.target),
+  );
+};
+
 // ── timer ────────────────────────────────────────────────────────────────────
 
 const startTimer = (): void => {
@@ -355,7 +367,12 @@ function formatWhen(iso: string): string {
     <div class="spec-banner" aria-live="polite" :data-status="banner?.status">
       <template v-if="banner">
         <div>{{ banner.text }}</div>
-        <div v-if="banner.hint" class="e2e-test-hub-console-banner-hint">{{ banner.hint }}</div>
+        <div v-if="banner.hint" class="e2e-test-hub-console-banner-hint">
+          {{ banner.hint }}
+          <button aria-label="Open pending steps" @click="openPendingSteps">
+            Open pending steps
+          </button>
+        </div>
       </template>
     </div>
 

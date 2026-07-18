@@ -33,17 +33,10 @@ function makeDeps(over: Record<string, unknown> = {}): UseCaseDetailDeps {
     featureInsight: { healthFor: vi.fn().mockResolvedValue(health()) },
     specificationService: {
       validate: vi.fn().mockResolvedValue({ ok: true, value: { valid: true, errors: [] } }),
-      detectMissingSteps: vi
-        .fn()
-        .mockResolvedValue({ ok: true, value: { missingSteps: [], detectionEventId: "e1" } }),
-    },
-    stepDefinitionService: {
-      generate: vi
-        .fn()
-        .mockResolvedValue({ ok: true, value: { generatedSteps: [], stepFile: "s" } }),
     },
     runLauncher: { launch: vi.fn().mockResolvedValue(undefined) },
     navigate: vi.fn(),
+    openPendingSteps: vi.fn(),
     ...over,
   } as unknown as UseCaseDetailDeps;
 }
@@ -59,35 +52,10 @@ const checkRows = (w: ReturnType<typeof mountRow>) =>
   w.findAll(".e2e-test-hub-uc-detail-feature-result .e2e-test-hub-settings-check-row");
 const validateButton = (w: ReturnType<typeof mountRow>) =>
   w.get(`button[aria-label="Validate ${LABEL}"]`);
-const detectButton = (w: ReturnType<typeof mountRow>) =>
-  w.get(`button[aria-label="Detect missing steps in ${LABEL}"]`);
-const generateButton = (w: ReturnType<typeof mountRow>) =>
-  w.get(`button[aria-label="Generate step definitions for ${LABEL}"]`);
+const stepsButton = (w: ReturnType<typeof mountRow>) =>
+  w.get(`button[aria-label="Open pending steps for ${LABEL}"]`);
 
-/**
- * Mounts the row and clicks Generate, flushing both the mount and the click
- * through — the shared arrange+act behind the no-op/failed generate tests
- * below, which differ only in `deps` and their own trailing assertions (kept
- * local to each `it` per vitest/expect-expect).
- */
-async function mountAndGenerate(deps: UseCaseDetailDeps): Promise<ReturnType<typeof mountRow>> {
-  const w = mountRow(deps);
-  await flushPromises();
-  await generateButton(w).trigger("click");
-  await flushPromises();
-  return w;
-}
-
-/** Same shape as {@link mountAndGenerate}, for the Detect button (Part 3). */
-async function mountAndDetect(deps: UseCaseDetailDeps): Promise<ReturnType<typeof mountRow>> {
-  const w = mountRow(deps);
-  await flushPromises();
-  await detectButton(w).trigger("click");
-  await flushPromises();
-  return w;
-}
-
-/** Same shape as {@link mountAndGenerate}, for the Validate button. */
+/** Same shape as the other mount-and-click helpers, for the Validate button. */
 async function mountAndValidate(deps: UseCaseDetailDeps): Promise<ReturnType<typeof mountRow>> {
   const w = mountRow(deps);
   await flushPromises();
@@ -135,7 +103,6 @@ describe("FeatureRow", () => {
             resolveValidate = resolve;
           }),
         ),
-        detectMissingSteps: vi.fn(),
       },
     });
     const w = mountRow(deps);
@@ -165,124 +132,13 @@ describe("FeatureRow", () => {
     expect(checkRows(w)).toHaveLength(0);
   });
 
-  it("emits railStale once the generate outcome commits (#77, root fix: refreshRail() doesn't rebuild this row, so the emit no longer needs gating)", async () => {
-    const deps = makeDeps({
-      stepDefinitionService: {
-        generate: vi
-          .fn()
-          .mockResolvedValue({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } }),
-      },
-    });
-    const w = await mountAndGenerate(deps);
-
-    expect(checkRows(w).length).toBeGreaterThan(0);
-    expect(w.emitted("railStale")).toHaveLength(1);
-  });
-
-  it("emits railStale for a NO-OP generate too, and its row still renders (Codex P2s on PR #102, root fix)", async () => {
-    // makeDeps' default generate mock resolves ok with an EMPTY generatedSteps.
-    const w = await mountAndGenerate(makeDeps());
-
-    expect(checkRows(w)).toHaveLength(1);
-    expect(checkRows(w)[0].text()).toContain("nothing to generate");
-    expect(w.emitted("railStale")).toHaveLength(1);
-  });
-
-  it("emits railStale for a FAILED generate too, and its error row still renders (Codex P2s on PR #102, root fix)", async () => {
-    const deps = makeDeps({
-      stepDefinitionService: {
-        generate: vi.fn().mockResolvedValue({
-          ok: false,
-          error: { code: "RUNNER_NOT_INSTALLED", message: "bddgen is not installed" },
-        }),
-      },
-    });
-    const w = await mountAndGenerate(deps);
-
-    expect(checkRows(w)).toHaveLength(1);
-    expect(checkRows(w)[0].text()).toContain("Could not generate step definitions");
-    expect(w.emitted("railStale")).toHaveLength(1);
-  });
-
-  it("does not emit railStale for a generate result dropped by a refresh (stale-write guard)", async () => {
-    let resolveGenerate!: (v: unknown) => void;
-    const deps = makeDeps({
-      stepDefinitionService: {
-        generate: vi.fn().mockReturnValue(
-          new Promise((resolve) => {
-            resolveGenerate = resolve;
-          }),
-        ),
-      },
-    });
-    const w = mountRow(deps);
+  it("the merged Steps button opens the Pending Steps companion for this Feature (WS1/C2)", async () => {
+    const openPendingSteps = vi.fn();
+    const w = mountRow(makeDeps({ openPendingSteps }));
     await flushPromises();
 
-    await generateButton(w).trigger("click");
-    // generateStepDefinitionsOutcome awaits detectMissingSteps (an already-
-    // resolved mock) BEFORE reaching the deliberately-pending generate() call;
-    // flushPromises (not just one nextTick) drains that hop while still
-    // leaving the deferred generate() promise itself unresolved below.
-    await flushPromises();
-    expect(w.find(".e2e-test-hub-uc-detail-feature-result").text()).toContain(
-      "Generating step definitions",
-    );
+    await stepsButton(w).trigger("click");
 
-    // A refresh reuses the component (fresh row, same path) — clears the result
-    // and bumps the generation before the generate outcome resolves.
-    await w.setProps({ row: row() });
-    await flushPromises();
-
-    // The stale generate now resolves; it must neither repopulate the row NOR
-    // tell the parent to re-derive the rail on its behalf.
-    resolveGenerate({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } });
-    await flushPromises();
-    expect(checkRows(w)).toHaveLength(0);
-    expect(w.emitted("railStale")).toBeUndefined();
-  });
-
-  it("emits railStale once a committed DETECT commits too — detect now records a #77 coverage verdict, so it may also change the rail (Codex P2, Part 3)", async () => {
-    const w = await mountAndDetect(makeDeps());
-
-    expect(checkRows(w).length).toBeGreaterThan(0);
-    expect(w.emitted("railStale")).toHaveLength(1);
-  });
-
-  it("does not emit railStale for a detect result dropped by a refresh (stale-write guard, Codex P2, Part 3)", async () => {
-    let resolveDetect!: (v: unknown) => void;
-    const deps = makeDeps({
-      specificationService: {
-        validate: vi.fn(),
-        detectMissingSteps: vi.fn().mockReturnValue(
-          new Promise((resolve) => {
-            resolveDetect = resolve;
-          }),
-        ),
-      },
-    });
-    const w = mountRow(deps);
-    await flushPromises();
-
-    await detectButton(w).trigger("click");
-    await nextTick();
-    expect(w.find(".e2e-test-hub-uc-detail-feature-result").text()).toContain("Detecting");
-
-    // A refresh reuses the component (fresh row, same path) — clears the result
-    // and bumps the generation before the detect outcome resolves.
-    await w.setProps({ row: row() });
-    await flushPromises();
-
-    // The stale detect now resolves; it must neither repopulate the row NOR
-    // tell the parent to re-derive the rail on its behalf.
-    resolveDetect({ ok: true, value: { missingSteps: [], detectionEventId: "e1" } });
-    await flushPromises();
-    expect(checkRows(w)).toHaveLength(0);
-    expect(w.emitted("railStale")).toBeUndefined();
-  });
-
-  it("does not emit railStale for a VALIDATE — it runs no detect/generate and changes no coverage (Codex P2, Part 3)", async () => {
-    const w = await mountAndValidate(makeDeps());
-    expect(checkRows(w).length).toBeGreaterThan(0);
-    expect(w.emitted("railStale")).toBeUndefined();
+    expect(openPendingSteps).toHaveBeenCalledWith({ kind: "feature", featurePath: PATH });
   });
 });

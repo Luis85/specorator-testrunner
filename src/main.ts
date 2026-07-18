@@ -278,6 +278,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       openWizard: () => this.openWizard(),
       openCreateUseCase: () => this.openCreateUseCase(),
       openCreateSuite: () => this.openCreateSuite(),
+      openPendingSteps: (target) => void this.openPendingSteps(target),
       openPrdBuilder: () => this.openPrdBuilder(),
       openStoryMapBuilder: () => this.openStoryMapBuilder(),
       openDocumentation: (documentType) => this.openDocumentation(documentType),

@@ -70,8 +70,8 @@ describe("extractRunSummary / summaryHint (playwright-bdd live console)", () => 
   });
 
   it("hints at the step-definition flow only when steps are missing", () => {
-    expect(summaryHint(["Missing step definitions: 2", "1 failed"])).toContain(
-      "Generate step definitions",
+    expect(summaryHint(["Missing step definitions: 2", "1 failed"])).toBe(
+      "Some steps have no step definition — open Pending Steps to generate and implement them.",
     );
     expect(summaryHint(["1 failed", "2 passed (3.0s)"])).toBeNull();
     expect(summaryHint(["Missing step definitions: 0"])).toBeNull();

@@ -105,6 +105,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
     runDemo: () => s.runLauncher.launch({ scope: "demo", target: "demo" }),
     openCreateUseCase: () => deps.openCreateUseCase(),
     openUseCases: () => void workspace.openView(USE_CASE_VIEW_TYPE),
+    openPendingSteps: () => deps.openPendingSteps({ kind: "vault" }),
     openCreateSuite: () => deps.openCreateSuite(),
     openSuites: () => void workspace.openView(SUITE_VIEW_TYPE),
     openLatestEvidence: () => deps.openLatestEvidence(),
@@ -148,6 +149,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         eventBus,
         runLauncher: s.runLauncher,
         openCreateSuite: () => deps.openCreateSuite(),
+        openPendingSteps: (target) => deps.openPendingSteps(target),
         navigate: (target) => deps.navigate(target),
         openGenerateFeature: (useCase, onGenerated) =>
           generateFeatureForUseCase(
@@ -227,6 +229,7 @@ export const registerViews = (plugin: Plugin, deps: ViewWiringDeps): void => {
         // "the last generated evidence note" when the console opens.
         lastEvidence: () => s.postRunCoordinator.lastEvidence(),
         openEvidence: (path) => deps.openEvidence(path),
+        openPendingSteps: (target) => deps.openPendingSteps(target),
       }),
   );
   // WS1/C2: the Pending Steps right-sidebar companion — undefined-step listing,

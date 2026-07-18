@@ -3,6 +3,7 @@ import type { LastEvidence } from "../../../application/services/post-run-coordi
 import type { TestRun } from "../../../domain/entities/test-run";
 import type { RunId, VaultPath } from "../../../domain/value-objects/identifiers";
 import type { EventBus } from "../../../shared/event-bus/event-bus";
+import type { PendingStepsTarget } from "../../views/pending-steps-rows";
 import type { RunLauncher } from "../../run/run-launcher";
 
 /**
@@ -31,6 +32,9 @@ export interface TestConsoleDeps {
   lastEvidence(): LastEvidence | null;
   // Opens the evidence note via the workspace (wired to the workspace adapter).
   openEvidence(path: VaultPath): void | Promise<void>;
+  // WS1/C2: the missing-steps hint's action — opens the Pending Steps
+  // companion targeted at the finished run's scope (vault-wide otherwise).
+  openPendingSteps(target: PendingStepsTarget): void;
 }
 
 /** Per-leaf DI key: the composition-root slice the Test Console app injects (ADR-0033). */

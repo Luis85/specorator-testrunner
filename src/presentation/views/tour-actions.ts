@@ -11,6 +11,7 @@ export interface TourActionFlows {
   runDemo: () => void | Promise<void>;
   openCreateUseCase: () => void;
   openUseCases: () => void | Promise<void>;
+  openPendingSteps: () => void;
   openCreateSuite: () => void;
   openSuites: () => void | Promise<void>;
   openLatestEvidence: () => void;
@@ -28,6 +29,9 @@ export const dispatchTourAction = (id: TourActionId, flows: TourActionFlows): vo
       return;
     case "open-use-cases":
       void flows.openUseCases();
+      return;
+    case "open-pending-steps":
+      flows.openPendingSteps();
       return;
     case "open-create-suite":
       flows.openCreateSuite();

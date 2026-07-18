@@ -210,6 +210,7 @@ const buildDeps = (): TestHubCommandDeps => ({
   openWizard: vi.fn(() => undefined),
   openCreateUseCase: vi.fn(() => undefined),
   openCreateSuite: vi.fn(() => undefined),
+  openPendingSteps: vi.fn(() => undefined),
   openPrdBuilder: vi.fn(() => undefined),
   openStoryMapBuilder: vi.fn(() => undefined),
   openDocumentation: vi.fn(async () => undefined),
@@ -220,7 +221,7 @@ describe("registerCommands (smoke)", () => {
     const { plugin, commands } = buildPlugin();
     registerCommands(plugin, buildDeps());
     const ids = commands.map((command) => command.id);
-    // register-commands.ts currently registers 29 commands; the >=25 floor
+    // register-commands.ts currently registers 30 commands; the >=25 floor
     // catches meaningful registration loss while giving V2 room to add more.
     // The id spot-check below is the tighter guard against silent removal.
     expect(commands.length).toBeGreaterThanOrEqual(25);

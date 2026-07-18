@@ -43,6 +43,7 @@ export type TourActionId =
   | "run-demo"
   | "open-create-use-case"
   | "open-use-cases"
+  | "open-pending-steps"
   | "open-create-suite"
   | "open-suites"
   | "open-latest-evidence"
@@ -253,7 +254,7 @@ export const TOUR_STEPS: readonly TourStepDefinition[] = [
       "runner's src/steps/ folder. Open that file, replace the stubs with the implementation " +
       "below, then run Detect Missing Steps again. Zero missing completes this step — that " +
       "means every step is now defined; your run in the later step proves the implementation.",
-    action: { id: "open-use-cases", label: "Open Use Cases" },
+    action: { id: "open-pending-steps", label: "Open pending steps" },
     snippets: [{ title: "Step implementation", language: "typescript", code: TOUR_STEPS_SNIPPET }],
     completion: {
       // Anchored on the @tour Feature's validation, then ITS stub generation,
