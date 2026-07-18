@@ -46,6 +46,8 @@ import { InitializationWizardModal } from "./presentation/views/initialization-w
 import { PrdBuilderModal } from "./presentation/views/prd-builder-modal";
 import { StoryMapBuilderModal } from "./presentation/views/story-map-builder-modal";
 import { USE_CASE_DETAIL_VIEW_TYPE } from "./presentation/views/use-case-detail-view";
+import { PENDING_STEPS_VIEW_TYPE } from "./presentation/views/pending-steps-view";
+import type { PendingStepsTarget } from "./presentation/views/pending-steps-rows";
 import { STORY_MAP_BOARD_VIEW_TYPE } from "./presentation/views/story-map-board-view";
 import { HUB_VIEW_TYPE } from "./presentation/views/hub-view";
 import { openOrNotice } from "./presentation/views/modal-helpers";
@@ -218,6 +220,7 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       getSettings: () => this.hubSettings,
       openCreateUseCase: () => this.openCreateUseCase(),
       openUseCaseDetail: (useCaseId) => void this.openUseCaseDetail(useCaseId),
+      openPendingSteps: (target) => void this.openPendingSteps(target),
       openHub: () => this.openHub(),
       navigate: (target) => void this.navigate(target),
       openCreateSuite: () => this.openCreateSuite(),
@@ -408,6 +411,20 @@ export default class E2ETestHubPlugin extends Plugin implements SettingsHost {
       active: true,
       state: { useCaseId },
     });
+    void workspace.revealLeaf(leaf);
+  }
+
+  // WS1/C2: open (or re-target) the Pending Steps sidebar companion. A single
+  // right-sidebar leaf is reused; the target travels in the view state so it
+  // survives a workspace reload (spec D5), mirroring openUseCaseDetail but in
+  // the sidebar (a companion the user watches next to their work, like the
+  // Test Console).
+  private async openPendingSteps(target: PendingStepsTarget): Promise<void> {
+    const { workspace } = this.app;
+    const leaf =
+      workspace.getLeavesOfType(PENDING_STEPS_VIEW_TYPE)[0] ?? workspace.getRightLeaf(false);
+    if (!leaf) return;
+    await leaf.setViewState({ type: PENDING_STEPS_VIEW_TYPE, active: true, state: { target } });
     void workspace.revealLeaf(leaf);
   }
 

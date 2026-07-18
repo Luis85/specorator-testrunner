@@ -26,7 +26,11 @@ export interface FeatureFileRead {
  * Gherkin — the same failure modes {@link readFeatureFile} has always had.
  */
 export const readFeatureFileWithSource = async (
-  fs: VaultFileSystem,
+  // Only `readFile` is used — the narrow slice lets a caller with a minimal fs
+  // slice (e.g. the Pending Steps panel's deps) reuse this; a full
+  // VaultFileSystem still satisfies it structurally (same idiom as
+  // loadStepDefinitions).
+  fs: Pick<VaultFileSystem, "readFile">,
   featurePath: VaultPath,
 ): Promise<Result<FeatureFileRead>> => {
   const read = await fs.readFile(featurePath);
@@ -47,7 +51,7 @@ export const readFeatureFileWithSource = async (
  * only need the parsed spec, not the raw bytes.
  */
 export const readFeatureFile = async (
-  fs: VaultFileSystem,
+  fs: Pick<VaultFileSystem, "readFile">,
   featurePath: VaultPath,
 ): Promise<Result<FeatureSpecification>> => {
   const read = await readFeatureFileWithSource(fs, featurePath);
