@@ -15,15 +15,17 @@ import {
 
 const props = defineProps<{ row: FeatureRowModel }>();
 const deps = inject(USE_CASE_DETAIL_DEPS)!;
-// #77: lets the parent re-derive the loop rail after THIS row's generate
-// commits — scoped to generate only, not detect, since a detect refresh
-// would unmount this row mid-flight and drop its own inline result before it
-// renders. Emits UNCONDITIONALLY on any committed outcome (success, no-op,
-// or error): the parent binds this to refreshRail(), which re-derives ONLY
-// the rail and never rebuilds this row or clears its inline result, so
-// there's nothing left here to protect by gating the emit (root-fix pass,
-// Codex P2s on PR #102).
-const emit = defineEmits<{ generated: [] }>();
+// #77: lets the parent re-derive the loop rail after a row action that may
+// have changed coverage — DETECT (which now records a #77 coverage-cache
+// verdict too, so it can flip allStepsDefined() on its own — e.g. bddgen
+// confirms an advanced-construct feature the static matcher couldn't model)
+// AND GENERATE. Emits UNCONDITIONALLY on either's committed outcome
+// (success, no-op, or error): the parent binds this to refreshRail(), which
+// re-derives ONLY the rail and never rebuilds this row or clears its inline
+// result, so there's nothing left here to protect by gating the emit.
+// VALIDATE does NOT emit — it runs no bddgen/detect and changes no coverage
+// (root-fix pass, Codex P2s on PR #102; detect wiring Part 3).
+const emit = defineEmits<{ railStale: [] }>();
 
 // The muted per-Feature health line (Wave F). An unreadable/unparseable Feature
 // leaves the line empty (Validate explains why).
@@ -69,7 +71,8 @@ const run = (): void => void deps.runLauncher.launch({ scope: "feature", target:
 // await the outcome, then commit ONLY if no refresh intervened (so a result from
 // the pre-edit Feature can't repopulate the row after the watcher cleared it).
 // `onCommitted` fires ONLY alongside that commit (never after a stale write is
-// dropped) — generate() uses it to tell the parent to re-derive the rail.
+// dropped) — detect() and generate() use it to tell the parent to re-derive
+// the rail; validate() passes none (it changes no coverage).
 async function runAction(
   pendingText: string,
   outcome: () => Promise<ChecklistRow[]>,
@@ -89,8 +92,10 @@ const validate = (): void =>
     validateFeatureOutcome(deps.specificationService, props.row.path),
   );
 const detect = (): void =>
-  void runAction("Detecting…", () =>
-    detectMissingStepsOutcome(deps.specificationService, props.row.path),
+  void runAction(
+    "Detecting…",
+    () => detectMissingStepsOutcome(deps.specificationService, props.row.path),
+    () => emit("railStale"),
   );
 const generate = (): void =>
   void runAction(
@@ -101,7 +106,7 @@ const generate = (): void =>
         deps.stepDefinitionService,
         props.row.path,
       ),
-    () => emit("generated"),
+    () => emit("railStale"),
   );
 </script>
 

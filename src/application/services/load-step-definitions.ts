@@ -1,6 +1,7 @@
 import { parseStepDefinitions, type StepDefinitionPattern } from "../content/step-definitions";
 import type { VaultFileSystem } from "../ports/vault-file-system";
 import type { VaultPath } from "../../domain/value-objects/identifiers";
+import { joinVaultPath } from "../../shared/utils/vault-path";
 
 /**
  * A steps-file's identity for content-addressing (#77, spec D6): its vault
@@ -53,18 +54,42 @@ export const loadStepSources = (
 
 /**
  * Reads every `*.ts` under the runner's ENTIRE `src` tree (recursively:
- * steps, pages, support, fixtures, …) — the #77 coverage cache's sources
- * digest input (spec D6). Wider than {@link loadStepSources} (`src/steps`
- * only) because bddgen compiles the whole runner graph: the default
- * generated runner's example step imports `../pages/ExamplePage`, so a
- * `src/steps`-only digest would miss a page-object/support edit bddgen
- * recompiles against (Codex P2 on PR #102). Same best-effort semantics as
- * {@link loadStepSources}.
+ * steps, pages, support, fixtures, …) — the {@link loadRunnerCoverageSources}
+ * building block covering the runner src tree. Wider than
+ * {@link loadStepSources} (`src/steps` only) because bddgen compiles the
+ * whole runner graph: the default generated runner's example step imports
+ * `../pages/ExamplePage`, so a `src/steps`-only digest would miss a
+ * page-object/support edit bddgen recompiles against (Codex P2 on PR #102).
+ * Same best-effort semantics as {@link loadStepSources}. NOT exported: every
+ * external caller wants the FULL #77 coverage-cache input (this PLUS the
+ * runner-root `playwright.config.ts`) — use {@link loadRunnerCoverageSources}.
  */
-export const loadRunnerSources = (
+const loadRunnerSources = (
   fs: Pick<VaultFileSystem, "listFilesRecursive" | "readFile">,
   runnerSrcDir: VaultPath,
 ): Promise<StepSourceFile[]> => loadTsSources(fs, runnerSrcDir);
+
+/**
+ * {@link loadRunnerSources} PLUS the runner-root `playwright.config.ts` (path +
+ * bytes), when it exists — the #77 coverage cache's FULL sources digest input
+ * (spec D6, closing the outermost ring, Codex P2 on PR #102). The config file
+ * owns bddgen's `defineBddConfig` call (`features`/`featuresRoot`/`steps`/
+ * `tags` globs), which lives OUTSIDE `src/` entirely — editing it changes what
+ * bddgen evaluates, invisibly to a src-only digest, which would then serve a
+ * stale `covered=true`. Best-effort like {@link loadRunnerSources}: an
+ * uninitialized runner (the config not yet written) or an unreadable config
+ * is skipped — same treatment as any other unreadable source file, never an
+ * error.
+ */
+export const loadRunnerCoverageSources = async (
+  fs: Pick<VaultFileSystem, "listFilesRecursive" | "readFile">,
+  testRunnerPath: VaultPath,
+): Promise<StepSourceFile[]> => {
+  const sources = await loadRunnerSources(fs, joinVaultPath(testRunnerPath, "src"));
+  const configPath = joinVaultPath(testRunnerPath, "playwright.config.ts");
+  const read = await fs.readFile(configPath);
+  return read.ok ? [...sources, { path: configPath, content: read.value }] : sources;
+};
 
 /** Scrapes step-definition patterns out of an already-read set of source files. */
 export const parseStepSources = (sources: readonly StepSourceFile[]): StepDefinitionPattern[] =>

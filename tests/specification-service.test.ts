@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../src/domain/settings/settings";
 import {
   DefaultSpecificationService,
+  parseBddgenMissingCount,
   parseBddgenMissingSteps,
 } from "../src/application/services/specification-service";
 import { parseFeature } from "../src/application/content/gherkin";
@@ -530,6 +531,40 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     expect(await service.allStepsDefined([FEATURE])).toBe(false);
   });
 
+  it("caches covered=false on bddgen's HEADER count, not the parsed snippet count — a snippet-format shift must not be read as covered (Codex P2 on PR #102, priority)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-happy-path.feature");
+    fs.files.set(path, "Feature: Happy\n  Scenario: S\n    Given a step\n");
+    seedRunnerFolder(absoluteFs);
+    // The header says 2 are missing, but the snippet lines are INDENTED — an
+    // upstream bddgen format shift parseBddgenMissingSteps' anchored regex
+    // (`^Given(`, no leading whitespace) can't parse — it returns [] even
+    // though bddgen explicitly reported 2 missing steps.
+    const indentedSnippets = `Missing step definitions: 2
+
+  Given('a step', async ({}) => {
+    // Step: Given a step
+  });
+
+  When('another step', async ({}) => {
+    // Step: When another step
+  });
+
+Use snippets above to create missing steps.
+`;
+    childProcess.stdouts.set("playwright-bdd", indentedSnippets);
+    expect(parseBddgenMissingSteps(indentedSnippets)).toEqual([]); // prove the premise
+
+    const detected = await service.detectMissingSteps(path);
+    expect(detected.ok).toBe(true);
+
+    // If the cache gated `covered` on the parsed snippet count (wrongly 0),
+    // it would record covered=true even though bddgen's own header says 2
+    // are missing — the dangerous direction. Gated on the header instead, it
+    // must stay false.
+    expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
   it("allStepsDefined falls back to static after the feature changes (hash miss)", async () => {
     const { service, fs, detected } = await detectColourFeature();
     expect(detected.ok).toBe(true);
@@ -668,6 +703,37 @@ describe("DefaultSpecificationService.allStepsDefined", () => {
     expect(await service.allStepsDefined([path])).toBe(false);
   });
 
+  it("falls back to static after the runner-root playwright.config.ts is edited — bddgen's defineBddConfig lives there, outside src/ (Codex P2 on PR #102, closes the outermost digest ring)", async () => {
+    const { service, fs, absoluteFs, childProcess } = build();
+    const path = vp("Specifications/features/UC-001-colour.feature");
+    const configFile = ".testrunner/playwright.config.ts";
+    fs.files.set(path, "Feature: Colour\n  Scenario: S\n    Given I have a colour\n");
+    // Same "bddgen resolves it, static can't" colou?r asymmetry as
+    // detectColourFeature, so a fallback to static is observable.
+    defineStep(fs, "I have a colou?r");
+    fs.files.set(
+      configFile,
+      'import { defineBddConfig } from "playwright-bdd";\nconst testDir = defineBddConfig({ features: "Specifications/features/**/*.feature" });\n',
+    );
+    await detectAndAssertCacheHit(service, absoluteFs, childProcess, path);
+
+    // Edit ONLY the runner-root config — the steps file (and hence the
+    // scraped pattern set the static fallback reads) is byte-for-byte
+    // untouched. playwright.config.ts owns bddgen's defineBddConfig call
+    // (features/featuresRoot/steps/tags globs); editing it changes what
+    // bddgen evaluates, invisibly to a src-only digest.
+    fs.files.set(
+      configFile,
+      'import { defineBddConfig } from "playwright-bdd";\nconst testDir = defineBddConfig({ features: "Specifications/features/**/*.feature", tags: "@smoke" });\n',
+    );
+
+    // A src-tree-only digest would still hit here (nothing under src/
+    // changed); the config-inclusive digest (Codex P2, closes the outermost
+    // ring) catches the edit and falls back to static, which — for this
+    // colou?r fixture — reports the step undefined (the safe direction).
+    expect(await service.allStepsDefined([path])).toBe(false);
+  });
+
   it("loads settings exactly ONCE per allStepsDefined call, regardless of feature count (Codex P2, settings TOCTOU)", async () => {
     const { service, fs, settings } = build();
     const other = vp("Specifications/features/UC-001-second.feature");
@@ -737,6 +803,26 @@ Use snippets above to create missing steps.
     // stripped so the result equals the feature's raw `I can't log in`.
     const stdout = `Missing step definitions: 1\n\nGiven('I can\\'t log in', async ({}) => {});\n`;
     expect(parseBddgenMissingSteps(stdout)).toEqual(["I can't log in"]);
+  });
+});
+
+describe("parseBddgenMissingCount", () => {
+  it("extracts the count from bddgen's header, independent of the snippet body", () => {
+    const stdout = `Missing step definitions: 2\n\nGiven('a step', async ({}) => {});\n`;
+    expect(parseBddgenMissingCount(stdout)).toBe(2);
+  });
+
+  it("extracts a multi-digit count", () => {
+    expect(parseBddgenMissingCount("Missing step definitions: 42\n")).toBe(42);
+  });
+
+  it("returns 0 when there is no header (all steps defined)", () => {
+    const stdout = `BDD generator started\nAll steps are defined.\n`;
+    expect(parseBddgenMissingCount(stdout)).toBe(0);
+  });
+
+  it("returns 0 for an empty string", () => {
+    expect(parseBddgenMissingCount("")).toBe(0);
   });
 });
 

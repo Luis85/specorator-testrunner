@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, ref, watch } from "vue";
+import { inject, onUnmounted, ref, watch } from "vue";
 import { USE_CASE_DETAIL_DEPS, USE_CASE_DETAIL_ID } from "./use-case-detail-deps";
 import { OBSIDIAN_APP } from "../obsidian-app";
 import { useEventBus } from "../use-event-bus";
@@ -9,6 +9,7 @@ import LoopRailBar from "./LoopRailBar.vue";
 import { checklistRow, type ChecklistRow } from "../../views/checklist";
 import { openOrNotice } from "../../views/modal-helpers";
 import { projectLoopRail, type LoopRail, type LoopRailAction } from "../../views/loop-rail-rows";
+import { RenderScheduler } from "../../views/render-scheduler";
 import {
   generateStepDefinitionsOutcome,
   prdBreadcrumbLabel,
@@ -39,16 +40,21 @@ const app = inject(OBSIDIAN_APP)!;
 // here would clear loopResult and rebuild every FeatureRow, wiping the very
 // outcome rows a generate just wrote (success, no-op, OR error) — exactly the
 // clobbering the #102 review flagged, worse across a multi-feature batch where
-// one Feature's error and another's success both need to survive together.
-// The generate paths refresh through refreshRail() instead (see
-// generateStepsForAll / FeatureRow's "generated" emit) — a narrower, rail-only
-// re-derivation that leaves loopResult and the FeatureRows alone (root-fix
-// pass, Codex P2s on PR #102). generateStepDefinitionsOutcome also no longer
-// re-detects after generating (that auto re-detect published a premature
-// zero-missing specification.missingSteps.detected that could complete the
-// Guided Tour's implement-steps step right after Generate — bddgen counts the
-// Pending-stub throws as defined); the coverage cache instead records on the
-// next REAL detect. Residual: a generate from the command palette no longer
+// one Feature's error and another's success both need to survive together. A
+// committed row-local Detect OR Generate refreshes through refreshRail()
+// instead (see generateStepsForAll / FeatureRow's "railStale" emit) — a
+// narrower, rail-only re-derivation that leaves loopResult and the
+// FeatureRows alone (root-fix pass, Codex P2s on PR #102). Detect is wired
+// the same way (Part 3 follow-up): it now records a #77 coverage-cache
+// verdict too, so it can flip allStepsDefined() on its own (e.g. bddgen
+// confirms an advanced-construct feature the static matcher couldn't model),
+// and without this the rail would sit stale until an unrelated refresh.
+// generateStepDefinitionsOutcome also no longer re-detects after generating
+// (that auto re-detect published a premature zero-missing
+// specification.missingSteps.detected that could complete the Guided Tour's
+// implement-steps step right after Generate — bddgen counts the Pending-stub
+// throws as defined); the coverage cache instead records on the next REAL
+// detect. Residual: a generate/detect from the command palette no longer
 // live-refreshes an open detail view's rail — same accepted class as the
 // detect-event exclusion above; it catches up on the next interaction.
 const REFRESH_ON: DomainEventType[] = [
@@ -221,23 +227,40 @@ function runLoopAction(action: Exclude<LoopRailAction, null>, model: LoadedModel
   }
 }
 
-/**
- * Re-derives ONLY the loop rail — not loopResult, not the FeatureRows, not
- * the rest of the loaded model — the generate paths' refresh target (root-fix
- * pass, Codex P2s on PR #102): a full reload() clears loopResult and rebuilds
- * every FeatureRow, which would wipe the very outcome rows a generate just
- * wrote. No-ops outside the loaded state; if a reload (re-target or a
- * same-Use-Case refresh) replaces the model while this awaits, the
- * loopGeneration check below discards this stale computation rather than
- * writing it under the fresher model.
- */
-async function refreshRail(): Promise<void> {
+// Serializes rail-only re-derivations (Part 5, Codex P2 on PR #102): two
+// generate/detect actions committing close together (e.g. two Feature rows)
+// can each trigger refreshRail(); left unserialized, the OLDER call can
+// resolve its own allStepsDefined read AFTER the newer one and overwrite the
+// fresher rail with stale coverage — the loopGeneration guard inside only
+// catches a FULL reload racing a derive, not two rail-only derives racing
+// each other. RenderScheduler (the same primitive useEventBus's own
+// scheduler uses for reload()) serializes calls and coalesces a burst into
+// one trailing derive that reads state fresh at ITS OWN start, so an older
+// derive can never land after — and therefore never overwrite — a newer one.
+const railScheduler = new RenderScheduler(async () => {
   if (state.value.kind !== "loaded") return;
   const generation = loopGeneration;
   const { useCase, railPaths } = state.value.model;
   const loopRail = await deriveLoopRail(useCase, railPaths);
+  // Still guards against a FULL reload (re-target or same-Use-Case refresh)
+  // replacing the model while this awaited — a different race than the
+  // refreshRail-vs-refreshRail one the scheduler itself serializes.
   if (loopGeneration !== generation || state.value.kind !== "loaded") return;
   state.value = { kind: "loaded", model: { ...state.value.model, loopRail } };
+});
+// Mirrors useEventBus's own teardown: stop scheduling once the view closes.
+onUnmounted(() => railScheduler.dispose());
+
+/**
+ * Re-derives ONLY the loop rail — not loopResult, not the FeatureRows, not
+ * the rest of the loaded model — the generate/detect paths' refresh target
+ * (root-fix pass, Codex P2s on PR #102): a full reload() clears loopResult
+ * and rebuilds every FeatureRow, which would wipe the very outcome rows an
+ * action just wrote. Routed through railScheduler so overlapping calls
+ * serialize instead of racing (Part 5).
+ */
+async function refreshRail(): Promise<void> {
+  await railScheduler.schedule();
 }
 
 // Generate step definitions for EVERY Feature the Use Case owns (the rail's Steps
@@ -436,7 +459,7 @@ const navigateArtifact = (id: string): void => deps.navigate(artifactTarget(id))
           v-for="row in state.model.featureRows"
           :key="row.path"
           :row="row"
-          @generated="refreshRail"
+          @railStale="refreshRail"
         />
       </div>
     </template>

@@ -59,6 +59,8 @@ const checkRows = (w: ReturnType<typeof mountRow>) =>
   w.findAll(".e2e-test-hub-uc-detail-feature-result .e2e-test-hub-settings-check-row");
 const validateButton = (w: ReturnType<typeof mountRow>) =>
   w.get(`button[aria-label="Validate ${LABEL}"]`);
+const detectButton = (w: ReturnType<typeof mountRow>) =>
+  w.get(`button[aria-label="Detect missing steps in ${LABEL}"]`);
 const generateButton = (w: ReturnType<typeof mountRow>) =>
   w.get(`button[aria-label="Generate step definitions for ${LABEL}"]`);
 
@@ -72,6 +74,24 @@ async function mountAndGenerate(deps: UseCaseDetailDeps): Promise<ReturnType<typ
   const w = mountRow(deps);
   await flushPromises();
   await generateButton(w).trigger("click");
+  await flushPromises();
+  return w;
+}
+
+/** Same shape as {@link mountAndGenerate}, for the Detect button (Part 3). */
+async function mountAndDetect(deps: UseCaseDetailDeps): Promise<ReturnType<typeof mountRow>> {
+  const w = mountRow(deps);
+  await flushPromises();
+  await detectButton(w).trigger("click");
+  await flushPromises();
+  return w;
+}
+
+/** Same shape as {@link mountAndGenerate}, for the Validate button. */
+async function mountAndValidate(deps: UseCaseDetailDeps): Promise<ReturnType<typeof mountRow>> {
+  const w = mountRow(deps);
+  await flushPromises();
+  await validateButton(w).trigger("click");
   await flushPromises();
   return w;
 }
@@ -101,10 +121,7 @@ describe("FeatureRow", () => {
   });
 
   it("renders the inline validate outcome", async () => {
-    const w = mountRow(makeDeps());
-    await flushPromises();
-    await validateButton(w).trigger("click");
-    await flushPromises();
+    const w = await mountAndValidate(makeDeps());
     expect(checkRows(w)).toHaveLength(1);
     expect(checkRows(w)[0].text()).toContain("valid");
   });
@@ -140,10 +157,7 @@ describe("FeatureRow", () => {
   });
 
   it("clears an existing inline result on refresh", async () => {
-    const w = mountRow(makeDeps());
-    await flushPromises();
-    await validateButton(w).trigger("click");
-    await flushPromises();
+    const w = await mountAndValidate(makeDeps());
     expect(checkRows(w).length).toBeGreaterThan(0);
 
     await w.setProps({ row: row() });
@@ -151,7 +165,7 @@ describe("FeatureRow", () => {
     expect(checkRows(w)).toHaveLength(0);
   });
 
-  it("emits generated once the generate outcome commits (#77, root fix: refreshRail() doesn't rebuild this row, so the emit no longer needs gating)", async () => {
+  it("emits railStale once the generate outcome commits (#77, root fix: refreshRail() doesn't rebuild this row, so the emit no longer needs gating)", async () => {
     const deps = makeDeps({
       stepDefinitionService: {
         generate: vi
@@ -159,26 +173,22 @@ describe("FeatureRow", () => {
           .mockResolvedValue({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } }),
       },
     });
-    const w = mountRow(deps);
-    await flushPromises();
-
-    await generateButton(w).trigger("click");
-    await flushPromises();
+    const w = await mountAndGenerate(deps);
 
     expect(checkRows(w).length).toBeGreaterThan(0);
-    expect(w.emitted("generated")).toHaveLength(1);
+    expect(w.emitted("railStale")).toHaveLength(1);
   });
 
-  it("emits generated for a NO-OP generate too, and its row still renders (Codex P2s on PR #102, root fix)", async () => {
+  it("emits railStale for a NO-OP generate too, and its row still renders (Codex P2s on PR #102, root fix)", async () => {
     // makeDeps' default generate mock resolves ok with an EMPTY generatedSteps.
     const w = await mountAndGenerate(makeDeps());
 
     expect(checkRows(w)).toHaveLength(1);
     expect(checkRows(w)[0].text()).toContain("nothing to generate");
-    expect(w.emitted("generated")).toHaveLength(1);
+    expect(w.emitted("railStale")).toHaveLength(1);
   });
 
-  it("emits generated for a FAILED generate too, and its error row still renders (Codex P2s on PR #102, root fix)", async () => {
+  it("emits railStale for a FAILED generate too, and its error row still renders (Codex P2s on PR #102, root fix)", async () => {
     const deps = makeDeps({
       stepDefinitionService: {
         generate: vi.fn().mockResolvedValue({
@@ -191,10 +201,10 @@ describe("FeatureRow", () => {
 
     expect(checkRows(w)).toHaveLength(1);
     expect(checkRows(w)[0].text()).toContain("Could not generate step definitions");
-    expect(w.emitted("generated")).toHaveLength(1);
+    expect(w.emitted("railStale")).toHaveLength(1);
   });
 
-  it("does not emit generated for a generate result dropped by a refresh (stale-write guard)", async () => {
+  it("does not emit railStale for a generate result dropped by a refresh (stale-write guard)", async () => {
     let resolveGenerate!: (v: unknown) => void;
     const deps = makeDeps({
       stepDefinitionService: {
@@ -228,6 +238,51 @@ describe("FeatureRow", () => {
     resolveGenerate({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } });
     await flushPromises();
     expect(checkRows(w)).toHaveLength(0);
-    expect(w.emitted("generated")).toBeUndefined();
+    expect(w.emitted("railStale")).toBeUndefined();
+  });
+
+  it("emits railStale once a committed DETECT commits too — detect now records a #77 coverage verdict, so it may also change the rail (Codex P2, Part 3)", async () => {
+    const w = await mountAndDetect(makeDeps());
+
+    expect(checkRows(w).length).toBeGreaterThan(0);
+    expect(w.emitted("railStale")).toHaveLength(1);
+  });
+
+  it("does not emit railStale for a detect result dropped by a refresh (stale-write guard, Codex P2, Part 3)", async () => {
+    let resolveDetect!: (v: unknown) => void;
+    const deps = makeDeps({
+      specificationService: {
+        validate: vi.fn(),
+        detectMissingSteps: vi.fn().mockReturnValue(
+          new Promise((resolve) => {
+            resolveDetect = resolve;
+          }),
+        ),
+      },
+    });
+    const w = mountRow(deps);
+    await flushPromises();
+
+    await detectButton(w).trigger("click");
+    await nextTick();
+    expect(w.find(".e2e-test-hub-uc-detail-feature-result").text()).toContain("Detecting");
+
+    // A refresh reuses the component (fresh row, same path) — clears the result
+    // and bumps the generation before the detect outcome resolves.
+    await w.setProps({ row: row() });
+    await flushPromises();
+
+    // The stale detect now resolves; it must neither repopulate the row NOR
+    // tell the parent to re-derive the rail on its behalf.
+    resolveDetect({ ok: true, value: { missingSteps: [], detectionEventId: "e1" } });
+    await flushPromises();
+    expect(checkRows(w)).toHaveLength(0);
+    expect(w.emitted("railStale")).toBeUndefined();
+  });
+
+  it("does not emit railStale for a VALIDATE — it runs no detect/generate and changes no coverage (Codex P2, Part 3)", async () => {
+    const w = await mountAndValidate(makeDeps());
+    expect(checkRows(w).length).toBeGreaterThan(0);
+    expect(w.emitted("railStale")).toBeUndefined();
   });
 });

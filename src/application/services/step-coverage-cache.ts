@@ -63,11 +63,15 @@ interface CoverageEntry {
  * miss is always safe: callers fall back to the static heuristic. Nothing is
  * persisted (spec D7).
  *
- * ACCEPTED RESIDUAL: imports that escape `.testrunner/src` entirely (a
- * tsconfig path alias, a bare package carrying step logic, the playwright
- * config at the runner root) are not hashed — exotic for a plugin-generated
- * runner (whose steps import only `playwright-bdd`), session-scoped (spec
- * D7), and re-recorded on the next detect.
+ * ACCEPTED RESIDUAL: imports that escape `.testrunner/src` AND the runner-root
+ * `playwright.config.ts` entirely (a tsconfig path alias, a bare package
+ * carrying step logic) are not hashed — exotic for a plugin-generated runner
+ * (whose steps import only `playwright-bdd`), session-scoped (spec D7), and
+ * re-recorded on the next detect. `playwright.config.ts` itself — bddgen's
+ * `defineBddConfig` entry point, previously this residual's own example — IS
+ * now hashed (Codex P2, closing the outermost ring): the sources set the
+ * caller passes in (`SpecificationService.runnerSources`, via
+ * `loadRunnerCoverageSources`) includes it alongside the whole `src` tree.
  *
  * 32-bit digests: a colliding edit could in principle serve a stale verdict
  * (~2^-32 per changed-input read) — accepted; the verdict only gates

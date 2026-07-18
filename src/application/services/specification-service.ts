@@ -12,7 +12,7 @@ import {
   type StepDefinitionPattern,
 } from "../content/step-definitions";
 import {
-  loadRunnerSources,
+  loadRunnerCoverageSources,
   loadStepSources,
   parseStepSources,
   type StepSourceFile,
@@ -153,6 +153,22 @@ export interface SpecificationService {
  */
 /** Header bddgen prints when a run has undefined steps — the sole signal, since bddgen exits 0 regardless. */
 const BDDGEN_MISSING_HEADER = "Missing step definitions:";
+
+/**
+ * The bddgen HEADER's own missing-step COUNT (`Missing step definitions: N`)
+ * — bddgen's own authoritative "how many are missing" assertion, distinct
+ * from {@link parseBddgenMissingSteps}' per-snippet text extraction below.
+ * The #77 cache's `covered` gate reads THIS, not the parsed snippet count: if
+ * bddgen's snippet FORMAT shifts (e.g. indented output) the anchored
+ * per-line regex below can under-extract — even down to zero — while the
+ * header still truthfully reports N missing (Codex P2 on PR #102, dangerous
+ * direction). No header → 0 (nothing missing), matching
+ * {@link parseBddgenMissingSteps}' own no-header case.
+ */
+export const parseBddgenMissingCount = (stdout: string): number => {
+  const match = /Missing step definitions:\s*(\d+)/.exec(stdout);
+  return match ? Number(match[1]) : 0;
+};
 
 export const parseBddgenMissingSteps = (stdout: string): string[] => {
   if (!stdout.includes(BDDGEN_MISSING_HEADER)) return [];
@@ -349,22 +365,23 @@ export class DefaultSpecificationService implements SpecificationService {
   }
 
   /**
-   * The runner's WHOLE `src` tree's raw source files (path + bytes) for the
-   * ALREADY-LOADED `settings` snapshot — the #77 coverage cache's
-   * content-address input (spec D6). Wider than {@link stepSources}
-   * (`src/steps` only) because bddgen compiles the whole runner graph: the
+   * The runner's WHOLE `src` tree PLUS the runner-root `playwright.config.ts`
+   * (path + bytes) for the ALREADY-LOADED `settings` snapshot — the #77
+   * coverage cache's content-address input (spec D6). Wider than
+   * {@link stepSources} (`src/steps` only) because bddgen compiles the whole
+   * runner graph AND reads the config for its `defineBddConfig` globs: the
    * default generated runner's example step imports `../pages/ExamplePage`,
    * so a `src/steps`-only digest would miss a page-object/support edit bddgen
-   * recompiles against (Codex P2 on PR #102). Takes `settings` rather than
-   * loading it itself (Codex P2, settings TOCTOU on PR #102): a caller that
-   * also derives a spawn cwd from settings (e.g. `detectMissingSteps`) must
-   * resolve BOTH from the SAME snapshot, or a settings edit landing between
-   * two independent loads could record a verdict for a runner bddgen never
-   * actually evaluated.
+   * recompiles against, and a src-only digest would miss a config edit that
+   * changes what bddgen even evaluates — closing the outermost ring (Codex P2
+   * on PR #102). Takes `settings` rather than loading it itself (Codex P2,
+   * settings TOCTOU on PR #102): a caller that also derives a spawn cwd from
+   * settings (e.g. `detectMissingSteps`) must resolve BOTH from the SAME
+   * snapshot, or a settings edit landing between two independent loads could
+   * record a verdict for a runner bddgen never actually evaluated.
    */
   private async runnerSources(settings: TestHubSettings): Promise<StepSourceFile[]> {
-    const runnerSrcDir = joinVaultPath(settings.paths.testRunnerPath, "src");
-    return loadRunnerSources(this.fs, runnerSrcDir);
+    return loadRunnerCoverageSources(this.fs, settings.paths.testRunnerPath);
   }
 
   async allStepsDefined(featurePaths: readonly VaultPath[]): Promise<boolean> {
@@ -372,10 +389,10 @@ export class DefaultSpecificationService implements SpecificationService {
     // ONE settings load feeds the #77 cache's sources snapshot below — no
     // per-feature reload (Codex P2, settings TOCTOU on PR #102).
     const settings = await this.settingsService.load();
-    // The #77 cache consults against the WHOLE runner src tree (spec D6); the
-    // static fallback still scrapes only src/steps (listStepPatterns' scope),
-    // filtered out of this SAME read so a cache miss doesn't re-list the
-    // folder a second time.
+    // The #77 cache consults against the WHOLE runner src tree PLUS the
+    // root playwright.config.ts (spec D6); the static fallback still scrapes
+    // only src/steps (listStepPatterns' scope), filtered out of this SAME
+    // read so a cache miss doesn't re-list the folder a second time.
     const runnerSources = await this.runnerSources(settings);
     const stepsDir = this.stepsDirFor(settings);
     const definitions = parseStepSources(
@@ -488,11 +505,12 @@ export class DefaultSpecificationService implements SpecificationService {
     const safeNode = this.commandSafety.assertSafe([settings.runner.nodeExecutable, "--version"]);
     if (!safeNode.ok) return err(safeNode.error);
 
-    // #77: the WHOLE runner src tree's sources bddgen is about to evaluate —
-    // the cache records against THIS set (spec D6: raw path+bytes, not
-    // scraped patterns, and not just src/steps — see runnerSources' doc), so
-    // a runner-src file edited externally during or after the spawn
-    // hash-misses and falls back to the static heuristic.
+    // #77: the WHOLE runner src tree PLUS the root playwright.config.ts —
+    // every source bddgen is about to evaluate — the cache records against
+    // THIS set (spec D6: raw path+bytes, not scraped patterns, and not just
+    // src/steps — see runnerSources' doc), so a runner-src OR config file
+    // edited externally during or after the spawn hash-misses and falls back
+    // to the static heuristic.
     const sourcesAtSpawn = await this.runnerSources(settings);
 
     // Scope bddgen to THIS feature (same BDD_FEATURES env the generated config
@@ -542,21 +560,25 @@ export class DefaultSpecificationService implements SpecificationService {
       postSpawnRead.value === featureContent &&
       sourcesDigest(postSpawnSources) === sourcesDigest(sourcesAtSpawn);
     if (unchangedSinceSpawn) {
-      // The cache trusts bddgen's OWN authoritative zero-missing report
-      // (rawMissing), NOT the filtered `missingSteps` list: keepFeatureSteps
-      // is a lossy feature-step projection — for a Scenario Outline, bddgen
-      // reports the CONCRETE pickle text (e.g. "I have red") while
-      // collectStepTexts yields the TEMPLATE ("I have <colour>"), so an
-      // undefined Outline step's concrete miss never maps back to its
-      // template and `missingSteps` comes out empty. Gating `covered` on
-      // that emptiness would record a false covered=true for a feature that
-      // still has a genuinely undefined step — the dangerous direction
-      // (Codex P2 on PR #102).
+      // The cache trusts bddgen's OWN HEADER count (parseBddgenMissingCount),
+      // NOT the parsed snippet list (rawMissing) and NOT the filtered
+      // `missingSteps` list — two independent ways the "0 missing" signal can
+      // be wrong in the dangerous (false covered=true) direction: (1) if
+      // bddgen's snippet FORMAT shifts (e.g. indented output), the anchored
+      // per-line regex parsing rawMissing can under-extract, even to zero,
+      // while the header still truthfully reports N missing; (2)
+      // keepFeatureSteps is ALSO a lossy feature-step projection — for a
+      // Scenario Outline, bddgen reports the CONCRETE pickle text (e.g. "I
+      // have red") while collectStepTexts yields the TEMPLATE ("I have
+      // <colour>"), so an undefined Outline step's concrete miss never maps
+      // back to its template and `missingSteps` comes out empty (Codex P2 on
+      // PR #102). The header is bddgen's own count of what it evaluated —
+      // trusting it survives both failure modes.
       this.stepCoverage.record(
         featurePath,
         featureContent,
         sourcesAtSpawn,
-        rawMissing.length === 0,
+        parseBddgenMissingCount(ran.value.stdout) === 0,
       );
     }
 

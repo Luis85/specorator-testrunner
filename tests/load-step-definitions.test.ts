@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { loadStepDefinitions } from "../src/application/services/load-step-definitions";
+import {
+  loadRunnerCoverageSources,
+  loadStepDefinitions,
+} from "../src/application/services/load-step-definitions";
 import type { VaultFileSystem } from "../src/application/ports/vault-file-system";
 import type { VaultPath } from "../src/domain/value-objects/identifiers";
 import { unsafeVaultPath as vp } from "../src/domain/value-objects/vault-path";
@@ -55,5 +58,35 @@ describe("loadStepDefinitions", () => {
       { kind: "expression", source: "first" },
       { kind: "expression", source: "second" },
     ]);
+  });
+});
+
+describe("loadRunnerCoverageSources", () => {
+  const RUNNER = vp(".testrunner");
+
+  it("includes the runner-root playwright.config.ts alongside the whole src tree (Codex P2, closes the outermost digest ring)", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const config = vp(".testrunner/playwright.config.ts");
+    const fs = stubFs(ok([a]), {
+      [a]: 'Given("a step", async () => {});',
+      [config]: 'const testDir = defineBddConfig({ features: "x" });',
+    });
+
+    const sources = await loadRunnerCoverageSources(fs, RUNNER);
+
+    expect(sources).toEqual([
+      { path: a, content: 'Given("a step", async () => {});' },
+      { path: config, content: 'const testDir = defineBddConfig({ features: "x" });' },
+    ]);
+  });
+
+  it("skips the config file, best-effort, when the runner hasn't been initialized yet", async () => {
+    const a = vp(".testrunner/src/steps/a.ts");
+    const fs = stubFs(ok([a]), { [a]: 'Given("a step", async () => {});' });
+    // No playwright.config.ts in `files` → readFile fails → skipped, the same
+    // best-effort treatment as any other unreadable source file.
+    const sources = await loadRunnerCoverageSources(fs, RUNNER);
+
+    expect(sources).toEqual([{ path: a, content: 'Given("a step", async () => {});' }]);
   });
 });

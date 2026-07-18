@@ -438,4 +438,162 @@ describe("UseCaseDetailApp", () => {
     // write before it ever renders.
     expect(w.text()).toContain("1 step needs a definition");
   });
+
+  /**
+   * Mounts the detail view on a Use Case with ONE Feature, clicks the given
+   * per-row action button, and waits for the resulting allStepsDefined
+   * re-read — FeatureRow's detect/generate handlers both emit railStale
+   * unconditionally on a committed outcome, so refreshRail always runs. The
+   * shared arrange+act behind the two per-row seam-close pins below (Part 1
+   * generate, Part 3 detect), which differ only in `specificationService`
+   * and the button clicked; each keeps its own trailing row assertion local
+   * to the `it` block per vitest/expect-expect.
+   */
+  const clickPerRowActionAndExpectRailRefresh = async (
+    specificationService: Record<string, unknown>,
+    buttonLabel: string,
+  ): Promise<ReturnType<typeof mountApp>> => {
+    const deps = makeDeps({
+      traceability: {
+        deriveById: vi.fn(async () => ({ ok: true, value: useCase({ featureFiles: [PATH] }) })),
+      },
+      specificationService,
+    });
+    const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
+    await flushPromises();
+    expect(deps.specificationService.allStepsDefined).toHaveBeenCalledTimes(1); // initial load
+
+    await w.get(`button[aria-label="${buttonLabel}"]`).trigger("click");
+    await flushPromises();
+
+    // refreshRail() ran (the rail re-derived) — FeatureRow's own inline
+    // result (written independently by its own runAction) is unaffected: it
+    // did NOT rebuild the FeatureRows. The close-out review's one unpinned
+    // lever: binding @railStale to the full `refresh()` instead of
+    // `refreshRail()` passes every OTHER test in this suite, yet would
+    // silently reintroduce the clobber — a full reload() sets
+    // state="loading", unmounting every FeatureRow and resetting its
+    // `result` to null via the row-prop watcher.
+    expect(deps.specificationService.allStepsDefined).toHaveBeenCalledTimes(2);
+    return w;
+  };
+
+  const rowCheckRows = (w: ReturnType<typeof mountApp>) =>
+    w.findAll(".e2e-test-hub-uc-detail-feature-result .e2e-test-hub-settings-check-row");
+
+  it("a per-row generate refreshes the rail via refreshRail — NOT a full reload — so the row's own inline result survives (final seam close, Codex P2 + review)", async () => {
+    const w = await clickPerRowActionAndExpectRailRefresh(
+      {
+        ...specService(true),
+        listFeatures: vi.fn().mockResolvedValue({
+          ok: true,
+          value: [{ path: PATH, label: "UC-001-login.feature" }],
+        }),
+      },
+      "Generate step definitions for UC-001-login.feature",
+    );
+
+    expect(rowCheckRows(w)).toHaveLength(1);
+    expect(rowCheckRows(w)[0].text()).toContain("Generated 1 step stub in");
+  });
+
+  it("a per-row Detect that commits also refreshes the rail via refreshRail — NOT a full reload — so the row's own inline detect result survives (Codex P2, Part 3)", async () => {
+    const w = await clickPerRowActionAndExpectRailRefresh(
+      {
+        ...specService(true),
+        listFeatures: vi.fn().mockResolvedValue({
+          ok: true,
+          value: [{ path: PATH, label: "UC-001-login.feature" }],
+        }),
+        detectMissingSteps: vi.fn().mockResolvedValue({
+          ok: true,
+          value: { missingSteps: [], detectionEventId: "e" },
+        }),
+      },
+      "Detect missing steps in UC-001-login.feature",
+    );
+
+    expect(rowCheckRows(w)).toHaveLength(1);
+    expect(rowCheckRows(w)[0].text()).toContain("All steps are defined");
+  });
+
+  it("serializes overlapping rail refreshes — an older refresh resolving AFTER a newer one must not overwrite it with stale coverage (Part 5, Codex P2)", async () => {
+    const pathA = "Features/UC-001-a.feature" as VaultPath;
+    const pathB = "Features/UC-001-b.feature" as VaultPath;
+    let callCount = 0;
+    let resolveCallTwo!: (value: boolean) => void;
+    const allStepsDefined = vi.fn(() => {
+      callCount += 1;
+      if (callCount === 1) return Promise.resolve(false); // initial load
+      // Call #2 (row A's refreshRail derive) is held open — this test drives
+      // its resolution explicitly to land AFTER row B's commit. Call #3+
+      // (row B's derive, once it runs) resolves immediately with the FRESH
+      // verdict — under the fix it can only start after call #2 settles.
+      if (callCount === 2) {
+        return new Promise<boolean>((resolve) => {
+          resolveCallTwo = resolve;
+        });
+      }
+      return Promise.resolve(true);
+    });
+    const deps = makeDeps({
+      traceability: {
+        deriveById: vi.fn(async () => ({
+          ok: true,
+          value: useCase({ featureFiles: [pathA, pathB] }),
+        })),
+      },
+      specificationService: {
+        allStepsDefined,
+        listFeatures: vi.fn().mockResolvedValue({
+          ok: true,
+          value: [
+            { path: pathA, label: "UC-001-a.feature" },
+            { path: pathB, label: "UC-001-b.feature" },
+          ],
+        }),
+        validate: vi.fn(),
+        detectMissingSteps: vi.fn().mockResolvedValue({
+          ok: true,
+          value: { missingSteps: ["Given x"], detectionEventId: "e" },
+        }),
+      },
+      stepDefinitionService: {
+        generate: vi
+          .fn()
+          .mockResolvedValue({ ok: true, value: { generatedSteps: ["x"], stepFile: "s" } }),
+      },
+    });
+    const w = mountApp(deps, ref<UseCaseId | null>("UC-001" as UseCaseId));
+    await flushPromises();
+
+    // Row A's generate commits and emits railStale — its refreshRail()
+    // derive starts and stalls on the deferred allStepsDefined (call #2).
+    await w
+      .get('button[aria-label="Generate step definitions for UC-001-a.feature"]')
+      .trigger("click");
+    await flushPromises();
+
+    // Row B's generate ALSO commits, overlapping with A's still-pending
+    // derive. Unserialized, this starts a SECOND, independent derive right
+    // away; serialized, it queues behind A's.
+    await w
+      .get('button[aria-label="Generate step definitions for UC-001-b.feature"]')
+      .trigger("click");
+    await flushPromises();
+
+    // Resolve row A's (the OLDER) read — landing well after row B's own
+    // commit, reproducing "the earlier call resolves after the newer one."
+    resolveCallTwo(false);
+    await flushPromises();
+
+    // The rail must reflect the FRESH verdict (steps now done via row B's
+    // commit) — not a stale one an overlapping older derive raced in after.
+    // Polls rather than a fixed flush count: under the fix, resolving A
+    // unblocks B's QUEUED derive, whose own allStepsDefined call and write
+    // are each a further microtask hop.
+    await vi.waitFor(() => {
+      expect(w.find(GENERATE_STEPS_BTN).exists()).toBe(false);
+    });
+  });
 });
