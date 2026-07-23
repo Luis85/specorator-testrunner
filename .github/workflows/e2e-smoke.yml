@@ -29,7 +29,7 @@ jobs:
     outputs:
       runner-templates: ${{ steps.diff.outputs.changed }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         if: github.event_name == 'pull_request'
         with:
           fetch-depth: 0
@@ -79,7 +79,7 @@ jobs:
         # install paths) were Windows-specific.
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up Node 22
         uses: actions/setup-node@v7
